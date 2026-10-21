@@ -1,0 +1,23 @@
+# Tài liệu yêu cầu gốc — không commit
+Game_Server_System_Requirements*.md
+
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+TestResults/
+
+# IDE
+.idea/
+*.swp
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Secrets / local config
+appsettings.*.local.json
+*.secrets.json
+.env
