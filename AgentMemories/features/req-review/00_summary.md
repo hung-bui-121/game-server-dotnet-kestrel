@@ -42,8 +42,14 @@ Remote/game config service · resource/item catalog · maintenance mode + versio
 - 01 đề xuất Client SDK = `CLI-01..04`; 02 = `SDK-01..03`. → dùng SDK.
 - IAP: 01 nói out-of-scope hoặc P1; 02 nói P0/P1 tuỳ lộ trình migrate Sniper PVP. → phụ thuộc TBD-18.
 
+## v1.1 rev 2 (2026-10-21)
+
+- `Requirements/Game_Server_System_Requirements_v1.1.md` đã viết (rev 1) theo 7 bước ở 01 §8 + toàn bộ 02 §13/§14, rồi được system-architect review chéo: `03_v11_architect_review.md` (1 Blocker, 6 Major, 21 Minor). **Rev 2 đã áp dụng cả 28 finding**, không bỏ qua finding nào; changelog "v1.1 → v1.1 rev 2" ở cuối tài liệu liệt kê từng finding.
+- Trạng thái: Draft v1.1 rev 2 — chờ owner chốt. Thống kê: 167 yêu cầu có ID (159 MUST / 8 SHOULD; P0 = 119, P0.5 = 32, P0.5* = 3, P1 = 11, P1* = 1, P2 = 1), 52 ACC, 26 TBD, **36 chỗ `[MẶC ĐỊNH — chờ owner chốt]`** thuộc 15 TBD, 22 chỗ `[VERIFY]` (V1–V14, V14 mới: Hangfire/Quartz không có storage Couchbase).
+- Thay đổi hướng so với 00 bảng đầu: D2 "receipt" của 00/02 §3 = "idempotency entry + receipt compact ≤ 512 B" của v1.1; receipt đầy đủ là projection `receipts` không dùng expiry, purge 180 ngày (TBD-08). D3: 4 section cố định P0 (`profile/progression/wallet/inventory`). DAT-04 có cơ chế (c) claim-marker saga. TBD-18 mặc định **Có** (IAP-01/02 + MIG-01 = P0.5). Battle state nằm trong aggregate (`activeBattles[]`), không battle document.
+
 ## Việc tiếp theo
 
-1. Owner chốt 4 quyết định nền ở bảng trên + TBD sprint-0 (TBD-07, 11–15, 18, 20, 22).
-2. Viết v1.1 theo thứ tự 7 bước ở `01_requirements_quality.md` §8, nhúng bảng sửa ở `02_technical_fitness.md` §13–14, kèm ma trận truy vết yêu cầu ↔ ACC ↔ phase.
-3. Xác minh 13 fact ở `02_technical_fitness.md` §15 trước khi khoá baseline (.NET 10 EOL, Couchbase SDK/Server, Serilog rolling, Testcontainers, Google.Protobuf ↔ Unity…).
+1. Owner chốt các mục `[MẶC ĐỊNH]` — trước hết TBD Sprint 0: TBD-04a, 05a, 07, 11, 12, 13, 14, 15, 18, 20, 22 (bảng mục 20 của v1.1 có cột "Mặc định nếu chưa chốt"/"Trạng thái").
+2. Xác minh 14 fact ở mục 21 của v1.1 (= 02 §15 + V14) trước khi khoá baseline (.NET 10 EOL, Couchbase SDK/Server, Majority với 0 replica, Serilog rolling, Testcontainers, Google.Protobuf ↔ Unity, kích thước state Sniper PVP…).
+3. Sau 1–2: chuyển cho system-architect thiết kế P0 từ DAT-09 + DAT-04(a/b/c) + API-10 + CMD-01..09.
