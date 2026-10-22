@@ -48,11 +48,17 @@ Remote/game config service · resource/item catalog · maintenance mode + versio
 - Trạng thái: Draft v1.1 rev 2 — chờ owner chốt. Thống kê: 167 yêu cầu có ID (159 MUST / 8 SHOULD; P0 = 119, P0.5 = 32, P0.5* = 3, P1 = 11, P1* = 1, P2 = 1), 52 ACC, 26 TBD, **36 chỗ `[MẶC ĐỊNH — chờ owner chốt]`** thuộc 15 TBD, 22 chỗ `[VERIFY]` (V1–V14, V14 mới: Hangfire/Quartz không có storage Couchbase).
 - Thay đổi hướng so với 00 bảng đầu: D2 "receipt" của 00/02 §3 = "idempotency entry + receipt compact ≤ 512 B" của v1.1; receipt đầy đủ là projection `receipts` không dùng expiry, purge 180 ngày (TBD-08). D3: 4 section cố định P0 (`profile/progression/wallet/inventory`). DAT-04 có cơ chế (c) claim-marker saga. TBD-18 mặc định **Có** (IAP-01/02 + MIG-01 = P0.5). Battle state nằm trong aggregate (`activeBattles[]`), không battle document.
 
+## v1.2 (2026-10-22)
+
+- Owner trả lời 23/26 TBD (`04_owner_answers.md`): 8 thay đổi (TBD-07 **nhiều aggregate** — đảo ngược D1; TBD-11 một game/deployment; TBD-04a single session + takeover; TBD-01 5 sample command gồm IAP; TBD-02 một battle; TBD-03 PGS + Game Center; TBD-17 config = file; TBD-18 **Không** di dời), 15 chấp nhận, 3 mở (06, 09, 21). System-architect thiết kế lại ở `05_owner_decisions_design.md` (§I bảng văn bản mới, §J [MẶC ĐỊNH]/[VERIFY] mới, §K rủi ro).
+- `Requirements/Game_Server_System_Requirements_v1.2.md` (file mới, v1.1 rev 2 giữ nguyên) áp dụng toàn bộ §I: mọi command = **một Couchbase transaction** (aggregate chạm ≤ 4 + receipt document + claim marker); receipt = idempotency entry + outbox carrier; không còn receipt ring/outbox nhúng/tầng A–B/saga; `pa_<aggregateId>` collection per aggregate; section ≡ aggregate; SMP-01..05; IAP-01/02 + ECO-08 + ACC-44/46/47 → P0; MIG/15.2/deliverable 9/G1/V5/V12/V13 xoá; V15–V22 thêm.
+- Thống kê: 170 yêu cầu (162 MUST / 8 SHOULD; P0 = 127, P0.5 = 32, P1 = 10, P2 = 1), 53 ACC, 26 TBD (20 Chốt 22/10, 3 Mở, 9 còn [MẶC ĐỊNH] con), **31 chỗ `[MẶC ĐỊNH — chờ owner chốt]`** thuộc 9 TBD (07, 13, 02, 04a, 03, 01, 17, 15, 19), 27 chỗ `[VERIFY]` (V1–V4, V6–V11, V14–V22).
+
 ## Việc tiếp theo
 
-1. Owner chốt các mục `[MẶC ĐỊNH]` — trước hết TBD Sprint 0: TBD-04a, 05a, 07, 11, 12, 13, 14, 15, 18, 20, 22 (bảng mục 20 của v1.1 có cột "Mặc định nếu chưa chốt"/"Trạng thái").
-2. Xác minh 14 fact ở mục 21 của v1.1 (= 02 §15 + V14) trước khi khoá baseline (.NET 10 EOL, Couchbase SDK/Server, Majority với 0 replica, Serilog rolling, Testcontainers, Google.Protobuf ↔ Unity, kích thước state Sniper PVP…).
-3. Sau 1–2: chuyển cho system-architect thiết kế P0 từ DAT-09 + DAT-04(a/b/c) + API-10 + CMD-01..09.
+1. Owner duyệt các `[MẶC ĐỊNH]` mới của §J (mục 20 v1.2, đoạn cuối): TBD-07 (transaction là cơ chế duy nhất kể cả command một aggregate; 32/64 KiB, 16 aggregate, 4 Touches, 2 marker), TBD-13 (window 24 h, receipt ≤ 4 KiB, `resultCompact` ≤ 512 B), TBD-02 (policy Replace, 24 h), TBD-04a (cửa sổ 60 s), TBD-03 (tham số verify), TBD-01 (chi tiết IAP), TBD-17 (overlay/reload/Dev file-watch), TBD-15 (Unity LTS), TBD-19 (`TransactionExpiration` 10 s, sweeper 30 s). Cân nhắc §K của 05 (chi phí transaction hot path, TBD-06 trống, config chỉ đổi bằng deploy).
+2. Xác minh `[VERIFY]` chặn P0: **V15, V16, V17** (transactions: trộn ghi staged, counter ngoài transaction, `txn_meta`/lost cleanup) trước khi system-architect thiết kế P0; V18–V21 trước IAP/provider; V22 để chốt 32/64 KiB; V1–V4, V6–V11, V14 trước khi khoá baseline.
+3. Sau 1–2: system-architect thiết kế P0 từ DAT-09 + DAT-04(a/b/c) + API-10 + CMD-01..09 + SMP-01..05.
 
 ## Owner feedback (2026-10-22)
 
