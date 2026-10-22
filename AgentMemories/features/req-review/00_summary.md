@@ -60,11 +60,17 @@ Remote/game config service · resource/item catalog · maintenance mode + versio
 - 2 thay đổi: R2-07-commit → **DAT-11** (P0, MUST): tập aggregate của command nạp bằng bulk/parallel get một round-trip, trong và ngoài transaction; **V23** mới (transactions .NET có cho `Get` song song không) chặn P0 cùng V15–V17. R2-17-config → CFG-03 viết lại: config phân phối qua Player API (Login trả `configVersion`, `GetConfig(configVersion?)` trả bundle Protobuf ≤ 1 MiB, client cache theo version); bỏ endpoint `/v1/config/...` và CDN; SEC-09/SMP-01/SDK-02/ACC-35 theo.
 - Thống kê: 171 yêu cầu (163 MUST / 8 SHOULD; P0 = 128, P0.5 = 32, P1 = 10, P2 = 1), 53 ACC; **[MẶC ĐỊNH] còn 1 mục** (TBD-17: Login chỉ trả version, bundle qua `GetConfig` — ở D7 và CFG-03); 28 chỗ `[VERIFY]` (V1–V4, V6–V11, V14–V21, V23; V22 tham chiếu trong bảng).
 
+## v1.2 rev 3 (2026-10-22, sau xác minh Couchbase transactions — `06_verify_couchbase_txn.md`)
+
+- V4, V15, V16, V23 và phần cấu hình V17 → "Đã xác minh 22/10/2026" (mục 21 có cột kết luận + nguồn); **không còn [VERIFY] chặn P0**. V17 phần 1024 ATR/TTL/giới hạn document giữ [VERIFY] không chặn P0 → TST-04.
+- Hệ quả thiết kế: **loại bỏ vĩnh viễn** fast path CAS thường cho `pa_*`/`rcpt::*` (V15: trộn ghi undefined kể cả CAS) — DAT-04/DAT-09 "không ngoại lệ", đọc ngoài transaction Read Committed hợp lệ; DAT-11 = `ctx.GetMulti` trong transaction (SDK ≥ 3.9.1, volatile → adapter), không `Task.WhenAll` trên `ctx.GetAsync`, chỉ tiêu "≈ 1 RTT" thay "1 round-trip"; GFT-03/04 counter ngoài lambda, hoàn trả theo kết quả transaction; DAT-07/OPS-05 `txn_meta` tạo trước, `MetadataCollection` giống hệt mọi instance, cleanup per Cluster, `CleanupWindow` 60 s, cần ≥ 1 instance chạy; Dev replicas = 0, `None` cấm; 2.2/TBD-20: transactions tích hợp `CouchbaseNetClient`, `Couchbase.Transactions` deprecated, pin SDK ≥ 3.9.1, Server ≥ 6.6.2 (khuyến nghị 7.6), `ExpirationTime` override 10 s; **TST-04** 8 test thực nghiệm (P0, CI).
+- Thống kê: 172 yêu cầu (164 MUST / 8 SHOULD; P0 = 129, P0.5 = 32, P1 = 10, P2 = 1), 53 ACC; **còn 1 [MẶC ĐỊNH]** (TBD-17: Login chỉ trả `configVersion`, bundle qua `GetConfig` — D7, CFG-03) chờ vòng 3; [VERIFY] inline còn 18 chỗ (V1, V2, V3 phần còn lại, V6–V11, V14, V18–V21), không chặn P0.
+
 ## Việc tiếp theo
 
-1. Owner duyệt mục `[MẶC ĐỊNH]` cuối cùng (TBD-17: Login chỉ trả `configVersion`, không nhúng bundle). TBD-09 (RPO/RTO) và TBD-21 (GM frontend stack) vẫn Mở, chặn P0.5 — không chặn P0.
-2. Xác minh `[VERIFY]` chặn P0: **V15, V16, V17, V23** (transactions: trộn ghi staged, counter ngoài transaction, `txn_meta`/lost cleanup, `Get` song song trong một attempt) trước khi system-architect thiết kế P0; V18–V21 trước IAP/provider; V22 kiểm lại giả định 8 KiB; V1–V4, V6–V11, V14 trước khi khoá baseline.
-3. Sau 1–2: system-architect thiết kế P0 từ DAT-09 + DAT-04(a/b/c) + DAT-11 + API-10 + CMD-01..09 + CFG-03 + SMP-01..05.
+1. Owner vòng 3: duyệt mục `[MẶC ĐỊNH]` cuối cùng (TBD-17: Login chỉ trả `configVersion`, không nhúng bundle). TBD-09 (RPO/RTO) và TBD-21 (GM frontend stack) vẫn Mở, chặn P0.5 — không chặn P0.
+2. System-architect thiết kế P0 từ DAT-09 + DAT-04(a/b/c) + DAT-11 (`GetMulti`) + API-10 + CMD-01..09 + CFG-03 + SMP-01..05; Sprint 0 chạy TST-04 (test thực nghiệm transactions) và đo V22.
+3. Trước IAP/provider: xác minh V18–V21; trước khoá baseline: V1, V2 (TFM/serializer/OTel), V3 (RBAC/giới hạn collection), V6–V11, V14.
 
 ## Owner feedback (2026-10-22)
 
