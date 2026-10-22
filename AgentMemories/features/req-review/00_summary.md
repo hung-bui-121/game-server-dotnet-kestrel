@@ -53,3 +53,8 @@ Remote/game config service · resource/item catalog · maintenance mode + versio
 1. Owner chốt các mục `[MẶC ĐỊNH]` — trước hết TBD Sprint 0: TBD-04a, 05a, 07, 11, 12, 13, 14, 15, 18, 20, 22 (bảng mục 20 của v1.1 có cột "Mặc định nếu chưa chốt"/"Trạng thái").
 2. Xác minh 14 fact ở mục 21 của v1.1 (= 02 §15 + V14) trước khi khoá baseline (.NET 10 EOL, Couchbase SDK/Server, Majority với 0 replica, Serilog rolling, Testcontainers, Google.Protobuf ↔ Unity, kích thước state Sniper PVP…).
 3. Sau 1–2: chuyển cho system-architect thiết kế P0 từ DAT-09 + DAT-04(a/b/c) + API-10 + CMD-01..09.
+
+## Owner feedback (2026-10-22)
+
+- **TBD-11 / D4 — CHỐT:** mỗi deployment phục vụ MỘT game duy nhất. `gameId` là hằng trong deployment config; không multi-game routing/claim. Giữ scope `g_<gameId>` trong Couchbase để tái dùng cluster. → Cần sửa v1.1: ARC-09/ARC-10/DAT-01 bỏ nhánh "session claim", mục 2.x "hosting nhiều game chung deployment" = ngoài phạm vi hẳn.
+- Các TBD còn lại owner trả lời trên trang: https://claude.ai/artifact/LW7xjjfNrJFPaBGVZwTEre (db collection `answers/<TBD-id>` = `{choice: accept|change|answer|later, note, updatedAt}`). Phiên sau: đọc `answers` bằng ArtifactData rồi áp vào v1.1.
