@@ -20,3 +20,13 @@ TBD-04b, 04c, 05a, 05b, 07b, 08, 10, 12 (ghi chú: "đồng ý chỉ response c�
 
 ## CHƯA TRẢ LỜI (giữ Mở)
 TBD-06 workload, TBD-09 RPO/RTO, TBD-21 GM frontend stack.
+
+## Vòng 2 (2026-10-22, db `answers/R2-*`) — 11/11 trả lời
+
+**Chấp nhận:** R2-07-size (32/64 KiB, ≤16 aggregate, ≤4/command), R2-13-window (24 h, receipt ≤4 KiB), R2-02-replace (StartBattle Replace, hết hạn 24 h), R2-04a-window (chấp nhận ≤60 s hai phiên), R2-03-ids (`pgs:{playerId}`, `gamecenter:{teamPlayerId}`), R2-01-iap (Google purchaseToken / Apple transactionId JWS offline), R2-15-unity (LTS mới nhất Sprint 0), R2-19-txn (TransactionExpiration 10 s, sweeper 30 s), R2-06-assume (giả định 5 000 DAU, 50 RPS command / 20 RPS login, p95 ≤ 300 ms, aggregate TB 8 KiB).
+
+**Thay đổi:**
+| Mục | Quyết định owner | Hệ quả |
+| --- | --- | --- |
+| R2-07-commit | GIỮ một command chạm nhiều document (transaction); **đọc document theo bundle** (nhiều key một lần) để giảm thời gian | Thêm yêu cầu: load tập aggregate của command bằng bulk/parallel get một round-trip (trong transaction nếu SDK cho phép get song song — [VERIFY] mới; ngoài transaction cho query/snapshot). Không gộp aggregate. |
+| R2-17-config | Config trên server **trả về client qua Login hoặc lệnh GetConfig riêng** để thống nhất config cho mọi client | Bỏ endpoint file `/v1/config/{version}/{file}`; CFG thêm: Login trả `configVersion` (+ config bundle hoặc chỉ version), `GetConfig(configVersion?)` trả bundle Protobuf; client cache theo version; mọi client cùng version với server đang chạy. |
