@@ -1,3 +1,19 @@
+# RESUME — ĐỌC ĐẦU TIÊN (cập nhật 2026-10-23)
+
+**Trạng thái:** Requirement **v1.2 rev 3** là bản hiện hành (`Requirements/Game_Server_System_Requirements_v1.2.md`, local, gitignored). Mọi TBD đã chốt hoặc có giả định thiết kế; không còn [VERIFY] chặn P0. Chưa có dòng code nào.
+
+**Còn mở:**
+1. Vòng 3 trên trang quyết định https://claude.ai/artifact/LW7xjjfNrJFPaBGVZwTEre — 1 mục `answers/R3-17-login` (TBD-17: Login chỉ trả `configVersion`, bundle qua `GetConfig`). Đọc bằng ArtifactData `list answers`; nếu owner đã trả lời → áp vào v1.2 (rev 4, sửa D7/CFG-03, bỏ nhãn [MẶC ĐỊNH] cuối).
+2. TBD-09 (RPO/RTO), TBD-21 (GM frontend stack) Mở — chặn P0.5, không chặn P0.
+
+**Bước kế tiếp đã đề xuất với owner (chưa xác nhận chạy):** system-architect thiết kế P0 từ v1.2 rev 3 (solution structure, `IModule`/`PlayerAggregateDescriptor`/`CommandDescriptor`, transaction runner + `GetMulti`, Platform.Web Protobuf, Identity PGS/Game Center, SampleGame 5 command, GM backend tối thiểu) → task-planner chia work item → code-implementer. Sprint 0 phải chạy TST-04 (8 test thực nghiệm Couchbase transactions).
+
+**File trong thư mục này (đọc theo nhu cầu):** 01 chất lượng yêu cầu v1.0 · 02 độ phù hợp kỹ thuật v1.0 · 03 review chéo v1.1 · 04 câu trả lời owner (vòng 1 + 2) · 05 thiết kế lại theo owner (nhiều aggregate, transaction) · 06 xác minh Couchbase transactions. Lịch sử chi tiết các rev ở dưới.
+
+**Quy ước repo:** commit conventional (`feat:/fix:/docs:/chore:`), KHÔNG chữ ký Claude; identity hung-bui-121; `Requirements/` không commit.
+
+---
+
 # RESUME — Review Game_Server_System_Requirements.md v1.0 (2026-10-21)
 
 Tổng hợp từ hai báo cáo độc lập (đọc chi tiết khi cần):
@@ -72,7 +88,7 @@ Remote/game config service · resource/item catalog · maintenance mode + versio
 2. System-architect thiết kế P0 từ DAT-09 + DAT-04(a/b/c) + DAT-11 (`GetMulti`) + API-10 + CMD-01..09 + CFG-03 + SMP-01..05; Sprint 0 chạy TST-04 (test thực nghiệm transactions) và đo V22.
 3. Trước IAP/provider: xác minh V18–V21; trước khoá baseline: V1, V2 (TFM/serializer/OTel), V3 (RBAC/giới hạn collection), V6–V11, V14.
 
-## Owner feedback (2026-10-22)
+## Owner feedback vòng 1 (2026-10-22) — lịch sử, đã áp vào v1.2
 
 - **TBD-11 / D4 — CHỐT:** mỗi deployment phục vụ MỘT game duy nhất. `gameId` là hằng trong deployment config; không multi-game routing/claim. Giữ scope `g_<gameId>` trong Couchbase để tái dùng cluster. → Cần sửa v1.1: ARC-09/ARC-10/DAT-01 bỏ nhánh "session claim", mục 2.x "hosting nhiều game chung deployment" = ngoài phạm vi hẳn.
-- Các TBD còn lại owner trả lời trên trang: https://claude.ai/artifact/LW7xjjfNrJFPaBGVZwTEre (db collection `answers/<TBD-id>` = `{choice: accept|change|answer|later, note, updatedAt}`). Phiên sau: đọc `answers` bằng ArtifactData rồi áp vào v1.1.
+- Các TBD còn lại owner trả lời trên trang: https://claude.ai/artifact/LW7xjjfNrJFPaBGVZwTEre (db collection `answers/<TBD-id>` = `{choice: accept|change|answer|later, note, updatedAt}`). (Đã áp. Vòng 2 ở `04_owner_answers.md`; vòng 3 xem đầu file.)
