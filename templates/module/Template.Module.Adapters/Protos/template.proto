@@ -1,0 +1,18 @@
+// Wire contract of the template module. Rename package/namespace when copying.
+syntax = "proto3";
+
+package template.module.v1;
+
+option csharp_namespace = "Template.Module.Protocol.V1";
+
+message TemplateState {
+  int64 points = 1;
+}
+
+message EarnRequest {
+  int64 amount = 1;
+}
+
+message EarnResult {
+  int64 points = 1;
+}

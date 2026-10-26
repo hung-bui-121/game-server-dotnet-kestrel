@@ -4,3 +4,45 @@ Framework backend dùng chung cho nhiều game mobile: C# / .NET, ASP.NET Core +
 Client Unity giao tiếp qua HTTPS + Protobuf; GM tool web qua HTTPS + JSON. Server giữ trạng thái
 progression/resource chính thức (server-authoritative); client gửi action, server quyết định và trả kết quả.
 
+## Trạng thái
+
+P0 được làm theo Spec Kit, chia 6 slice (`specs/`). Đã xong: **001 platform-core** — host + module registry +
+startup validation, Player API Protobuf / GM API JSON, command runner một transaction với receipt/replay,
+outbox + sweeper, store Couchbase và in-memory, module mẫu `Sample.Counter`.
+
+## Yêu cầu
+
+- .NET SDK **10.0.403** (`global.json`). Trên máy chỉ có .NET 10 RC thì cài bản GA vào thư mục user:
+  `dotnet-install.ps1 -Channel 10.0 -InstallDir $env:USERPROFILE\.dotnet10` rồi dùng `~/.dotnet10/dotnet`.
+- Couchbase Server ≥ 7.6 chỉ cần cho integration test và chạy thật (`Store=Couchbase`).
+
+## Build, test, chạy
+
+```powershell
+dotnet build GameServer.slnx -c Release          # warnings-as-errors, analyzers bật
+dotnet test --solution GameServer.slnx -c Release # unit + HTTP + arch; integration Skipped nếu thiếu COUCHBASE_CONNSTR
+dotnet run --project samples/SampleHost          # store in-memory, xác thực thử nghiệm qua header X-Test-Player
+```
+
+Integration test với Couchbase thật:
+
+```powershell
+$env:COUCHBASE_CONNSTR="couchbase://localhost"; $env:COUCHBASE_USERNAME="Administrator"
+$env:COUCHBASE_PASSWORD="..."; $env:COUCHBASE_BUCKET="gameserver-it"   # bucket replicas = 0 nếu single node
+dotnet test --project tests/GameServer.Platform.Couchbase.IntegrationTests -c Release
+```
+
+## Cấu trúc
+
+| Đường dẫn | Nội dung |
+| --- | --- |
+| `src/GameServer.Core` | contract: actor, clock, error code, descriptor, command handler |
+| `src/GameServer.Platform` | registry, command runner, receipt, outbox, config, snapshot |
+| `src/GameServer.Platform.Web` | hosting (`AddGameServer`/`UseGameServer`), Protobuf, lỗi, profile, limit |
+| `src/GameServer.Platform.Couchbase` | store Couchbase (transactions, GetMulti, provisioning) |
+| `src/GameServer.Platform.Testing` | store in-memory + tiêm lỗi, `FakeClock` |
+| `src/GameServer.Modules.Identity*` | aggregate bắt buộc `profile` (login ở slice 002) |
+| `modules/Sample.Counter` | module mẫu (ACC-13) |
+| `templates/module` | khung module 2 project |
+| `docs/pcr`, `docs/adr`, `docs/guides` | Published Contract Register, ADR, hướng dẫn viết module |
+| `specs/` | Spec Kit: spec, plan, tasks theo slice |

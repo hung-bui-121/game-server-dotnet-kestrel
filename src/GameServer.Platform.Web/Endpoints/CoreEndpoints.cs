@@ -2,7 +2,6 @@ using GameServer.Config;
 using GameServer.Errors;
 using GameServer.Platform.Aggregates;
 using GameServer.Platform.Commands;
-using GameServer.Platform.Persistence;
 using GameServer.Platform.Web.Aggregates;
 using GameServer.Platform.Web.Auth;
 using GameServer.Platform.Web.Protobuf;
@@ -59,9 +58,7 @@ internal static class CoreEndpoints
             {
                 var services = http.RequestServices;
                 var actor = services.GetRequiredService<ActorContextAccessor>().GetActor(http);
-                var document = await services.GetRequiredService<ITransactionalDocumentStore>()
-                    .GetAsync(ReceiptDocument.KeyFor(receiptId), http.RequestAborted);
-                var receipt = document is null ? null : ReceiptDocument.FromJson(document.Content);
+                var receipt = await services.GetRequiredService<ReceiptReader>().GetAsync(receiptId, http.RequestAborted);
 
                 // Other actors' receipts are reported as missing, not forbidden (no existence leak).
                 if (receipt is null || !string.Equals(receipt.ActorId, actor.ActorId, StringComparison.Ordinal))

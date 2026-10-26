@@ -4,11 +4,14 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Shouldly" />
     <PackageReference Include="NetArchTest.Rules" />
-    <ProjectReference Include="..\..\samples\SampleHost\SampleHost.csproj" />
+    <ProjectReference Include="../../samples/SampleHost/SampleHost.csproj" />
   </ItemGroup>
 </Project>

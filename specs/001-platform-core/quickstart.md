@@ -53,3 +53,17 @@ $env:COUCHBASE_PASSWORD="..."; $env:COUCHBASE_BUCKET="gameserver-dev"
 
 Kỳ vọng: store conformance test pass; 8 test TST-04 chạy và in kết quả để chép vào
 `docs/pcr/platform.md` mục "TST-04 results".
+
+## Validation log
+
+2026-10-26 — SDK 10.0.403, Windows 11, no Couchbase:
+
+- `dotnet build GameServer.slnx -c Release`: succeeded, 0 warnings (warnings-as-errors).
+- `dotnet test --solution GameServer.slnx -c Release`: 137 tests — 120 passed, 17 skipped (`COUCHBASE_CONNSTR`
+  not set: store conformance on Couchbase + 8 TST-04 experiments), 0 failed, ~3 s.
+- Scenarios 1–12 covered by tests: `CommandRunnerTests`, `CommandPipelineTests`, `SnapshotTests`,
+  `ErrorContractTests`, `StartupValidationTests`, `ExtensionTests`, `AggregateBudgetAndUpgradeTests`, `OutboxTests`.
+- SampleHost on real Kestrel (`--urls http://127.0.0.1:5199`): `/v1/time` 200 protobuf; snapshot without auth
+  401 protobuf; 70 KB body 413; snapshot 200; GM `/gm/v1/counter/k1` JSON.
+- Not validated: anything requiring Couchbase (integration section above).
+

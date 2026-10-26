@@ -114,6 +114,7 @@ public static class GameServerBuilderExtensions
         services.AddSingleton<OutboxSweeper>();
         services.AddHostedService(sp => sp.GetRequiredService<OutboxSweeper>());
         services.AddSingleton<PlayerSnapshotReader>();
+        services.AddSingleton<ReceiptReader>();
         services.AddSingleton<IGameConfig>(sp =>
         {
             var environment = sp.GetRequiredService<IHostEnvironment>();
