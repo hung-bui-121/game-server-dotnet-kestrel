@@ -49,19 +49,47 @@ public sealed class CommandRunner(
         var receiptId = ReceiptIds.Compute(actor.ActorId, descriptor.Operation, invocation.RequestId);
         var receiptKey = ReceiptDocument.KeyFor(receiptId);
 
-        // Fast replay path outside the transaction (Read Committed is valid here, DAT-09).
-        var existing = await store.GetAsync(receiptKey, requestAborted);
-        if (existing is not null)
+        for (var round = 1; ; round++)
         {
-            var committed = ReceiptDocument.FromJson(existing.Content);
-            if (IsInReplayWindow(committed, clock.UtcNow))
+            // Fast replay path outside the transaction (Read Committed is valid here, DAT-09).
+            var existing = await store.GetAsync(receiptKey, requestAborted);
+            if (existing is not null)
             {
-                return await ReplayAsync(committed, invocation, requestAborted);
+                var committed = ReceiptDocument.FromJson(existing.Content);
+                if (IsInReplayWindow(committed, clock.UtcNow))
+                {
+                    return await ReplayAsync(committed, invocation, requestAborted);
+                }
+            }
+
+            requestAborted.ThrowIfCancellationRequested();
+            try
+            {
+                return await ExecuteTransactionAsync(registration, invocation, playerId, receiptId, receiptKey, requestAborted);
+            }
+            catch (DocumentExistsException ex)
+            {
+                // Another instance committed the same receipt (or claim) between our read and insert. Couchbase
+                // reports this as "document exists" instead of retrying, so re-run: the receipt check above replays it.
+                if (round >= MaxInsertRaceRounds)
+                {
+                    throw new GameServerException(CoreErrorCodes.ConcurrentUpdate, $"Insert race on {ex.Key} for {descriptor.Operation}.", ex) { RetryAfterMs = 200 };
+                }
             }
         }
+    }
 
-        requestAborted.ThrowIfCancellationRequested();
+    private const int MaxInsertRaceRounds = 3;
 
+    private async Task<CommandExecution> ExecuteTransactionAsync(
+        GameServer.Commands.CommandRegistration registration,
+        CommandInvocation invocation,
+        string playerId,
+        string receiptId,
+        DocumentKey receiptKey,
+        CancellationToken requestAborted)
+    {
+        var descriptor = registration.Descriptor;
         var handler = ActivatorUtilities.CreateInstance(services, registration.HandlerType);
         var descriptors = descriptor.Touches.Concat(descriptor.Reads).Distinct(StringComparer.Ordinal).Select(registry.GetAggregate).ToArray();
         var keys = descriptors.Select(d => AggregateDocumentSerializer.KeyFor(d, playerId)).Append(receiptKey).ToArray();

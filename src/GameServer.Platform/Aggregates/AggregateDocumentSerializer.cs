@@ -76,8 +76,8 @@ public sealed class AggregateDocumentSerializer(GameServerOptions options, Platf
         }
 
         var content = document.Content;
-        var version = content["schemaVersion"]?.GetValue<int>() ?? 1;
-        var rev = content["rev"]?.GetValue<long>() ?? 0;
+        var version = JsonNumbers.ToInt32(content["schemaVersion"]) ?? 1;
+        var rev = JsonNumbers.ToInt64(content["rev"]) ?? 0;
         var stateNode = content["state"]?.DeepClone() as JsonObject ?? [];
 
         if (version > descriptor.SchemaVersion)

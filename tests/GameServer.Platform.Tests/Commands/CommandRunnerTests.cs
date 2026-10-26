@@ -150,6 +150,24 @@ public sealed class CommandRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Racing_instances_without_delay_still_have_one_effect()
+    {
+        for (var round = 0; round < 50; round++)
+        {
+            var requestId = Guid.NewGuid().ToString("D");
+            var runners = Enumerable.Range(0, 4).Select(_ => _h.CreateRunner()).ToArray();
+
+            var results = await Task.WhenAll(runners.Select(r => Task.Run(() =>
+                _h.RunAsync(IncrementHandler.Operation, new IncrementCommand(1, null), playerId: "race", requestId: requestId, runner: r))));
+
+            results.Select(x => x.ReceiptId).Distinct().Count().ShouldBe(1);
+            results.Count(x => !x.Replayed).ShouldBe(1);
+        }
+
+        CounterValue("race").ShouldBe(50);
+    }
+
+    [Fact]
     public async Task Concurrent_different_commands_of_one_player_serialize_without_lost_updates()
     {
         var runners = new[] { _h.CreateRunner(), _h.CreateRunner(), _h.CreateRunner(), _h.CreateRunner() };
