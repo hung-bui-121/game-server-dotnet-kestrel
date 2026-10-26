@@ -11,6 +11,9 @@
     <Project Path="samples/SampleGame/SampleGame.Adapters/SampleGame.Adapters.csproj" />
     <Project Path="samples/SampleGame/SampleGame/SampleGame.csproj" />
   </Folder>
+  <Folder Name="/sdk/">
+    <Project Path="sdk/GameServer.Client/GameServer.Client.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/GameServer.Core/GameServer.Core.csproj" />
     <Project Path="src/GameServer.Modules.Economy.Adapters/GameServer.Modules.Economy.Adapters.csproj" />
@@ -34,6 +37,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/GameServer.Architecture.Tests/GameServer.Architecture.Tests.csproj" />
+    <Project Path="tests/GameServer.Client.Tests/GameServer.Client.Tests.csproj" />
     <Project Path="tests/GameServer.Gm.Tests/GameServer.Gm.Tests.csproj" />
     <Project Path="tests/GameServer.Observability.Tests/GameServer.Observability.Tests.csproj" />
     <Project Path="tests/GameServer.Platform.Couchbase.IntegrationTests/GameServer.Platform.Couchbase.IntegrationTests.csproj" />

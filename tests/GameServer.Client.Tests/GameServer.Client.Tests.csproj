@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Shouldly" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <ProjectReference Include="../../samples/SampleHost/SampleHost.csproj" />
+    <ProjectReference Include="../GameServer.Platform.Tests/GameServer.Platform.Tests.csproj" />
+    <!-- The SDK carries its own generated copies of the server contract: keep them apart from the server's types. -->
+    <ProjectReference Include="../../sdk/GameServer.Client/GameServer.Client.csproj" Aliases="sdk" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/*.cs" LinkBase="Shared" />
+    <None Include="../Shared/config/**/*" LinkBase="config" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

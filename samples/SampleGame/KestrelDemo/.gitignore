@@ -1,0 +1,20 @@
+# Unity generated
+/Library/
+/Temp/
+/Logs/
+/UserSettings/
+/obj/
+/Build/
+/Builds/
+/MemoryCaptures/
+/.vscode/
+/.vs/
+/.idea/
+*.csproj
+*.sln
+*.slnx
+*.pidb
+*.userprefs
+*.apk
+*.aab
+/.utmp/

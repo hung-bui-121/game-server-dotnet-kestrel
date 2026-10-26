@@ -1,0 +1,9 @@
+<!--
+  IL2CPP managed stripping (High) removes members only reached by reflection. Google.Protobuf and the generated messages use
+  reflection for descriptors and parsers (API-09, SDK-04). Fed to the linker by Editor/LinkXmlProvider.cs, because Unity does
+  not read link.xml files inside packages on its own.
+-->
+<linker>
+  <assembly fullname="Google.Protobuf" preserve="all" />
+  <assembly fullname="GameServer.Client" preserve="all" />
+</linker>

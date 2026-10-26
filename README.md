@@ -19,7 +19,10 @@ P0 được làm theo Spec Kit, chia 6 slice (`specs/`). Đã xong:
 - **005 observability-ops** — log file JSON per instance (rolling, queue có giới hạn, che secret), OpenTelemetry (OTLP),
   `/health/live` + `/health/ready`, chi tiết health cho GM, graceful shutdown, ForwardedHeaders, kiểm nguồn secret.
 
-Còn lại: 006 Unity SDK.
+- **006 unity-sdk** — gói UPM `com.gameserver.client`: transport Protobuf (`UnityWebRequest`), session, header gate, retry gửi lại
+  đúng bytes, sự kiện session/tài khoản/gate, `rev` từng section, giờ server, config; `link.xml`, Google.Protobuf pin, sample client.
+
+Chưa kiểm trên hạ tầng thật: Couchbase (TST-04), collector OTLP, sandbox Apple/Google, thiết bị Android/iOS và Unity LTS mới nhất.
 
 ## Yêu cầu
 
@@ -63,6 +66,9 @@ dotnet test --project tests/GameServer.Platform.Couchbase.IntegrationTests -c Re
 | `src/GameServer.Modules.Economy*`, `src/GameServer.Modules.Iap*` | wallet/inventory/ledger; mua IAP |
 | `src/GameServer.Modules.Gm*` | GM: staff, cookie session, lookup, audit, trang `/gm/v1/ui` |
 | `samples/SampleGame`, `samples/SampleHost` | game mẫu và host chạy thử |
+| `sdk/unity/com.gameserver.client` | gói Unity client SDK (UPM); `sdk/GameServer.Client` build cùng mã nguồn cho .NET |
+| `samples/SampleGame/KestrelDemo` | client mẫu Unity 6 dùng SDK (scene `SampleGameClient`) |
+| `sdk/unity/ci/smoke-build.ps1` | CI-02: build smoke Android IL2CPP + stripping High của KestrelDemo |
 | `modules/Sample.Counter` | module mẫu (ACC-13) |
 | `templates/module` | khung module 2 project |
 | `docs/pcr`, `docs/adr`, `docs/guides` | Published Contract Register, ADR, hướng dẫn viết module |

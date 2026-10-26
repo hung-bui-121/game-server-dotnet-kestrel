@@ -1,0 +1,10 @@
+{
+  "name": "com.gameserver.client",
+  "version": "0.6.0",
+  "displayName": "Game Server Client SDK",
+  "description": "Client SDK of the modular game server framework: Protobuf transport (UnityWebRequest), session, retries that resend the same bytes, section revisions, server time and config sync. Versioned in lockstep with the server .proto contract (SDK-01). Sample client: samples/SampleGame/KestrelDemo (Unity 6).",
+  "unity": "2021.3",
+  "author": {
+    "name": "Backend team"
+  }
+}

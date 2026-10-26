@@ -5,6 +5,17 @@ using Microsoft.AspNetCore.Http;
 
 namespace GameServer.Platform.Web.Middleware;
 
+/// <summary>
+/// Headers every Player request carries (GATE-02), sent by the client SDK. P0 only defines them; P0.5 compares
+/// <see cref="ClientVersion"/> with <c>minClientVersion</c> per platform.
+/// </summary>
+public static class GateHeaders
+{
+    public const string ClientVersion = "X-Client-Version";
+    public const string Platform = "X-Platform";
+    public const string BuildId = "X-Build-Id";
+}
+
 public enum GateDecision
 {
     Allow,

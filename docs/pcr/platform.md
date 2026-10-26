@@ -165,6 +165,8 @@ Health endpoints (`/health/live`, `/health/ready`) do module `platform.observabi
 - `IKeyValueStore` từ chối ghi `receipts`, `pa_*` và `gm_audit`.
 - Response GM: `Cache-Control: no-store`.
 - Middleware profile: mutation GM có `Sec-Fetch-Site: cross-site` → 403.
+- `GateHeaders` (slice 006): `X-Client-Version`, `X-Platform`, `X-Build-Id` — SDK gửi trên mọi request (GATE-02); server so
+  `minClientVersion` ở P0.5.
 - Startup validator: endpoint GM phải có permission trong catalog của các module đã đăng ký (SEC-08).
 
 ## 11. TST-04 — kết quả thực nghiệm

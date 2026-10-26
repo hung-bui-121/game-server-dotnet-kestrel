@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Builds the Unity client SDK outside Unity (tests, bots, load tools). The sources live in the UPM package so Unity and
+    .NET compile the same files; C# 9 and netstandard2.1 match Unity 2021.3+ (research R1).
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>GameServer.Client</RootNamespace>
+    <PackageRoot>..\unity\com.gameserver.client\</PackageRoot>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(PackageRoot)Runtime\**\*.cs" Exclude="$(PackageRoot)Runtime\Generated\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" />
+    <PackageReference Include="Grpc.Tools" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Lockstep with the server contract (SDK-01, API-09): generated into the package and committed. -->
+    <Protobuf Include="..\..\proto\gameserver\core\v1\core.proto" ProtoRoot="..\..\proto" GrpcServices="None" OutputDir="$(PackageRoot)Runtime\Generated" />
+    <Protobuf Include="..\..\src\GameServer.Modules.Identity.Adapters\Protos\identity.proto" ProtoRoot="..\..\src\GameServer.Modules.Identity.Adapters\Protos" AdditionalImportDirs="..\..\proto" GrpcServices="None" OutputDir="$(PackageRoot)Runtime\Generated" />
+    <Protobuf Include="..\..\src\GameServer.Modules.Economy.Adapters\Protos\economy.proto" ProtoRoot="..\..\src\GameServer.Modules.Economy.Adapters\Protos" AdditionalImportDirs="..\..\proto" GrpcServices="None" OutputDir="$(PackageRoot)Runtime\Generated" />
+    <Protobuf Include="..\..\src\GameServer.Modules.Iap.Adapters\Protos\iap.proto" ProtoRoot="..\..\src\GameServer.Modules.Iap.Adapters\Protos" AdditionalImportDirs="..\..\proto" GrpcServices="None" OutputDir="$(PackageRoot)Runtime\Generated" />
+    <!-- The sample game's contract is generated into the KestrelDemo Unity client (not compiled into the SDK). -->
+    <Protobuf Include="..\..\samples\SampleGame\SampleGame.Adapters\Protos\sample_game.proto" ProtoRoot="..\..\samples\SampleGame\SampleGame.Adapters\Protos" AdditionalImportDirs="..\..\proto" GrpcServices="None" OutputDir="..\..\samples\SampleGame\KestrelDemo\Assets\SampleGame\Generated" CompileOutputs="false" />
+  </ItemGroup>
+</Project>
