@@ -1,4 +1,3 @@
-using GameServer.Actors;
 using GameServer.Errors;
 using GameServer.Platform.Web.Errors;
 using GameServer.Platform.Web.Routing;
@@ -27,12 +26,12 @@ public sealed class AllowAllGateEvaluator : IGateEvaluator
     public ValueTask<GateDecision> EvaluateAsync(HttpContext context) => ValueTask.FromResult(GateDecision.Allow);
 }
 
-/// <summary>Runs before authentication, only for Player endpoints; GM, health and Dev keep working.</summary>
+/// <summary>Runs before authentication on gated endpoints (Player API and login); GM, health and Dev keep working.</summary>
 public sealed class GateMiddleware(RequestDelegate next, IGateEvaluator evaluator, ErrorResponseWriter writer)
 {
     public async Task InvokeAsync(HttpContext context)
     {
-        if (context.GetEndpoint()?.GetProfile() == SecurityProfile.Player)
+        if (context.GetEndpoint()?.Metadata.GetMetadata<GateMetadata>() is not null)
         {
             var decision = await evaluator.EvaluateAsync(context);
             if (decision != GateDecision.Allow)

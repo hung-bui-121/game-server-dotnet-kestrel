@@ -8,6 +8,12 @@ public sealed record SecurityProfileMetadata(SecurityProfile Profile);
 /// <summary>GM permission required by an endpoint (SEC-07).</summary>
 public sealed record RequiredPermissionMetadata(string Permission);
 
+/// <summary>Endpoints subject to the maintenance/version gate (GATE-01, GATE-02): all Player endpoints and login.</summary>
+public sealed class GateMetadata
+{
+    public static GateMetadata Instance { get; } = new();
+}
+
 /// <summary>Marks endpoints whose responses and errors are Protobuf (API-01, API-04).</summary>
 public sealed class ProtobufEndpointMetadata
 {

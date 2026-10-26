@@ -29,7 +29,7 @@ public static class ApiRouteExtensions
     public static TBuilder AsPlayerEndpoint<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder
     {
-        builder.WithMetadata(new SecurityProfileMetadata(SecurityProfile.Player), ProtobufEndpointMetadata.Instance);
+        builder.WithMetadata(new SecurityProfileMetadata(SecurityProfile.Player), ProtobufEndpointMetadata.Instance, GateMetadata.Instance);
         builder.WithRequestTimeout(PlayerTimeoutPolicy);
         builder.RequireRateLimiting(CommandLimiterPolicy);
         return builder;
@@ -51,6 +51,19 @@ public static class ApiRouteExtensions
         protobuf
             ? builder.WithMetadata(new SecurityProfileMetadata(SecurityProfile.Public), ProtobufEndpointMetadata.Instance)
             : builder.WithMetadata(new SecurityProfileMetadata(SecurityProfile.Public));
+
+    /// <summary>
+    /// Public Player-facing endpoint such as login: Protobuf, maintenance/version gate, Player timeout and limiter.
+    /// The route must be declared in <c>ModuleDescriptor.PublicEndpoints</c> (SEC-09).
+    /// </summary>
+    public static TBuilder AsPublicPlayerEndpoint<TBuilder>(this TBuilder builder)
+        where TBuilder : IEndpointConventionBuilder
+    {
+        builder.WithMetadata(new SecurityProfileMetadata(SecurityProfile.Public), ProtobufEndpointMetadata.Instance, GateMetadata.Instance);
+        builder.WithRequestTimeout(PlayerTimeoutPolicy);
+        builder.RequireRateLimiting(CommandLimiterPolicy);
+        return builder;
+    }
 
     /// <summary>Development-only endpoint (OPS-09); forbidden in Production by the startup validator.</summary>
     public static TBuilder AsDevEndpoint<TBuilder>(this TBuilder builder)

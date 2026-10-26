@@ -3,16 +3,23 @@ using GameServer.Errors;
 using GameServer.Platform.Web.Auth;
 using GameServer.Platform.Web.Errors;
 using GameServer.Platform.Web.Routing;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.Options;
 
 namespace GameServer.Platform.Web.Middleware;
 
 /// <summary>
-/// Deny-by-default (SEC-08, ACC-12): an endpoint without a security profile is refused even if the startup
-/// validator was disabled. Enforces the actor type per profile, GM permissions (SEC-07) and body limits (API-06).
+/// Deny-by-default (SEC-08, ACC-12): an endpoint without a security profile is refused even if the startup validator
+/// was disabled. Authenticates with the schemes of the endpoint's profile only (SEC-02), enforces GM permissions
+/// (SEC-07) and the body limit of the profile (API-06).
 /// </summary>
-public sealed class ProfileEnforcementMiddleware(RequestDelegate next, ErrorResponseWriter writer, GameServerOptions options)
+public sealed class ProfileEnforcementMiddleware(
+    RequestDelegate next,
+    ErrorResponseWriter writer,
+    GameServerOptions options,
+    IOptions<ActorSchemeOptions> schemes)
 {
     public async Task InvokeAsync(HttpContext context)
     {
@@ -31,14 +38,21 @@ public sealed class ProfileEnforcementMiddleware(RequestDelegate next, ErrorResp
         }
 
         SetBodyLimit(context, profile.Value);
-        var actorType = ActorClaims.GetActorType(context.User);
-        switch (profile.Value)
+        if (profile.Value != SecurityProfile.Public)
         {
-            case SecurityProfile.Player when actorType != ActorType.Player:
-            case SecurityProfile.Gm when actorType != ActorType.Gm:
-            case SecurityProfile.Dev when actorType is null:
-                await writer.WriteAsync(context, CoreErrorCodes.Unauthenticated);
+            var authenticated = profile.Value switch
+            {
+                SecurityProfile.Player => await AuthenticateAsync(context, schemes.Value.PlayerSchemes, ActorType.Player),
+                SecurityProfile.Gm => await AuthenticateAsync(context, schemes.Value.GmSchemes, ActorType.Gm),
+                _ => await AuthenticateAsync(context, schemes.Value.PlayerSchemes, ActorType.Player)
+                     || await AuthenticateAsync(context, schemes.Value.GmSchemes, ActorType.Gm),
+            };
+            if (!authenticated)
+            {
+                var (code, details) = AuthenticationFailures.Get(context);
+                await writer.WriteAsync(context, code, details: details);
                 return;
+            }
         }
 
         var permission = endpoint.Metadata.GetMetadata<RequiredPermissionMetadata>()?.Permission;
@@ -49,6 +63,21 @@ public sealed class ProfileEnforcementMiddleware(RequestDelegate next, ErrorResp
         }
 
         await next(context);
+    }
+
+    private static async Task<bool> AuthenticateAsync(HttpContext context, IReadOnlyList<string> schemeNames, ActorType expected)
+    {
+        foreach (var scheme in schemeNames)
+        {
+            var result = await context.AuthenticateAsync(scheme);
+            if (result.Succeeded && ActorClaims.GetActorType(result.Principal) == expected)
+            {
+                context.User = result.Principal;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void SetBodyLimit(HttpContext context, SecurityProfile profile)

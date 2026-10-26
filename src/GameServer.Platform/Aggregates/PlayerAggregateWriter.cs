@@ -36,6 +36,29 @@ public sealed class PlayerAggregateWriter(
         var key = AggregateDocumentSerializer.KeyFor(descriptor, playerId);
         cancellationToken.ThrowIfCancellationRequested();
 
+        for (var round = 1; ; round++)
+        {
+            try
+            {
+                return await UpdateOnceAsync(descriptor, key, playerId, aggregateId, mutate);
+            }
+            catch (Exception ex) when (round < MaxRaceRounds && ex is DocumentExistsException or StaleReadException)
+            {
+                // Two first writes raced on a missing document (Couchbase reports "exists"), or a stale bundle read: re-run.
+            }
+        }
+    }
+
+    private const int MaxRaceRounds = 3;
+
+    private async Task<(TState State, long Rev)> UpdateOnceAsync<TState>(
+        GameServer.Aggregates.PlayerAggregateDescriptor descriptor,
+        DocumentKey key,
+        string playerId,
+        string aggregateId,
+        Func<TState, TState> mutate)
+        where TState : class
+    {
         // The request token is not passed to the commit (PERF-02).
         return await store.RunTransactionAsync(async tx =>
         {

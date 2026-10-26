@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using GameServer.Modules.Identity;
 using GameServer.Platform.Testing;
 using GameServer.Platform.Web.Auth;
@@ -16,15 +17,17 @@ namespace GameServer.Tests.Shared;
 
 /// <summary>
 /// Builds a framework host on TestServer with the in-memory store, a fake clock and test authentication.
-/// Unlike WebApplicationFactory it lets each test choose modules, settings and extra endpoints.
+/// Unlike WebApplicationFactory it lets each test choose modules, settings and extra endpoints, and lets two hosts
+/// share one store and clock to play two instances (ACC-20).
 /// </summary>
 public sealed class TestHost : IAsyncDisposable
 {
-    private TestHost(WebApplication app, InMemoryDocumentStore store, FakeClock clock)
+    private TestHost(WebApplication app, InMemoryDocumentStore store, FakeClock clock, ConcurrentQueue<string> logs)
     {
         App = app;
         Store = store;
         Clock = clock;
+        Logs = logs;
     }
 
     public WebApplication App { get; }
@@ -32,6 +35,9 @@ public sealed class TestHost : IAsyncDisposable
     public InMemoryDocumentStore Store { get; }
 
     public FakeClock Clock { get; }
+
+    /// <summary>Every formatted log message (for "no secret in logs" checks, ACC-25).</summary>
+    public ConcurrentQueue<string> Logs { get; }
 
     public IServiceProvider Services => App.Services;
 
@@ -42,6 +48,7 @@ public sealed class TestHost : IAsyncDisposable
         ["GameServer:DeploymentEnvironment"] = "Development",
         ["GameServer:ConfigPath"] = Path.Combine(AppContext.BaseDirectory, "config"),
         ["GameServer:Outbox:SweeperEnabled"] = "false",
+        ["Identity:CacheSeconds"] = "0",
     };
 
     /// <summary>Default modules: Identity + Sample.Counter.</summary>
@@ -53,7 +60,10 @@ public sealed class TestHost : IAsyncDisposable
         Action<Dictionary<string, string?>>? settings = null,
         Action<WebApplication>? beforeUseGameServer = null,
         bool testAuthentication = true,
-        Action<WebApplication>? afterUseGameServer = null)
+        Action<WebApplication>? afterUseGameServer = null,
+        InMemoryDocumentStore? store = null,
+        FakeClock? clock = null,
+        Action<IServiceCollection>? services = null)
     {
         var values = DefaultSettings();
         settings?.Invoke(values);
@@ -65,10 +75,13 @@ public sealed class TestHost : IAsyncDisposable
         });
         builder.WebHost.UseTestServer();
         builder.Configuration.AddInMemoryCollection(values);
+        var logs = new ConcurrentQueue<string>();
         builder.Logging.ClearProviders();
+        builder.Logging.SetMinimumLevel(LogLevel.Debug);
+        builder.Logging.AddProvider(new CapturingLoggerProvider(logs));
 
-        var clock = new FakeClock();
-        var store = new InMemoryDocumentStore(clock);
+        clock ??= new FakeClock();
+        store ??= new InMemoryDocumentStore(clock);
         var gameServer = builder.AddGameServer();
         builder.Services.AddInMemoryDocumentStore(store);
         builder.Services.RemoveAll<IClock>();
@@ -79,13 +92,14 @@ public sealed class TestHost : IAsyncDisposable
         }
 
         (modules ?? DefaultModules)(gameServer);
+        services?.Invoke(builder.Services);
 
         var app = builder.Build();
         beforeUseGameServer?.Invoke(app);
         app.UseGameServer();
         afterUseGameServer?.Invoke(app);
         await app.StartAsync();
-        return new TestHost(app, store, clock);
+        return new TestHost(app, store, clock, logs);
     }
 
     public HttpClient Client() => App.GetTestClient();
@@ -94,6 +108,13 @@ public sealed class TestHost : IAsyncDisposable
     {
         var client = Client();
         client.DefaultRequestHeaders.Add(TestAuthenticationHandler.PlayerHeader, playerId);
+        return client;
+    }
+
+    public HttpClient BearerClient(string token)
+    {
+        var client = Client();
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
         return client;
     }
 
@@ -109,5 +130,25 @@ public sealed class TestHost : IAsyncDisposable
     {
         await App.StopAsync();
         await App.DisposeAsync();
+    }
+
+    private sealed class CapturingLoggerProvider(ConcurrentQueue<string> sink) : ILoggerProvider
+    {
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(sink);
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class CapturingLogger(ConcurrentQueue<string> sink) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            sink.Enqueue(formatter(state, exception) + (exception is null ? string.Empty : " | " + exception));
     }
 }

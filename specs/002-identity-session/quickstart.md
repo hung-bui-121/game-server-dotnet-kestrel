@@ -17,3 +17,9 @@ $dotnet = "$env:USERPROFILE\.dotnet10\dotnet.exe"
 | 8 | Logout rồi dùng token | 401 | ACC-01 |
 | 9 | Session hết hạn trượt (FakeClock +31 ngày) / tuyệt đối (+91 ngày dù touch) | 401 | IDN-08 |
 | 10 | Scan log sau bộ test tìm token/secret | không có | ACC-25 (phần identity) |
+
+## Validation log
+
+2026-10-26 — SDK 10.0.403, no Couchbase: `dotnet test --solution GameServer.slnx -c Release` → 194 tests,
+165 passed, 29 skipped (Couchbase integration), 0 failed. Scenarios 1–10 covered by `IdentityLoginTests`,
+`SessionTests`, `AccountStateTests`, `LoginLimitAndSchemeTests`, `PlatformAdditionsTests`.

@@ -81,8 +81,13 @@ public sealed class GameServerBuilder
     public GameServerBuilder UseTestAuthentication()
     {
         Services.AddSingleton<TestAuthenticationMarker>();
-        Services.AddAuthentication(TestAuthenticationHandler.SchemeName)
+        Services.AddAuthentication()
             .AddScheme<AuthenticationSchemeOptions, TestAuthenticationHandler>(TestAuthenticationHandler.SchemeName, null);
+        Services.Configure<ActorSchemeOptions>(o =>
+        {
+            o.PlayerSchemes.Add(TestAuthenticationHandler.SchemeName);
+            o.GmSchemes.Add(TestAuthenticationHandler.SchemeName);
+        });
         return this;
     }
 }
@@ -114,6 +119,7 @@ public static class GameServerBuilderExtensions
         services.AddSingleton<OutboxSweeper>();
         services.AddHostedService(sp => sp.GetRequiredService<OutboxSweeper>());
         services.AddSingleton<PlayerSnapshotReader>();
+        services.AddSingleton<IPlayerAggregateWriter, PlayerAggregateWriter>();
         services.AddSingleton<ReceiptReader>();
         services.AddSingleton<IGameConfig>(sp =>
         {
@@ -126,6 +132,7 @@ public static class GameServerBuilderExtensions
         services.AddSingleton<ActorContextAccessor>();
         services.TryAddSingleton<IGateEvaluator, AllowAllGateEvaluator>();
         services.AddAuthentication();
+        services.AddOptions<ActorSchemeOptions>();
 
         AddLimits(builder, options);
         return new GameServerBuilder(builder, options, registry);

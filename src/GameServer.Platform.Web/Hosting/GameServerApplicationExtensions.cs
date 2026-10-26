@@ -47,7 +47,6 @@ public static class GameServerApplicationExtensions
         app.UseMiddleware<CorrelationMiddleware>();
         app.UseRouting();
         app.UseMiddleware<GateMiddleware>();
-        app.UseAuthentication();
         app.UseMiddleware<ProfileEnforcementMiddleware>();
         app.UseRequestTimeouts();
         app.UseRateLimiter();

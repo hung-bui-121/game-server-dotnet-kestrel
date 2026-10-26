@@ -178,6 +178,33 @@ public abstract class StoreConformanceTests
     }
 
     [Fact]
+    public async Task Key_value_insert_cas_replace_and_remove()
+    {
+        var kv = (IKeyValueStore)Store;
+        var key = NewKey();
+
+        (await kv.InsertAsync(key, Doc(1), null, CancellationToken.None)).ShouldBeTrue();
+        (await kv.InsertAsync(key, Doc(2), null, CancellationToken.None)).ShouldBeFalse();
+        var read = (await kv.GetAsync(key, CancellationToken.None))!;
+        (await kv.ReplaceAsync(read, Doc(3), null, CancellationToken.None)).ShouldBeTrue();
+        (await kv.ReplaceAsync(read, Doc(4), null, CancellationToken.None)).ShouldBeFalse();
+        (await kv.GetAsync(key, CancellationToken.None))!.Content["value"]!.GetValue<int>().ShouldBe(3);
+
+        await kv.RemoveAsync(key, CancellationToken.None);
+        (await kv.GetAsync(key, CancellationToken.None)).ShouldBeNull();
+        await kv.RemoveAsync(key, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Key_value_writes_to_runner_owned_collections_are_refused()
+    {
+        var kv = (IKeyValueStore)Store;
+
+        await Should.ThrowAsync<InvalidOperationException>(() => kv.InsertAsync(new DocumentKey("receipts", "x"), Doc(1), null, CancellationToken.None));
+        await Should.ThrowAsync<InvalidOperationException>(() => kv.InsertAsync(new DocumentKey("pa_counter", "x"), Doc(1), null, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task InsertIfAbsent_is_idempotent()
     {
         var a = NewKey();

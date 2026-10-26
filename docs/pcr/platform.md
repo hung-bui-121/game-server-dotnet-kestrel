@@ -3,7 +3,7 @@
 Published Contract Register của nền tảng (PCR-01). Thay đổi mục **semantic** là breaking change (ARC-08);
 thay đổi mục **vận hành** chỉ cần ghi changelog. Nguồn yêu cầu: `Requirements/Game_Server_System_Requirements_v1.2.md` rev 4.
 
-Phiên bản: 0.2.0 (slice 001 platform-core + sửa sau review, 2026-10-26).
+Phiên bản: 0.3.0 (slice 001 + sửa sau review + slice 002 identity, 2026-10-26).
 
 ## 1. Limits và timeout theo nhóm endpoint (vận hành — API-06, PERF-04)
 
@@ -101,16 +101,27 @@ idempotent theo `entryId`; projection mặc định Insert-if-absent `<kind>::<e
 | 13 | COMMIT_UNKNOWN_RETRY | 503 | yes |
 | 14 | AGGREGATE_TOO_LARGE | 200 | no |
 | 15 | INTERNAL | 500 | no |
+| 16 | ACCOUNT_SUSPENDED | 403 | no |
+| 17 | ACCOUNT_DELETED | 401 | no |
+| 18 | SESSION_REPLACED | 401 | no |
+| 19 | IDENTITY_CONFLICT | 409 | no |
+| 20 | SWITCH_ACCOUNT | 409 | no |
 
 Dải: core 0–999; module khai `ErrorCodeSet(rangeStart, rangeEnd)`; trùng tên/số/chồng dải → startup fail.
 Player nhận `ErrorEnvelope` (Protobuf, kể cả lỗi middleware); GM nhận Problem Details JSON với `code`,
-`codeNumber`, `requestId`, `retryable`, `retryAfterMs`.
+`codeNumber`, `requestId`, `retryable`, `retryAfterMs`. Cả hai có `details` (map chuỗi an toàn, ví dụ `until` của
+`ACCOUNT_SUSPENDED`; field 9 của `ErrorEnvelope`, thêm ở 0.3.0, không breaking).
+
+Xác thực theo profile (SEC-02): endpoint Player chỉ thử scheme Player (`PlayerBearer`, + scheme thử nghiệm ở
+Development/Test), endpoint GM chỉ thử scheme GM. Scheme thử nghiệm header (`X-Test-*`) và store in-memory bị
+startup chặn ngoài Development/Test.
 
 ## 9. Public endpoint allowlist (semantic — SEC-09)
 
 | Route | Mục đích |
 | --- | --- |
 | `GET /v1/time` | server time (TIME-01) |
+| `POST /api/v1/identity/login/guest` | guest login (khai báo bởi module identity qua `ModuleDescriptor.PublicEndpoints`) |
 
 Health endpoints (`/health/live`, `/health/ready`) thêm ở slice 005.
 
