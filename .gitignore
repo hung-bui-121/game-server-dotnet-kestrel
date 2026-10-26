@@ -21,3 +21,6 @@ Thumbs.db
 appsettings.*.local.json
 *.secrets.json
 .env
+
+# Claude Code local
+.claude/settings.local.json
