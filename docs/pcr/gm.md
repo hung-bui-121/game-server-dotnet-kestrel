@@ -13,6 +13,7 @@ catalog → startup fail (SEC-08).
 | `gm.access` | gm | `/gm/v1/me`, logout |
 | `player.read` | gm, economy (tên dùng chung; catalog là hợp của các module) | lookup, search, receipts, audit, ledger |
 | `player.read.pii` | gm | hiện `identities` (mapping key) trong lookup |
+| `ops.read` | gm | `GET /gm/v1/health` (chi tiết health, slice 005) |
 | `resource.adjust` | economy | `economy.adjust` |
 | `progression.edit` | sample.game | `progression.set` |
 
@@ -61,6 +62,7 @@ Module cũng khai index `receipts(playerId, committedAtUtc DESC, META().id DESC)
 | `POST /gm/v1/auth/login` `{staffId, password}` | Public (chỉ map ở Development/Test) | 200 `{staffId, displayName, gameId, environmentId, permissions[]}` + cookie; sai → 401 |
 | `POST /gm/v1/auth/logout` | `gm.access` | 204, xoá session + cookie |
 | `GET /gm/v1/me` | `gm.access` | như response login |
+| `GET /gm/v1/health` | `ops.read` | chi tiết từng health check (OBS-03); 404 nếu host không bật observability |
 | `GET /gm/v1/ui` | Public | trang HTML tĩnh same-origin, CSP chặt (`frame-ancestors 'none'`, `connect-src 'self'`) |
 | `GET /gm/v1/players/{playerId}` | `player.read` | mọi aggregate (kể cả hidden): `{id, exists, clientVisible, rev, schemaVersion, storedSchemaVersion, sizeBytes, updatedAtUtc, state}`; không có aggregate nào → 404 |
 | `GET /gm/v1/players/by-mapping/{mappingKey}` | `player.read` | `identities/{mappingKey}` → như trên; không có → 404 |

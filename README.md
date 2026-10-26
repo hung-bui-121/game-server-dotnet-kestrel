@@ -16,7 +16,10 @@ P0 được làm theo Spec Kit, chia 6 slice (`specs/`). Đã xong:
 - **004 gm** — module GM: staff/grant/role template, cookie session, permission + scope game/env mỗi request,
   tra cứu player (PII theo permission), list phân trang keyset, điều chỉnh resource và progression có audit, trang GM tĩnh.
 
-Còn lại: 005 observability/ops, 006 Unity SDK.
+- **005 observability-ops** — log file JSON per instance (rolling, queue có giới hạn, che secret), OpenTelemetry (OTLP),
+  `/health/live` + `/health/ready`, chi tiết health cho GM, graceful shutdown, ForwardedHeaders, kiểm nguồn secret.
+
+Còn lại: 006 Unity SDK.
 
 ## Yêu cầu
 
@@ -31,6 +34,9 @@ dotnet build GameServer.slnx -c Release          # warnings-as-errors, analyzers
 dotnet test --solution GameServer.slnx -c Release # unit + HTTP + arch; integration Skipped nếu thiếu COUCHBASE_CONNSTR
 dotnet run --project samples/SampleHost          # store in-memory, xác thực thử nghiệm qua header X-Test-Player
 ```
+
+Log ghi ở `samples/SampleHost/logs/` (compact JSON); health: `/health/live`, `/health/ready`. Gửi trace/metrics tới
+collector: đặt `Observability__Otlp__Endpoint=http://localhost:4317`.
 
 GM tool khi chạy SampleHost (Development): mở `http://localhost:5000/gm/v1/ui`, đăng nhập staff seed trong
 `samples/SampleHost/appsettings.json` (`Gm:Bootstrap:Staff`, chỉ hợp lệ ở Development/Test).
@@ -51,6 +57,7 @@ dotnet test --project tests/GameServer.Platform.Couchbase.IntegrationTests -c Re
 | `src/GameServer.Platform` | registry, command runner, receipt, outbox, config, snapshot |
 | `src/GameServer.Platform.Web` | hosting (`AddGameServer`/`UseGameServer`), Protobuf, lỗi, profile, limit |
 | `src/GameServer.Platform.Couchbase` | store Couchbase (transactions, GetMulti, provisioning) |
+| `src/GameServer.Platform.Observability` | Serilog file log, OpenTelemetry, health checks (`AddObservability()`) |
 | `src/GameServer.Platform.Testing` | store in-memory + tiêm lỗi, `FakeClock` |
 | `src/GameServer.Modules.Identity*` | aggregate bắt buộc `profile`, guest login, session |
 | `src/GameServer.Modules.Economy*`, `src/GameServer.Modules.Iap*` | wallet/inventory/ledger; mua IAP |

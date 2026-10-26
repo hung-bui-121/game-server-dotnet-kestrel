@@ -3,7 +3,7 @@
 Published Contract Register của nền tảng (PCR-01). Thay đổi mục **semantic** là breaking change (ARC-08);
 thay đổi mục **vận hành** chỉ cần ghi changelog. Nguồn yêu cầu: `Requirements/Game_Server_System_Requirements_v1.2.md` rev 4.
 
-Phiên bản: 0.4.0 (slice 001 + sửa sau review + slice 002 identity + slice 004 GM, 2026-10-26).
+Phiên bản: 0.5.0 (slice 001 + sửa sau review + slice 002 identity + slice 004 GM + slice 005 observability, 2026-10-26).
 
 ## 1. Limits và timeout theo nhóm endpoint (vận hành — API-06, PERF-04)
 
@@ -130,7 +130,8 @@ startup chặn ngoài Development/Test.
 `GetConfig` (`POST /api/v1/config/get`) là endpoint **Player** (SEC-09, CFG-03): trả các file `clientVisible` (bytes sau
 overlay), `not_modified` khi client gửi đúng version; bundle > `GameServer:Limits:ConfigBundleBytes` (1 MiB) → 413.
 
-Health endpoints (`/health/live`, `/health/ready`) thêm ở slice 005.
+Health endpoints (`/health/live`, `/health/ready`) do module `platform.observability` khai (slice 005); đường dẫn cố
+định, không có version (miễn trừ quy tắc `/v{n}/` cho `/health/*`). Xem mục 13.
 
 ## 10. Extensible capabilities (EXT-01)
 
@@ -143,6 +144,8 @@ Health endpoints (`/health/live`, `/health/ready`) thêm ở slice 005.
 | Document store | `ITransactionalDocumentStore` + `IKeyValueStore` (Couchbase; in-memory chỉ Development/Test — startup chặn ở môi trường khác) |
 | Command guard | `ICommandGuard` (chạy trước mỗi lần thực thi mới) |
 | Truy vấn phân trang | `IPagedQueryStore` (in-memory; Couchbase N1QL `RequestPlus`) |
+| Health của store | `IStoreHealthProbe` (mặc định: một KV get key không tồn tại) |
+| Endpoint cấp host | `IHostEndpointsModule` (map ở mọi host, bất kể `MapPlayerApi`/`MapGmApi`) |
 
 ## 12. GM API dùng chung (semantic — slice 004)
 
@@ -183,3 +186,44 @@ Health endpoints (`/health/live`, `/health/ready`) thêm ở slice 005.
 
 Phần chưa tự động hoá (drill thủ công): lost-attempt cleanup khi kill process giữa commit (V17-T1), hai
 process khác `MetadataCollection` (V17-T2), bucket replicas = 1 trên một node (V4-T1).
+
+## 13. Observability và vận hành (slice 005 — LOG-01..06, OBS-01..04, OPS-02/03/08)
+
+Bật bằng `gameServer.AddObservability()` (project `GameServer.Platform.Observability`, section `Observability`).
+
+**Log (vận hành, trừ định dạng file là semantic với hệ thống ship log):**
+
+| Mục | Giá trị |
+| --- | --- |
+| File | `{Logging:Directory}/{gameId}-{instanceId}-{yyyyMMdd}[_NNN].log`, compact JSON (`@t` UTC, `@mt`, `@l`, `@x`, `@tr`, `@sp`) |
+| Instance id | `Observability:InstanceId` → `HOSTNAME` → tên máy. Nhiều process cùng máy + cùng thư mục phải đặt id khác nhau (LOG-03) |
+| Rolling | ngày + kích thước (`FileSizeLimitBytes` 100 MiB), giữ `RetainedFileCountLimit` 30 file, `RetainedFileTimeLimitDays` tuỳ chọn; restart cùng instance append |
+| Queue | async, `BufferSize` 10 000, không chặn khi đầy → bỏ và đếm `log_dropped_total` |
+| Thuộc tính | `InstanceId`, `GameId`, `EnvironmentId`, `RequestId` (scope), `SourceContext`; trace/span id |
+| Che dữ liệu | giá trị thuộc tính (kể cả lồng trong object destructure `{@x}`) có tên chứa token/password/secret/pepper/authorization/cookie/privatekey/receiptpayload/signeddata/credential → `***`. Object log bằng `{x}` (không `@`) bị `ToString()` nên **không** được che theo tên — module không được log object chứa secret |
+| Lỗi sink | `SelfLog` → `log_sink_errors_total`; `log_dir_free_bytes`; health `log` Degraded khi lỗi trong `SinkErrorWindowSeconds` (300) hoặc đĩa < `LowDiskBytes` (1 GiB) |
+
+**Metrics/traces:** OpenTelemetry; sources/meters `GameServer.*` + ASP.NET Core (hosting, Kestrel, rate limiting) + HttpClient
++ runtime. OTLP khi `Observability:Otlp:Endpoint` có giá trị (`Protocol` `grpc` | `http/protobuf`); Prometheus qua collector.
+Metric bổ sung slice 005: `command_results_total{operation, code, replayed}`, `http_errors_total{code}`, `log_*`. Không metric nào
+có tag player/request (OBS-02); `gs.request_id`, `gs.player_id` là attribute của span. Span `command {operation}` là con của span
+HTTP. Couchbase SDK tracing và `txn_cleanup_lost_total`: chờ cluster thật (V2).
+
+**Health (semantic):**
+
+| Route | Profile | Check | Trả về |
+| --- | --- | --- | --- |
+| `GET /health/live` | Public | không có | 200 `Healthy` |
+| `GET /health/ready` | Public | `store` (≤ 2 s), `config`, `log`, `shutdown` | 200 `Healthy`/`Degraded`, 503 `Unhealthy`; chỉ một từ, không chi tiết |
+| `GET /gm/v1/health` | GM `ops.read` | như ready | JSON từng check: status, description, duration, data |
+
+**Shutdown (OPS-03):** `GameServer:Hosting:ShutdownTimeoutSeconds` 25; ready = 503 ngay khi `ApplicationStopping`; commit đang
+chạy hoàn tất (PERF-02); logger dispose cùng container → flush. Orchestrator đặt grace period ≥ 35 s.
+
+**Reverse proxy (OPS-02):** `GameServer:Hosting:ForwardedHeaders {Enabled, KnownProxies[], KnownNetworks[] (CIDR), ForwardLimit=1}`;
+chỉ proxy trong danh sách được tin `X-Forwarded-For`/`-Proto`; bật mà danh sách rỗng → startup fail.
+
+**Secret (OPS-08):** ngoài Development/Test, các khoá `GameServer:SecretKeys` (mặc định `Identity:GuestPepper`,
+`Couchbase:Password`, `Iap:Google:ServiceAccountPrivateKeyPem`) không được lấy giá trị từ file JSON → startup fail; dùng biến môi
+trường (`Identity__GuestPepper`) hoặc secret provider.
+
