@@ -19,7 +19,7 @@ else
     builder.Services.AddInMemoryDocumentStore();
 }
 
-if (!gameServer.Options.IsProduction)
+if (gameServer.Options.AllowsDevelopmentTools)
 {
     gameServer.UseTestAuthentication();
 }

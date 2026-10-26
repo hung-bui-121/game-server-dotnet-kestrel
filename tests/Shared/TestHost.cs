@@ -67,8 +67,8 @@ public sealed class TestHost : IAsyncDisposable
         builder.Configuration.AddInMemoryCollection(values);
         builder.Logging.ClearProviders();
 
-        var store = new InMemoryDocumentStore();
         var clock = new FakeClock();
+        var store = new InMemoryDocumentStore(clock);
         var gameServer = builder.AddGameServer();
         builder.Services.AddInMemoryDocumentStore(store);
         builder.Services.RemoveAll<IClock>();

@@ -3,7 +3,7 @@
 Published Contract Register của nền tảng (PCR-01). Thay đổi mục **semantic** là breaking change (ARC-08);
 thay đổi mục **vận hành** chỉ cần ghi changelog. Nguồn yêu cầu: `Requirements/Game_Server_System_Requirements_v1.2.md` rev 4.
 
-Phiên bản: 0.1.0 (slice 001 platform-core, 2026-10-26).
+Phiên bản: 0.2.0 (slice 001 platform-core + sửa sau review, 2026-10-26).
 
 ## 1. Limits và timeout theo nhóm endpoint (vận hành — API-06, PERF-04)
 
@@ -23,14 +23,19 @@ Budget tổng = giá trị × số instance.
 - Mỗi command thay đổi trạng thái = **một** transaction: aggregate trong `Touches` (≤ 4) + receipt
   `rcpt::{receiptId}` (Insert) + claim marker (≤ 2, Insert). Durability `Majority`. `ExpirationTime` 10 s,
   `KvDurableTimeout` 5 s. Deadline commit tách khỏi request token (PERF-02).
-- Đọc bundle (DAT-11): aggregate `Touches ∪ Reads` + receipt nạp bằng **một** `GetMulti` (Couchbase) trong
-  transaction. **Phát hiện khi implement (SDK 3.10.0):** `GetMulti` không trả `TransactionGetResult`, nên mỗi
-  aggregate **thực sự bị ghi** cần thêm một `ctx.GetAsync` trước `ReplaceAsync`; nội dung được so với bản đọc
-  bundle, khác → command chạy lại (`StaleReadException`). Chi phí đọc ≈ 1 RTT + 1 RTT cho mỗi aggregate đổi.
-  Tắt `GetMulti` bằng `Couchbase:UseGetMulti=false` (đọc tuần tự).
-- Mọi ghi `pa_*` và `rcpt::*` chỉ qua `ICommandRunner` (arch test). Ngoại lệ duy nhất: cờ `outboxPending` của
-  receipt **đã commit** được đặt `false` bằng `MutateIn` ngoài transaction (receipt không bao giờ còn bị
-  transaction ghi lại).
+- Đọc bundle (DAT-11): **mặc định đọc tuần tự** `GetOptionalAsync` (N + 1 RTT) cho tới khi TST-04 (V23-T1) và
+  bộ conformance chạy trên cluster thật. **Phát hiện khi implement (SDK 3.10.0):** `GetMulti` không trả
+  `TransactionGetResult`, nên ở chế độ `Couchbase:UseGetMulti=true` mỗi aggregate **thực sự bị ghi** cần thêm một
+  `ctx.GetAsync` trước `ReplaceAsync`; nội dung được so với bản đọc bundle, khác → command chạy lại
+  (`StaleReadException`). Chế độ GetMulti dùng `PrioritizeReadSkewDetection`. Chỉ tiêu "≈ 1 RTT" của DAT-11 **chưa
+  đạt** cho tới khi bật GetMulti — cần owner quyết định sau khi có số đo.
+- Conflict: Couchbase chỉ phát hiện **write-write**; document chỉ đọc (`Reads`) có thể đổi trong lúc transaction
+  chạy (read skew). Store in-memory mô phỏng đúng như vậy.
+- Mọi ghi `pa_*` và `rcpt::*` chỉ qua `ICommandRunner` / `IPlayerAggregateWriter` (arch test). Ngoại lệ: các cờ
+  outbox của receipt **đã commit** (`outboxPending`, `outboxAttempts`, `outboxNextAttemptAtUtc`,
+  `outboxDeadLetter`) được cập nhật bằng `MutateIn` ngoài transaction, có CAS lấy từ một get mới; receipt chưa nhìn
+  thấy (đang unstaging) được bỏ qua cho sweeper. Rủi ro còn lại: receipt hết replay window bị transaction mới thay
+  thế cùng lúc với `MutateIn` (hiếm; xem V15).
 - Business rejection (HTTP 200 + code) **không tạo receipt**: transaction rollback, kể cả claim marker. Retry
   cùng `requestId` sau rejection được xử lý lại như mới.
 - Insert race (hai instance cùng ghi receipt/claim) hoặc stale read → runner chạy lại tối đa 3 vòng; hết vòng →
@@ -41,7 +46,7 @@ Budget tổng = giá trị × số instance.
 | Mục | Giá trị |
 | --- | --- |
 | `requestId` | UUID ở header `X-Request-Id` (cũng là correlation id); thiếu/sai → 400 |
-| `receiptId` | `base64url(SHA-256(actorId|operation|requestId))[0..32]` |
+| `receiptId` | `base64url(SHA-256(actorId|playerId|operation|requestId))[0..32]` (player đích nằm trong khoá) |
 | `bodyHash` | hex SHA-256 trên raw body như nhận được |
 | Replay window | 24 h theo `committedAtUtc` (`GameServer:Commands:ReplayWindowHours`) |
 | Replay cùng body | cùng `code`, `receipt_id`, `result` (byte-identical), `replayed = true`; `updates` chứa aggregate **hiện hành** (`full = true`, `new_rev` = rev hiện tại ≥ rev đã commit, `base_rev` = rev đã commit − 1) |
@@ -50,6 +55,7 @@ Budget tổng = giá trị × số instance.
 | Commit không rõ | 503 `COMMIT_UNKNOWN_RETRY` + `retry_after_ms`; retry cùng bytes |
 | Receipt / resultCompact | ≤ 4 KiB / ≤ 512 B; vượt = lỗi lập trình (500) |
 | Lookup | `GET /api/v1/player/receipts/{receiptId}` — chỉ actor sở hữu; actor khác nhận 404 |
+| Guard (`ICommandGuard`, ví dụ ban theo nhóm command) | chỉ chặn lần thực thi mới; retry của command đã commit vẫn replay |
 
 ## 4. Revision và section (semantic — API-10)
 
@@ -70,9 +76,10 @@ aggregate đổi; `aggregate_upgrades_total`. Document có `schemaVersion` mới
 ## 7. Outbox (semantic — JOB-02, OPS-05)
 
 Entry `{entryId = <receiptId>:<index>, kind, payload}` trong receipt. Relay inline sau commit (best effort) +
-sweeper mỗi 30 s cho receipt pending cũ hơn 10 s (partial index `ix_receipts_outbox_pending`). Consumer
-idempotent theo `entryId`; projection mặc định Insert-if-absent `<kind>::<entryId>`. Kind không có consumer →
-receipt giữ pending, metric `outbox_relay_inline_failures_total`.
+sweeper mỗi 30 s ±20 % cho receipt pending cũ hơn 10 s (partial index `ix_receipts_outbox_pending`). Consumer
+idempotent theo `entryId`; projection mặc định Insert-if-absent `<kind>::<entryId>`. Relay thất bại → backoff
+`30 s × 2^(n-1)` (tối đa 1 h) theo `outboxNextAttemptAtUtc`; sau 10 lần → `outboxDeadLetter = true`, ra khỏi hàng
+đợi, metric `outbox_dead_letter_total` (cần vận hành xử lý). Kind không có consumer tính là thất bại.
 
 ## 8. Error-code catalog — core (semantic — API-05, API-11)
 
@@ -115,7 +122,8 @@ Health endpoints (`/health/live`, `/health/ready`) thêm ở slice 005.
 | Policy/service của module | `ConfigureExtensions(x => x.ReplacePolicy<TService, TImpl>())` |
 | Gate (maintenance/version) | đăng ký `IGateEvaluator` |
 | Outbox consumer | đăng ký `IOutboxConsumer` cho một `kind` |
-| Document store | `ITransactionalDocumentStore` (Couchbase; in-memory chỉ cho test/dev) |
+| Document store | `ITransactionalDocumentStore` + `IKeyValueStore` (Couchbase; in-memory chỉ Development/Test — startup chặn ở môi trường khác) |
+| Command guard | `ICommandGuard` (chạy trước mỗi lần thực thi mới) |
 
 ## 11. TST-04 — kết quả thực nghiệm
 

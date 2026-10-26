@@ -5,7 +5,9 @@ using Couchbase.Client.Transactions;
 using Couchbase.Client.Transactions.Config;
 using Couchbase.KeyValue;
 using Couchbase.Query;
+using GameServer.Platform.Aggregates;
 using GameServer.Platform.Persistence;
+using CbCasMismatch = Couchbase.Core.Exceptions.CasMismatchException;
 using CbDocumentExists = Couchbase.Core.Exceptions.KeyValue.DocumentExistsException;
 using CbDocumentNotFound = Couchbase.Core.Exceptions.KeyValue.DocumentNotFoundException;
 using CbTransactionAmbiguous = Couchbase.Client.Transactions.Error.TransactionCommitAmbiguousException;
@@ -15,19 +17,35 @@ using CbTransactionFailed = Couchbase.Client.Transactions.Error.TransactionFaile
 namespace GameServer.Platform.Couchbase;
 
 /// <summary>
-/// <see cref="ITransactionalDocumentStore"/> on Couchbase distributed transactions (DAT-04, DAT-09, DAT-11).
-/// The only component of the framework that calls the Couchbase SDK.
+/// <see cref="ITransactionalDocumentStore"/> and <see cref="IKeyValueStore"/> on Couchbase (DAT-04, DAT-09, DAT-11,
+/// CMD-05). The only component of the framework that calls the Couchbase SDK.
 /// </summary>
-public sealed class CouchbaseDocumentStore(CouchbaseConnection connection) : ITransactionalDocumentStore
+public sealed class CouchbaseDocumentStore(CouchbaseConnection connection) : ITransactionalDocumentStore, IKeyValueStore
 {
+    private const int CasRetries = 5;
+
     public async Task<T> RunTransactionAsync<T>(Func<ITransactionContext, Task<T>> body, TransactionRunOptions options)
     {
         var cluster = await connection.GetClusterAsync();
         T result = default!;
+        Exception? bodyException = null;
         try
         {
             await cluster.Transactions.RunAsync(
-                async attempt => result = await body(new CouchbaseTransactionContext(attempt, connection)),
+                async attempt =>
+                {
+                    bodyException = null;
+                    try
+                    {
+                        result = await body(new CouchbaseTransactionContext(attempt, connection));
+                    }
+                    catch (Exception ex)
+                    {
+                        // Remember what the body threw; the SDK may wrap it in a way that hides it (review B1).
+                        bodyException = ex;
+                        throw;
+                    }
+                },
                 PerTransactionConfigBuilder.Create().Timeout(options.Expiration).Build());
             return result;
         }
@@ -41,10 +59,10 @@ public sealed class CouchbaseDocumentStore(CouchbaseConnection connection) : ITr
         }
         catch (CbTransactionFailed ex)
         {
-            // Exceptions thrown by the body are rethrown unchanged (contract of ITransactionalDocumentStore).
-            if (FindApplicationException(ex) is { } application)
+            // Exceptions thrown by the body itself are rethrown unchanged (contract of ITransactionalDocumentStore).
+            if (bodyException is not null && !CouchbaseErrors.IsSdkException(bodyException))
             {
-                ExceptionDispatchInfo.Capture(application).Throw();
+                ExceptionDispatchInfo.Capture(bodyException).Throw();
             }
 
             throw new TransactionFailedException("Couchbase transaction failed.", ex);
@@ -82,25 +100,34 @@ public sealed class CouchbaseDocumentStore(CouchbaseConnection connection) : ITr
         }
     }
 
-    public async Task MarkOutboxRelayedAsync(DocumentKey receiptKey, CancellationToken cancellationToken)
-    {
-        // Receipt is committed and never written by a transaction again (research R14).
-        var collection = await connection.GetCollectionAsync(receiptKey.Collection);
-        await collection.MutateInAsync(
-            receiptKey.Key,
-            specs => specs.Upsert("outboxPending", false),
-            new MutateInOptions().Durability(DurabilityLevel.Majority).CancellationToken(cancellationToken));
-    }
+    public Task MarkOutboxRelayedAsync(DocumentKey receiptKey, CancellationToken cancellationToken) =>
+        MutateCommittedReceiptAsync(receiptKey, specs => specs.Upsert("outboxPending", false), cancellationToken);
 
-    public async Task<IReadOnlyList<StoredDocument>> QueryPendingOutboxAsync(DateTimeOffset committedBefore, int limit, CancellationToken cancellationToken)
+    public Task MarkOutboxFailedAsync(DocumentKey receiptKey, int attempts, DateTimeOffset nextAttemptAt, bool deadLetter, CancellationToken cancellationToken) =>
+        MutateCommittedReceiptAsync(
+            receiptKey,
+            specs => specs
+                .Upsert("outboxAttempts", attempts)
+                .Upsert("outboxNextAttemptAtUtc", AggregateDocumentSerializer.FormatTime(nextAttemptAt))
+                .Upsert("outboxDeadLetter", deadLetter),
+            cancellationToken);
+
+    public async Task<IReadOnlyList<StoredDocument>> QueryPendingOutboxAsync(
+        DateTimeOffset committedBefore,
+        DateTimeOffset now,
+        int limit,
+        CancellationToken cancellationToken)
     {
         var scope = await connection.GetScopeAsync();
         var result = await scope.QueryAsync<PendingRow>(
             "SELECT META(r).id AS id, r AS doc FROM receipts AS r " +
             "WHERE r.outboxPending = true AND r.committedAtUtc < $before " +
+            "AND IFMISSINGORNULL(r.outboxDeadLetter, false) = false " +
+            "AND (r.outboxNextAttemptAtUtc IS MISSING OR r.outboxNextAttemptAtUtc IS NULL OR r.outboxNextAttemptAtUtc <= $now) " +
             "ORDER BY r.committedAtUtc LIMIT $limit",
             new QueryOptions()
-                .Parameter("before", Aggregates.AggregateDocumentSerializer.FormatTime(committedBefore))
+                .Parameter("before", AggregateDocumentSerializer.FormatTime(committedBefore))
+                .Parameter("now", AggregateDocumentSerializer.FormatTime(now))
                 .Parameter("limit", limit)
                 .ScanConsistency(QueryScanConsistency.RequestPlus)
                 .CancellationToken(cancellationToken));
@@ -114,17 +141,93 @@ public sealed class CouchbaseDocumentStore(CouchbaseConnection connection) : ITr
         return rows;
     }
 
-    private static Exception? FindApplicationException(Exception exception)
+    async Task<bool> IKeyValueStore.InsertAsync(DocumentKey key, JsonObject content, TimeSpan? expiry, CancellationToken cancellationToken)
     {
-        for (var current = exception.InnerException; current is not null; current = current.InnerException)
+        KeyValueCollections.EnsureWritable(key);
+        var collection = await connection.GetCollectionAsync(key.Collection);
+        var options = new InsertOptions().Durability(DurabilityLevel.Majority).CancellationToken(cancellationToken);
+        if (expiry is { } e)
         {
-            if (current.GetType().Namespace?.StartsWith("Couchbase", StringComparison.Ordinal) != true)
-            {
-                return current;
-            }
+            options.Expiry(e);
         }
 
-        return null;
+        try
+        {
+            await collection.InsertAsync(key.Key, content, options);
+            return true;
+        }
+        catch (CbDocumentExists)
+        {
+            return false;
+        }
+    }
+
+    async Task<bool> IKeyValueStore.ReplaceAsync(StoredDocument existing, JsonObject content, TimeSpan? expiry, CancellationToken cancellationToken)
+    {
+        KeyValueCollections.EnsureWritable(existing.Key);
+        var collection = await connection.GetCollectionAsync(existing.Key.Collection);
+        var options = new ReplaceOptions().Cas((ulong)existing.Handle!).Durability(DurabilityLevel.Majority).CancellationToken(cancellationToken);
+        if (expiry is { } e)
+        {
+            options.Expiry(e);
+        }
+
+        try
+        {
+            await collection.ReplaceAsync(existing.Key.Key, content, options);
+            return true;
+        }
+        catch (Exception ex) when (ex is CbCasMismatch or CbDocumentNotFound)
+        {
+            return false;
+        }
+    }
+
+    async Task IKeyValueStore.RemoveAsync(DocumentKey key, CancellationToken cancellationToken)
+    {
+        KeyValueCollections.EnsureWritable(key);
+        var collection = await connection.GetCollectionAsync(key.Collection);
+        try
+        {
+            await collection.RemoveAsync(key.Key, new RemoveOptions().Durability(DurabilityLevel.Majority).CancellationToken(cancellationToken));
+        }
+        catch (CbDocumentNotFound)
+        {
+        }
+    }
+
+    /// <summary>
+    /// Sub-document update of a committed receipt guarded by the CAS of a fresh read (review M2): a receipt still being
+    /// unstaged is invisible (not found) and left to the sweeper; a concurrent change retries.
+    /// </summary>
+    private async Task MutateCommittedReceiptAsync(DocumentKey receiptKey, Action<MutateInSpecBuilder> specs, CancellationToken cancellationToken)
+    {
+        var collection = await connection.GetCollectionAsync(receiptKey.Collection);
+        for (var attempt = 0; attempt < CasRetries; attempt++)
+        {
+            ulong cas;
+            try
+            {
+                cas = (await collection.GetAsync(receiptKey.Key, new GetOptions().CancellationToken(cancellationToken))).Cas;
+            }
+            catch (CbDocumentNotFound)
+            {
+                return;
+            }
+
+            try
+            {
+                await collection.MutateInAsync(
+                    receiptKey.Key,
+                    specs,
+                    new MutateInOptions().Cas(cas).Durability(DurabilityLevel.Majority).CancellationToken(cancellationToken));
+                return;
+            }
+            catch (CbCasMismatch)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(20 * (attempt + 1)), cancellationToken);
+            }
+        }
     }
 
     private sealed class PendingRow
@@ -147,7 +250,7 @@ internal sealed class CouchbaseTransactionContext(AttemptContext attempt, Couchb
         }
 
         return connection.Options.UseGetMulti
-            ? await CouchbaseGetMultiAdapter.GetMultiAsync(attempt, keys, collections)
+            ? await CouchbaseGetMultiAdapter.GetMultiAsync(attempt, keys, collections, connection.Transcoder)
             : await CouchbaseGetMultiAdapter.GetSequentialAsync(attempt, keys, collections);
     }
 
@@ -158,9 +261,10 @@ internal sealed class CouchbaseTransactionContext(AttemptContext attempt, Couchb
         {
             await attempt.InsertAsync(collection, key.Key, content);
         }
-        catch (CbDocumentExists ex)
+        catch (Exception ex) when (CouchbaseErrors.Contains<CbDocumentExists>(ex))
         {
-            throw new DocumentExistsException(key) { Source = ex.Message };
+            // Whatever wrapper the SDK uses, a duplicate insert becomes the platform's DocumentExistsException (review B1).
+            throw new DocumentExistsException(key);
         }
     }
 
@@ -180,5 +284,45 @@ internal sealed class CouchbaseTransactionContext(AttemptContext attempt, Couchb
         }
 
         await attempt.ReplaceAsync(current, content);
+    }
+}
+
+/// <summary>Inspection of SDK exception chains (InnerException and the transaction "Cause" property).</summary>
+internal static class CouchbaseErrors
+{
+    public static bool IsSdkException(Exception exception) =>
+        exception.GetType().Namespace?.StartsWith("Couchbase", StringComparison.Ordinal) == true;
+
+    public static bool Contains<TException>(Exception exception)
+        where TException : Exception
+    {
+        var seen = new HashSet<Exception>(ReferenceEqualityComparer.Instance);
+        var pending = new Stack<Exception>();
+        pending.Push(exception);
+        while (pending.Count > 0)
+        {
+            var current = pending.Pop();
+            if (!seen.Add(current))
+            {
+                continue;
+            }
+
+            if (current is TException)
+            {
+                return true;
+            }
+
+            if (current.InnerException is { } inner)
+            {
+                pending.Push(inner);
+            }
+
+            if (current.GetType().GetProperty("Cause")?.GetValue(current) is Exception cause)
+            {
+                pending.Push(cause);
+            }
+        }
+
+        return false;
     }
 }

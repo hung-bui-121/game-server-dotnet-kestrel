@@ -19,4 +19,7 @@ public sealed class GameServerException : Exception
 
     /// <summary>Optional retry hint in milliseconds when <see cref="ErrorCode.Retryable"/>.</summary>
     public int? RetryAfterMs { get; init; }
+
+    /// <summary>Safe structured details sent to the client (for example <c>until</c> of a suspension).</summary>
+    public IReadOnlyDictionary<string, string>? Details { get; init; }
 }

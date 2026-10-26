@@ -59,6 +59,14 @@ public sealed class ReceiptDocument
 
     public required string CorrelationId { get; init; }
 
+    /// <summary>Failed relay attempts (sweeper backoff, review M1).</summary>
+    public int OutboxAttempts { get; init; }
+
+    public string? OutboxNextAttemptAtUtc { get; init; }
+
+    /// <summary>Relay gave up after the maximum attempts; needs operator attention.</summary>
+    public bool OutboxDeadLetter { get; init; }
+
     public static DocumentKey KeyFor(string receiptId) => new(Collection, KeyPrefix + receiptId);
 
     public DateTimeOffset CommittedAt => AggregateDocumentSerializer.ParseTime(CommittedAtUtc);
@@ -75,10 +83,13 @@ public sealed class ReceiptDocument
 /// <summary>Deterministic ids and hashes of the idempotency contract (CMD-01, CMD-02).</summary>
 public static class ReceiptIds
 {
-    /// <summary><c>base64url(SHA-256(actorId | operation | requestId))[0..32]</c>.</summary>
-    public static string Compute(string actorId, string operation, string requestId)
+    /// <summary>
+    /// <c>base64url(SHA-256(actorId | playerId | operation | requestId))[0..32]</c>. The target player is part of the
+    /// key so a GM reusing a requestId for another player never replays the first player's receipt.
+    /// </summary>
+    public static string Compute(string actorId, string playerId, string operation, string requestId)
     {
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{actorId}|{operation}|{requestId}"));
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{actorId}|{playerId}|{operation}|{requestId}"));
         return Convert.ToBase64String(hash).TrimEnd('=').Replace('+', '-').Replace('/', '_')[..32];
     }
 

@@ -33,7 +33,7 @@ public sealed class ExceptionMiddleware(RequestDelegate next, ErrorResponseWrite
                 logger.LogInformation("Request rejected with {Code}: {Detail}", ex.Code.Name, ex.Detail);
             }
 
-            await writer.WriteAsync(context, ex.Code, ex.RetryAfterMs);
+            await writer.WriteAsync(context, ex.Code, ex.RetryAfterMs, ex.Details);
         }
         catch (BadHttpRequestException ex)
         {

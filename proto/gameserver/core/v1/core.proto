@@ -16,6 +16,7 @@ message ErrorEnvelope {
   int32 retry_after_ms = 6;   // chỉ khi retryable
   int64 server_time_utc_ms = 7;
   string config_version = 8;
+  map<string, string> details = 9;   // safe structured details, e.g. "until" for ACCOUNT_SUSPENDED
 }
 
 // Một aggregate client-visible (section ≡ aggregate, API-10).

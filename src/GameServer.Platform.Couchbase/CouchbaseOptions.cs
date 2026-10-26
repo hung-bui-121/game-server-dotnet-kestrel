@@ -18,10 +18,11 @@ public sealed class CouchbaseOptions
     public string BucketName { get; set; } = string.Empty;
 
     /// <summary>
-    /// Use <c>AttemptContext.GetMulti</c> for bundle reads (DAT-11). The API is volatile in SDK 3.10;
-    /// set false to fall back to sequential <c>GetOptionalAsync</c>.
+    /// Use <c>AttemptContext.GetMulti</c> for bundle reads (DAT-11). Off by default until TST-04 (V23-T1) and the store
+    /// conformance suite pass on a real cluster: GetMulti returns no write handle in SDK 3.10, so every changed aggregate
+    /// is re-read before replace and a concurrent commit aborts the attempt (review M3).
     /// </summary>
-    public bool UseGetMulti { get; set; } = true;
+    public bool UseGetMulti { get; set; }
 
     /// <summary>Create scope, collections and indexes at startup. Defaults to true only in Development (DAT-07).</summary>
     public bool? ProvisionOnStartup { get; set; }

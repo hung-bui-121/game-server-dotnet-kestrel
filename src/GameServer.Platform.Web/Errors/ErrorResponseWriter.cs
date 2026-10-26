@@ -19,7 +19,7 @@ public sealed class ErrorResponseWriter(IClock clock, IGameConfig config)
 {
     public const string ProtobufContentType = "application/x-protobuf";
 
-    public async Task WriteAsync(HttpContext context, ErrorCode code, int? retryAfterMs = null)
+    public async Task WriteAsync(HttpContext context, ErrorCode code, int? retryAfterMs = null, IReadOnlyDictionary<string, string>? details = null)
     {
         if (context.Response.HasStarted)
         {
@@ -50,6 +50,11 @@ public sealed class ErrorResponseWriter(IClock clock, IGameConfig config)
                 ServerTimeUtcMs = clock.UtcNow.ToUnixTimeMilliseconds(),
                 ConfigVersion = config.ConfigVersion,
             };
+            foreach (var (key, value) in details ?? new Dictionary<string, string>())
+            {
+                envelope.Details[key] = value;
+            }
+
             context.Response.ContentType = ProtobufContentType;
             await context.Response.Body.WriteAsync(envelope.ToByteArray());
             return;
@@ -68,6 +73,11 @@ public sealed class ErrorResponseWriter(IClock clock, IGameConfig config)
         if (code.Retryable)
         {
             problem["retryAfterMs"] = retryAfter;
+        }
+
+        if (details is not null)
+        {
+            problem["details"] = new JsonObject(details.Select(d => KeyValuePair.Create(d.Key, (JsonNode?)d.Value)));
         }
 
         context.Response.ContentType = "application/problem+json";

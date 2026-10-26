@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using Couchbase.Client.Transactions;
 using Couchbase.Client.Transactions.Config;
+using Couchbase.Core.IO.Transcoders;
 using Couchbase.KeyValue;
 using GameServer.Platform.Persistence;
 
@@ -15,11 +16,14 @@ internal static class CouchbaseGetMultiAdapter
     public static async Task<IReadOnlyList<StoredDocument?>> GetMultiAsync(
         AttemptContext attempt,
         IReadOnlyList<DocumentKey> keys,
-        IReadOnlyList<ICouchbaseCollection> collections)
+        IReadOnlyList<ICouchbaseCollection> collections,
+        ITypeTranscoder transcoder)
     {
-        var specs = keys.Select((k, i) => new TransactionGetMultiSpec(collections[i], k.Key, null!)).ToList();
+        var specs = keys.Select((k, i) => new TransactionGetMultiSpec(collections[i], k.Key, transcoder)).ToList();
+
+        // Read-skew detection: the bundle must be a consistent view because the handler decides on it (review M3).
         var options = (TransactionGetMultiOptionsBuilder)TransactionGetMultiOptionsBuilder.Create()
-            .Mode(TransactionGetMultiMode.PrioritizeLatency);
+            .Mode(TransactionGetMultiMode.PrioritizeReadSkewDetection);
 
         var result = await attempt.GetMulti(specs, options);
         var documents = new StoredDocument?[keys.Count];

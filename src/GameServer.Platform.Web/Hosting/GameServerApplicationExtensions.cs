@@ -72,7 +72,7 @@ public static class GameServerApplicationExtensions
         }
 
         var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints);
-        errors.AddRange(EndpointSecurityValidator.Validate(endpoints, options));
+        errors.AddRange(EndpointSecurityValidator.Validate(endpoints, options, registry.Modules.SelectMany(m => m.Descriptor.PublicEndpoints)));
         if (errors.Count > 0)
         {
             throw new GameServerStartupException(errors);
@@ -83,14 +83,28 @@ public static class GameServerApplicationExtensions
 
     private static void ValidateServices(IServiceProvider services, GameServerOptions options, ModuleRegistry registry, List<string> errors)
     {
-        if (services.GetService<ITransactionalDocumentStore>() is null)
+        var store = services.GetService<ITransactionalDocumentStore>();
+        if (store is null || services.GetService<IKeyValueStore>() is null)
         {
             errors.Add("[deployment] no document store is registered. Fix: AddCouchbaseDocumentStore() (or AddInMemoryDocumentStore() for Development/tests).");
         }
-
-        if (options.IsProduction && services.GetService<TestAuthenticationMarker>() is not null)
+        else
         {
-            errors.Add("[deployment] test authentication is enabled in Production. Fix: remove UseTestAuthentication() (SEC-16).");
+            if (store is IDevelopmentOnlyStore && !options.AllowsDevelopmentTools)
+            {
+                errors.Add(
+                    $"[deployment] the in-memory store is configured in '{options.DeploymentEnvironment}'. " +
+                    "Fix: set GameServer:Store=Couchbase; the in-memory store is for Development/Test only (review M6).");
+            }
+
+            (store as ICollectionAwareStore)?.UseCollections(registry.RequiredCollections());
+        }
+
+        if (!options.AllowsDevelopmentTools && services.GetService<TestAuthenticationMarker>() is not null)
+        {
+            errors.Add(
+                $"[deployment] test authentication is enabled in '{options.DeploymentEnvironment}'. " +
+                "Fix: remove UseTestAuthentication(); it is allowed only in Development/Test (SEC-16).");
         }
 
         try

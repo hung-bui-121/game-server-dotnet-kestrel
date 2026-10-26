@@ -146,6 +146,38 @@ public abstract class StoreConformanceTests
     }
 
     [Fact]
+    public async Task Only_write_write_conflicts_abort_commits()
+    {
+        var store = Store;
+        var readOnly = NewKey();
+        var written = NewKey();
+        await store.InsertIfAbsentAsync(readOnly, Doc(1), CancellationToken.None);
+        var attempts = 0;
+
+        await store.RunTransactionAsync(async tx =>
+        {
+            attempts++;
+            await tx.GetManyAsync([readOnly]);
+            if (attempts == 1)
+            {
+                // Another transaction changes the document this one only read.
+                await store.RunTransactionAsync(async other =>
+                {
+                    var current = (await other.GetManyAsync([readOnly]))[0]!;
+                    await other.ReplaceAsync(current, Doc(2));
+                    return true;
+                }, Options);
+            }
+
+            await tx.InsertAsync(written, Doc(1));
+            return true;
+        }, Options);
+
+        attempts.ShouldBe(1);
+        (await store.GetAsync(written, CancellationToken.None)).ShouldNotBeNull();
+    }
+
+    [Fact]
     public async Task InsertIfAbsent_is_idempotent()
     {
         var a = NewKey();
@@ -165,12 +197,43 @@ public abstract class StoreConformanceTests
             return true;
         }, Options);
 
-        var pending = await Store.QueryPendingOutboxAsync(new DateTimeOffset(2000, 1, 2, 0, 0, 0, TimeSpan.Zero), 1000, CancellationToken.None);
+        var before = new DateTimeOffset(2000, 1, 2, 0, 0, 0, TimeSpan.Zero);
+        var pending = await Store.QueryPendingOutboxAsync(before, before, 1000, CancellationToken.None);
         pending.ShouldContain(d => d.Key == key);
 
         await Store.MarkOutboxRelayedAsync(key, CancellationToken.None);
-        var after = await Store.QueryPendingOutboxAsync(new DateTimeOffset(2000, 1, 2, 0, 0, 0, TimeSpan.Zero), 1000, CancellationToken.None);
+        var after = await Store.QueryPendingOutboxAsync(before, before, 1000, CancellationToken.None);
         after.ShouldNotContain(d => d.Key == key);
         (await Store.GetAsync(key, CancellationToken.None))!.Content["outboxPending"]!.GetValue<bool>().ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Failed_relays_back_off_and_dead_letters_leave_the_queue()
+    {
+        var store = Store;
+        var key = new DocumentKey("receipts", "rcpt::conf-" + Guid.NewGuid().ToString("N"));
+        await store.RunTransactionAsync(async tx =>
+        {
+            await tx.InsertAsync(key, new JsonObject { ["outboxPending"] = true, ["committedAtUtc"] = "2000-01-01T00:00:00.000Z" });
+            return true;
+        }, Options);
+        var committedBefore = new DateTimeOffset(2000, 1, 2, 0, 0, 0, TimeSpan.Zero);
+        var now = new DateTimeOffset(2000, 1, 3, 0, 0, 0, TimeSpan.Zero);
+
+        await store.MarkOutboxFailedAsync(key, 1, now.AddMinutes(5), deadLetter: false, CancellationToken.None);
+        (await store.QueryPendingOutboxAsync(committedBefore, now, 1000, CancellationToken.None)).ShouldNotContain(d => d.Key == key);
+        (await store.QueryPendingOutboxAsync(committedBefore, now.AddMinutes(6), 1000, CancellationToken.None)).ShouldContain(d => d.Key == key);
+
+        await store.MarkOutboxFailedAsync(key, 10, now, deadLetter: true, CancellationToken.None);
+        (await store.QueryPendingOutboxAsync(committedBefore, now.AddDays(1), 1000, CancellationToken.None)).ShouldNotContain(d => d.Key == key);
+        var stored = (await store.GetAsync(key, CancellationToken.None))!.Content;
+        stored["outboxAttempts"]!.GetValue<int>().ShouldBe(10);
+        stored["outboxDeadLetter"]!.GetValue<bool>().ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Mark_relayed_on_a_missing_receipt_is_a_no_op()
+    {
+        await Store.MarkOutboxRelayedAsync(new DocumentKey("receipts", "rcpt::missing-" + Guid.NewGuid().ToString("N")), CancellationToken.None);
     }
 }

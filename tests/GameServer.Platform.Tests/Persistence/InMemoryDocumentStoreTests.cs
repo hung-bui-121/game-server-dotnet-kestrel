@@ -65,6 +65,16 @@ public sealed class InMemoryDocumentStoreFaultTests
     }
 
     [Fact]
+    public async Task Unprovisioned_collections_are_rejected_once_collections_are_declared()
+    {
+        _store.UseCollections(["d"]);
+
+        await Insert(new DocumentKey("d", "ok"));
+        await Should.ThrowAsync<InvalidOperationException>(() => Insert(new DocumentKey("undeclared", "x")));
+        await Should.ThrowAsync<InvalidOperationException>(() => _store.GetAsync(new DocumentKey("undeclared", "x"), CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Faults_can_target_one_collection()
     {
         _store.Faults.OnlyWhenWritingCollection = "receipts";

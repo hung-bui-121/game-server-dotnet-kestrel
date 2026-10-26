@@ -44,6 +44,11 @@ public sealed class GameServerOptions
     public bool IsProduction => string.Equals(DeploymentEnvironment, "Production", StringComparison.OrdinalIgnoreCase);
 
     public bool IsDevelopment => string.Equals(DeploymentEnvironment, "Development", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Automated test deployments; like Development, they may use test authentication and the in-memory store.</summary>
+    public bool IsTest => string.Equals(DeploymentEnvironment, "Test", StringComparison.OrdinalIgnoreCase);
+
+    public bool AllowsDevelopmentTools => IsDevelopment || IsTest;
 }
 
 /// <summary>Which APIs this host maps; lets the GM API run in a separate host later (OPS-10).</summary>
@@ -91,6 +96,14 @@ public sealed class OutboxSettings
     public int MinAgeSeconds { get; set; } = 10;
 
     public int BatchSize { get; set; } = 100;
+
+    /// <summary>Failed relays before a receipt is dead-lettered.</summary>
+    public int MaxRelayAttempts { get; set; } = 10;
+
+    /// <summary>First retry delay; doubles per attempt up to <see cref="MaxRetryDelaySeconds"/>.</summary>
+    public int RetryDelaySeconds { get; set; } = 30;
+
+    public int MaxRetryDelaySeconds { get; set; } = 3600;
 }
 
 public sealed class LimitSettings

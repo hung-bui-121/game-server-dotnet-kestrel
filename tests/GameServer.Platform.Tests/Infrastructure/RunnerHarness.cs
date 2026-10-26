@@ -7,6 +7,7 @@ using GameServer.Platform.Commands;
 using GameServer.Platform.Config;
 using GameServer.Platform.Diagnostics;
 using GameServer.Platform.Outbox;
+using GameServer.Platform.Persistence;
 using GameServer.Platform.Registry;
 using GameServer.Platform.Testing;
 using GameServer.Time;
@@ -19,6 +20,12 @@ namespace GameServer.Platform.Tests.Infrastructure;
 public sealed class RunnerHarness : IDisposable
 {
     public RunnerHarness(Action<GameServerOptions>? configure = null, params IGameModule[] extraModules)
+        : this(configure, null, extraModules)
+    {
+    }
+
+    /// <summary>Uses <paramref name="externalStore"/> (e.g. Couchbase) instead of the in-memory store.</summary>
+    public RunnerHarness(Action<GameServerOptions>? configure, ITransactionalDocumentStore? externalStore, params IGameModule[] extraModules)
     {
         Options = new GameServerOptions { GameId = "test", EnvironmentId = "dev" };
         Options.Outbox.SweeperEnabled = false;
@@ -34,20 +41,27 @@ public sealed class RunnerHarness : IDisposable
         }
 
         Services = services.BuildServiceProvider();
+        Store = new InMemoryDocumentStore(Clock);
+        Store.UseCollections(Registry.RequiredCollections());
+        TransactionalStore = externalStore ?? Store;
         Config = new GameConfig("test", "test+000000000000", new Dictionary<string, byte[]>(), new HashSet<string>());
         Metrics = new PlatformMetrics();
         Serializer = new AggregateDocumentSerializer(Options, Metrics);
-        Relay = new OutboxRelay([], Registry, Store, Options, Metrics, NullLogger<OutboxRelay>.Instance);
+        Relay = new OutboxRelay([], Registry, TransactionalStore, Clock, Options, Metrics, NullLogger<OutboxRelay>.Instance);
         Runner = CreateRunner();
-        Sweeper = new OutboxSweeper(Store, Relay, Clock, Options, Metrics, NullLogger<OutboxSweeper>.Instance);
-        Snapshots = new PlayerSnapshotReader(Registry, Store, Serializer);
+        Sweeper = new OutboxSweeper(TransactionalStore, Relay, Clock, Options, Metrics, NullLogger<OutboxSweeper>.Instance);
+        Snapshots = new PlayerSnapshotReader(Registry, TransactionalStore, Serializer);
     }
 
     public GameServerOptions Options { get; }
 
     public ModuleRegistry Registry { get; }
 
-    public InMemoryDocumentStore Store { get; } = new();
+    /// <summary>In-memory store (only meaningful when no external store was given).</summary>
+    public InMemoryDocumentStore Store { get; }
+
+    /// <summary>Store used by the runner: external if given, otherwise <see cref="Store"/>.</summary>
+    public ITransactionalDocumentStore TransactionalStore { get; }
 
     public FakeClock Clock { get; } = new();
 
@@ -67,9 +81,11 @@ public sealed class RunnerHarness : IDisposable
 
     public PlayerSnapshotReader Snapshots { get; }
 
+    public List<ICommandGuard> Guards { get; } = [];
+
     /// <summary>A runner with its own per-player limiter, as on a second instance sharing the store.</summary>
     public CommandRunner CreateRunner() =>
-        new(Registry, Store, Serializer, Config, Clock, Options, new PerPlayerCommandLimiter(Options), Relay, Metrics, Services);
+        new(Registry, TransactionalStore, Serializer, Config, Clock, Options, new PerPlayerCommandLimiter(Options), Relay, Metrics, Guards, Services);
 
     public static ActorContext Player(string playerId) =>
         new(playerId, ActorType.Player, playerId, "test", "dev", new HashSet<string>(), "corr-" + playerId);

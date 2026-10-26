@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json.Nodes;
 using GameServer.Platform.Aggregates;
 using GameServer.Platform.Persistence;
+using GameServer.Time;
 
 namespace GameServer.Platform.Testing;
 
@@ -10,11 +11,40 @@ namespace GameServer.Platform.Testing;
 /// command runner relies on: atomic multi-document commit, conflict retry until expiration, staged writes
 /// invisible outside the transaction, and injectable ambiguous/failed commits.
 /// </summary>
-public sealed class InMemoryDocumentStore : ITransactionalDocumentStore
+public sealed class InMemoryDocumentStore(IClock? clock = null)
+    : ITransactionalDocumentStore, IKeyValueStore, ICollectionAwareStore, IDevelopmentOnlyStore
 {
     private readonly Dictionary<DocumentKey, Entry> _documents = [];
     private readonly Lock _lock = new();
+    private readonly IClock _clock = clock ?? new SystemClock();
+    private HashSet<string>? _collections;
     private long _versionSequence;
+
+    /// <summary>Restricts the store to provisioned collections, like Couchbase "collection not found" (review M4).</summary>
+    public void UseCollections(IEnumerable<string> collections)
+    {
+        lock (_lock)
+        {
+            _collections = new HashSet<string>(collections, StringComparer.Ordinal);
+        }
+    }
+
+    public Task MarkOutboxFailedAsync(DocumentKey receiptKey, int attempts, DateTimeOffset nextAttemptAt, bool deadLetter, CancellationToken cancellationToken)
+    {
+        lock (_lock)
+        {
+            if (Live(receiptKey) is { } entry)
+            {
+                var content = Clone(entry.Content);
+                content["outboxAttempts"] = attempts;
+                content["outboxNextAttemptAtUtc"] = AggregateDocumentSerializer.FormatTime(nextAttemptAt);
+                content["outboxDeadLetter"] = deadLetter;
+                _documents[receiptKey] = new Entry(content, ++_versionSequence, entry.ExpiresAt);
+            }
+
+            return Task.CompletedTask;
+        }
+    }
 
     public StoreFaultInjector Faults { get; } = new();
 
@@ -75,6 +105,47 @@ public sealed class InMemoryDocumentStore : ITransactionalDocumentStore
         }
     }
 
+    Task<bool> IKeyValueStore.InsertAsync(DocumentKey key, JsonObject content, TimeSpan? expiry, CancellationToken cancellationToken)
+    {
+        KeyValueCollections.EnsureWritable(key);
+        lock (_lock)
+        {
+            if (Live(key) is not null)
+            {
+                return Task.FromResult(false);
+            }
+
+            _documents[key] = new Entry(Clone(content), ++_versionSequence, ExpiresAt(expiry));
+            return Task.FromResult(true);
+        }
+    }
+
+    Task<bool> IKeyValueStore.ReplaceAsync(StoredDocument existing, JsonObject content, TimeSpan? expiry, CancellationToken cancellationToken)
+    {
+        KeyValueCollections.EnsureWritable(existing.Key);
+        lock (_lock)
+        {
+            var current = Live(existing.Key);
+            if (current is null || current.Version != (long)existing.Handle!)
+            {
+                return Task.FromResult(false);
+            }
+
+            _documents[existing.Key] = new Entry(Clone(content), ++_versionSequence, ExpiresAt(expiry));
+            return Task.FromResult(true);
+        }
+    }
+
+    Task IKeyValueStore.RemoveAsync(DocumentKey key, CancellationToken cancellationToken)
+    {
+        KeyValueCollections.EnsureWritable(key);
+        lock (_lock)
+        {
+            _documents.Remove(key);
+            return Task.CompletedTask;
+        }
+    }
+
     public Task<IReadOnlyList<StoredDocument?>> GetManyAsync(IReadOnlyList<DocumentKey> keys, CancellationToken cancellationToken)
     {
         lock (_lock)
@@ -88,12 +159,12 @@ public sealed class InMemoryDocumentStore : ITransactionalDocumentStore
     {
         lock (_lock)
         {
-            if (_documents.ContainsKey(key))
+            if (Live(key) is not null)
             {
                 return Task.FromResult(false);
             }
 
-            _documents[key] = new Entry(Clone(content), ++_versionSequence);
+            _documents[key] = new Entry(Clone(content), ++_versionSequence, null);
             return Task.FromResult(true);
         }
     }
@@ -102,24 +173,27 @@ public sealed class InMemoryDocumentStore : ITransactionalDocumentStore
     {
         lock (_lock)
         {
-            if (_documents.TryGetValue(receiptKey, out var entry))
+            if (Live(receiptKey) is { } entry)
             {
                 var content = Clone(entry.Content);
                 content["outboxPending"] = false;
-                _documents[receiptKey] = new Entry(content, ++_versionSequence);
+                _documents[receiptKey] = new Entry(content, ++_versionSequence, entry.ExpiresAt);
             }
 
             return Task.CompletedTask;
         }
     }
 
-    public Task<IReadOnlyList<StoredDocument>> QueryPendingOutboxAsync(DateTimeOffset committedBefore, int limit, CancellationToken cancellationToken)
+    public Task<IReadOnlyList<StoredDocument>> QueryPendingOutboxAsync(DateTimeOffset committedBefore, DateTimeOffset now, int limit, CancellationToken cancellationToken)
     {
         lock (_lock)
         {
             IReadOnlyList<StoredDocument> result = _documents
                 .Where(d => d.Key.Collection == "receipts"
                             && d.Value.Content["outboxPending"]?.GetValue<bool>() == true
+                            && d.Value.Content["outboxDeadLetter"]?.GetValue<bool>() != true
+                            && (d.Value.Content["outboxNextAttemptAtUtc"]?.GetValue<string>() is not { } next
+                                || AggregateDocumentSerializer.ParseTime(next) <= now)
                             && d.Value.Content["committedAtUtc"]?.GetValue<string>() is { } at
                             && AggregateDocumentSerializer.ParseTime(at) < committedBefore)
                 .OrderBy(d => d.Value.Content["committedAtUtc"]!.GetValue<string>(), StringComparer.Ordinal)
@@ -135,7 +209,7 @@ public sealed class InMemoryDocumentStore : ITransactionalDocumentStore
     {
         lock (_lock)
         {
-            _documents[key] = new Entry(Clone(content), ++_versionSequence);
+            _documents[key] = new Entry(Clone(content), ++_versionSequence, null);
         }
     }
 
@@ -144,7 +218,7 @@ public sealed class InMemoryDocumentStore : ITransactionalDocumentStore
     {
         lock (_lock)
         {
-            return _documents.TryGetValue(key, out var entry) ? Clone(entry.Content) : null;
+            return Live(key) is { } entry ? Clone(entry.Content) : null;
         }
     }
 
@@ -165,24 +239,43 @@ public sealed class InMemoryDocumentStore : ITransactionalDocumentStore
     }
 
     private StoredDocument? ReadCommitted(DocumentKey key) =>
-        _documents.TryGetValue(key, out var entry) ? new StoredDocument(key, Clone(entry.Content), entry.Version) : null;
+        Live(key) is { } entry ? new StoredDocument(key, Clone(entry.Content), entry.Version) : null;
+
+    private void EnsureCollection(DocumentKey key)
+    {
+        if (_collections is not null && !_collections.Contains(key.Collection))
+        {
+            throw new InvalidOperationException($"Collection '{key.Collection}' is not provisioned (declare it in a ModuleDescriptor).");
+        }
+    }
+
+    /// <summary>Entry that has not expired; expired entries are removed (caller holds the lock).</summary>
+    private Entry? Live(DocumentKey key)
+    {
+        EnsureCollection(key);
+        if (!_documents.TryGetValue(key, out var entry))
+        {
+            return null;
+        }
+
+        if (entry.ExpiresAt is { } expiresAt && expiresAt <= _clock.UtcNow)
+        {
+            _documents.Remove(key);
+            return null;
+        }
+
+        return entry;
+    }
+
+    private DateTimeOffset? ExpiresAt(TimeSpan? expiry) => expiry is { } e ? _clock.UtcNow + e : null;
 
     private bool TryCommit(Attempt attempt)
     {
         lock (_lock)
         {
-            foreach (var (key, version) in attempt.ReadVersions)
-            {
-                var current = _documents.TryGetValue(key, out var entry) ? entry.Version : 0;
-                if (current != version)
-                {
-                    return false;
-                }
-            }
-
             foreach (var (key, write) in attempt.Writes)
             {
-                var current = _documents.TryGetValue(key, out var entry) ? entry.Version : 0;
+                var current = Live(key)?.Version ?? 0;
                 if (current != write.ExpectedVersion)
                 {
                     return false;
@@ -191,7 +284,7 @@ public sealed class InMemoryDocumentStore : ITransactionalDocumentStore
 
             foreach (var (key, write) in attempt.Writes)
             {
-                _documents[key] = new Entry(write.Content, ++_versionSequence);
+                _documents[key] = new Entry(write.Content, ++_versionSequence, null);
             }
 
             return true;
@@ -200,15 +293,12 @@ public sealed class InMemoryDocumentStore : ITransactionalDocumentStore
 
     private static JsonObject Clone(JsonObject content) => (JsonObject)content.DeepClone();
 
-    private sealed record Entry(JsonObject Content, long Version);
+    private sealed record Entry(JsonObject Content, long Version, DateTimeOffset? ExpiresAt);
 
     private sealed record PendingWrite(JsonObject Content, long ExpectedVersion);
 
     private sealed class Attempt(InMemoryDocumentStore store) : ITransactionContext
     {
-        /// <summary>Version observed per key; 0 = observed absent.</summary>
-        public Dictionary<DocumentKey, long> ReadVersions { get; } = [];
-
         public Dictionary<DocumentKey, PendingWrite> Writes { get; } = [];
 
         public Task<IReadOnlyList<StoredDocument?>> GetManyAsync(IReadOnlyList<DocumentKey> keys)
@@ -225,10 +315,7 @@ public sealed class InMemoryDocumentStore : ITransactionalDocumentStore
                         continue;
                     }
 
-                    var committed = store.ReadCommitted(key);
-                    var version = committed is null ? 0 : (long)committed.Handle!;
-                    ReadVersions.TryAdd(key, version);
-                    result[i] = committed;
+                    result[i] = store.ReadCommitted(key);
                 }
             }
 
@@ -239,7 +326,7 @@ public sealed class InMemoryDocumentStore : ITransactionalDocumentStore
         {
             lock (store._lock)
             {
-                if (Writes.ContainsKey(key) || store._documents.ContainsKey(key))
+                if (Writes.ContainsKey(key) || store.Live(key) is not null)
                 {
                     throw new DocumentExistsException(key);
                 }

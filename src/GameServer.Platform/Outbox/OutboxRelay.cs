@@ -3,6 +3,7 @@ using GameServer.Platform.Commands;
 using GameServer.Platform.Diagnostics;
 using GameServer.Platform.Persistence;
 using GameServer.Platform.Registry;
+using GameServer.Time;
 using Microsoft.Extensions.Logging;
 
 namespace GameServer.Platform.Outbox;
@@ -45,6 +46,8 @@ public sealed class OutboxRelay : IOutboxRelay
 {
     private readonly Dictionary<string, IOutboxConsumer> _consumers = new(StringComparer.Ordinal);
     private readonly ITransactionalDocumentStore _store;
+    private readonly IClock _clock;
+    private readonly OutboxSettings _settings;
     private readonly PlatformMetrics _metrics;
     private readonly ILogger<OutboxRelay> _logger;
 
@@ -52,11 +55,14 @@ public sealed class OutboxRelay : IOutboxRelay
         IEnumerable<IOutboxConsumer> consumers,
         ModuleRegistry registry,
         ITransactionalDocumentStore store,
+        IClock clock,
         GameServerOptions options,
         PlatformMetrics metrics,
         ILogger<OutboxRelay> logger)
     {
         _store = store;
+        _clock = clock;
+        _settings = options.Outbox;
         _metrics = metrics;
         _logger = logger;
         foreach (var projection in registry.OutboxProjections)
@@ -104,6 +110,7 @@ public sealed class OutboxRelay : IOutboxRelay
 
         if (!allDelivered)
         {
+            await RecordFailureAsync(receiptKey, receipt, cancellationToken);
             return false;
         }
 
@@ -117,6 +124,27 @@ public sealed class OutboxRelay : IOutboxRelay
             _metrics.OutboxRelayFailed("mark_relayed");
             _logger.LogWarning(ex, "Could not mark receipt {ReceiptId} relayed; the sweeper will retry.", receipt.ReceiptId);
             return false;
+        }
+    }
+
+    /// <summary>Exponential backoff per receipt so failing receipts never block newer ones (review M1).</summary>
+    private async Task RecordFailureAsync(DocumentKey receiptKey, ReceiptDocument receipt, CancellationToken cancellationToken)
+    {
+        var attempts = receipt.OutboxAttempts + 1;
+        var delaySeconds = Math.Min(_settings.MaxRetryDelaySeconds, _settings.RetryDelaySeconds * Math.Pow(2, attempts - 1));
+        var deadLetter = attempts >= _settings.MaxRelayAttempts;
+        try
+        {
+            await _store.MarkOutboxFailedAsync(receiptKey, attempts, _clock.UtcNow.AddSeconds(delaySeconds), deadLetter, cancellationToken);
+            if (deadLetter)
+            {
+                _metrics.OutboxDeadLettered();
+                _logger.LogError("Receipt {ReceiptId} dead-lettered after {Attempts} relay attempts.", receipt.ReceiptId, attempts);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not record relay failure of receipt {ReceiptId}.", receipt.ReceiptId);
         }
     }
 }

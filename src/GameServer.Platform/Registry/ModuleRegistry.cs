@@ -37,6 +37,15 @@ public sealed partial class ModuleRegistry
 
     public IEnumerable<OutboxProjection> OutboxProjections => _modules.SelectMany(m => m.Descriptor.OutboxProjections);
 
+    /// <summary>Collections to provision: <c>receipts</c>, every <c>pa_*</c>, module collections and projection targets (DAT-07).</summary>
+    public IReadOnlyList<string> RequiredCollections() =>
+        new[] { GameServer.Platform.Commands.ReceiptDocument.Collection }
+            .Concat(Aggregates.Values.Select(a => a.Collection))
+            .Concat(_modules.SelectMany(m => m.Descriptor.Collections).Select(c => c.Name))
+            .Concat(OutboxProjections.Select(p => p.Collection))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
     public void Add(IGameModule module, bool serviceOnly)
     {
         var descriptor = module.Describe();

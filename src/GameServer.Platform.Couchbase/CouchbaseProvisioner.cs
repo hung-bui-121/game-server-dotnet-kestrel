@@ -21,16 +21,10 @@ public sealed class CouchbaseProvisioner(
 {
     public const string PendingOutboxIndex = "ix_receipts_outbox_pending";
 
-    /// <summary>Collections the framework itself needs.</summary>
-    public static readonly string[] FrameworkCollections = [ReceiptDocument.Collection, CouchbaseConnection.TransactionMetadataCollection];
+    private const int IndexAttempts = 6;
 
     public IReadOnlyList<string> RequiredCollections() =>
-        FrameworkCollections
-            .Concat(registry.Aggregates.Values.Select(a => a.Collection))
-            .Concat(registry.Modules.SelectMany(m => m.Descriptor.Collections).Select(c => c.Name))
-            .Concat(registry.OutboxProjections.Select(p => p.Collection))
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
+        registry.RequiredCollections().Append(CouchbaseConnection.TransactionMetadataCollection).Distinct(StringComparer.Ordinal).ToArray();
 
     public async Task ProvisionAsync(CancellationToken cancellationToken)
     {
@@ -82,16 +76,35 @@ public sealed class CouchbaseProvisioner(
 
         foreach (var statement in statements)
         {
-            try
-            {
-                await cluster.QueryAsync<object>(statement);
-            }
-            catch (IndexExistsException)
-            {
-            }
+            await CreateIndexAsync(cluster, statement, cancellationToken);
         }
 
         logger.LogInformation("Provisioned {Count} collections for game {GameId}.", RequiredCollections().Count, gameServer.GameId);
+    }
+
+    /// <summary>
+    /// A freshly created collection may not be visible to the query service yet ("keyspace not found"): retry with
+    /// backoff (review minor).
+    /// </summary>
+    private async Task CreateIndexAsync(global::Couchbase.ICluster cluster, string statement, CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await cluster.QueryAsync<object>(statement);
+                return;
+            }
+            catch (IndexExistsException)
+            {
+                return;
+            }
+            catch (Exception ex) when (attempt < IndexAttempts && ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Index statement failed (attempt {Attempt}); retrying.", attempt);
+                await Task.Delay(TimeSpan.FromMilliseconds(500 * attempt), cancellationToken);
+            }
+        }
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)

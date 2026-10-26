@@ -24,7 +24,7 @@ public sealed class OutboxSweeper(
     {
         var now = clock.UtcNow;
         var cutoff = now - TimeSpan.FromSeconds(options.Outbox.MinAgeSeconds);
-        var pending = await store.QueryPendingOutboxAsync(cutoff, options.Outbox.BatchSize, cancellationToken);
+        var pending = await store.QueryPendingOutboxAsync(cutoff, now, options.Outbox.BatchSize, cancellationToken);
         var relayed = 0;
         foreach (var document in pending)
         {
@@ -46,11 +46,13 @@ public sealed class OutboxSweeper(
             return;
         }
 
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(options.Outbox.SweepIntervalSeconds));
-        while (await timer.WaitForNextTickAsync(stoppingToken))
+        var interval = TimeSpan.FromSeconds(options.Outbox.SweepIntervalSeconds);
+        while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
+                // ±20 % jitter so instances do not sweep the same batch in lockstep.
+                await Task.Delay(interval * (0.8 + (0.4 * Random.Shared.NextDouble())), stoppingToken);
                 await SweepOnceAsync(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

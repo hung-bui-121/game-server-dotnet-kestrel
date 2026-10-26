@@ -20,7 +20,10 @@ public static class CouchbaseServiceCollectionExtensions
         services.AddSingleton(options);
         services.AddSingleton<CouchbaseConnection>();
         services.RemoveAll<ITransactionalDocumentStore>();
-        services.AddSingleton<ITransactionalDocumentStore, CouchbaseDocumentStore>();
+        services.RemoveAll<IKeyValueStore>();
+        services.AddSingleton<CouchbaseDocumentStore>();
+        services.AddSingleton<ITransactionalDocumentStore>(sp => sp.GetRequiredService<CouchbaseDocumentStore>());
+        services.AddSingleton<IKeyValueStore>(sp => sp.GetRequiredService<CouchbaseDocumentStore>());
         services.AddSingleton<CouchbaseProvisioner>();
         services.AddHostedService(sp => sp.GetRequiredService<CouchbaseProvisioner>());
         return services;

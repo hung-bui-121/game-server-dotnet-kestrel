@@ -74,7 +74,17 @@ public sealed class StartupValidationTests
             s => s["GameServer:DeploymentEnvironment"] = "Production");
 
         ex.Message.ShouldContain("uses profile Dev in Production");
-        ex.Message.ShouldContain("test authentication is enabled in Production");
+        ex.Message.ShouldContain("test authentication is enabled in 'Production'");
+        ex.Message.ShouldContain("the in-memory store is configured in 'Production'");
+    }
+
+    [Fact]
+    public async Task Staging_rejects_test_auth_and_in_memory_store()
+    {
+        var ex = await StartupFails(settings: s => s["GameServer:DeploymentEnvironment"] = "Staging");
+
+        ex.Message.ShouldContain("test authentication is enabled in 'Staging'");
+        ex.Message.ShouldContain("in-memory store is configured in 'Staging'");
     }
 
     [Fact]

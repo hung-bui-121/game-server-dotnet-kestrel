@@ -44,12 +44,30 @@ public interface ITransactionalDocumentStore
     /// <summary>Inserts a projection document if absent. Returns false if it already existed.</summary>
     Task<bool> InsertIfAbsentAsync(DocumentKey key, JsonObject content, CancellationToken cancellationToken);
 
-    /// <summary>Sets <c>outboxPending = false</c> on a committed receipt.</summary>
+    /// <summary>
+    /// Sets <c>outboxPending = false</c> on a committed receipt, guarded by the CAS of a fresh read. A receipt that is
+    /// not visible yet (commit not fully unstaged) is left for the sweeper.
+    /// </summary>
     Task MarkOutboxRelayedAsync(DocumentKey receiptKey, CancellationToken cancellationToken);
 
-    /// <summary>Committed receipts with <c>outboxPending = true</c> committed before <paramref name="committedBefore"/>.</summary>
-    Task<IReadOnlyList<StoredDocument>> QueryPendingOutboxAsync(DateTimeOffset committedBefore, int limit, CancellationToken cancellationToken);
+    /// <summary>Records a failed relay: attempts, next attempt time and dead-letter flag (CAS-guarded like above).</summary>
+    Task MarkOutboxFailedAsync(DocumentKey receiptKey, int attempts, DateTimeOffset nextAttemptAt, bool deadLetter, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Receipts with <c>outboxPending = true</c>, not dead-lettered, committed before <paramref name="committedBefore"/>
+    /// and due (<c>outboxNextAttemptAtUtc</c> missing or ≤ <paramref name="now"/>), oldest first.
+    /// </summary>
+    Task<IReadOnlyList<StoredDocument>> QueryPendingOutboxAsync(DateTimeOffset committedBefore, DateTimeOffset now, int limit, CancellationToken cancellationToken);
 }
+
+/// <summary>Store that must know the provisioned collections (in-memory mirrors Couchbase "collection not found").</summary>
+public interface ICollectionAwareStore
+{
+    void UseCollections(IEnumerable<string> collections);
+}
+
+/// <summary>Marker for stores allowed only in Development/Test deployments (startup validation).</summary>
+public interface IDevelopmentOnlyStore;
 
 /// <summary>Operations available inside a transaction attempt. Call them sequentially (V23).</summary>
 public interface ITransactionContext

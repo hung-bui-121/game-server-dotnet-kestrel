@@ -24,6 +24,7 @@ public sealed class PlatformMetrics : IDisposable
     private readonly Histogram<double> _txnDuration;
     private readonly Histogram<int> _receiptSize;
     private readonly Counter<long> _relayFailures;
+    private readonly Counter<long> _deadLetters;
     private readonly Histogram<double> _outboxPendingAge;
     private string _configVersion = string.Empty;
 
@@ -40,6 +41,7 @@ public sealed class PlatformMetrics : IDisposable
         _txnDuration = _meter.CreateHistogram<double>("txn_duration_seconds", "s");
         _receiptSize = _meter.CreateHistogram<int>("receipt_size_bytes", "By");
         _relayFailures = _meter.CreateCounter<long>("outbox_relay_inline_failures_total");
+        _deadLetters = _meter.CreateCounter<long>("outbox_dead_letter_total");
         _outboxPendingAge = _meter.CreateHistogram<double>("outbox_pending_age_seconds", "s");
         _meter.CreateObservableGauge(
             "config_version_info",
@@ -77,6 +79,8 @@ public sealed class PlatformMetrics : IDisposable
     public void ReceiptWritten(int sizeBytes) => _receiptSize.Record(sizeBytes);
 
     public void OutboxRelayFailed(string kind) => _relayFailures.Add(1, new KeyValuePair<string, object?>("kind", kind));
+
+    public void OutboxDeadLettered() => _deadLetters.Add(1);
 
     public void OutboxPendingAge(TimeSpan age) => _outboxPendingAge.Record(age.TotalSeconds);
 

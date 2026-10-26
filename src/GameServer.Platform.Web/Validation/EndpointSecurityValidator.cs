@@ -13,11 +13,11 @@ namespace GameServer.Platform.Web.Validation;
 /// </summary>
 public static partial class EndpointSecurityValidator
 {
-    public static IReadOnlyList<string> Validate(IEnumerable<Endpoint> endpoints, GameServerOptions options)
+    public static IReadOnlyList<string> Validate(IEnumerable<Endpoint> endpoints, GameServerOptions options, IEnumerable<string>? modulePublicEndpoints = null)
     {
         var errors = new List<string>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var allowlist = options.PublicEndpointAllowlist.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var allowlist = options.PublicEndpointAllowlist.Concat(modulePublicEndpoints ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         foreach (var endpoint in endpoints.OfType<RouteEndpoint>())
         {

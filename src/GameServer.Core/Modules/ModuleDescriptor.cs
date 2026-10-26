@@ -33,6 +33,9 @@ public sealed class ModuleDescriptor
 
     public ErrorCodeSet ErrorCodes { get; init; } = ErrorCodeSet.None;
 
+    /// <summary>Public routes of the module (SEC-09); added to the allowlist and listed in the module PCR.</summary>
+    public IReadOnlyList<string> PublicEndpoints { get; init; } = [];
+
     /// <summary>Outbox kinds projected into a collection by the default projection consumer.</summary>
     public IReadOnlyList<OutboxProjection> OutboxProjections { get; init; } = [];
 }

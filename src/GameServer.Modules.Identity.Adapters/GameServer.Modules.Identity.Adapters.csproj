@@ -11,6 +11,6 @@
     <PackageReference Include="Grpc.Tools" PrivateAssets="all" />
   </ItemGroup>
   <ItemGroup>
-    <Protobuf Include="Protos\identity.proto" GrpcServices="None" />
+    <Protobuf Include="Protos\identity.proto" GrpcServices="None" AdditionalImportDirs="..\..\proto" />
   </ItemGroup>
 </Project>

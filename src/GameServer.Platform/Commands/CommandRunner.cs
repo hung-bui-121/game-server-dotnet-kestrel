@@ -29,6 +29,7 @@ public sealed class CommandRunner(
     PerPlayerCommandLimiter limiter,
     IOutboxRelay relay,
     PlatformMetrics metrics,
+    IEnumerable<ICommandGuard> guards,
     IServiceProvider services) : ICommandRunner
 {
     public async Task<CommandExecution> ExecuteAsync(CommandInvocation invocation, CancellationToken requestAborted)
@@ -46,7 +47,7 @@ public sealed class CommandRunner(
 
         using var lease = await limiter.AcquireAsync(playerId, requestAborted);
 
-        var receiptId = ReceiptIds.Compute(actor.ActorId, descriptor.Operation, invocation.RequestId);
+        var receiptId = ReceiptIds.Compute(actor.ActorId, playerId, descriptor.Operation, invocation.RequestId);
         var receiptKey = ReceiptDocument.KeyFor(receiptId);
 
         for (var round = 1; ; round++)
@@ -63,6 +64,16 @@ public sealed class CommandRunner(
             }
 
             requestAborted.ThrowIfCancellationRequested();
+
+            // Guards (e.g. command-scope bans) apply to new executions only; a committed retry still replays (CMD-04).
+            foreach (var guard in guards)
+            {
+                if (await guard.CheckAsync(actor, descriptor, requestAborted) is { } rejection)
+                {
+                    throw new GameServerException(rejection, $"Command {descriptor.Operation} rejected by {guard.GetType().Name}.");
+                }
+            }
+
             try
             {
                 return await ExecuteTransactionAsync(registration, invocation, playerId, receiptId, receiptKey, requestAborted);
@@ -91,7 +102,6 @@ public sealed class CommandRunner(
         CancellationToken requestAborted)
     {
         var descriptor = registration.Descriptor;
-        var handler = ActivatorUtilities.CreateInstance(services, registration.HandlerType);
         var descriptors = descriptor.Touches.Concat(descriptor.Reads).Distinct(StringComparer.Ordinal).Select(registry.GetAggregate).ToArray();
         var keys = descriptors.Select(d => AggregateDocumentSerializer.KeyFor(d, playerId)).Append(receiptKey).ToArray();
         var attempts = 0;
@@ -102,7 +112,7 @@ public sealed class CommandRunner(
         {
             // No request token below this line: a client disconnect must not abort the commit (PERF-02).
             result = await store.RunTransactionAsync(
-                tx => RunAttemptAsync(tx, attempts++, registration, handler, invocation, playerId, receiptId, receiptKey, descriptors, keys),
+                tx => RunAttemptAsync(tx, attempts++, registration, invocation, playerId, receiptId, receiptKey, descriptors, keys),
                 new TransactionRunOptions(TimeSpan.FromSeconds(options.Transactions.ExpirationSeconds)));
         }
         catch (CommandRejectedException rejected)
@@ -160,7 +170,6 @@ public sealed class CommandRunner(
         ITransactionContext tx,
         int attempt,
         GameServer.Commands.CommandRegistration registration,
-        object handler,
         CommandInvocation invocation,
         string playerId,
         string receiptId,
@@ -190,6 +199,7 @@ public sealed class CommandRunner(
         }
 
         var context = new CommandContext(invocation.Actor, now, config, loaded, descriptor, tx, receiptId);
+        var handler = ActivatorUtilities.CreateInstance(services, registration.HandlerType);
         var outcome = await registration.InvokeAsync(handler, invocation.Request, context);
         if (!outcome.IsOk)
         {

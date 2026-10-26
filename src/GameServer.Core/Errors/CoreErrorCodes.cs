@@ -22,6 +22,11 @@ public static class CoreErrorCodes
     public static readonly ErrorCode CommitUnknownRetry = new(13, "COMMIT_UNKNOWN_RETRY", 503, true, "The outcome is unknown. Retry with the same requestId.");
     public static readonly ErrorCode AggregateTooLarge = new(14, "AGGREGATE_TOO_LARGE", 200, false, "The change would exceed the data size limit.");
     public static readonly ErrorCode Internal = new(15, "INTERNAL", 500, false, "An internal error occurred.");
+    public static readonly ErrorCode AccountSuspended = new(16, "ACCOUNT_SUSPENDED", 403, false, "The account is suspended.");
+    public static readonly ErrorCode AccountDeleted = new(17, "ACCOUNT_DELETED", 401, false, "The account has been deleted.");
+    public static readonly ErrorCode SessionReplaced = new(18, "SESSION_REPLACED", 401, false, "The session was replaced by a newer login.");
+    public static readonly ErrorCode IdentityConflict = new(19, "IDENTITY_CONFLICT", 409, false, "The identity is linked to another account.");
+    public static readonly ErrorCode SwitchAccount = new(20, "SWITCH_ACCOUNT", 409, false, "The identity belongs to another account.");
 
     public static ErrorCodeSet All { get; } = new(
         RangeStart,
@@ -41,5 +46,10 @@ public static class CoreErrorCodes
         ConcurrentUpdate,
         CommitUnknownRetry,
         AggregateTooLarge,
-        Internal);
+        Internal,
+        AccountSuspended,
+        AccountDeleted,
+        SessionReplaced,
+        IdentityConflict,
+        SwitchAccount);
 }

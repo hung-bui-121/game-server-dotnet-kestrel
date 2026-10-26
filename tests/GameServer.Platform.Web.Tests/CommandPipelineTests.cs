@@ -107,6 +107,25 @@ public sealed class CommandPipelineTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Timeout_after_commit_returns_503_and_retry_replays_without_second_effect()
+    {
+        await using var host = await TestHost.StartAsync(settings: s => s["GameServer:Limits:PlayerTimeoutSeconds"] = "1");
+        var player = host.PlayerClient("slow");
+        var requestId = ProtobufHttp.NewRequestId();
+        host.Store.Faults.CommitDelay = TimeSpan.FromMilliseconds(1500);
+        host.Store.Faults.Enqueue(StoreFault.DelayCommit);
+
+        var timedOut = await player.PostProtobufAsync(Increment, new IncrementRequest { By = 4 }, requestId);
+        timedOut.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
+        (await timedOut.ReadErrorAsync()).Code.ShouldBe("REQUEST_TIMEOUT");
+
+        var retry = await (await player.PostProtobufAsync(Increment, new IncrementRequest { By = 4 }, requestId)).ReadProtobufAsync<CommandResponse>();
+        retry.Replayed.ShouldBeTrue();
+        var value = await (await player.PostProtobufAsync("/api/v1/counter/get", new GetCounterRequest())).ReadProtobufAsync<GetCounterResponse>();
+        value.Value.ShouldBe(4);
+    }
+
+    [Fact]
     public async Task Business_rejection_is_200_with_code_and_no_receipt()
     {
         var response = await _player.PostProtobufAsync(Increment, new IncrementRequest { By = 11 }, ProtobufHttp.NewRequestId());
