@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Shouldly" />
+    <ProjectReference Include="..\..\src\GameServer.Platform.Couchbase\GameServer.Platform.Couchbase.csproj" />
+    <ProjectReference Include="..\..\src\GameServer.Platform.Testing\GameServer.Platform.Testing.csproj" />
+    <ProjectReference Include="..\GameServer.Platform.Tests\GameServer.Platform.Tests.csproj" />
+  </ItemGroup>
+</Project>

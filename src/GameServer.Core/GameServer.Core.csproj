@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>GameServer</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Only DI abstractions here; no ASP.NET Core, Couchbase or Protobuf (ARC-01). -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+</Project>

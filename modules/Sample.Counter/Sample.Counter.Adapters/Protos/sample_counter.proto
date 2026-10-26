@@ -1,0 +1,32 @@
+// Module mẫu Sample.Counter (ACC-13, EXT-05).
+syntax = "proto3";
+
+package sample.counter.v1;
+
+option csharp_namespace = "Sample.Counter.Protocol.V1";
+
+// State của aggregate `counter` trên wire (Section.payload).
+message CounterState {
+  int64 value = 1;
+  int32 increments = 2;
+}
+
+// POST /api/v1/counter/increment  (header X-Request-Id bắt buộc)
+message IncrementRequest {
+  int64 by = 1;
+  string note = 2;  // tuỳ chọn, ≤ 64 ký tự; đi vào outbox counter_log
+}
+
+// CommandResponse.result
+message IncrementResult {
+  int64 value = 1;
+}
+
+// POST /api/v1/counter/get  (query, không ghi)
+message GetCounterRequest {}
+
+message GetCounterResponse {
+  int64 value = 1;
+  int64 rev = 2;
+  int64 server_time_utc_ms = 3;
+}

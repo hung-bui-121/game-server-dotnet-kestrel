@@ -1,0 +1,12 @@
+// Identity module wire contract (slice 001: profile section only; login/session in slice 002).
+syntax = "proto3";
+
+package gameserver.identity.v1;
+
+option csharp_namespace = "GameServer.Modules.Identity.Protocol.V1";
+
+// Section.payload of aggregate `profile`.
+message ProfileState {
+  string display_name = 1;
+  int64 session_epoch = 2;
+}

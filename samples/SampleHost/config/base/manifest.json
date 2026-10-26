@@ -1,0 +1,5 @@
+{
+  "label": "sample-1",
+  "files": ["counter.json"],
+  "clientVisible": ["counter.json"]
+}

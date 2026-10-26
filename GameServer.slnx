@@ -1,0 +1,26 @@
+<Solution>
+  <Folder Name="/modules/" />
+  <Folder Name="/modules/Sample.Counter/">
+    <Project Path="modules/Sample.Counter/Sample.Counter.Adapters/Sample.Counter.Adapters.csproj" />
+    <Project Path="modules/Sample.Counter/Sample.Counter/Sample.Counter.csproj" />
+  </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/SampleHost/SampleHost.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/GameServer.Core/GameServer.Core.csproj" />
+    <Project Path="src/GameServer.Modules.Identity.Adapters/GameServer.Modules.Identity.Adapters.csproj" />
+    <Project Path="src/GameServer.Modules.Identity/GameServer.Modules.Identity.csproj" />
+    <Project Path="src/GameServer.Platform.Couchbase/GameServer.Platform.Couchbase.csproj" />
+    <Project Path="src/GameServer.Platform.Testing/GameServer.Platform.Testing.csproj" />
+    <Project Path="src/GameServer.Platform.Web/GameServer.Platform.Web.csproj" />
+    <Project Path="src/GameServer.Platform/GameServer.Platform.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/GameServer.Architecture.Tests/GameServer.Architecture.Tests.csproj" />
+    <Project Path="tests/GameServer.Platform.Couchbase.IntegrationTests/GameServer.Platform.Couchbase.IntegrationTests.csproj" />
+    <Project Path="tests/GameServer.Platform.Tests/GameServer.Platform.Tests.csproj" />
+    <Project Path="tests/GameServer.Platform.Web.Tests/GameServer.Platform.Web.Tests.csproj" />
+    <Project Path="tests/Sample.Counter.Tests/Sample.Counter.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,39 @@
+root = true
+
+[*]
+charset = utf-8
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{csproj,props,targets,slnx,json,yml,yaml,proto}]
+indent_size = 2
+
+[*.cs]
+# Framework is C#-only; cross-language keyword conflicts (Get/Set/Error) do not apply.
+dotnet_diagnostic.CA1716.severity = none
+# Static factories on generic result types (CommandOutcome<T>.Ok) are the intended API.
+dotnet_diagnostic.CA1000.severity = none
+# ASP.NET Core has no SynchronizationContext; ConfigureAwait noise is not useful here.
+dotnet_diagnostic.CA2007.severity = none
+# LoggerMessage source generation is adopted in slice 005 (observability).
+dotnet_diagnostic.CA1848.severity = none
+dotnet_diagnostic.CA1873.severity = none
+# Types are activated by DI.
+dotnet_diagnostic.CA1812.severity = none
+# Pipeline boundaries intentionally catch all exceptions to map them to error codes.
+dotnet_diagnostic.CA1031.severity = none
+# Nullable reference types already cover argument null checks.
+dotnet_diagnostic.CA1062.severity = none
+# Culture: identifiers and wire values are invariant by design.
+dotnet_diagnostic.CA1305.severity = none
+dotnet_diagnostic.CA1307.severity = none
+dotnet_diagnostic.CA1309.severity = none
+dotnet_diagnostic.CA1310.severity = none
+dotnet_diagnostic.CA1311.severity = none
+
+[tests/**.cs]
+dotnet_diagnostic.CA1707.severity = none
+dotnet_diagnostic.CA1515.severity = none
+dotnet_diagnostic.CA2000.severity = none

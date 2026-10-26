@@ -1,0 +1,84 @@
+// Contract wire chung của Player API (API-01, API-04, API-08, API-10, TIME-01).
+// Field number đã phát hành không được đổi/tái sử dụng (API-03); field bỏ phải `reserved`.
+syntax = "proto3";
+
+package gameserver.core.v1;
+
+option csharp_namespace = "GameServer.Protocol.Core.V1";
+
+// Lỗi chung cho mọi Player endpoint, kể cả lỗi do middleware sinh (401/403/413/415/429/503).
+message ErrorEnvelope {
+  string code = 1;            // tên trong error-code catalog (API-11), ví dụ "CONCURRENT_UPDATE"
+  int32 code_number = 2;      // số theo dải của module
+  string message = 3;         // thông điệp an toàn
+  string request_id = 4;      // correlation id
+  bool retryable = 5;
+  int32 retry_after_ms = 6;   // chỉ khi retryable
+  int64 server_time_utc_ms = 7;
+  string config_version = 8;
+}
+
+// Một aggregate client-visible (section ≡ aggregate, API-10).
+message Section {
+  string id = 1;              // aggregateId
+  int64 rev = 2;
+  bytes payload = 3;          // message state của module, serialize Protobuf
+}
+
+message SectionUpdate {
+  string id = 1;
+  int64 base_rev = 2;
+  int64 new_rev = 3;
+  bytes payload = 4;
+  bool full = 5;              // P0 luôn true
+}
+
+// Response của mọi command thay đổi trạng thái.
+message CommandResponse {
+  string code = 1;            // "OK" hoặc mã nghiệp vụ (HTTP 200)
+  int32 code_number = 2;
+  string receipt_id = 3;      // rỗng khi bị từ chối nghiệp vụ
+  repeated SectionUpdate updates = 4;  // chỉ aggregate đã đổi
+  bytes result = 5;           // message kết quả của module (= resultCompact)
+  string config_version = 6;
+  int64 server_time_utc_ms = 7;
+  bool replayed = 8;          // true nếu trả từ receipt đã commit
+}
+
+message SnapshotRequest {
+  repeated string sections = 1;  // rỗng = mọi aggregate client-visible
+}
+
+message SnapshotResponse {
+  repeated Section sections = 1;
+  string config_version = 2;
+  int64 server_time_utc_ms = 3;
+}
+
+message ReceiptView {
+  string receipt_id = 1;
+  string operation = 2;
+  string request_id = 3;
+  string result_code = 4;
+  bytes result = 5;
+  repeated AggregateRev aggregates = 6;
+  string config_version = 7;
+  int64 committed_at_utc_ms = 8;
+  repeated OutboxEntryView outbox = 9;
+  int64 server_time_utc_ms = 10;
+}
+
+message AggregateRev {
+  string aggregate_id = 1;
+  int64 new_rev = 2;
+}
+
+message OutboxEntryView {
+  string entry_id = 1;
+  string kind = 2;
+  string payload_json = 3;
+}
+
+message TimeResponse {
+  int64 server_time_utc_ms = 1;
+}

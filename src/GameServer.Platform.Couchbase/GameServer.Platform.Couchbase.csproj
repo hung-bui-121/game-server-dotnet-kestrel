@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\GameServer.Platform\GameServer.Platform.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="CouchbaseNetClient" />
+  </ItemGroup>
+</Project>

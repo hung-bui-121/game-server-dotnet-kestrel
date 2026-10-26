@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\GameServer.Platform.Web\GameServer.Platform.Web.csproj" />
+    <ProjectReference Include="..\..\src\GameServer.Platform.Testing\GameServer.Platform.Testing.csproj" />
+    <ProjectReference Include="..\..\src\GameServer.Platform.Couchbase\GameServer.Platform.Couchbase.csproj" />
+    <ProjectReference Include="..\..\src\GameServer.Modules.Identity.Adapters\GameServer.Modules.Identity.Adapters.csproj" />
+    <ProjectReference Include="..\..\modules\Sample.Counter\Sample.Counter.Adapters\Sample.Counter.Adapters.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Update="config\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
