@@ -9,10 +9,10 @@
 | 002 identity-session (guest) | `002-identity-session` (tách từ 001) | DONE 29/29 task (`16d8f5a`) |
 | 003 SampleGame (economy, GetConfig, IAP fake + Apple/Google, battle, shop, cheat) | `003-sample-game` (tách từ 002) | DONE 26/26 task |
 | 004 GM backend + frontend tối thiểu | `004-gm` (tách từ 003) | DONE 18/18 task (`71dfc84` feat, `36d5eed` sửa sau review tech-lead: 0 Blocker, 4 Major, 4 Minor — đã sửa hết) |
-| 005 observability/ops | — | |
+| 005 observability/ops | `005-observability-ops` (tách từ 004) | DONE 15/15 task (`86fbafa` feat, `bd7b471` sửa sau review tech-lead: 0 Blocker, 5 Major, 6 Minor — đã sửa hết) |
 | 006 Unity SDK | — | |
 
-Test (26/10, cuối 004): 286 — 253 pass, 33 skip (integration Couchbase, thiếu `COUCHBASE_CONNSTR`), 0 fail.
+Test (26/10, cuối 005): 311 — 278 pass, 33 skip (integration Couchbase, thiếu `COUCHBASE_CONNSTR`), 0 fail.
 
 **Quyết định owner 26/10/2026:** 6 slice tuần tự; không Docker/Couchbase trên máy → unit test bằng store
 in-memory, integration/TST-04 viết sẵn và skip có lý do; chỉ dừng review sau spec+plan 001.
@@ -35,5 +35,11 @@ Heredoc trong Bash tool hay lỗi với ký tự đặc biệt → viết script
   cho command `Gm`, 0 cho command khác; audit = outbox `gm_audit` → projection. `IPagedQueryStore` keyset, trường chuỗi;
   N1QL paging **chưa chạy trên Couchbase thật** (cần EXPLAIN). Operation phải đúng 2 đoạn `<x>.<y>` → `progression.set`.
 - `player.read` khai ở cả module gm và economy (catalog = hợp) để Economy không phụ thuộc gm.
+- Observability (005): project `GameServer.Platform.Observability`, `gameServer.AddObservability()`. Serilog `AddSerilog(...,
+  preserveStaticLogger: true, writeToProviders: false)` — **bắt buộc** preserveStaticLogger, nếu không host này dispose sẽ đóng
+  logger của host khác (test song song mất log). `LogSinkMonitor` static (SelfLog là process-wide). Health `/health/live|ready`
+  (Public, chỉ status, ready cache 1 s), chi tiết `GET /gm/v1/health` (`ops.read`). Drain: `IHostedLifecycleService.StoppingAsync`
+  chạy **trước** `ApplicationStopping` → dùng `ShutdownSignal`. TestHost đặt `DrainDelaySeconds=0`.
+- Chưa kiểm được trên hạ tầng thật: Couchbase (TST-04, N1QL paging EXPLAIN), OTLP tới collector thật, Apple/Google sandbox.
 
-**Việc tiếp theo:** slice 005 observability/ops (OTel, Serilog, health live/ready, metrics OBS-01, graceful shutdown, ForwardedHeaders) tách từ `004-gm`.
+**Việc tiếp theo:** slice 006 Unity SDK tách từ `005-observability-ops`.
