@@ -124,4 +124,7 @@ public sealed class LimitSettings
 
     /// <summary>Queue length = factor × permits.</summary>
     public int QueueFactor { get; set; } = 2;
+
+    /// <summary>Maximum GetConfig bundle size (CFG-03, API-06).</summary>
+    public int ConfigBundleBytes { get; set; } = 1024 * 1024;
 }

@@ -83,3 +83,20 @@ message OutboxEntryView {
 message TimeResponse {
   int64 server_time_utc_ms = 1;
 }
+
+// POST /api/v1/config/get  (Player, CFG-03)
+message GetConfigRequest {
+  string config_version = 1;   // version the client already has; empty = none
+}
+
+message ConfigFile {
+  string name = 1;
+  bytes content = 2;           // file bytes after base/env overlay
+}
+
+message GetConfigResponse {
+  string config_version = 1;
+  bool not_modified = 2;       // true when the client already has config_version
+  repeated ConfigFile files = 3;   // clientVisible files only
+  int64 server_time_utc_ms = 4;
+}

@@ -1,0 +1,26 @@
+// Economy module wire contract (slice 003).
+syntax = "proto3";
+
+package gameserver.economy.v1;
+
+option csharp_namespace = "GameServer.Modules.Economy.Protocol.V1";
+
+// Section.payload of aggregate `wallet`.
+message WalletState {
+  map<string, int64> balances = 1;
+}
+
+// Section.payload of aggregate `inventory`.
+message InventoryState {
+  map<string, int64> items = 1;
+}
+
+// POST /api/v1/cheat/grant  (Dev profile, Development/Test only)
+message CheatGrantRequest {
+  string resource = 1;
+  int64 quantity = 2;
+}
+
+message CheatGrantResult {
+  int64 balance_after = 1;
+}

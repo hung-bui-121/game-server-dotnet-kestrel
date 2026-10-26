@@ -22,6 +22,7 @@ internal static class CoreEndpoints
     public const string TimeRoute = "/v1/time";
     public const string SnapshotRoute = "/api/v1/player/snapshot";
     public const string ReceiptRoute = "/api/v1/player/receipts/{receiptId}";
+    public const string ConfigRoute = "/api/v1/config/get";
 
     public static void MapPublic(IEndpointRouteBuilder routes) =>
         routes.MapGet(TimeRoute, async (HttpContext http, IClock clock) =>
@@ -50,6 +51,33 @@ internal static class CoreEndpoints
                     Rev = a.Rev,
                     Payload = mappers.ToPayload(a.Descriptor.AggregateId, a.State),
                 }));
+                await ProtobufBinding.WriteAsync(http, response);
+            })
+            .AsPlayerEndpoint();
+
+        routes.MapPost(ConfigRoute, async (HttpContext http) =>
+            {
+                var services = http.RequestServices;
+                var options = services.GetRequiredService<GameServerOptions>();
+                var request = ProtobufBinding.Parse<GetConfigRequest>(await ProtobufBinding.ReadBodyAsync(http, options.Limits.PlayerBodyBytes));
+                var config = services.GetRequiredService<IGameConfig>();
+                var response = new GetConfigResponse
+                {
+                    ConfigVersion = config.ConfigVersion,
+                    ServerTimeUtcMs = services.GetRequiredService<IClock>().UtcNow.ToUnixTimeMilliseconds(),
+                    NotModified = string.Equals(request.ConfigVersion, config.ConfigVersion, StringComparison.Ordinal),
+                };
+                if (!response.NotModified)
+                {
+                    response.Files.AddRange(config.ClientVisibleFiles
+                        .OrderBy(name => name, StringComparer.Ordinal)
+                        .Select(name => new ConfigFile { Name = name, Content = ByteString.CopyFrom(config.GetFileBytes(name).Span) }));
+                    if (response.CalculateSize() > options.Limits.ConfigBundleBytes)
+                    {
+                        throw new GameServerException(CoreErrorCodes.PayloadTooLarge, $"Config bundle exceeds {options.Limits.ConfigBundleBytes} bytes.");
+                    }
+                }
+
                 await ProtobufBinding.WriteAsync(http, response);
             })
             .AsPlayerEndpoint();

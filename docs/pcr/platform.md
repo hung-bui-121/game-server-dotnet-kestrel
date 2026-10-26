@@ -56,6 +56,8 @@ Budget tổng = giá trị × số instance.
 | Receipt / resultCompact | ≤ 4 KiB / ≤ 512 B; vượt = lỗi lập trình (500) |
 | Lookup | `GET /api/v1/player/receipts/{receiptId}` — chỉ actor sở hữu; actor khác nhận 404 |
 | Guard (`ICommandGuard`, ví dụ ban theo nhóm command) | chỉ chặn lần thực thi mới; retry của command đã commit vẫn replay |
+| Commit kèm mã nghiệp vụ | `CommandOutcome.Commit(result, code)`: state + receipt được ghi, `resultCode = code`, HTTP 200; replay trả lại đúng mã |
+| Id xác định | `ctx.NewId(purpose)` / `ctx.NewSeed(purpose)` = SHA-256(receiptId|purpose) — ổn định qua attempt và retry |
 
 ## 4. Revision và section (semantic — API-10)
 
@@ -122,6 +124,9 @@ startup chặn ngoài Development/Test.
 | --- | --- |
 | `GET /v1/time` | server time (TIME-01) |
 | `POST /api/v1/identity/login/guest` | guest login (khai báo bởi module identity qua `ModuleDescriptor.PublicEndpoints`) |
+
+`GetConfig` (`POST /api/v1/config/get`) là endpoint **Player** (SEC-09, CFG-03): trả các file `clientVisible` (bytes sau
+overlay), `not_modified` khi client gửi đúng version; bundle > `GameServer:Limits:ConfigBundleBytes` (1 MiB) → 413.
 
 Health endpoints (`/health/live`, `/health/ready`) thêm ở slice 005.
 

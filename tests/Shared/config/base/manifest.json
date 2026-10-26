@@ -1,5 +1,16 @@
 {
   "label": "test-1",
-  "files": ["counter.json"],
-  "clientVisible": ["counter.json"]
+  "files": [
+    "counter.json",
+    "resources.json",
+    "shop.json",
+    "battle.json",
+    "iap.json"
+  ],
+  "clientVisible": [
+    "counter.json",
+    "resources.json",
+    "shop.json",
+    "battle.json"
+  ]
 }

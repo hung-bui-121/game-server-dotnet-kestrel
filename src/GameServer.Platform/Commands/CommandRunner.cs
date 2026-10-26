@@ -163,7 +163,8 @@ public sealed class CommandRunner(
                 w.NewRev,
                 AggregateDocumentSerializer.DeserializeState(w.NewStateJson, w.Before.Descriptor.StateType)))
             .ToArray();
-        return new CommandExecution(CoreErrorCodes.Ok, receiptId, updates, result.ResultBytes, false, config.ConfigVersion);
+        var code = registry.Errors.FindByName(receipt.ResultCode) ?? CoreErrorCodes.Ok;
+        return new CommandExecution(code, receiptId, updates, result.ResultBytes, false, config.ConfigVersion);
     }
 
     private async Task<AttemptResult> RunAttemptAsync(
@@ -250,7 +251,8 @@ public sealed class CommandRunner(
             await tx.InsertAsync(claimKey, claim);
         }
 
-        var receipt = BuildReceipt(invocation, descriptor.Operation, playerId, receiptId, resultBytes, loaded, writes, context, now);
+        var resultCode = outcome.Error ?? CoreErrorCodes.Ok;
+        var receipt = BuildReceipt(invocation, descriptor.Operation, playerId, receiptId, resultCode, resultBytes, loaded, writes, context, now);
         var receiptJson = receipt.ToJson();
         var receiptSize = ReceiptDocument.SizeOf(receiptJson);
         if (receiptSize > options.Commands.ReceiptMaxBytes)
@@ -277,6 +279,7 @@ public sealed class CommandRunner(
         string operation,
         string playerId,
         string receiptId,
+        GameServer.Errors.ErrorCode resultCode,
         byte[] resultBytes,
         Dictionary<string, LoadedAggregate> loaded,
         List<AggregateWrite> writes,
@@ -298,7 +301,7 @@ public sealed class CommandRunner(
             Operation = operation,
             RequestId = invocation.RequestId,
             BodyHash = invocation.BodyHash,
-            ResultCode = CoreErrorCodes.Ok.Name,
+            ResultCode = resultCode.Name,
             ResultCompact = Convert.ToBase64String(resultBytes),
             ConfigVersion = config.ConfigVersion,
             SchemaVersions = loaded.Values.ToDictionary(l => l.Descriptor.AggregateId, l => l.Descriptor.SchemaVersion, StringComparer.Ordinal),

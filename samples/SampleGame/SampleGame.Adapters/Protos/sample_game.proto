@@ -1,0 +1,74 @@
+// SampleGame wire contract (slice 003, SMP-02..05).
+syntax = "proto3";
+
+package samplegame.v1;
+
+option csharp_namespace = "SampleGame.Protocol.V1";
+
+// Section.payload of aggregate `progression`.
+message ProgressionState {
+  int32 level = 1;
+  int64 xp = 2;
+  int32 stage = 3;
+}
+
+message ActiveBattle {
+  string battle_id = 1;
+  int32 stage = 2;
+  int64 started_at_utc_ms = 3;
+  int64 expires_at_utc_ms = 4;
+  int64 seed = 5;
+}
+
+message BattleStats {
+  int32 started = 1;
+  int32 won = 2;
+  int32 lost = 3;
+  int32 abandoned = 4;
+  int32 expired = 5;
+}
+
+// Section.payload of aggregate `battle`.
+message BattleState {
+  ActiveBattle active_battle = 1;   // absent when no battle is open
+  BattleStats stats = 2;
+}
+
+// POST /api/v1/battle/start
+message StartBattleRequest {
+  int32 stage = 1;
+}
+
+message StartBattleResult {
+  string battle_id = 1;
+  int64 seed = 2;
+  int64 expires_at_utc_ms = 3;
+}
+
+// POST /api/v1/battle/end
+message EndBattleRequest {
+  string battle_id = 1;
+  bool won = 2;
+}
+
+message RewardLine {
+  string resource = 1;
+  int64 quantity = 2;
+}
+
+message EndBattleResult {
+  repeated RewardLine rewards = 1;
+  int64 xp_gained = 2;
+  int32 stage_unlocked = 3;
+}
+
+// POST /api/v1/shop/buy
+message BuyItemRequest {
+  string shop_item_id = 1;
+  int32 quantity = 2;
+}
+
+message BuyItemResult {
+  int64 price_paid = 1;
+  int64 granted = 2;
+}

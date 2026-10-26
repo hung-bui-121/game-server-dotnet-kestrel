@@ -5,6 +5,9 @@
     <ProjectReference Include="..\..\src\GameServer.Platform.Couchbase\GameServer.Platform.Couchbase.csproj" />
     <ProjectReference Include="..\..\src\GameServer.Modules.Identity.Adapters\GameServer.Modules.Identity.Adapters.csproj" />
     <ProjectReference Include="..\..\modules\Sample.Counter\Sample.Counter.Adapters\Sample.Counter.Adapters.csproj" />
+    <ProjectReference Include="..\..\src\GameServer.Modules.Economy.Adapters\GameServer.Modules.Economy.Adapters.csproj" />
+    <ProjectReference Include="..\..\src\GameServer.Modules.Iap.Adapters\GameServer.Modules.Iap.Adapters.csproj" />
+    <ProjectReference Include="..\SampleGame\SampleGame.Adapters\SampleGame.Adapters.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Content Update="config\**\*" CopyToOutputDirectory="PreserveNewest" />

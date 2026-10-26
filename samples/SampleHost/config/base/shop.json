@@ -1,0 +1,24 @@
+{
+  "items": {
+    "potion_pack": {
+      "price": {
+        "resource": "gold",
+        "amount": 60
+      },
+      "grant": {
+        "resource": "potion",
+        "quantity": 1
+      }
+    },
+    "sword": {
+      "price": {
+        "resource": "gem",
+        "amount": 50
+      },
+      "grant": {
+        "resource": "sword",
+        "quantity": 1
+      }
+    }
+  }
+}

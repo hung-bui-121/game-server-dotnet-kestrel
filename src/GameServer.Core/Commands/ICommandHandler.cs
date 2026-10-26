@@ -16,10 +16,15 @@ public interface ICommandHandler<in TRequest, TResult>
 /// <summary>Untyped view of a command outcome.</summary>
 public interface ICommandOutcome
 {
+    /// <summary>True when the changes are committed (with or without a business code).</summary>
     bool IsOk { get; }
 
     object? Result { get; }
 
+    /// <summary>
+    /// Business code returned with HTTP 200: the rejection reason when <see cref="IsOk"/> is false, or the code of a
+    /// committed outcome (e.g. BATTLE_EXPIRED); null means OK.
+    /// </summary>
     ErrorCode? Error { get; }
 }
 
@@ -42,6 +47,9 @@ public readonly record struct CommandOutcome<TResult> : ICommandOutcome
     object? ICommandOutcome.Result => Result;
 
     public static CommandOutcome<TResult> Ok(TResult result) => new(true, result, null);
+
+    /// <summary>Commits the changes but reports a business code (HTTP 200), e.g. an expired battle that is cleared.</summary>
+    public static CommandOutcome<TResult> Commit(TResult result, ErrorCode code) => new(true, result, code);
 
     /// <summary>Rejects the command: nothing is written and no receipt is created.</summary>
     public static CommandOutcome<TResult> Reject(ErrorCode error) => new(false, default, error);
@@ -75,4 +83,13 @@ public interface ICommandContext
 
     /// <summary>Adds an outbox entry committed inside the receipt (JOB-02).</summary>
     void AddOutbox(string kind, object payload);
+
+    /// <summary>
+    /// Deterministic id for <paramref name="purpose"/>: identical across transaction attempts and request retries of this
+    /// command (derived from the receipt), different for every other command.
+    /// </summary>
+    string NewId(string purpose);
+
+    /// <summary>Deterministic 64-bit seed for <paramref name="purpose"/> (PLY-05: server-issued randomness).</summary>
+    long NewSeed(string purpose);
 }

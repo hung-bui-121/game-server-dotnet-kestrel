@@ -1,0 +1,22 @@
+// IAP module wire contract (slice 003).
+syntax = "proto3";
+
+package gameserver.iap.v1;
+
+option csharp_namespace = "GameServer.Modules.Iap.Protocol.V1";
+
+// POST /api/v1/iap/purchase  (Player; X-Request-Id)
+message IapPurchaseRequest {
+  string store = 1;            // "google" | "apple"
+  string product_id = 2;
+  string receipt_payload = 3;  // Google: purchaseToken; Apple: JWS signedTransactionInfo
+}
+
+message GrantedResource {
+  string resource = 1;
+  int64 quantity = 2;
+}
+
+message IapPurchaseResult {
+  repeated GrantedResource granted = 1;
+}

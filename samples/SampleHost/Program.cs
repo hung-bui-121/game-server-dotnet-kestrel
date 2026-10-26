@@ -1,9 +1,12 @@
+using GameServer.Modules.Economy;
+using GameServer.Modules.Iap;
 using GameServer.Modules.Identity;
 using GameServer.Platform;
 using GameServer.Platform.Couchbase;
 using GameServer.Platform.Testing;
 using GameServer.Platform.Web.Hosting;
 using Sample.Counter.Adapters;
+using SampleGame.Adapters;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,9 +27,19 @@ if (gameServer.Options.AllowsDevelopmentTools)
     gameServer.UseTestAuthentication();
 }
 
+// SampleGame (G7): Login (identity), StartBattle/EndBattle/BuyVirtualItem (sample.game), IAPurchase (iap).
 gameServer
     .AddModule<IdentityModule>()
+    .AddModule<EconomyModule>()
+    .AddModule<IapModule>()
+    .AddModule<SampleGameModule>()
     .AddModule<CounterModule>();
+
+if (gameServer.Options.AllowsDevelopmentTools)
+{
+    // Cheat endpoints (OPS-09) never exist outside Development/Test.
+    gameServer.AddModule<CheatModule>();
+}
 
 var app = builder.Build();
 try

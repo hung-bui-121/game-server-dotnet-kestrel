@@ -7,12 +7,12 @@
 | --- | --- | --- |
 | 001 platform-core | `001-platform-core` | DONE 88/88 task; review tech-lead (1 Blocker, 6 Major) đã sửa trên nhánh 002 (`801304a`) |
 | 002 identity-session (guest) | `002-identity-session` (tách từ 001) | DONE 29/29 task (`16d8f5a`) |
-| 003 SampleGame commands (economy, GetConfig, IAP verifier giả) | — | tiếp theo |
+| 003 SampleGame (economy, GetConfig, IAP fake + Apple/Google, battle, shop, cheat) | `003-sample-game` (tách từ 002) | DONE 26/26 task |
 | 004 GM backend + frontend tối thiểu | — | |
 | 005 observability/ops | — | |
 | 006 Unity SDK | — | |
 
-Test (26/10, cuối 002): 194 — 165 pass, 29 skip (integration Couchbase, thiếu `COUCHBASE_CONNSTR`), 0 fail.
+Test (26/10, cuối 003): 235 — 206 pass, 29 skip (integration Couchbase, thiếu `COUCHBASE_CONNSTR`), 0 fail.
 
 **Quyết định owner 26/10/2026:** 6 slice tuần tự; không Docker/Couchbase trên máy → unit test bằng store
 in-memory, integration/TST-04 viết sẵn và skip có lý do; chỉ dừng review sau spec+plan 001.
@@ -31,4 +31,4 @@ Heredoc trong Bash tool hay lỗi với ký tự đặc biệt → viết script
 - Xác thực theo profile endpoint (SEC-02); test auth + in-memory chỉ Development/Test.
 - Outbox: backoff 30 s×2^n ≤ 1 h, dead-letter sau 10 lần.
 
-**Việc tiếp theo:** slice 003 trên nhánh mới tách từ `002-identity-session`.
+**Việc tiếp theo:** slice 004 GM (backend permission/scope/audit, lookup, adjust, frontend tối thiểu) tách từ `003-sample-game`.

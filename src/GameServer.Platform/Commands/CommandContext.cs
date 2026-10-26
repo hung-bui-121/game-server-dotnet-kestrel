@@ -1,3 +1,6 @@
+using System.Buffers.Binary;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using GameServer.Actors;
@@ -117,6 +120,16 @@ internal sealed class CommandContext : ICommandContext
         var node = JsonSerializer.SerializeToNode(payload, payload.GetType(), GameServerJson.Options);
         _outbox.Add(new OutboxEntry($"{_receiptId}:{_outbox.Count}", kind, node));
     }
+
+    public string NewId(string purpose)
+    {
+        var hash = Hash(purpose);
+        return Convert.ToHexStringLower(hash.AsSpan(0, 10));
+    }
+
+    public long NewSeed(string purpose) => BinaryPrimitives.ReadInt64LittleEndian(Hash("seed|" + purpose));
+
+    private byte[] Hash(string purpose) => SHA256.HashData(Encoding.UTF8.GetBytes(_receiptId + "|" + purpose));
 
     /// <summary>New serialized state of an aggregate if the handler called <see cref="Set{TState}"/>.</summary>
     public bool TryGetNewState(string aggregateId, out byte[] json) => _newStates.TryGetValue(aggregateId, out json!);

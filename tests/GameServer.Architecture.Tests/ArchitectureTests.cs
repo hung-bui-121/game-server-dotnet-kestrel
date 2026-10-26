@@ -1,5 +1,7 @@
 using System.Reflection;
 using GameServer.Commands;
+using GameServer.Modules.Economy;
+using GameServer.Modules.Iap;
 using GameServer.Modules.Identity;
 using GameServer.Platform.Commands;
 using GameServer.Platform.Couchbase;
@@ -9,6 +11,8 @@ using GameServer.Platform.Web.Hosting;
 using NetArchTest.Rules;
 using Sample.Counter;
 using Sample.Counter.Adapters;
+using SampleGame;
+using SampleGame.Adapters;
 using Shouldly;
 
 namespace GameServer.Architecture.Tests;
@@ -28,11 +32,20 @@ public sealed class ArchitectureTests
     private static readonly Assembly IdentityAdapters = typeof(IdentityModule).Assembly;
     private static readonly Assembly CounterBusiness = typeof(IncrementHandler).Assembly;
     private static readonly Assembly CounterAdapters = typeof(CounterModule).Assembly;
+    private static readonly Assembly EconomyBusiness = typeof(EconomyOperations).Assembly;
+    private static readonly Assembly EconomyAdapters = typeof(EconomyModule).Assembly;
+    private static readonly Assembly IapBusiness = typeof(IapPurchaseHandler).Assembly;
+    private static readonly Assembly IapAdapters = typeof(IapModule).Assembly;
+    private static readonly Assembly GameBusiness = typeof(EndBattleHandler).Assembly;
+    private static readonly Assembly GameAdapters = typeof(SampleGameModule).Assembly;
 
-    private static readonly Assembly[] BusinessAssemblies = [Core, IdentityBusiness, CounterBusiness];
+    private static readonly Assembly[] BusinessAssemblies = [Core, IdentityBusiness, CounterBusiness, EconomyBusiness, IapBusiness, GameBusiness];
+
+    private static readonly Assembly[] ModuleAssemblies =
+        [IdentityBusiness, IdentityAdapters, CounterBusiness, CounterAdapters, EconomyBusiness, EconomyAdapters, IapBusiness, IapAdapters, GameBusiness, GameAdapters];
 
     private static readonly Assembly[] AllFrameworkAndModules =
-        [Core, Platform, PlatformWeb, PlatformCouchbase, PlatformTesting, IdentityBusiness, IdentityAdapters, CounterBusiness, CounterAdapters];
+        [Core, Platform, PlatformWeb, PlatformCouchbase, PlatformTesting, .. ModuleAssemblies];
 
     private static void ShouldPass(ConditionList rule, string because)
     {
@@ -88,7 +101,7 @@ public sealed class ArchitectureTests
     [Fact]
     public void Modules_do_not_touch_the_document_store_directly()
     {
-        foreach (var assembly in new[] { IdentityBusiness, IdentityAdapters, CounterBusiness, CounterAdapters })
+        foreach (var assembly in ModuleAssemblies)
         {
             ShouldPass(
                 Types.InAssembly(assembly).ShouldNot().HaveDependencyOn(typeof(ITransactionalDocumentStore).FullName!),

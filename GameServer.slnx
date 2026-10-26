@@ -7,8 +7,16 @@
   <Folder Name="/samples/">
     <Project Path="samples/SampleHost/SampleHost.csproj" />
   </Folder>
+  <Folder Name="/samples/SampleGame/">
+    <Project Path="samples/SampleGame/SampleGame.Adapters/SampleGame.Adapters.csproj" />
+    <Project Path="samples/SampleGame/SampleGame/SampleGame.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/GameServer.Core/GameServer.Core.csproj" />
+    <Project Path="src/GameServer.Modules.Economy.Adapters/GameServer.Modules.Economy.Adapters.csproj" />
+    <Project Path="src/GameServer.Modules.Economy/GameServer.Modules.Economy.csproj" />
+    <Project Path="src/GameServer.Modules.Iap.Adapters/GameServer.Modules.Iap.Adapters.csproj" />
+    <Project Path="src/GameServer.Modules.Iap/GameServer.Modules.Iap.csproj" />
     <Project Path="src/GameServer.Modules.Identity.Adapters/GameServer.Modules.Identity.Adapters.csproj" />
     <Project Path="src/GameServer.Modules.Identity/GameServer.Modules.Identity.csproj" />
     <Project Path="src/GameServer.Platform.Couchbase/GameServer.Platform.Couchbase.csproj" />
@@ -27,5 +35,6 @@
     <Project Path="tests/GameServer.Platform.Tests/GameServer.Platform.Tests.csproj" />
     <Project Path="tests/GameServer.Platform.Web.Tests/GameServer.Platform.Web.Tests.csproj" />
     <Project Path="tests/Sample.Counter.Tests/Sample.Counter.Tests.csproj" />
+    <Project Path="tests/SampleGame.Tests/SampleGame.Tests.csproj" />
   </Folder>
 </Solution>

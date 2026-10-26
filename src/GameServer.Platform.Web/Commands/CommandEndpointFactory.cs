@@ -30,6 +30,43 @@ public static class CommandEndpointFactory
         Func<TResult, IMessage> toWire)
         where TWireRequest : IMessage<TWireRequest>, new()
         where TRequest : notnull =>
+        routes.MapCommand<TWireRequest, TRequest, TResult>(pattern, operation, (wire, _) => Task.FromResult(toDomain(wire)), toWire).AsPlayerEndpoint();
+
+    /// <summary>
+    /// Player command whose domain request needs async work before the transaction (e.g. IAP receipt verification,
+    /// IAP-01: outbound calls happen before the runner, never inside the transaction).
+    /// </summary>
+    public static IEndpointConventionBuilder MapPlayerCommand<TWireRequest, TRequest, TResult>(
+        this IEndpointRouteBuilder routes,
+        string pattern,
+        string operation,
+        Func<TWireRequest, HttpContext, Task<TRequest>> toDomainAsync,
+        Func<TResult, IMessage> toWire)
+        where TWireRequest : IMessage<TWireRequest>, new()
+        where TRequest : notnull =>
+        routes.MapCommand(pattern, operation, toDomainAsync, toWire).AsPlayerEndpoint();
+
+    /// <summary>Development-only command (OPS-09): profile Dev, Protobuf, forbidden in Production by the validator.</summary>
+    public static IEndpointConventionBuilder MapDevCommand<TWireRequest, TRequest, TResult>(
+        this IEndpointRouteBuilder routes,
+        string pattern,
+        string operation,
+        Func<TWireRequest, TRequest> toDomain,
+        Func<TResult, IMessage> toWire)
+        where TWireRequest : IMessage<TWireRequest>, new()
+        where TRequest : notnull =>
+        routes.MapCommand<TWireRequest, TRequest, TResult>(pattern, operation, (wire, _) => Task.FromResult(toDomain(wire)), toWire)
+            .AsDevEndpoint()
+            .WithMetadata(ProtobufEndpointMetadata.Instance);
+
+    private static IEndpointConventionBuilder MapCommand<TWireRequest, TRequest, TResult>(
+        this IEndpointRouteBuilder routes,
+        string pattern,
+        string operation,
+        Func<TWireRequest, HttpContext, Task<TRequest>> toDomainAsync,
+        Func<TResult, IMessage> toWire)
+        where TWireRequest : IMessage<TWireRequest>, new()
+        where TRequest : notnull =>
         routes.MapPost(pattern, async (HttpContext http) =>
             {
                 var services = http.RequestServices;
@@ -37,7 +74,7 @@ public static class CommandEndpointFactory
                 var body = await ProtobufBinding.ReadBodyAsync(http, options.Limits.PlayerBodyBytes);
                 var requestId = CorrelationMiddleware.GetClientRequestId(http)
                     ?? throw new GameServerException(CoreErrorCodes.BadRequest, $"Header {CorrelationMiddleware.HeaderName} must be a UUID for commands.");
-                var request = toDomain(ProtobufBinding.Parse<TWireRequest>(body));
+                var request = await toDomainAsync(ProtobufBinding.Parse<TWireRequest>(body), http);
                 var actor = services.GetRequiredService<ActorContextAccessor>().GetActor(http);
 
                 var invocation = new CommandInvocation(
@@ -51,8 +88,7 @@ public static class CommandEndpointFactory
 
                 var response = BuildResponse(execution, services.GetRequiredService<AggregateWireMapperRegistry>(), services.GetRequiredService<IClock>());
                 await ProtobufBinding.WriteAsync(http, response);
-            })
-            .AsPlayerEndpoint();
+            });
 
     internal static CommandResponse BuildResponse(CommandExecution execution, AggregateWireMapperRegistry mappers, IClock clock)
     {

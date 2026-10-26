@@ -1,0 +1,54 @@
+{
+  "items": {
+    "potion_pack": {
+      "price": {
+        "resource": "gold",
+        "amount": 60
+      },
+      "grant": {
+        "resource": "potion",
+        "quantity": 1
+      }
+    },
+    "sword": {
+      "price": {
+        "resource": "gem",
+        "amount": 50
+      },
+      "grant": {
+        "resource": "sword",
+        "quantity": 1
+      }
+    },
+    "broken": {
+      "price": {
+        "resource": "gold",
+        "amount": 1
+      },
+      "grant": {
+        "resource": "unknown_item",
+        "quantity": 1
+      }
+    },
+    "huge": {
+      "price": {
+        "resource": "gold",
+        "amount": 4611686018427387904
+      },
+      "grant": {
+        "resource": "potion",
+        "quantity": 1
+      }
+    },
+    "sword_bundle": {
+      "price": {
+        "resource": "gold",
+        "amount": 1
+      },
+      "grant": {
+        "resource": "sword",
+        "quantity": 4
+      }
+    }
+  }
+}

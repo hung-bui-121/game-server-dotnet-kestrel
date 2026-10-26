@@ -1,0 +1,28 @@
+{
+  "resources": [
+    {
+      "id": "gold",
+      "kind": "currency",
+      "maxQuantity": 1000000000,
+      "displayName": "Gold"
+    },
+    {
+      "id": "gem",
+      "kind": "currency",
+      "maxQuantity": 1000000,
+      "displayName": "Gem"
+    },
+    {
+      "id": "potion",
+      "kind": "item",
+      "maxQuantity": 999,
+      "displayName": "Potion"
+    },
+    {
+      "id": "sword",
+      "kind": "item",
+      "maxQuantity": 10,
+      "displayName": "Sword"
+    }
+  ]
+}

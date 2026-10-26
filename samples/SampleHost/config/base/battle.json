@@ -1,0 +1,48 @@
+{
+  "maxStage": 3,
+  "battleHours": 24,
+  "stages": [
+    {
+      "stage": 1,
+      "xp": 40,
+      "rewards": [
+        {
+          "resource": "gold",
+          "quantity": 50
+        }
+      ],
+      "drops": [
+        {
+          "resource": "potion",
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "stage": 2,
+      "xp": 70,
+      "rewards": [
+        {
+          "resource": "gold",
+          "quantity": 80
+        }
+      ],
+      "drops": []
+    },
+    {
+      "stage": 3,
+      "xp": 120,
+      "rewards": [
+        {
+          "resource": "gold",
+          "quantity": 150
+        },
+        {
+          "resource": "gem",
+          "quantity": 5
+        }
+      ],
+      "drops": []
+    }
+  ]
+}

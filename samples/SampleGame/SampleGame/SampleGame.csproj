@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\GameServer.Core\GameServer.Core.csproj" />
+    <ProjectReference Include="..\..\..\src\GameServer.Modules.Economy\GameServer.Modules.Economy.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,32 @@
+{
+  "products": {
+    "google:gems_100": {
+      "grants": [
+        {
+          "resource": "gem",
+          "quantity": 100
+        }
+      ]
+    },
+    "apple:gems_100": {
+      "grants": [
+        {
+          "resource": "gem",
+          "quantity": 100
+        }
+      ]
+    },
+    "google:starter_pack": {
+      "grants": [
+        {
+          "resource": "gold",
+          "quantity": 500
+        },
+        {
+          "resource": "sword",
+          "quantity": 1
+        }
+      ]
+    }
+  }
+}
