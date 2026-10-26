@@ -66,6 +66,39 @@ public sealed class HealthAndShutdownTests
     }
 
     [Fact]
+    public async Task Ready_results_are_shared_for_the_cache_window()
+    {
+        await using var observed = await ObservedHost.StartAsync(settings: s => s["Observability:ReadyCacheMilliseconds"] = "60000");
+        var client = observed.Host.Client();
+        (await GetAsync(client, ObservabilityModule.ReadyRoute)).Status.ShouldBe(200);
+
+        // A flood of Public ready calls does not reach the store again within the window.
+        observed.Host.Store.Faults.Unavailable = true;
+        (await GetAsync(client, ObservabilityModule.ReadyRoute)).Status.ShouldBe(200);
+        observed.Host.Store.Faults.Unavailable = false;
+    }
+
+    [Fact]
+    public async Task Stop_keeps_serving_with_ready_503_during_the_drain_delay()
+    {
+        var observed = await ObservedHost.StartAsync(settings: s => s["GameServer:Hosting:DrainDelaySeconds"] = "2");
+        try
+        {
+            var client = observed.Host.Client();
+            var stopping = observed.Host.App.StopAsync();
+            await Task.Delay(300);
+            stopping.IsCompleted.ShouldBeFalse();
+            (await GetAsync(client, ObservabilityModule.ReadyRoute)).ShouldBe((503, "Unhealthy"));
+            (await GetAsync(client, "/v1/time")).Status.ShouldBe(200);
+            await stopping;
+        }
+        finally
+        {
+            await observed.DisposeAsync();
+        }
+    }
+
+    [Fact]
     public async Task Health_detail_requires_ops_read()
     {
         await using var observed = await ObservedHost.StartAsync(settings: s =>

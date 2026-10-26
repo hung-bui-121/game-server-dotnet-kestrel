@@ -43,6 +43,7 @@ public static class GameServerApplicationExtensions
         ValidateServices(services, options, registry, errors);
 
         DeploymentChecks.ValidateSecretSources(app.Configuration, options, errors);
+        DeploymentChecks.ValidateShutdown(options, errors);
         var forwarded = DeploymentChecks.BuildForwardedHeaders(options, errors);
 
         // Endpoints are mapped even when errors exist so that every violation is reported at once.

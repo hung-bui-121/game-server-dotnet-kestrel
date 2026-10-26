@@ -1,3 +1,4 @@
+using GameServer.Platform;
 using GameServer.Platform.Diagnostics;
 using GameServer.Platform.Web.Hosting;
 using Microsoft.Extensions.Configuration;
@@ -29,6 +30,7 @@ public static class ObservabilityExtensions
         var options = section.Get<ObservabilityOptions>() ?? new ObservabilityOptions();
         host.Services.Configure<ObservabilityOptions>(section);
 
+        Validate(options);
         var instanceId = options.ResolveInstanceId();
         AddLogging(host.Services, host.Environment.ContentRootPath, gameServer.Options, options, instanceId);
         AddTelemetry(host.Services, gameServer.Options, options, instanceId);
@@ -75,9 +77,10 @@ public static class ObservabilityExtensions
                 }
             },
             // Each host owns its logger (disposed = flushed with the container, OPS-03); the static Log.Logger is
-            // never replaced, so one host stopping cannot close another host's logger.
+            // never replaced, so one host stopping cannot close another host's logger. Other logging providers (the
+            // default console provider waits when its queue is full) are not written to: logging never blocks (LOG-06).
             preserveStaticLogger: true,
-            writeToProviders: true);
+            writeToProviders: false);
     }
 
     private static void AddTelemetry(IServiceCollection services, GameServerOptions gameServer, ObservabilityOptions options, string instanceId)
@@ -86,6 +89,10 @@ public static class ObservabilityExtensions
         var protocol = string.Equals(options.Otlp.Protocol, "http/protobuf", StringComparison.OrdinalIgnoreCase)
             ? OtlpExportProtocol.HttpProtobuf
             : OtlpExportProtocol.Grpc;
+
+        // An endpoint set in code is used as is: over HTTP the signal path must be appended explicitly.
+        Uri SignalEndpoint(string signal) =>
+            protocol == OtlpExportProtocol.HttpProtobuf ? new Uri(otlp!, otlp!.AbsolutePath.TrimEnd('/') + "/v1/" + signal) : otlp!;
 
         services.AddOpenTelemetry()
             .ConfigureResource(resource => resource
@@ -99,7 +106,7 @@ public static class ObservabilityExtensions
                     .AddHttpClientInstrumentation();
                 if (otlp is not null)
                 {
-                    tracing.AddOtlpExporter(o => (o.Endpoint, o.Protocol) = (otlp, protocol));
+                    tracing.AddOtlpExporter(o => (o.Endpoint, o.Protocol) = (SignalEndpoint("traces"), protocol));
                 }
             })
             .WithMetrics(metrics =>
@@ -112,12 +119,43 @@ public static class ObservabilityExtensions
                     .AddRuntimeInstrumentation();
                 if (otlp is not null)
                 {
-                    metrics.AddOtlpExporter(o => (o.Endpoint, o.Protocol) = (otlp, protocol));
+                    metrics.AddOtlpExporter(o => (o.Endpoint, o.Protocol) = (SignalEndpoint("metrics"), protocol));
                 }
             });
 
         // The platform meter is created by DI; make sure it exists before the first collection.
         services.AddHostedService<PlatformMetricsWarmup>();
+    }
+
+    /// <summary>Invalid settings fail startup with a readable violation instead of a raw exception.</summary>
+    private static void Validate(ObservabilityOptions options)
+    {
+        var errors = new List<string>();
+        var logging = options.Logging;
+        if (!Enum.TryParse<LogEventLevel>(logging.MinimumLevel, ignoreCase: true, out _))
+        {
+            errors.Add($"[observability] Observability:Logging:MinimumLevel '{logging.MinimumLevel}' is not a level ({string.Join(", ", Enum.GetNames<LogEventLevel>())}).");
+        }
+
+        if (logging.FileSizeLimitBytes < 1024 || logging.RetainedFileCountLimit < 1 || logging.BufferSize < 1 || logging.RetainedFileTimeLimitDays < 1)
+        {
+            errors.Add("[observability] Observability:Logging limits must be positive (FileSizeLimitBytes >= 1024).");
+        }
+
+        if (options.Otlp.Endpoint is { Length: > 0 } endpoint && !Uri.TryCreate(endpoint, UriKind.Absolute, out _))
+        {
+            errors.Add($"[observability] Observability:Otlp:Endpoint '{endpoint}' is not an absolute URI.");
+        }
+
+        if (options.Otlp.Protocol is not ("grpc" or "http/protobuf"))
+        {
+            errors.Add($"[observability] Observability:Otlp:Protocol must be 'grpc' or 'http/protobuf', not '{options.Otlp.Protocol}'.");
+        }
+
+        if (errors.Count > 0)
+        {
+            throw new GameServerStartupException(errors);
+        }
     }
 
     private static string Sanitize(string value) =>

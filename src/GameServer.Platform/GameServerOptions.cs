@@ -74,6 +74,12 @@ public sealed class HostingSettings
 
     /// <summary>Graceful shutdown drain (OPS-03): in-flight requests get this long after SIGTERM.</summary>
     public int ShutdownTimeoutSeconds { get; set; } = 25;
+
+    /// <summary>
+    /// After SIGTERM, keep serving (readiness already 503) this long before the server stops accepting, so load
+    /// balancers see the 503 and stop routing first. Counted inside <see cref="ShutdownTimeoutSeconds"/>.
+    /// </summary>
+    public int DrainDelaySeconds { get; set; } = 5;
 }
 
 public sealed class ForwardedHeadersSettings

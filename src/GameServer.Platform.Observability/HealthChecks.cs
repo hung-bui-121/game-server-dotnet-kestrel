@@ -1,5 +1,6 @@
 using GameServer.Config;
 using GameServer.Platform.Persistence;
+using GameServer.Platform.Web.Hosting;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -49,6 +50,11 @@ public sealed class LogHealthCheck(IOptions<ObservabilityOptions> options) : IHe
             ["sinkErrors"] = monitor.SinkErrors,
             ["dropped"] = monitor.DroppedCount,
         };
+        if (monitor.LastError is { } lastError)
+        {
+            data["lastError"] = lastError;
+        }
+
         if (monitor.FreeBytes() is { } free)
         {
             data["freeBytes"] = free;
@@ -65,10 +71,10 @@ public sealed class LogHealthCheck(IOptions<ObservabilityOptions> options) : IHe
 }
 
 /// <summary>OPS-03: not ready once shutdown started, so the load balancer drains this instance.</summary>
-public sealed class ShutdownHealthCheck(IHostApplicationLifetime lifetime) : IHealthCheck
+public sealed class ShutdownHealthCheck(IHostApplicationLifetime lifetime, ShutdownSignal signal) : IHealthCheck
 {
     public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default) =>
-        Task.FromResult(lifetime.ApplicationStopping.IsCancellationRequested
+        Task.FromResult(signal.IsStopping || lifetime.ApplicationStopping.IsCancellationRequested
             ? HealthCheckResult.Unhealthy("Shutting down.")
             : HealthCheckResult.Healthy());
 }

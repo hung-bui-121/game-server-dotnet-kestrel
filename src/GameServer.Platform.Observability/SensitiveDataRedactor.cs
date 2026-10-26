@@ -75,6 +75,6 @@ public sealed partial class SensitiveDataRedactor : ILogEventEnricher
         }
     }
 
-    [GeneratedRegex("token|password|passwd|secret|pepper|authorization|cookie|privatekey|private_key|receiptpayload|signeddata|credential", RegexOptions.IgnoreCase)]
+    [GeneratedRegex("token|password|passwd|pwd|secret|pepper|authorization|bearer|jwt|cookie|privatekey|private_key|signingkey|signing_key|apikey|api_key|connectionstring|connection_string|receiptpayload|signeddata|credential", RegexOptions.IgnoreCase)]
     private static partial Regex SensitiveName();
 }

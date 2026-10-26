@@ -28,27 +28,27 @@ public sealed class ObservabilityModule : IGameModule, IHostEndpointsModule
         PublicEndpoints = [LiveRoute, ReadyRoute],
     };
 
-    public void ConfigureServices(IServiceCollection services, ModuleContext context) =>
+    public void ConfigureServices(IServiceCollection services, ModuleContext context)
+    {
+        services.AddSingleton<HealthReportCache>();
         services.AddHealthChecks()
             .AddCheck<StoreHealthCheck>("store", tags: [ReadyTag])
             .AddCheck<ConfigHealthCheck>("config", tags: [ReadyTag])
             .AddCheck<LogHealthCheck>("log", tags: [ReadyTag])
             .AddCheck<ShutdownHealthCheck>("shutdown", tags: [ReadyTag]);
+    }
 
     public void MapHostEndpoints(IEndpointRouteBuilder routes)
     {
         routes.MapHealthChecks(LiveRoute, new HealthCheckOptions { Predicate = _ => false, ResponseWriter = WriteStatusOnly })
             .AsPublicEndpoint(protobuf: false);
-        routes.MapHealthChecks(ReadyRoute, new HealthCheckOptions
+        routes.MapGet(ReadyRoute, async (HttpContext http, HealthReportCache cache) =>
             {
-                Predicate = check => check.Tags.Contains(ReadyTag),
-                ResponseWriter = WriteStatusOnly,
-                ResultStatusCodes =
-                {
-                    [HealthStatus.Healthy] = StatusCodes.Status200OK,
-                    [HealthStatus.Degraded] = StatusCodes.Status200OK,
-                    [HealthStatus.Unhealthy] = StatusCodes.Status503ServiceUnavailable,
-                },
+                var report = await cache.GetReadyAsync();
+                http.Response.StatusCode = report.Status == HealthStatus.Unhealthy
+                    ? StatusCodes.Status503ServiceUnavailable
+                    : StatusCodes.Status200OK;
+                await WriteStatusOnly(http, report);
             })
             .AsPublicEndpoint(protobuf: false);
     }

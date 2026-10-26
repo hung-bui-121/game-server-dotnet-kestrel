@@ -54,6 +54,7 @@ public sealed class ObservedHost : IAsyncDisposable
             values =>
             {
                 values["Observability:InstanceId"] = "it-1";
+                values["Observability:ReadyCacheMilliseconds"] = "0";
                 values["Observability:Logging:Directory"] = logDirectory;
                 values["Observability:Logging:MinimumLevel"] = "Debug";
                 values["Identity:GuestPepper"] = Pepper;

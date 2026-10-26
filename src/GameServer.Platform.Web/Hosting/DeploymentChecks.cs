@@ -8,6 +8,18 @@ namespace GameServer.Platform.Web.Hosting;
 /// <summary>Deployment-level settings applied by <c>UseGameServer</c>: reverse proxy (OPS-02) and secret sources (OPS-08).</summary>
 public static class DeploymentChecks
 {
+    /// <summary>Shutdown settings (OPS-03): positive timeout, drain delay inside it.</summary>
+    public static void ValidateShutdown(GameServerOptions options, List<string> errors)
+    {
+        var hosting = options.Hosting;
+        if (hosting.ShutdownTimeoutSeconds < 1 || hosting.DrainDelaySeconds < 0 || hosting.DrainDelaySeconds >= hosting.ShutdownTimeoutSeconds)
+        {
+            errors.Add(
+                $"[deployment] GameServer:Hosting:ShutdownTimeoutSeconds ({hosting.ShutdownTimeoutSeconds}) must be >= 1 and greater than " +
+                $"DrainDelaySeconds ({hosting.DrainDelaySeconds}, >= 0) (OPS-03).");
+        }
+    }
+
     public static ForwardedHeadersOptions? BuildForwardedHeaders(GameServerOptions options, List<string> errors)
     {
         var settings = options.Hosting.ForwardedHeaders;
@@ -39,7 +51,11 @@ public static class DeploymentChecks
 
         foreach (var network in settings.KnownNetworks)
         {
-            if (System.Net.IPNetwork.TryParse(network, out var parsed))
+            if (System.Net.IPNetwork.TryParse(network, out var parsed) && parsed.PrefixLength == 0)
+            {
+                errors.Add($"[deployment] GameServer:Hosting:ForwardedHeaders:KnownNetworks '{network}' trusts every client. Fix: list the proxy subnets.");
+            }
+            else if (System.Net.IPNetwork.TryParse(network, out parsed))
             {
                 forwarded.KnownIPNetworks.Add(parsed);
             }
@@ -67,19 +83,25 @@ public static class DeploymentChecks
     /// <summary>Secrets must not be read from JSON files outside Development/Test (OPS-08).</summary>
     public static void ValidateSecretSources(IConfiguration configuration, GameServerOptions options, List<string> errors)
     {
-        if (options.AllowsDevelopmentTools || configuration is not IConfigurationRoot root)
+        if (options.AllowsDevelopmentTools)
         {
+            return;
+        }
+
+        if (configuration is not IConfigurationRoot root)
+        {
+            errors.Add("[deployment] secret sources cannot be checked: the configuration is not an IConfigurationRoot (OPS-08).");
             return;
         }
 
         foreach (var key in options.SecretKeys)
         {
-            var source = root.Providers.Reverse().FirstOrDefault(p => p.TryGet(key, out var value) && !string.IsNullOrEmpty(value));
-            if (source is FileConfigurationProvider file)
+            // Any file holding the secret is a leak, even when an environment variable overrides it.
+            foreach (var file in root.Providers.OfType<FileConfigurationProvider>().Where(p => p.TryGet(key, out var value) && !string.IsNullOrEmpty(value)))
             {
                 errors.Add(
-                    $"[deployment] secret '{key}' is read from {file.Source.Path}. Fix: provide it through an environment variable " +
-                    $"({key.Replace(":", "__", StringComparison.Ordinal)}) or a secret provider; never commit secrets (OPS-08).");
+                    $"[deployment] secret '{key}' is present in {file.Source.Path}. Fix: remove it from the file and provide it through an " +
+                    $"environment variable ({key.Replace(":", "__", StringComparison.Ordinal)}) or a secret provider; never commit secrets (OPS-08).");
             }
         }
     }

@@ -61,6 +61,38 @@ public sealed class DeploymentTests
     }
 
     [Fact]
+    public async Task Catch_all_proxy_networks_fail_startup()
+    {
+        var ex = await Should.ThrowAsync<GameServerStartupException>(() => StartWithProxyAsync(s =>
+            s["GameServer:Hosting:ForwardedHeaders:KnownNetworks:0"] = "0.0.0.0/0"));
+        ex.Message.ShouldContain("trusts every client");
+    }
+
+    [Theory]
+    [InlineData("0", "0")]
+    [InlineData("10", "10")]
+    [InlineData("10", "-1")]
+    public async Task Invalid_shutdown_settings_fail_startup(string timeout, string drain)
+    {
+        var ex = await Should.ThrowAsync<GameServerStartupException>(() => ObservedHost.StartAsync(settings: s =>
+        {
+            s["GameServer:Hosting:ShutdownTimeoutSeconds"] = timeout;
+            s["GameServer:Hosting:DrainDelaySeconds"] = drain;
+        }));
+        ex.Message.ShouldContain("ShutdownTimeoutSeconds");
+    }
+
+    [Theory]
+    [InlineData("Observability:Logging:MinimumLevel", "Verbose-ish")]
+    [InlineData("Observability:Otlp:Endpoint", "not a uri")]
+    [InlineData("Observability:Otlp:Protocol", "udp")]
+    public async Task Invalid_observability_settings_fail_startup_with_a_readable_violation(string key, string value)
+    {
+        var ex = await Should.ThrowAsync<GameServerStartupException>(() => ObservedHost.StartAsync(settings: s => s[key] = value));
+        ex.Message.ShouldContain(key);
+    }
+
+    [Fact]
     public void Secrets_from_json_files_are_refused_outside_development()
     {
         var json = Path.Combine(Path.GetTempPath(), "gs-appsettings-" + Guid.NewGuid().ToString("N") + ".json");
@@ -74,13 +106,21 @@ public sealed class DeploymentTests
             errors.Count.ShouldBe(2);
             errors[0].ShouldContain("Identity__GuestPepper");
 
-            // An environment-style provider added later wins: the effective value no longer comes from the file.
+            // Overriding with an environment variable does not help: the secret is still committed in the file.
             var overridden = new ConfigurationBuilder()
                 .AddJsonFile(json)
                 .AddInMemoryCollection(new Dictionary<string, string?> { ["Identity:GuestPepper"] = "env", ["Couchbase:Password"] = "env" })
                 .Build();
             errors.Clear();
             DeploymentChecks.ValidateSecretSources(overridden, production, errors);
+            errors.Count.ShouldBe(2);
+
+            // Secrets only in environment-style providers pass.
+            var fromEnvironment = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?> { ["Identity:GuestPepper"] = "env" })
+                .Build();
+            errors.Clear();
+            DeploymentChecks.ValidateSecretSources(fromEnvironment, production, errors);
             errors.ShouldBeEmpty();
 
             errors.Clear();

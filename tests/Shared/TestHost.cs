@@ -49,6 +49,7 @@ public sealed class TestHost : IAsyncDisposable
         ["GameServer:ConfigPath"] = Path.Combine(AppContext.BaseDirectory, "config"),
         ["GameServer:Outbox:SweeperEnabled"] = "false",
         ["Identity:CacheSeconds"] = "0",
+        ["GameServer:Hosting:DrainDelaySeconds"] = "0",
     };
 
     /// <summary>Default modules: Identity + Sample.Counter.</summary>

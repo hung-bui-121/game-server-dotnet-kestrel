@@ -137,6 +137,8 @@ public static class GameServerBuilderExtensions
 
         // OPS-03: drain in-flight requests (commits complete, PERF-02) before the host stops.
         services.Configure<HostOptions>(host => host.ShutdownTimeout = TimeSpan.FromSeconds(options.Hosting.ShutdownTimeoutSeconds));
+        services.AddSingleton<ShutdownSignal>();
+        services.AddHostedService<DrainDelayService>();
 
         AddLimits(builder, options);
         return new GameServerBuilder(builder, options, registry);

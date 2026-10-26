@@ -39,5 +39,5 @@ description: "Task list for 005 observability-ops"
 
 ## Phase 7: Polish
 
-- [ ] T014 [P] SampleHost uses `AddObservability()`; appsettings `Observability`; README run notes; PCR platform (logging/metrics/health) + gm (`ops.read`)
+- [X] T014 [P] SampleHost uses `AddObservability()`; appsettings `Observability`; README run notes; PCR platform (logging/metrics/health) + gm (`ops.read`)
 - [ ] T015 Full suite, architecture rule (Serilog/OTel only in Observability/Web), AgentMemories

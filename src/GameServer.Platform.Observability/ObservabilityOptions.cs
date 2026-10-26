@@ -15,6 +15,9 @@ public sealed class ObservabilityOptions
 
     public OtlpSettings Otlp { get; set; } = new();
 
+    /// <summary>Readiness results are shared for this long (bounds store probes from the Public endpoint).</summary>
+    public int ReadyCacheMilliseconds { get; set; } = 1000;
+
     public string ResolveInstanceId() =>
         !string.IsNullOrWhiteSpace(InstanceId) ? InstanceId
         : Environment.GetEnvironmentVariable("HOSTNAME") is { Length: > 0 } host ? host

@@ -13,6 +13,9 @@ namespace GameServer.Platform.Web.Validation;
 /// </summary>
 public static partial class EndpointSecurityValidator
 {
+    /// <summary>The only unversioned routes: fixed health probe paths for load balancers (OBS-03).</summary>
+    public static readonly IReadOnlySet<string> UnversionedProbeRoutes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "/health/live", "/health/ready" };
+
     public static IReadOnlyList<string> Validate(
         IEnumerable<Endpoint> endpoints,
         GameServerOptions options,
@@ -39,7 +42,7 @@ public static partial class EndpointSecurityValidator
             }
 
             // Health probes have fixed, unversioned paths for load balancers and orchestrators (OBS-03).
-            if (!VersionSegment().IsMatch(route) && !route.StartsWith("/health/", StringComparison.OrdinalIgnoreCase))
+            if (!VersionSegment().IsMatch(route) && !UnversionedProbeRoutes.Contains(route))
             {
                 errors.Add($"[endpoint {label}] route has no version segment. Fix: prefix with /v{{n}}/ (API-02).");
             }

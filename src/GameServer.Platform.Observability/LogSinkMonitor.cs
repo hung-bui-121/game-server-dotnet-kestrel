@@ -21,6 +21,7 @@ public sealed class LogSinkMonitor : IAsyncLogEventSinkMonitor
     private long _droppedByStoppedSinks;
     private long _lastErrorTimestamp;
     private volatile string? _directory;
+    private volatile string? _lastError;
 
     private LogSinkMonitor()
     {
@@ -37,15 +38,32 @@ public sealed class LogSinkMonitor : IAsyncLogEventSinkMonitor
     /// <summary>Cumulative for the process, including sinks of hosts that already stopped.</summary>
     public long DroppedCount => Interlocked.Read(ref _droppedByStoppedSinks) + _inspectors.Keys.Sum(i => i.DroppedMessagesCount);
 
-    /// <summary>Routes Serilog's internal errors here (idempotent).</summary>
+    /// <summary>Last sink error message (for the GM health detail).</summary>
+    public string? LastError => _lastError;
+
+    /// <summary>
+    /// Routes Serilog's internal errors here (idempotent; replaces any other SelfLog output of the process).
+    /// Queue-full notices are already counted as drops and are not sink errors.
+    /// </summary>
     public void Attach(string directory)
     {
         _directory = directory;
-        SelfLog.Enable(_ => RecordSinkError());
+        SelfLog.Enable(message =>
+        {
+            if (!message.Contains("unable to enqueue", StringComparison.OrdinalIgnoreCase))
+            {
+                RecordSinkError(message);
+            }
+        });
     }
 
-    public void RecordSinkError()
+    public void RecordSinkError(string? message = null)
     {
+        if (message is not null)
+        {
+            _lastError = message.Length > 500 ? message[..500] : message;
+        }
+
         Interlocked.Increment(ref _sinkErrors);
         Interlocked.Exchange(ref _lastErrorTimestamp, Stopwatch.GetTimestamp());
     }
@@ -68,13 +86,25 @@ public sealed class LogSinkMonitor : IAsyncLogEventSinkMonitor
 
         try
         {
-            var root = Path.GetPathRoot(Path.GetFullPath(directory));
-            return root is null ? null : new DriveInfo(root).AvailableFreeSpace;
+            // The mount holding the directory (longest matching root), not the root filesystem: on Linux the log
+            // directory is usually a separate volume (LOG-03).
+            var full = Path.GetFullPath(directory);
+            var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            var drive = DriveInfo.GetDrives()
+                .Where(d => d.IsReady && IsUnder(full, d.RootDirectory.FullName, comparison))
+                .MaxBy(d => d.RootDirectory.FullName.Length);
+            return drive?.AvailableFreeSpace;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         {
             return null;
         }
+    }
+
+    private static bool IsUnder(string path, string root, StringComparison comparison)
+    {
+        var normalized = root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;
+        return path.StartsWith(normalized, comparison) || string.Equals(path, root.TrimEnd(Path.DirectorySeparatorChar), comparison);
     }
 
     public void StartMonitoring(IAsyncLogEventSinkInspector inspector) => _inspectors.TryAdd(inspector, 0);
