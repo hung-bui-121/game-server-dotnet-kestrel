@@ -1,0 +1,36 @@
+// Identity module wire contract (slice 002).
+syntax = "proto3";
+
+package gameserver.identity.v1;
+
+import "gameserver/core/v1/core.proto";
+
+option csharp_namespace = "GameServer.Modules.Identity.Protocol.V1";
+
+// Section.payload of aggregate `profile`.
+message ProfileState {
+  string display_name = 1;
+  int64 session_epoch = 2;
+}
+
+// POST /api/v1/identity/login/guest  (Public, gated)
+message GuestLoginRequest {
+  string local_id = 1;   // 1-64 chars [A-Za-z0-9_-]
+  bytes secret = 2;      // >= 32 bytes, generated and kept on device
+}
+
+message LoginResponse {
+  string session_token = 1;   // send as Authorization: Bearer <token>
+  string player_id = 2;
+  repeated gameserver.core.v1.Section sections = 3;
+  string config_version = 4;
+  int64 server_time_utc_ms = 5;
+  int64 session_expires_at_utc_ms = 6;
+}
+
+// POST /api/v1/identity/logout  (Player)
+message LogoutRequest {}
+
+message LogoutResponse {
+  int64 server_time_utc_ms = 1;
+}
