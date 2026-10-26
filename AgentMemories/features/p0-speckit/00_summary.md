@@ -1,27 +1,34 @@
 # RESUME — P0 qua Spec Kit (cập nhật 2026-10-26)
 
-**Trạng thái:** Spec Kit 1.2.4 đã cài (`specify init --here --integration claude --script ps`;
-skill ở `.claude/skills/speckit-*`). Constitution v1.0.0 (`.specify/memory/constitution.md`).
-Slice **001 platform-core**: spec + plan xong trên nhánh `001-platform-core` — **đang chờ owner review
-spec + plan** (owner chọn dừng một lần sau spec+plan đầu tiên; sau khi duyệt thì tự chạy tiếp
-tasks → implement và các slice sau).
+**Trạng thái:** Spec Kit 1.2.4 (`.claude/skills/speckit-*`), constitution v1.0.0. Owner duyệt spec+plan 001
+(26/10) → chạy tự động tasks/implement cho các slice sau, không dừng.
 
-**Quyết định owner 26/10/2026:**
-- P0 chia 6 spec làm tuần tự: 001 platform-core → 002 identity/session (guest) → 003 SampleGame
-  commands (economy, GetConfig, IAP verifier giả) → 004 GM backend + frontend tối thiểu →
-  005 observability/ops → 006 Unity SDK.
-- Không có Docker/Couchbase trên máy: unit test dùng store in-memory; integration/TST-04 viết sẵn,
-  skip khi thiếu `COUCHBASE_CONNSTR`.
-- Review gate: chỉ dừng sau spec + plan của 001.
+| Slice | Nhánh | Trạng thái |
+| --- | --- | --- |
+| 001 platform-core | `001-platform-core` | DONE 88/88 task; review tech-lead (1 Blocker, 6 Major) đã sửa trên nhánh 002 (`801304a`) |
+| 002 identity-session (guest) | `002-identity-session` (tách từ 001) | DONE 29/29 task (`16d8f5a`) |
+| 003 SampleGame commands (economy, GetConfig, IAP verifier giả) | — | tiếp theo |
+| 004 GM backend + frontend tối thiểu | — | |
+| 005 observability/ops | — | |
+| 006 Unity SDK | — | |
 
-**Môi trường:** SDK hệ thống chỉ có .NET 10 RC1 và không có ASP.NET Core 10 runtime → đã cài .NET SDK
-10.0.403 vào `%USERPROFILE%\.dotnet10` (dotnet-install, không admin). Build/test bằng
-`~/.dotnet10/dotnet.exe`. Package pin: research.md R2 của 001.
+Test (26/10, cuối 002): 194 — 165 pass, 29 skip (integration Couchbase, thiếu `COUCHBASE_CONNSTR`), 0 fail.
 
-**Điểm thiết kế chính của 001 (plan.md / research.md):** runner DB-agnostic trong
-`GameServer.Platform` trên `ITransactionalDocumentStore` (Couchbase + in-memory), ADR-0001;
-`X-Request-Id` header; business rejection không tạo receipt (R5); claim marker GetOptional-then-Insert
-(R6); error code string + số theo dải module (R8); `CommandResponse.result` = `resultCompact` (R9).
+**Quyết định owner 26/10/2026:** 6 slice tuần tự; không Docker/Couchbase trên máy → unit test bằng store
+in-memory, integration/TST-04 viết sẵn và skip có lý do; chỉ dừng review sau spec+plan 001.
 
-**Việc tiếp theo:** owner duyệt → `/speckit-tasks` → (`/speckit-analyze`) → `/speckit-implement`
-cho 001; rồi specify/plan/tasks/implement 002..006.
+**Môi trường:** dùng `~/.dotnet10/dotnet.exe` (SDK 10.0.403; SDK hệ thống chỉ RC1, không có ASP.NET Core 10).
+`global.json` bật runner Microsoft.Testing.Platform → `dotnet test --solution GameServer.slnx` / `--project`.
+Heredoc trong Bash tool hay lỗi với ký tự đặc biệt → viết script Python ra scratchpad rồi chạy.
+
+**Thiết kế đáng nhớ (chi tiết ở specs/*/research.md, docs/pcr/*.md, docs/adr/0001):**
+- Runner DB-agnostic trên `ITransactionalDocumentStore`; `IKeyValueStore` cho collection ngoài transaction;
+  `IPlayerAggregateWriter` cho epoch/purge (không receipt).
+- `receiptId` = hash(actorId|playerId|operation|requestId); business rejection không receipt; guard chạy sau replay.
+- Couchbase SDK 3.10: `GetMulti` không trả handle để replace → `UseGetMulti` mặc định **tắt** (đọc tuần tự) đến khi
+  TST-04 V23-T1 đo trên cluster; chỉ tiêu "≈ 1 RTT" của DAT-11 chưa đạt — cần owner quyết sau khi đo.
+- Insert race báo DocumentExists (không retry) → runner/writer tự chạy lại ≤ 3 vòng.
+- Xác thực theo profile endpoint (SEC-02); test auth + in-memory chỉ Development/Test.
+- Outbox: backoff 30 s×2^n ≤ 1 h, dead-letter sau 10 lần.
+
+**Việc tiếp theo:** slice 003 trên nhánh mới tách từ `002-identity-session`.

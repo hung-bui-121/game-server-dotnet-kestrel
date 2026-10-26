@@ -37,9 +37,8 @@ public sealed class SessionTests
     [Fact]
     public async Task Takeover_on_another_instance_reaches_every_instance_within_the_cache_window()
     {
-        var store = new GameServer.Platform.Testing.InMemoryDocumentStore(new GameServer.Platform.Testing.FakeClock());
         var clock = new GameServer.Platform.Testing.FakeClock();
-        store = new GameServer.Platform.Testing.InMemoryDocumentStore(clock);
+        var store = new GameServer.Platform.Testing.InMemoryDocumentStore(clock);
         void Cache60(Dictionary<string, string?> s) => s["Identity:CacheSeconds"] = "60";
         await using var instanceA = await TestHost.StartAsync(settings: Cache60, store: store, clock: clock);
         await using var instanceB = await TestHost.StartAsync(settings: Cache60, store: store, clock: clock);
