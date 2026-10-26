@@ -1,24 +1,33 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace GameServer.Client
 {
-    /// <summary>Device wall clock; the SDK derives <c>ServerNow</c> from it (TIME-01).</summary>
+    /// <summary>Device clocks (TIME-01): wall clock for display, monotonic clock for elapsed time.</summary>
     public interface IClientClock
     {
+        /// <summary>Device wall clock; the user can change it.</summary>
         DateTimeOffset UtcNow { get; }
+
+        /// <summary>Monotonic time since an arbitrary origin; never jumps. <c>ServerNow</c> advances with it.</summary>
+        TimeSpan Monotonic { get; }
     }
 
     public sealed class SystemClientClock : IClientClock
     {
+        private static readonly Stopwatch Watch = Stopwatch.StartNew();
+
         public static SystemClientClock Instance { get; } = new SystemClientClock();
 
-#pragma warning disable RS0030 // The SDK runs on devices: the device clock is the only clock (server time = device + offset).
+#pragma warning disable RS0030 // The SDK runs on devices: the device clock is the only wall clock.
         public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
 #pragma warning restore RS0030
+
+        public TimeSpan Monotonic => Watch.Elapsed;
     }
 
     /// <summary>Waiting between retries (replaceable so tests and coroutines need not sleep).</summary>

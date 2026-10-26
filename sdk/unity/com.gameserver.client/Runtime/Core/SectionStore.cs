@@ -35,6 +35,9 @@ namespace GameServer.Client
         /// <summary>Raised after a section changed (id).</summary>
         public event Action<string>? SectionChanged;
 
+        /// <summary>A <see cref="SectionChanged"/> handler threw; the store caught it.</summary>
+        public event Action<Exception>? HandlerFailed;
+
         public IReadOnlyCollection<SectionState> All => _sections.Values;
 
         public bool TryGet(string id, out SectionState section) => _sections.TryGetValue(id, out section!);
@@ -46,8 +49,19 @@ namespace GameServer.Client
             where T : class, IMessage<T> =>
             _sections.TryGetValue(id, out var section) ? parser.ParseFrom(section.Payload) : null;
 
-        /// <summary>Snapshot/login sections are authoritative at their own revision.</summary>
-        public void Set(Section section) => Store(section.Id, section.Rev, section.Payload);
+        /// <summary>
+        /// Stores a snapshot/login section unless the client already has a newer revision (a snapshot read before a command's
+        /// update can arrive after it). Login clears the store first.
+        /// </summary>
+        public void Set(Section section)
+        {
+            if (_sections.TryGetValue(section.Id, out var current) && section.Rev < current.Rev)
+            {
+                return;
+            }
+
+            Store(section.Id, section.Rev, section.Payload);
+        }
 
         /// <summary>Applies a <c>SectionUpdate</c>; false when the section is now stale and must be refetched.</summary>
         public bool Apply(SectionUpdate update)
@@ -78,7 +92,25 @@ namespace GameServer.Client
         private void Store(string id, long rev, ByteString payload)
         {
             _sections[id] = new SectionState(id, rev, payload);
-            SectionChanged?.Invoke(id);
+            var handler = SectionChanged;
+            if (handler == null)
+            {
+                return;
+            }
+
+            foreach (var single in handler.GetInvocationList())
+            {
+                try
+                {
+                    ((Action<string>)single)(id);
+                }
+#pragma warning disable CA1031 // Game handlers must not break applying server state.
+                catch (Exception ex)
+#pragma warning restore CA1031
+                {
+                    HandlerFailed?.Invoke(ex);
+                }
+            }
         }
     }
 }

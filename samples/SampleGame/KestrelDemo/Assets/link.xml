@@ -1,0 +1,7 @@
+<!--
+  The SDK package preserves Google.Protobuf and GameServer.Client. A game must preserve the assembly holding its own
+  generated .proto messages (here SampleGame.Client) for IL2CPP stripping High (API-09).
+-->
+<linker>
+  <assembly fullname="SampleGame.Client" preserve="all" />
+</linker>

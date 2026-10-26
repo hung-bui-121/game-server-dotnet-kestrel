@@ -34,5 +34,37 @@ namespace GameServer.Client
 
         /// <summary>Random spread of each backoff (0.2 = ±20 %), so clients do not retry in lockstep.</summary>
         public double Jitter { get; set; } = 0.2;
+
+        /// <summary>A server <c>retryAfterMs</c> above this ends the call instead of waiting (the game decides).</summary>
+        public TimeSpan MaxRetryAfter { get; set; } = TimeSpan.FromSeconds(30);
+
+        /// <summary>Throws <see cref="ArgumentException"/> for settings that would misroute or break retries.</summary>
+        public void Validate()
+        {
+            if (!BaseUrl.IsAbsoluteUri || !BaseUrl.AbsolutePath.EndsWith('/'))
+            {
+                throw new ArgumentException("BaseUrl must be absolute and end with '/' (otherwise its last path segment is dropped).", nameof(BaseUrl));
+            }
+
+            if (MaxRetries < 0 || MaxRetries > 10)
+            {
+                throw new ArgumentException("MaxRetries must be 0..10.", nameof(MaxRetries));
+            }
+
+            if (Jitter < 0 || Jitter > 1)
+            {
+                throw new ArgumentException("Jitter must be 0..1.", nameof(Jitter));
+            }
+
+            if (InitialBackoff <= TimeSpan.Zero || MaxBackoff < InitialBackoff || MaxRetryAfter < TimeSpan.Zero)
+            {
+                throw new ArgumentException("Backoff settings must be positive and MaxBackoff >= InitialBackoff.");
+            }
+
+            if (string.IsNullOrEmpty(ClientVersion) || string.IsNullOrEmpty(Platform) || string.IsNullOrEmpty(BuildId))
+            {
+                throw new ArgumentException("ClientVersion, Platform and BuildId are required (GATE-02).");
+            }
+        }
     }
 }

@@ -10,14 +10,19 @@ using GameServer.Protocol.Core.V1;
 
 namespace GameServer.Client
 {
-    /// <summary>Outcome of a command: <c>OK</c> or a business code (HTTP 200, no retry). Transport and protocol errors throw.</summary>
+    /// <summary>
+    /// Outcome of a command: <c>OK</c> or a business code (HTTP 200, no retry). Transport and protocol errors before the
+    /// server answered throw; once the server answered, the result is always returned (the command may have committed).
+    /// </summary>
     public sealed class CommandResult<TResult>
         where TResult : class, IMessage<TResult>
     {
-        public CommandResult(CommandResponse response, TResult? result)
+        public CommandResult(CommandResponse response, TResult? result, bool sectionsStale, bool resultUnreadable)
         {
             Response = response;
             Result = result;
+            SectionsStale = sectionsStale;
+            ResultUnreadable = resultUnreadable;
         }
 
         public CommandResponse Response { get; }
@@ -31,14 +36,20 @@ namespace GameServer.Client
 
         public bool Replayed => Response.Replayed;
 
-        /// <summary>Module result; null when rejected.</summary>
+        /// <summary>Module result; null when rejected or unreadable.</summary>
         public TResult? Result { get; }
+
+        /// <summary>Some sections could not be refreshed after the command; call <c>RefreshSectionsAsync</c> later.</summary>
+        public bool SectionsStale { get; }
+
+        /// <summary>The command was answered but its result bytes did not parse with the given parser.</summary>
+        public bool ResultUnreadable { get; }
     }
 
     /// <summary>
     /// Framework client SDK (SDK-01..03): Protobuf transport, session header, gate headers, one <c>requestId</c> per command with
     /// retries that resend the exact cached bytes, error mapping with account/session events, per-section revisions, server
-    /// time offset and config version tracking. It holds no game rules: state comes only from server responses.
+    /// time and config version tracking. It holds no game rules: state comes only from server responses.
     /// </summary>
     public sealed class GameServerClient
     {
@@ -63,6 +74,12 @@ namespace GameServer.Client
         private readonly Random _random;
         private string? _announcedConfigVersion;
 
+        // Server time anchor on the monotonic clock (device wall-clock changes do not move ServerNow).
+        private DateTimeOffset _serverAnchor;
+        private TimeSpan _monotonicAnchor;
+        private TimeSpan _anchorRoundTrip = TimeSpan.MaxValue;
+        private bool _hasTime;
+
         public GameServerClient(
             GameServerClientOptions options,
             IHttpTransport transport,
@@ -72,6 +89,7 @@ namespace GameServer.Client
             IConfigCache? config = null,
             Random? random = null)
         {
+            options.Validate();
             _options = options;
             _transport = transport;
             _clock = clock ?? SystemClientClock.Instance;
@@ -79,6 +97,20 @@ namespace GameServer.Client
             _session = session ?? new InMemorySessionStore();
             _config = config ?? new InMemoryConfigCache();
             _random = random ?? new Random();
+            Sections.HandlerFailed += ex => HandlerFailed?.Invoke(ex);
+        }
+
+        /// <summary>How a request may be retried when its outcome is unknown.</summary>
+        private enum RetryMode
+        {
+            /// <summary>Reads and commands (same bytes + requestId → server replay): retry every retryable failure.</summary>
+            Idempotent,
+
+            /// <summary>
+            /// Login is not deduplicated by the server and every login revokes older sessions: retry only answers that
+            /// prove the server did not process it (RATE_LIMITED), never a lost or ambiguous attempt (review M1).
+            /// </summary>
+            RejectedOnly,
         }
 
         /// <summary>The token was revoked by a newer login elsewhere (IDN-10). The SDK cleared it and will not log in again.</summary>
@@ -94,6 +126,9 @@ namespace GameServer.Client
         /// <summary>A response carried a config version the cache does not have; call <see cref="RefreshConfigAsync"/>.</summary>
         public event Action<string>? ConfigVersionChanged;
 
+        /// <summary>A game event handler threw; the SDK caught it so request processing was not affected.</summary>
+        public event Action<Exception>? HandlerFailed;
+
         public SectionStore Sections { get; } = new SectionStore();
 
         public IConfigCache Config => _config;
@@ -102,21 +137,30 @@ namespace GameServer.Client
 
         public bool HasSession => !string.IsNullOrEmpty(_session.Token);
 
-        /// <summary>Server clock minus device clock, from the midpoint of the last round trip (TIME-01).</summary>
-        public TimeSpan ServerTimeOffset { get; private set; }
+        /// <summary>Server clock, advanced with the device's monotonic clock since the best (lowest round-trip) sample (TIME-01).</summary>
+        public DateTimeOffset ServerNow => _hasTime ? _serverAnchor + (_clock.Monotonic - _monotonicAnchor) : _clock.UtcNow;
 
-        public DateTimeOffset ServerNow => _clock.UtcNow + ServerTimeOffset;
+        /// <summary>Server clock minus device wall clock, as of now.</summary>
+        public TimeSpan ServerTimeOffset => ServerNow - _clock.UtcNow;
 
         /// <summary>Last config version announced by the server.</summary>
         public string? ServerConfigVersion { get; private set; }
 
         public bool ConfigOutdated => ServerConfigVersion != null && ServerConfigVersion != _config.Version;
 
-        /// <summary>Guest login (IDN-01): stores the token and the returned sections.</summary>
+        /// <summary>
+        /// Guest login (IDN-01): stores the token and the returned sections. Not retried after a lost or ambiguous attempt
+        /// (a late duplicate would revoke the session the client keeps); on <c>NETWORK_ERROR</c> the game calls it again.
+        /// </summary>
         public async Task<LoginResponse> LoginGuestAsync(string localId, byte[] secret, CancellationToken cancellationToken = default)
         {
             var request = new GuestLoginRequest { LocalId = localId, Secret = ByteString.CopyFrom(secret) };
-            var response = await PostAsync(LoginRoute, request.ToByteArray(), NewRequestId(), authenticated: false, LoginResponse.Parser, r => r.ServerTimeUtcMs, cancellationToken);
+            var response = await SendAsync("POST", LoginRoute, request.ToByteArray(), null, RetryMode.RejectedOnly, LoginResponse.Parser, r => r.ServerTimeUtcMs, cancellationToken);
+            if (string.IsNullOrEmpty(response.SessionToken) || string.IsNullOrEmpty(response.PlayerId))
+            {
+                throw new GameServerException(GameServerError.Client(ErrorCodes.InvalidResponse, "Login response without a session."));
+            }
+
             _session.Token = response.SessionToken;
             _session.PlayerId = response.PlayerId;
             Sections.Clear();
@@ -134,7 +178,7 @@ namespace GameServer.Client
         {
             try
             {
-                await PostAsync(LogoutRoute, new LogoutRequest().ToByteArray(), NewRequestId(), authenticated: true, LogoutResponse.Parser, r => r.ServerTimeUtcMs, cancellationToken);
+                await SendAsync("POST", LogoutRoute, new LogoutRequest().ToByteArray(), RequireToken(), RetryMode.Idempotent, LogoutResponse.Parser, r => r.ServerTimeUtcMs, cancellationToken);
             }
             finally
             {
@@ -143,7 +187,7 @@ namespace GameServer.Client
             }
         }
 
-        /// <summary>Refetches sections (all client-visible when <paramref name="sections"/> is empty) at their server revision.</summary>
+        /// <summary>Refetches sections (all client-visible when <paramref name="sections"/> is empty); never moves a section back in time.</summary>
         public async Task<SnapshotResponse> RefreshSectionsAsync(IEnumerable<string>? sections = null, CancellationToken cancellationToken = default)
         {
             var request = new SnapshotRequest();
@@ -152,7 +196,7 @@ namespace GameServer.Client
                 request.Sections.AddRange(sections);
             }
 
-            var response = await PostAsync(SnapshotRoute, request.ToByteArray(), NewRequestId(), authenticated: true, SnapshotResponse.Parser, r => r.ServerTimeUtcMs, cancellationToken);
+            var response = await SendAsync("POST", SnapshotRoute, request.ToByteArray(), RequireToken(), RetryMode.Idempotent, SnapshotResponse.Parser, r => r.ServerTimeUtcMs, cancellationToken);
             foreach (var section in response.Sections)
             {
                 Sections.Set(section);
@@ -164,7 +208,9 @@ namespace GameServer.Client
 
         /// <summary>
         /// Sends a state-changing command. The body is serialized once and resent unchanged with the same
-        /// <c>X-Request-Id</c> on every retry, so the server replays instead of applying twice (SDK-02, CMD-02).
+        /// <c>X-Request-Id</c> (and the same session token) on every retry, so the server replays instead of applying twice
+        /// (SDK-02, CMD-02). Once the server has answered, this method does not throw: local follow-up problems are reported
+        /// in the result.
         /// </summary>
         public async Task<CommandResult<TResult>> SendCommandAsync<TResult>(
             string route,
@@ -174,25 +220,51 @@ namespace GameServer.Client
             where TResult : class, IMessage<TResult>
         {
             var body = request.ToByteArray();
-            var response = await PostAsync(route, body, NewRequestId(), authenticated: true, CommandResponse.Parser, r => r.ServerTimeUtcMs, cancellationToken);
-            TrackConfig(response.ConfigVersion);
-
-            var stale = response.Updates.Where(u => !Sections.Apply(u)).Select(u => u.Id).ToList();
-            if (stale.Count > 0)
+            var response = await SendAsync("POST", route, body, RequireToken(), RetryMode.Idempotent, CommandResponse.Parser, r => r.ServerTimeUtcMs, cancellationToken);
+            if (string.IsNullOrEmpty(response.Code))
             {
-                await RefreshSectionsAsync(stale, cancellationToken);
+                throw new GameServerException(GameServerError.Client(ErrorCodes.InvalidResponse, "Command response without a code."));
             }
 
-            var result = response.Code == ErrorCodes.Ok ? resultParser.ParseFrom(response.Result) : null;
+            // From here on the command is known to the server: report problems, never throw (a caller retrying with a new
+            // request id would apply it twice).
+            TrackConfig(response.ConfigVersion);
+            var stale = response.Updates.Where(u => !Sections.Apply(u)).Select(u => u.Id).ToList();
+            var sectionsStale = false;
+            if (stale.Count > 0)
+            {
+                try
+                {
+                    await RefreshSectionsAsync(stale, cancellationToken);
+                }
+                catch (Exception ex) when (ex is GameServerException || ex is OperationCanceledException)
+                {
+                    sectionsStale = true;
+                }
+            }
 
-            return new CommandResult<TResult>(response, result);
+            TResult? result = null;
+            var unreadable = false;
+            if (response.Code == ErrorCodes.Ok)
+            {
+                try
+                {
+                    result = resultParser.ParseFrom(response.Result);
+                }
+                catch (InvalidProtocolBufferException)
+                {
+                    unreadable = true;
+                }
+            }
+
+            return new CommandResult<TResult>(response, result, sectionsStale, unreadable);
         }
 
         /// <summary>Downloads the client-visible config files when the server has a newer version (CFG-03). True when updated.</summary>
         public async Task<bool> RefreshConfigAsync(CancellationToken cancellationToken = default)
         {
             var request = new GetConfigRequest { ConfigVersion = _config.Version ?? string.Empty };
-            var response = await PostAsync(ConfigRoute, request.ToByteArray(), NewRequestId(), authenticated: true, GetConfigResponse.Parser, r => r.ServerTimeUtcMs, cancellationToken);
+            var response = await SendAsync("POST", ConfigRoute, request.ToByteArray(), RequireToken(), RetryMode.Idempotent, GetConfigResponse.Parser, r => r.ServerTimeUtcMs, cancellationToken);
             ServerConfigVersion = response.ConfigVersion;
             if (response.NotModified)
             {
@@ -204,70 +276,75 @@ namespace GameServer.Client
             return true;
         }
 
-        /// <summary>Measures the server time offset without a session (TIME-01).</summary>
+        /// <summary>Measures the server time without a session (TIME-01).</summary>
         public async Task<DateTimeOffset> SyncTimeAsync(CancellationToken cancellationToken = default)
         {
-            await SendAsync("GET", TimeRoute, null, NewRequestId(), authenticated: false, TimeResponse.Parser, r => r.ServerTimeUtcMs, cancellationToken);
+            await SendAsync("GET", TimeRoute, null, null, RetryMode.Idempotent, TimeResponse.Parser, r => r.ServerTimeUtcMs, cancellationToken);
             return ServerNow;
         }
 
-        private Task<T> PostAsync<T>(string route, byte[] body, string requestId, bool authenticated, MessageParser<T> parser, Func<T, long> serverTime, CancellationToken cancellationToken)
-            where T : IMessage<T> =>
-            SendAsync("POST", route, body, requestId, authenticated, parser, serverTime, cancellationToken);
+        private string RequireToken()
+        {
+            var token = _session.Token;
+            if (string.IsNullOrEmpty(token))
+            {
+                throw new GameServerException(GameServerError.Client(ErrorCodes.Unauthenticated, "No session: log in first."));
+            }
+
+            return token!;
+        }
 
         private async Task<T> SendAsync<T>(
             string method,
             string route,
             byte[]? body,
-            string requestId,
-            bool authenticated,
+            string? token,
+            RetryMode mode,
             MessageParser<T> parser,
             Func<T, long> serverTime,
             CancellationToken cancellationToken)
             where T : IMessage<T>
         {
             var url = new Uri(_options.BaseUrl, route);
+
+            // Built once: every attempt sends the same request id, token and body bytes.
+            var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                [RequestIdHeader] = Guid.NewGuid().ToString("D"),
+                [ClientVersionHeader] = _options.ClientVersion,
+                [PlatformHeader] = _options.Platform,
+                [BuildIdHeader] = _options.BuildId,
+            };
+            if (token != null)
+            {
+                headers["Authorization"] = "Bearer " + token;
+            }
+
+            var request = new TransportRequest(method, url, headers, body);
             for (var attempt = 0; ; attempt++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                {
-                    [RequestIdHeader] = requestId,
-                    [ClientVersionHeader] = _options.ClientVersion,
-                    [PlatformHeader] = _options.Platform,
-                    [BuildIdHeader] = _options.BuildId,
-                };
-                if (authenticated)
-                {
-                    var token = _session.Token;
-                    if (string.IsNullOrEmpty(token))
-                    {
-                        throw new GameServerException(GameServerError.Client(ErrorCodes.Unauthenticated, "No session: log in first."));
-                    }
-
-                    headers["Authorization"] = "Bearer " + token;
-                }
-
-                var sentAt = _clock.UtcNow;
+                var sentAt = _clock.Monotonic;
                 TransportResponse response;
                 try
                 {
-                    response = await _transport.SendAsync(new TransportRequest(method, url, headers, body), cancellationToken);
+                    response = await _transport.SendAsync(request, cancellationToken);
                 }
                 catch (TransportException ex)
                 {
-                    // No response: the command may or may not have run; resending the same bytes is safe (replay).
-                    if (attempt < _options.MaxRetries)
+                    // No response: a command may or may not have run; resending the same bytes is safe (replay). A login is not.
+                    if (mode == RetryMode.Idempotent && attempt < _options.MaxRetries)
                     {
-                        await _delay.DelayAsync(Backoff(attempt, 0), cancellationToken);
+                        await _delay.DelayAsync(Backoff(attempt), cancellationToken);
                         continue;
                     }
 
                     throw new GameServerException(GameServerError.Client(ErrorCodes.NetworkError, "No response from the server.", retryable: true), ex);
                 }
 
-                var receivedAt = _clock.UtcNow;
-                if (response.Status == 200)
+                var receivedAt = _clock.Monotonic;
+                var protobuf = response.ContentType != null && response.ContentType.StartsWith(ProtobufContentType, StringComparison.OrdinalIgnoreCase);
+                if (response.Status == 200 && protobuf)
                 {
                     T message;
                     try
@@ -283,21 +360,28 @@ namespace GameServer.Client
                     return message;
                 }
 
-                var error = ParseError(response);
-                if (error.Envelope != null)
+                var (error, envelope) = ParseError(response, protobuf);
+                if (envelope != null)
                 {
-                    UpdateTime(error.Envelope.ServerTimeUtcMs, sentAt, receivedAt);
-                    TrackConfig(error.Envelope.ConfigVersion);
+                    UpdateTime(envelope.ServerTimeUtcMs, sentAt, receivedAt);
+                    TrackConfig(envelope.ConfigVersion);
                 }
 
-                var reported = error.Error;
-                if (!Notify(reported) && reported.Retryable && attempt < _options.MaxRetries)
+                if (Notify(error))
                 {
-                    await _delay.DelayAsync(Backoff(attempt, reported.RetryAfterMs), cancellationToken);
+                    throw new GameServerException(error);
+                }
+
+                var retryable = mode == RetryMode.Idempotent ? error.Retryable : error.Code == ErrorCodes.RateLimited;
+                var retryAfter = TimeSpan.FromMilliseconds(Math.Max(0, error.RetryAfterMs));
+                if (retryable && attempt < _options.MaxRetries && retryAfter <= _options.MaxRetryAfter)
+                {
+                    var backoff = Backoff(attempt);
+                    await _delay.DelayAsync(backoff > retryAfter ? backoff : retryAfter, cancellationToken);
                     continue;
                 }
 
-                throw new GameServerException(reported);
+                throw new GameServerException(error);
             }
         }
 
@@ -309,7 +393,7 @@ namespace GameServer.Client
                 case ErrorCodes.SessionReplaced:
                     // IDN-10: never log in again automatically; the game decides (e.g. "logged in on another device").
                     _session.Clear();
-                    SessionReplaced?.Invoke(error);
+                    Raise(SessionReplaced, error);
                     return true;
                 case ErrorCodes.AccountSuspended:
                 case ErrorCodes.AccountDeleted:
@@ -319,22 +403,54 @@ namespace GameServer.Client
                         _session.Clear();
                     }
 
-                    AccountBlocked?.Invoke(error);
+                    Raise(AccountBlocked, error);
                     return true;
                 case ErrorCodes.Maintenance:
-                    Maintenance?.Invoke(error);
+                    Raise(Maintenance, error);
                     return true;
                 case ErrorCodes.UpdateRequired:
-                    UpdateRequired?.Invoke(error);
+                    Raise(UpdateRequired, error);
                     return true;
                 default:
                     return false;
             }
         }
 
-        private static (GameServerError Error, ErrorEnvelope? Envelope) ParseError(TransportResponse response)
+        /// <summary>Game handlers must not break request processing (review M2).</summary>
+        private void Raise<TArg>(Action<TArg>? handler, TArg argument)
         {
-            if (response.ContentType != null && response.ContentType.StartsWith(ProtobufContentType, StringComparison.OrdinalIgnoreCase))
+            if (handler == null)
+            {
+                return;
+            }
+
+            foreach (var single in handler.GetInvocationList().Cast<Action<TArg>>())
+            {
+                try
+                {
+                    single(argument);
+                }
+#pragma warning disable CA1031 // Any game exception is caught by design and reported through HandlerFailed.
+                catch (Exception ex)
+#pragma warning restore CA1031
+                {
+                    try
+                    {
+                        HandlerFailed?.Invoke(ex);
+                    }
+#pragma warning disable CA1031
+                    catch (Exception)
+#pragma warning restore CA1031
+                    {
+                        // A failing error handler is ignored.
+                    }
+                }
+            }
+        }
+
+        private static (GameServerError Error, ErrorEnvelope? Envelope) ParseError(TransportResponse response, bool protobuf)
+        {
+            if (protobuf && response.Status != 200)
             {
                 try
                 {
@@ -349,28 +465,44 @@ namespace GameServer.Client
                 }
             }
 
-            // A proxy or load balancer answered: 502/503/504 are worth retrying, everything else is not.
-            var retryable = response.Status == 502 || response.Status == 503 || response.Status == 504;
-            return (new GameServerError(ErrorCodes.InvalidResponse, -1, response.Status, "HTTP " + response.Status, retryable, 0, null, new Dictionary<string, string>()), null);
+            // Not our server's answer (proxy, WAF, captive portal, HTML 200): 200/502/503/504 are worth retrying for
+            // idempotent requests, everything else is not.
+            var retryable = response.Status == 200 || response.Status == 502 || response.Status == 503 || response.Status == 504;
+            return (new GameServerError(ErrorCodes.InvalidResponse, -1, response.Status, "Unexpected HTTP " + response.Status + " response", retryable, 0, null, new Dictionary<string, string>()), null);
         }
 
-        private TimeSpan Backoff(int attempt, int retryAfterMs)
+        private TimeSpan Backoff(int attempt)
         {
             var exponential = _options.InitialBackoff.TotalMilliseconds * Math.Pow(2, attempt);
             var capped = Math.Min(exponential, _options.MaxBackoff.TotalMilliseconds);
             var jittered = capped * (1 + (((_random.NextDouble() * 2) - 1) * _options.Jitter));
-            return TimeSpan.FromMilliseconds(Math.Max(jittered, retryAfterMs));
+            return TimeSpan.FromMilliseconds(Math.Max(0, jittered));
         }
 
-        private void UpdateTime(long serverTimeUtcMs, DateTimeOffset sentAt, DateTimeOffset receivedAt)
+        /// <summary>
+        /// Keeps the sample with the smallest round trip (tightest bound on the server time); a sample at most 50 % (+50 ms)
+        /// worse replaces it, so the anchor follows server-side clock corrections without trusting slow round trips.
+        /// </summary>
+        private void UpdateTime(long serverTimeUtcMs, TimeSpan sentAt, TimeSpan receivedAt)
         {
             if (serverTimeUtcMs <= 0)
             {
                 return;
             }
 
-            var midpoint = sentAt + TimeSpan.FromTicks((receivedAt - sentAt).Ticks / 2);
-            ServerTimeOffset = DateTimeOffset.FromUnixTimeMilliseconds(serverTimeUtcMs) - midpoint;
+            var roundTrip = receivedAt - sentAt;
+            var tolerance = _anchorRoundTrip == TimeSpan.MaxValue
+                ? TimeSpan.MaxValue
+                : TimeSpan.FromTicks((long)(_anchorRoundTrip.Ticks * 1.5)) + TimeSpan.FromMilliseconds(50);
+            if (_hasTime && roundTrip > tolerance)
+            {
+                return;
+            }
+
+            _serverAnchor = DateTimeOffset.FromUnixTimeMilliseconds(serverTimeUtcMs);
+            _monotonicAnchor = sentAt + TimeSpan.FromTicks(roundTrip.Ticks / 2);
+            _anchorRoundTrip = roundTrip < _anchorRoundTrip ? roundTrip : _anchorRoundTrip;
+            _hasTime = true;
         }
 
         private void TrackConfig(string? version)
@@ -384,10 +516,8 @@ namespace GameServer.Client
             if (version != _config.Version && version != _announcedConfigVersion)
             {
                 _announcedConfigVersion = version;
-                ConfigVersionChanged?.Invoke(version!);
+                Raise(ConfigVersionChanged, version!);
             }
         }
-
-        private static string NewRequestId() => Guid.NewGuid().ToString("D");
     }
 }

@@ -71,6 +71,14 @@ public sealed class RecordingDelay : IDelay
     }
 }
 
+/// <summary>Device clocks under test control.</summary>
+public sealed class ManualClientClock : IClientClock
+{
+    public DateTimeOffset UtcNow { get; set; } = new(2030, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+    public TimeSpan Monotonic { get; set; } = TimeSpan.FromHours(1);
+}
+
 /// <summary>Gate decision switchable from a test (GATE-01/02 slot).</summary>
 public sealed class SwitchableGate : IGateEvaluator
 {
@@ -99,7 +107,7 @@ public sealed class SdkHarness : IAsyncDisposable
         return new SdkHarness(host, gate);
     }
 
-    public (GameServerClient Client, ScriptedTransport Transport, RecordingDelay Delay) NewClient(ISessionStore? session = null)
+    public (GameServerClient Client, ScriptedTransport Transport, RecordingDelay Delay) NewClient(ISessionStore? session = null, IClientClock? clock = null)
     {
         var http = Host.Client();
         var transport = new ScriptedTransport(new HttpClientTransport(http));
@@ -107,6 +115,7 @@ public sealed class SdkHarness : IAsyncDisposable
         var client = new GameServerClient(
             new GameServerClientOptions(http.BaseAddress!, "1.2.3", "editor", "build-42"),
             transport,
+            clock: clock,
             delay: delay,
             session: session,
             random: new Random(7));
