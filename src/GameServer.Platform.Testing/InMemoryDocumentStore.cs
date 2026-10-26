@@ -12,13 +12,43 @@ namespace GameServer.Platform.Testing;
 /// invisible outside the transaction, and injectable ambiguous/failed commits.
 /// </summary>
 public sealed class InMemoryDocumentStore(IClock? clock = null)
-    : ITransactionalDocumentStore, IKeyValueStore, ICollectionAwareStore, IDevelopmentOnlyStore
+    : ITransactionalDocumentStore, IKeyValueStore, IPagedQueryStore, ICollectionAwareStore, IDevelopmentOnlyStore
 {
     private readonly Dictionary<DocumentKey, Entry> _documents = [];
     private readonly Lock _lock = new();
     private readonly IClock _clock = clock ?? new SystemClock();
     private HashSet<string>? _collections;
     private long _versionSequence;
+
+    public Task<Page> QueryPageAsync(PagedQuery query, CancellationToken cancellationToken)
+    {
+        query.Validate();
+        var after = PageCursor.Decode(query.Cursor);
+        lock (_lock)
+        {
+            var rows = _documents
+                .Where(d => d.Key.Collection == query.Collection && Live(d.Key) is not null)
+                .Select(d => (d.Key, Content: d.Value.Content, Order: PageCursor.ValueAt(d.Value.Content, query.OrderByField) ?? string.Empty))
+                .Where(r => PageCursor.ValueAt(r.Content, query.FilterField) == query.FilterValue);
+            rows = query.Descending
+                ? rows.OrderByDescending(r => r.Order, StringComparer.Ordinal).ThenByDescending(r => r.Key.Key, StringComparer.Ordinal)
+                : rows.OrderBy(r => r.Order, StringComparer.Ordinal).ThenBy(r => r.Key.Key, StringComparer.Ordinal);
+            if (after is not null)
+            {
+                rows = rows.Where(r =>
+                {
+                    var byOrder = string.CompareOrdinal(r.Order, after.Value);
+                    var byKey = string.CompareOrdinal(r.Key.Key, after.Key);
+                    return query.Descending ? byOrder < 0 || (byOrder == 0 && byKey < 0) : byOrder > 0 || (byOrder == 0 && byKey > 0);
+                });
+            }
+
+            var page = rows.Take(query.PageSize + 1).ToArray();
+            var items = page.Take(query.PageSize).Select(r => new StoredDocument(r.Key, Clone(r.Content), null)).ToArray();
+            var next = page.Length > query.PageSize ? new PageCursor(page[query.PageSize - 1].Order, page[query.PageSize - 1].Key.Key).Encode() : null;
+            return Task.FromResult(new Page(items, next));
+        }
+    }
 
     /// <summary>Restricts the store to provisioned collections, like Couchbase "collection not found" (review M4).</summary>
     public void UseCollections(IEnumerable<string> collections)

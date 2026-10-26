@@ -52,6 +52,13 @@ public sealed record DeletionInfo
     public DateTimeOffset PurgeAfterUtc { get; init; }
 }
 
+/// <summary>Collections owned by the Identity module outside the player aggregates.</summary>
+public static class IdentityCollections
+{
+    /// <summary><c>identities/{mappingKey}</c> → playerId (IDN-02).</summary>
+    public const string Identities = "identities";
+}
+
 public static class IdentityAggregates
 {
     public const string Profile = "profile";

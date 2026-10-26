@@ -7,7 +7,7 @@
 Module framework `gm` (business + adapters): staff/grant model, role templates, Development local auth + bootstrap,
 scheme `GmCookie`, lookup/search/ledger/receipts (paged), audit projection, static UI. Core thêm `AuditEntry` +
 `ICommandContext.AddAudit` để mọi module ghi audit trong receipt. Economy thêm `economy.adjust` (GM); SampleGame thêm
-`gm.progression.set`. Platform thêm `IPagedQueryStore` và `MapGmCommand` (JSON, route player đích).
+`progression.set`. Platform thêm `IPagedQueryStore` và `MapGmCommand` (JSON, route player đích).
 
 ## Research / decisions
 
@@ -41,6 +41,6 @@ src/GameServer.Platform.Web/Validation/EndpointSecurityValidator.cs   # GM permi
 src/GameServer.Modules.Gm/                 # staff, roles, password hashing
 src/GameServer.Modules.Gm.Adapters/        # module, GmCookie scheme, bootstrap, endpoints, ui/index.html
 src/GameServer.Modules.Economy*/           # economy.adjust
-samples/SampleGame/*                       # gm.progression.set
+samples/SampleGame/*                       # progression.set
 tests/GameServer.Gm.Tests/
 ```

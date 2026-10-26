@@ -22,7 +22,7 @@ public sealed record LoginResult(
 /// </summary>
 public sealed class GuestLoginService
 {
-    public const string IdentitiesCollection = "identities";
+    public const string IdentitiesCollection = IdentityCollections.Identities;
 
     private readonly IKeyValueStore _store;
     private readonly IPlayerAggregateWriter _writer;

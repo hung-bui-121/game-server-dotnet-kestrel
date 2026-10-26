@@ -15,8 +15,10 @@ namespace SampleGame.Adapters;
 /// Game module of the sample (SMP-02, SMP-03, SMP-05): progression and battle aggregates, battle and shop commands.
 /// Login (SMP-01) comes from the Identity module and IAPurchase (SMP-04) from the IAP module.
 /// </summary>
-public sealed class SampleGameModule : IGameModule, IPlayerApiModule
+public sealed class SampleGameModule : IGameModule, IPlayerApiModule, IGmApiModule
 {
+    public const string GmProgressionRoute = "/gm/v1/players/{playerId}/progression";
+
     public const string StartRoute = "/api/v1/battle/start";
     public const string EndRoute = "/api/v1/battle/end";
     public const string BuyRoute = "/api/v1/shop/buy";
@@ -35,6 +37,21 @@ public sealed class SampleGameModule : IGameModule, IPlayerApiModule
             s => new Wire.ProgressionState { Level = s.Level, Xp = s.Xp, Stage = s.Stage });
         services.AddAggregateWireMapper<BattleState>(SampleGameAggregates.Battle, ToWire);
     }
+
+    public void MapGmApi(IEndpointRouteBuilder routes) =>
+        routes.MapGmCommand<SetProgressionBody, SetProgressionCommand, SetProgressionResult>(
+            GmProgressionRoute,
+            SetProgressionHandler.Operation,
+            SampleGamePermissions.ProgressionEdit,
+            body =>
+            {
+                if (body is { Level: null, Xp: null, Stage: null } || body.Level < 1 || body.Xp < 0 || body.Stage < 1)
+                {
+                    throw new GameServerException(CoreErrorCodes.BadRequest, "Set at least one of level (>= 1), xp (>= 0), stage (>= 1).");
+                }
+
+                return new SetProgressionCommand(body.Level, body.Xp, body.Stage, body.Reason!);
+            });
 
     public void MapPlayerApi(IEndpointRouteBuilder routes)
     {
@@ -99,3 +116,6 @@ public sealed class SampleGameModule : IGameModule, IPlayerApiModule
         return wire;
     }
 }
+
+/// <summary>Body of <c>POST /gm/v1/players/{playerId}/progression</c>; null fields are unchanged.</summary>
+public sealed record SetProgressionBody(int? Level, long? Xp, int? Stage, string? Reason) : IGmCommandBody;

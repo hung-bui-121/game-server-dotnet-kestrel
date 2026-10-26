@@ -14,34 +14,8 @@ public static class ProtobufBinding
     /// Reads the raw body with a hard size limit. Rejects non-Protobuf content types with 415
     /// and bodies above <paramref name="maxBytes"/> with 413.
     /// </summary>
-    public static async Task<byte[]> ReadBodyAsync(HttpContext context, int maxBytes)
-    {
-        var contentType = context.Request.ContentType;
-        if (contentType is null || !contentType.StartsWith(ErrorResponseWriter.ProtobufContentType, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new GameServerException(CoreErrorCodes.UnsupportedMediaType, $"Content-Type '{contentType}' is not {ErrorResponseWriter.ProtobufContentType}.");
-        }
-
-        if (context.Request.ContentLength > maxBytes)
-        {
-            throw new GameServerException(CoreErrorCodes.PayloadTooLarge, $"Content-Length {context.Request.ContentLength} > {maxBytes}.");
-        }
-
-        using var buffer = new MemoryStream();
-        var chunk = new byte[16 * 1024];
-        int read;
-        while ((read = await context.Request.Body.ReadAsync(chunk, context.RequestAborted)) > 0)
-        {
-            if (buffer.Length + read > maxBytes)
-            {
-                throw new GameServerException(CoreErrorCodes.PayloadTooLarge, $"Body exceeds {maxBytes} bytes.");
-            }
-
-            buffer.Write(chunk, 0, read);
-        }
-
-        return buffer.ToArray();
-    }
+    public static Task<byte[]> ReadBodyAsync(HttpContext context, int maxBytes) =>
+        BoundedBody.ReadAsync(context, maxBytes, ErrorResponseWriter.ProtobufContentType);
 
     /// <summary>Parses with recursion and size limits.</summary>
     public static T Parse<T>(byte[] body)

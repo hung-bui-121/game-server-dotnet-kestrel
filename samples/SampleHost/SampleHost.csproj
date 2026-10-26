@@ -8,6 +8,7 @@
     <ProjectReference Include="..\..\src\GameServer.Modules.Economy.Adapters\GameServer.Modules.Economy.Adapters.csproj" />
     <ProjectReference Include="..\..\src\GameServer.Modules.Iap.Adapters\GameServer.Modules.Iap.Adapters.csproj" />
     <ProjectReference Include="..\SampleGame\SampleGame.Adapters\SampleGame.Adapters.csproj" />
+    <ProjectReference Include="..\..\src\GameServer.Modules.Gm.Adapters\GameServer.Modules.Gm.Adapters.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Content Update="config\**\*" CopyToOutputDirectory="PreserveNewest" />

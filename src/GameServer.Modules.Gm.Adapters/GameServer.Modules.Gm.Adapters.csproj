@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\GameServer.Modules.Gm\GameServer.Modules.Gm.csproj" />
+    <ProjectReference Include="..\GameServer.Modules.Identity\GameServer.Modules.Identity.csproj" />
+    <ProjectReference Include="..\GameServer.Platform.Web\GameServer.Platform.Web.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="ui\index.html" LogicalName="GameServer.Modules.Gm.ui.index.html" />
+  </ItemGroup>
+</Project>

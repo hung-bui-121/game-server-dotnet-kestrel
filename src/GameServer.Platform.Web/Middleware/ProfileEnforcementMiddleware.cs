@@ -37,6 +37,13 @@ public sealed class ProfileEnforcementMiddleware(
             return;
         }
 
+        if (profile.Value == SecurityProfile.Gm && IsCrossSiteMutation(context.Request))
+        {
+            // P0 part of SEC-05: a cookie-authenticated GM mutation must come from the same site.
+            await writer.WriteAsync(context, CoreErrorCodes.Forbidden);
+            return;
+        }
+
         SetBodyLimit(context, profile.Value);
         if (profile.Value != SecurityProfile.Public)
         {
@@ -79,6 +86,12 @@ public sealed class ProfileEnforcementMiddleware(
 
         return false;
     }
+
+    private static bool IsCrossSiteMutation(HttpRequest request) =>
+        !HttpMethods.IsGet(request.Method)
+        && !HttpMethods.IsHead(request.Method)
+        && !HttpMethods.IsOptions(request.Method)
+        && string.Equals(request.Headers["Sec-Fetch-Site"], "cross-site", StringComparison.OrdinalIgnoreCase);
 
     private void SetBodyLimit(HttpContext context, SecurityProfile profile)
     {

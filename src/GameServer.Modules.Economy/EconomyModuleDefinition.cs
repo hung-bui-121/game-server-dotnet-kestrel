@@ -12,9 +12,11 @@ public static class EconomyModuleDefinition
     public static ModuleDescriptor Describe() => new()
     {
         Name = ModuleName,
-        Version = "0.1.0",
+        Version = "0.2.0",
         DependsOn = ["identity"],
         RequiredConfigFiles = [ResourceCatalog.ConfigFile],
+        Permissions = [EconomyPermissions.ResourceAdjust],
+        Commands = [Command.Define<AdjustResourceCommand, AdjustResourceResult>(AdjustResourceHandler.Descriptor).HandledBy<AdjustResourceHandler>()],
         Aggregates = [EconomyAggregates.WalletDescriptor, EconomyAggregates.InventoryDescriptor],
         Collections =
         [

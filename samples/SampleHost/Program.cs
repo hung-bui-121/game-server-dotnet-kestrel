@@ -1,4 +1,5 @@
 using GameServer.Modules.Economy;
+using GameServer.Modules.Gm;
 using GameServer.Modules.Iap;
 using GameServer.Modules.Identity;
 using GameServer.Platform;
@@ -33,7 +34,8 @@ gameServer
     .AddModule<EconomyModule>()
     .AddModule<IapModule>()
     .AddModule<SampleGameModule>()
-    .AddModule<CounterModule>();
+    .AddModule<CounterModule>()
+    .AddModule<GmModule>();
 
 if (gameServer.Options.AllowsDevelopmentTools)
 {

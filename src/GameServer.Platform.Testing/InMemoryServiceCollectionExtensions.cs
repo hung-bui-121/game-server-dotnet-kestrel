@@ -15,6 +15,7 @@ public static class InMemoryServiceCollectionExtensions
     {
         services.RemoveAll<ITransactionalDocumentStore>();
         services.RemoveAll<IKeyValueStore>();
+        services.RemoveAll<IPagedQueryStore>();
         services.RemoveAll<InMemoryDocumentStore>();
         if (store is null)
         {
@@ -27,6 +28,7 @@ public static class InMemoryServiceCollectionExtensions
 
         services.AddSingleton<ITransactionalDocumentStore>(sp => sp.GetRequiredService<InMemoryDocumentStore>());
         services.AddSingleton<IKeyValueStore>(sp => sp.GetRequiredService<InMemoryDocumentStore>());
+        services.AddSingleton<IPagedQueryStore>(sp => sp.GetRequiredService<InMemoryDocumentStore>());
         return services;
     }
 }

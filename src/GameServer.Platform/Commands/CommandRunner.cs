@@ -39,6 +39,7 @@ public sealed class CommandRunner(
         var actor = invocation.Actor;
         var playerId = actor.PlayerId
             ?? throw new GameServerException(CoreErrorCodes.BadRequest, "Command has no target player.");
+        EnsureActorAllowed(descriptor, actor);
 
         using var activity = PlatformMetrics.ActivitySource.StartActivity("command " + descriptor.Operation);
         activity?.SetTag("gs.operation", descriptor.Operation);
@@ -92,6 +93,25 @@ public sealed class CommandRunner(
     }
 
     private const int MaxInsertRaceRounds = 3;
+
+    /// <summary>
+    /// Defense in depth behind endpoint metadata (SEC-07, SEC-08): Player commands run for players only, GM commands
+    /// for GM actors holding the command's permission; Dev commands accept either (OPS-09 keeps them out of Production).
+    /// </summary>
+    private static void EnsureActorAllowed(GameServer.Commands.CommandDescriptor descriptor, ActorContext actor)
+    {
+        var allowed = descriptor.Profile switch
+        {
+            SecurityProfile.Player => actor.ActorType == ActorType.Player,
+            SecurityProfile.Gm => actor.ActorType == ActorType.Gm && descriptor.Permission is not null && actor.HasPermission(descriptor.Permission),
+            SecurityProfile.Dev => true,
+            _ => false,
+        };
+        if (!allowed)
+        {
+            throw new GameServerException(CoreErrorCodes.Forbidden, $"Actor {actor.ActorType} may not run {descriptor.Operation} ({descriptor.Profile}).");
+        }
+    }
 
     private async Task<CommandExecution> ExecuteTransactionAsync(
         GameServer.Commands.CommandRegistration registration,

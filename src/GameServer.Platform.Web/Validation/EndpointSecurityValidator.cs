@@ -13,8 +13,13 @@ namespace GameServer.Platform.Web.Validation;
 /// </summary>
 public static partial class EndpointSecurityValidator
 {
-    public static IReadOnlyList<string> Validate(IEnumerable<Endpoint> endpoints, GameServerOptions options, IEnumerable<string>? modulePublicEndpoints = null)
+    public static IReadOnlyList<string> Validate(
+        IEnumerable<Endpoint> endpoints,
+        GameServerOptions options,
+        IEnumerable<string>? modulePublicEndpoints = null,
+        IEnumerable<string>? permissionCatalog = null)
     {
+        var permissions = permissionCatalog?.ToHashSet(StringComparer.Ordinal);
         var errors = new List<string>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var allowlist = options.PublicEndpointAllowlist.Concat(modulePublicEndpoints ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -51,6 +56,17 @@ public static partial class EndpointSecurityValidator
                 errors.Add(
                     $"[endpoint {label}] is Public but not in GameServer:PublicEndpointAllowlist. " +
                     "Fix: add it to the allowlist and the PCR (SEC-09) or change its profile.");
+            }
+
+            if (permissions is not null && profiles.Any(p => p.Profile == SecurityProfile.Gm))
+            {
+                var permission = endpoint.Metadata.GetMetadata<RequiredPermissionMetadata>()?.Permission;
+                if (permission is null || !permissions.Contains(permission))
+                {
+                    errors.Add(
+                        $"[endpoint {label}] is a GM endpoint whose permission '{permission}' is not in any module's permission catalog. " +
+                        "Fix: declare it in ModuleDescriptor.Permissions and use AsGmEndpoint(permission) (SEC-08).");
+                }
             }
 
             if (options.IsProduction && profiles.Any(p => p.Profile == SecurityProfile.Dev))

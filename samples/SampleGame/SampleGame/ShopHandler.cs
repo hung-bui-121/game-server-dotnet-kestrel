@@ -71,8 +71,9 @@ public static class SampleGameModuleDefinition
     public static ModuleDescriptor Describe() => new()
     {
         Name = ModuleName,
-        Version = "0.1.0",
+        Version = "0.2.0",
         DependsOn = ["identity", EconomyModuleDefinition.ModuleName],
+        Permissions = [SampleGamePermissions.ProgressionEdit],
         RequiredConfigFiles = [BattleCatalog.ConfigFile, ShopCatalog.ConfigFile],
         Aggregates = [SampleGameAggregates.ProgressionDescriptor, SampleGameAggregates.BattleDescriptor],
         Commands =
@@ -80,6 +81,7 @@ public static class SampleGameModuleDefinition
             Command.Define<StartBattleCommand, StartBattleResult>(StartBattleHandler.Descriptor).HandledBy<StartBattleHandler>(),
             Command.Define<EndBattleCommand, EndBattleResult>(EndBattleHandler.Descriptor).HandledBy<EndBattleHandler>(),
             Command.Define<BuyItemCommand, BuyItemResult>(BuyItemHandler.Descriptor).HandledBy<BuyItemHandler>(),
+            Command.Define<SetProgressionCommand, SetProgressionResult>(SetProgressionHandler.Descriptor).HandledBy<SetProgressionHandler>(),
         ],
         ErrorCodes = SampleGameErrors.All,
     };

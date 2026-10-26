@@ -20,7 +20,7 @@ namespace GameServer.Platform.Couchbase;
 /// <see cref="ITransactionalDocumentStore"/> and <see cref="IKeyValueStore"/> on Couchbase (DAT-04, DAT-09, DAT-11,
 /// CMD-05). The only component of the framework that calls the Couchbase SDK.
 /// </summary>
-public sealed class CouchbaseDocumentStore(CouchbaseConnection connection) : ITransactionalDocumentStore, IKeyValueStore
+public sealed class CouchbaseDocumentStore(CouchbaseConnection connection) : ITransactionalDocumentStore, IKeyValueStore, IPagedQueryStore
 {
     private const int CasRetries = 5;
 
@@ -141,6 +141,44 @@ public sealed class CouchbaseDocumentStore(CouchbaseConnection connection) : ITr
         return rows;
     }
 
+    public async Task<Page> QueryPageAsync(PagedQuery query, CancellationToken cancellationToken)
+    {
+        query.Validate();
+        var after = PageCursor.Decode(query.Cursor);
+        var filter = Path(query.FilterField);
+        var order = Path(query.OrderByField);
+        var direction = query.Descending ? "DESC" : "ASC";
+        var comparison = query.Descending ? "<" : ">";
+        var statement =
+            $"SELECT META(d).id AS id, d AS doc, TOSTRING(IFMISSINGORNULL({order}, '')) AS ord FROM `{query.Collection}` AS d " +
+            $"WHERE {filter} = $value " +
+            (after is null ? string.Empty : $"AND (TOSTRING(IFMISSINGORNULL({order}, '')) {comparison} $cv OR (TOSTRING(IFMISSINGORNULL({order}, '')) = $cv AND META(d).id {comparison} $ck)) ") +
+            $"ORDER BY ord {direction}, META(d).id {direction} LIMIT $limit";
+        var options = new QueryOptions()
+            .Parameter("value", query.FilterValue)
+            .Parameter("limit", query.PageSize + 1)
+            .ScanConsistency(QueryScanConsistency.RequestPlus)
+            .CancellationToken(cancellationToken);
+        if (after is not null)
+        {
+            options.Parameter("cv", after.Value).Parameter("ck", after.Key);
+        }
+
+        var scope = await connection.GetScopeAsync();
+        var result = await scope.QueryAsync<PagedRow>(statement, options);
+        var rows = new List<PagedRow>();
+        await foreach (var row in result.Rows.WithCancellation(cancellationToken))
+        {
+            rows.Add(row);
+        }
+
+        var items = rows.Take(query.PageSize).Select(r => new StoredDocument(new DocumentKey(query.Collection, r.Id), r.Doc, null)).ToArray();
+        var next = rows.Count > query.PageSize ? new PageCursor(rows[query.PageSize - 1].Ord, rows[query.PageSize - 1].Id).Encode() : null;
+        return new Page(items, next);
+    }
+
+    private static string Path(string field) => "d." + string.Join('.', field.Split('.').Select(s => $"`{s}`"));
+
     async Task<bool> IKeyValueStore.InsertAsync(DocumentKey key, JsonObject content, TimeSpan? expiry, CancellationToken cancellationToken)
     {
         KeyValueCollections.EnsureWritable(key);
@@ -228,6 +266,15 @@ public sealed class CouchbaseDocumentStore(CouchbaseConnection connection) : ITr
                 await Task.Delay(TimeSpan.FromMilliseconds(20 * (attempt + 1)), cancellationToken);
             }
         }
+    }
+
+    private sealed class PagedRow
+    {
+        public string Id { get; set; } = string.Empty;
+
+        public JsonObject Doc { get; set; } = [];
+
+        public string Ord { get; set; } = string.Empty;
     }
 
     private sealed class PendingRow

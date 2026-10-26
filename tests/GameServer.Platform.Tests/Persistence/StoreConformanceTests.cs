@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using GameServer.Errors;
 using GameServer.Platform.Persistence;
 using Shouldly;
 
@@ -262,5 +263,72 @@ public abstract class StoreConformanceTests
     public async Task Mark_relayed_on_a_missing_receipt_is_a_no_op()
     {
         await Store.MarkOutboxRelayedAsync(new DocumentKey("receipts", "rcpt::missing-" + Guid.NewGuid().ToString("N")), CancellationToken.None);
+    }
+
+    private async Task<string> SeedGroupAsync(params string[] orderValues)
+    {
+        var group = "g-" + Guid.NewGuid().ToString("N");
+        await Store.RunTransactionAsync(async tx =>
+        {
+            for (var i = 0; i < orderValues.Length; i++)
+            {
+                await tx.InsertAsync(new DocumentKey(Docs, $"{group}-{i}"), new JsonObject { ["group"] = group, ["at"] = orderValues[i], ["value"] = i });
+            }
+
+            await tx.InsertAsync(NewKey(), new JsonObject { ["group"] = "other", ["at"] = "0", ["value"] = -1 });
+            return true;
+        }, Options);
+        return group;
+    }
+
+    private async Task<List<int>> WalkAsync(string group, bool descending, int pageSize)
+    {
+        var paged = (IPagedQueryStore)Store;
+        var values = new List<int>();
+        string? cursor = null;
+        for (var pages = 0; pages < 20; pages++)
+        {
+            var page = await paged.QueryPageAsync(new PagedQuery(Docs, "group", group, "at", descending, pageSize, cursor), CancellationToken.None);
+            page.Items.Count.ShouldBeLessThanOrEqualTo(pageSize);
+            values.AddRange(page.Items.Select(d => d.Content["value"]!.GetValue<int>()));
+            cursor = page.NextCursor;
+            if (cursor is null)
+            {
+                return values;
+            }
+        }
+
+        throw new ShouldAssertException("Cursor walk did not terminate.");
+    }
+
+    [Fact]
+    public async Task Paged_query_walks_every_match_once_in_order()
+    {
+        // Equal order values (indexes 1 and 2) are ordered by key.
+        var group = await SeedGroupAsync("2026-01-03", "2026-01-01", "2026-01-01", "2026-01-05", "2026-01-02");
+
+        (await WalkAsync(group, descending: false, pageSize: 2)).ShouldBe([1, 2, 4, 0, 3]);
+        (await WalkAsync(group, descending: true, pageSize: 2)).ShouldBe([3, 0, 4, 2, 1]);
+        (await WalkAsync(group, descending: true, pageSize: 200)).ShouldBe([3, 0, 4, 2, 1]);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(201)]
+    public async Task Paged_query_rejects_page_size_outside_1_to_200(int pageSize)
+    {
+        var paged = (IPagedQueryStore)Store;
+        var ex = await Should.ThrowAsync<GameServerException>(
+            () => paged.QueryPageAsync(new PagedQuery(Docs, "group", "x", "at", false, pageSize, null), CancellationToken.None));
+        ex.Code.ShouldBe(CoreErrorCodes.BadRequest);
+    }
+
+    [Fact]
+    public async Task Paged_query_rejects_a_malformed_cursor()
+    {
+        var paged = (IPagedQueryStore)Store;
+        var ex = await Should.ThrowAsync<GameServerException>(
+            () => paged.QueryPageAsync(new PagedQuery(Docs, "group", "x", "at", false, 10, "not-a-cursor!"), CancellationToken.None));
+        ex.Code.ShouldBe(CoreErrorCodes.BadRequest);
     }
 }

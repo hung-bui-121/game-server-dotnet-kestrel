@@ -23,6 +23,14 @@ public sealed class PlayerSnapshotReader(ModuleRegistry registry, ITransactional
         return descriptors.Select((d, i) => serializer.Load(d, playerId, documents[i])).ToArray();
     }
 
+    /// <summary>Reads every registered aggregate of a player, hidden ones included (GM inspection, GM-02).</summary>
+    public async Task<IReadOnlyList<LoadedAggregate>> ReadAllAsync(string playerId, CancellationToken cancellationToken)
+    {
+        var descriptors = registry.Aggregates.Values.OrderBy(a => a.AggregateId, StringComparer.Ordinal).ToArray();
+        var documents = await store.GetManyAsync(descriptors.Select(d => AggregateDocumentSerializer.KeyFor(d, playerId)).ToArray(), cancellationToken);
+        return descriptors.Select((d, i) => serializer.Load(d, playerId, documents[i])).ToArray();
+    }
+
     /// <summary>Reads one aggregate of a player (service use by other modules, ARC-04).</summary>
     public async Task<LoadedAggregate> ReadOneAsync(string playerId, string aggregateId, CancellationToken cancellationToken)
     {

@@ -39,7 +39,9 @@ public static class TestModules
             Command.Define<Unit, Unit>(NoChangeHandler.Descriptor).HandledBy<NoChangeHandler>(),
             Command.Define<int, Unit>(OutboxFloodHandler.Descriptor).HandledBy<OutboxFloodHandler>(),
             Command.Define<int, Unit>(BigResultHandler.Descriptor).HandledBy<BigResultHandler>(),
+            Command.Define<long, Unit>(GmAddHandler.Descriptor).HandledBy<GmAddHandler>(),
         ],
+        Permissions = [GmAddHandler.Permission],
         ErrorCodes = ProbeErrors.All,
         Collections = [new CollectionSpec("probe_claims")],
     });
@@ -122,6 +124,22 @@ public sealed class ClaimHandler : ICommandHandler<ClaimRequest, Unit>
 
         context.Set(ProbeAggregates.Probe, new ProbeState { Blob = "claimed:" + request.Key });
         return CommandOutcome<Unit>.Ok(Unit.Value);
+    }
+}
+
+/// <summary>GM command adding to the target player's counter (profile Gm, permission <c>probe.edit</c>).</summary>
+public sealed class GmAddHandler : ICommandHandler<long, Unit>
+{
+    public const string Permission = "probe.edit";
+
+    public static CommandDescriptor Descriptor { get; } =
+        new("probe.gm_add", touches: [CounterAggregates.Counter], profile: GameServer.Actors.SecurityProfile.Gm, permission: Permission);
+
+    public ValueTask<CommandOutcome<Unit>> HandleAsync(long request, ICommandContext context)
+    {
+        var counter = context.Get<CounterState>(CounterAggregates.Counter);
+        context.Set(CounterAggregates.Counter, counter with { Value = counter.Value + request });
+        return ValueTask.FromResult(CommandOutcome<Unit>.Ok(Unit.Value));
     }
 }
 

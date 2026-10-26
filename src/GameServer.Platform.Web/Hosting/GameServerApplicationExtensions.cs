@@ -71,7 +71,11 @@ public static class GameServerApplicationExtensions
         }
 
         var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints);
-        errors.AddRange(EndpointSecurityValidator.Validate(endpoints, options, registry.Modules.SelectMany(m => m.Descriptor.PublicEndpoints)));
+        errors.AddRange(EndpointSecurityValidator.Validate(
+            endpoints,
+            options,
+            registry.Modules.SelectMany(m => m.Descriptor.PublicEndpoints),
+            registry.Modules.SelectMany(m => m.Descriptor.Permissions)));
         if (errors.Count > 0)
         {
             throw new GameServerStartupException(errors);

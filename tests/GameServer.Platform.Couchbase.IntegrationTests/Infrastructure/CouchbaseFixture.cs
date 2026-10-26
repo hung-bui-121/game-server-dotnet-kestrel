@@ -59,7 +59,11 @@ public sealed class CouchbaseFixture : IAsyncLifetime
         Registry.Add(new DescriptorModule(new ModuleDescriptor
         {
             Name = "conformance",
-            Collections = [new CollectionSpec("conf_docs"), new CollectionSpec("tst04")],
+            Collections =
+            [
+                new CollectionSpec("conf_docs", [new IndexSpec("ix_conf_docs_group_at", "`group`, `at`")]),
+                new CollectionSpec("tst04"),
+            ],
         }), serviceOnly: false);
 
         Connection = new CouchbaseConnection(Options, GameServer, NullLoggerFactory.Instance);

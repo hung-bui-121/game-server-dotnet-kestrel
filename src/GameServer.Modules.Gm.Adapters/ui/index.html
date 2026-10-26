@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GM Console</title>
+<style>
+  :root { --bg: #f7f7f8; --fg: #1d1d1f; --muted: #6b6b70; --line: #d9d9de; --accent: #2f5bd3; --error: #b42318; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #17171a; --fg: #ececf0; --muted: #9a9aa3; --line: #34343a; --accent: #7c9bff; --error: #ff7a6b; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+  main { max-width: 960px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 20px; margin: 0 0 12px; }
+  h2 { font-size: 16px; margin: 20px 0 8px; }
+  section { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+  label { display: inline-flex; flex-direction: column; gap: 2px; margin: 0 8px 8px 0; color: var(--muted); font-size: 12px; }
+  input, select, button { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--fg); }
+  button { cursor: pointer; border-color: var(--accent); color: var(--accent); align-self: flex-end; margin-bottom: 8px; }
+  pre { overflow-x: auto; background: rgba(127,127,127,.08); padding: 8px; border-radius: 6px; margin: 4px 0 0; font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .row { display: flex; flex-wrap: wrap; align-items: flex-end; }
+  .muted { color: var(--muted); }
+  .error { color: var(--error); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>GM Console</h1>
+  <p id="status" class="muted">Not signed in.</p>
+  <p id="error" class="error" role="alert"></p>
+
+  <section id="login">
+    <h2>Sign in (Development)</h2>
+    <form id="login-form" class="row">
+      <label>Staff id <input name="staffId" autocomplete="username" required></label>
+      <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+      <button type="submit">Sign in</button>
+    </form>
+  </section>
+
+  <div id="app" hidden>
+    <section>
+      <div class="row">
+        <span id="me" class="muted"></span>
+        <button id="logout" type="button" style="margin-left:auto">Sign out</button>
+      </div>
+      <form id="lookup-form" class="row">
+        <label>Find by <select name="by"><option value="id">playerId</option><option value="mapping">mapping key</option><option value="name">display name</option></select></label>
+        <label>Value <input name="value" required></label>
+        <button type="submit">Look up</button>
+      </form>
+      <div id="search-results"></div>
+    </section>
+
+    <section id="player" hidden>
+      <h2>Player <span id="player-id"></span></h2>
+      <table><thead><tr><th>Aggregate</th><th>Rev</th><th>Schema</th><th>Size</th><th>State</th></tr></thead><tbody id="aggregates"></tbody></table>
+
+      <h2>Adjust resource</h2>
+      <form id="adjust-form" class="row">
+        <label>Resource <input name="resource" required></label>
+        <label>Delta <input name="delta" type="number" step="1" required></label>
+        <label>Reason <input name="reason" maxlength="500" required></label>
+        <button type="submit">Apply</button>
+      </form>
+      <pre id="adjust-result" hidden></pre>
+
+      <h2>Recent receipts</h2>
+      <pre id="receipts"></pre>
+    </section>
+  </div>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+let currentPlayer = null;
+
+function showError(message) { $("error").textContent = message || ""; }
+
+async function api(method, path, body, headers) {
+  const init = { method, credentials: "same-origin", headers: Object.assign({}, headers) };
+  if (body !== undefined) { init.headers["Content-Type"] = "application/json"; init.body = JSON.stringify(body); }
+  const response = await fetch(path, init);
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!response.ok) {
+    const code = data && (data.code || data.title) ? (data.code || data.title) : response.status;
+    throw new Error(`${method} ${path} → ${response.status} ${code}`);
+  }
+  return data;
+}
+
+function setSignedIn(me) {
+  $("login").hidden = !!me;
+  $("app").hidden = !me;
+  $("status").textContent = me ? `Signed in as ${me.displayName} (${me.gameId}/${me.environmentId})` : "Not signed in.";
+  $("me").textContent = me ? `Permissions: ${me.permissions.join(", ")}` : "";
+}
+
+function cell(row, value) { const td = document.createElement("td"); td.textContent = value; row.appendChild(td); return td; }
+
+function renderPlayer(view) {
+  currentPlayer = view.playerId;
+  $("player").hidden = false;
+  $("player-id").textContent = view.playerId;
+  const body = $("aggregates");
+  body.replaceChildren();
+  for (const a of view.aggregates) {
+    const row = document.createElement("tr");
+    cell(row, a.id + (a.clientVisible ? "" : " (hidden)"));
+    cell(row, a.exists ? String(a.rev) : "—");
+    cell(row, `${a.storedSchemaVersion}/${a.schemaVersion}`);
+    cell(row, `${a.sizeBytes} B`);
+    const pre = document.createElement("pre");
+    pre.textContent = JSON.stringify(a.state, null, 2);
+    cell(row, "").appendChild(pre);
+    body.appendChild(row);
+  }
+  loadReceipts();
+}
+
+async function loadReceipts() {
+  try {
+    const page = await api("GET", `/gm/v1/players/${encodeURIComponent(currentPlayer)}/receipts?pageSize=20`);
+    $("receipts").textContent = page.items.map(r => `${r.committedAtUtc}  ${r.operation}  ${r.resultCode}  ${r.actorType}:${r.actorId}`).join("\n") || "(none)";
+  } catch (e) { $("receipts").textContent = e.message; }
+}
+
+async function lookup(by, value) {
+  $("search-results").replaceChildren();
+  if (by === "name") {
+    const page = await api("GET", `/gm/v1/players/search?displayName=${encodeURIComponent(value)}&pageSize=50`);
+    for (const item of page.items) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = `${item.displayName} — ${item.playerId}`;
+      button.addEventListener("click", () => lookup("id", item.playerId).catch(e => showError(e.message)));
+      $("search-results").appendChild(button);
+    }
+    if (page.items.length === 0) { $("search-results").textContent = "No match."; }
+    return;
+  }
+  const path = by === "mapping" ? `/gm/v1/players/by-mapping/${encodeURIComponent(value)}` : `/gm/v1/players/${encodeURIComponent(value)}`;
+  renderPlayer(await api("GET", path));
+}
+
+$("login-form").addEventListener("submit", async (event) => {
+  event.preventDefault(); showError();
+  const form = new FormData(event.target);
+  try { setSignedIn(await api("POST", "/gm/v1/auth/login", { staffId: form.get("staffId"), password: form.get("password") })); event.target.reset(); }
+  catch (e) { showError(e.message); }
+});
+
+$("logout").addEventListener("click", async () => {
+  showError();
+  try { await api("POST", "/gm/v1/auth/logout"); } catch (e) { showError(e.message); }
+  setSignedIn(null); $("player").hidden = true;
+});
+
+$("lookup-form").addEventListener("submit", async (event) => {
+  event.preventDefault(); showError();
+  const form = new FormData(event.target);
+  try { await lookup(form.get("by"), String(form.get("value")).trim()); } catch (e) { showError(e.message); }
+});
+
+$("adjust-form").addEventListener("submit", async (event) => {
+  event.preventDefault(); showError();
+  const form = new FormData(event.target);
+  const body = { resource: form.get("resource"), delta: Number(form.get("delta")), reason: form.get("reason") };
+  try {
+    const result = await api("POST", `/gm/v1/players/${encodeURIComponent(currentPlayer)}/resources/adjust`, body, { "X-Request-Id": crypto.randomUUID() });
+    $("adjust-result").hidden = false;
+    $("adjust-result").textContent = JSON.stringify(result, null, 2);
+    await lookup("id", currentPlayer);
+  } catch (e) { showError(e.message); }
+});
+
+api("GET", "/gm/v1/me").then(setSignedIn).catch(() => setSignedIn(null));
+</script>
+</body>
+</html>

@@ -1,6 +1,7 @@
 using System.Reflection;
 using GameServer.Commands;
 using GameServer.Modules.Economy;
+using GameServer.Modules.Gm;
 using GameServer.Modules.Iap;
 using GameServer.Modules.Identity;
 using GameServer.Platform.Commands;
@@ -38,11 +39,13 @@ public sealed class ArchitectureTests
     private static readonly Assembly IapAdapters = typeof(IapModule).Assembly;
     private static readonly Assembly GameBusiness = typeof(EndBattleHandler).Assembly;
     private static readonly Assembly GameAdapters = typeof(SampleGameModule).Assembly;
+    private static readonly Assembly GmBusiness = typeof(StaffRecord).Assembly;
+    private static readonly Assembly GmAdapters = typeof(GmModule).Assembly;
 
-    private static readonly Assembly[] BusinessAssemblies = [Core, IdentityBusiness, CounterBusiness, EconomyBusiness, IapBusiness, GameBusiness];
+    private static readonly Assembly[] BusinessAssemblies = [Core, IdentityBusiness, CounterBusiness, EconomyBusiness, IapBusiness, GameBusiness, GmBusiness];
 
     private static readonly Assembly[] ModuleAssemblies =
-        [IdentityBusiness, IdentityAdapters, CounterBusiness, CounterAdapters, EconomyBusiness, EconomyAdapters, IapBusiness, IapAdapters, GameBusiness, GameAdapters];
+        [IdentityBusiness, IdentityAdapters, CounterBusiness, CounterAdapters, EconomyBusiness, EconomyAdapters, IapBusiness, IapAdapters, GameBusiness, GameAdapters, GmBusiness, GmAdapters];
 
     private static readonly Assembly[] AllFrameworkAndModules =
         [Core, Platform, PlatformWeb, PlatformCouchbase, PlatformTesting, .. ModuleAssemblies];

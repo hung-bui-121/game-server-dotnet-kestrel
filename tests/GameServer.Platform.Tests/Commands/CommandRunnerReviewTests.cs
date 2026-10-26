@@ -79,13 +79,13 @@ public sealed class CommandRunnerReviewTests : IDisposable
     public async Task Same_actor_and_requestId_for_two_target_players_are_two_commands()
     {
         var requestId = Guid.NewGuid().ToString("D");
-        var gm = new ActorContext("gm-1", ActorType.Gm, null, "test", "dev", new HashSet<string>(), "c");
+        var gm = Gm(GmAddHandler.Permission);
 
         var forA = await _h.Runner.ExecuteAsync(
-            new CommandInvocation(IncrementHandler.Operation, gm with { PlayerId = "a" }, requestId, "h", new IncrementCommand(2, null), _ => [1]),
+            new CommandInvocation(GmAddHandler.Descriptor.Operation, gm with { PlayerId = "a" }, requestId, "h", 2L, _ => [1]),
             CancellationToken.None);
         var forB = await _h.Runner.ExecuteAsync(
-            new CommandInvocation(IncrementHandler.Operation, gm with { PlayerId = "b" }, requestId, "h", new IncrementCommand(2, null), _ => [1]),
+            new CommandInvocation(GmAddHandler.Descriptor.Operation, gm with { PlayerId = "b" }, requestId, "h", 2L, _ => [1]),
             CancellationToken.None);
 
         forB.Replayed.ShouldBeFalse();
@@ -93,6 +93,24 @@ public sealed class CommandRunnerReviewTests : IDisposable
         CounterValue("a").ShouldBe(2);
         CounterValue("b").ShouldBe(2);
     }
+
+    [Fact]
+    public async Task Runner_rejects_actors_that_do_not_match_the_command_profile()
+    {
+        Task Run(string operation, ActorContext actor, object request) =>
+            _h.Runner.ExecuteAsync(new CommandInvocation(operation, actor, Guid.NewGuid().ToString("D"), "h", request, _ => [1]), CancellationToken.None);
+
+        (await Should.ThrowAsync<GameServerException>(Run(IncrementHandler.Operation, Gm(GmAddHandler.Permission) with { PlayerId = "p1" }, new IncrementCommand(1, null))))
+            .Code.ShouldBe(CoreErrorCodes.Forbidden);
+        (await Should.ThrowAsync<GameServerException>(Run(GmAddHandler.Descriptor.Operation, RunnerHarness.Player("p1"), 1L)))
+            .Code.ShouldBe(CoreErrorCodes.Forbidden);
+        (await Should.ThrowAsync<GameServerException>(Run(GmAddHandler.Descriptor.Operation, Gm() with { PlayerId = "p1" }, 1L)))
+            .Code.ShouldBe(CoreErrorCodes.Forbidden);
+        CounterValue().ShouldBe(0);
+    }
+
+    private static ActorContext Gm(params string[] permissions) =>
+        new("gm-1", ActorType.Gm, null, "test", "dev", permissions.ToHashSet(), "c");
 
     private sealed class RejectAllGuard : ICommandGuard
     {

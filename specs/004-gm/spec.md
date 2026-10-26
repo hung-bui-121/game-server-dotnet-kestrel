@@ -96,7 +96,7 @@ chỉ là tiện ích; backend quyết định quyền.
 - **FR-008**: `POST /gm/v1/players/{playerId}/resources/adjust` `{resource, delta, reason}` + `X-Request-Id`
   (`resource.adjust`) → command `economy.adjust` (Touches `wallet`, `inventory`) ledger `gm_adjust`, audit (GM-03).
 - **FR-009**: `POST /gm/v1/players/{playerId}/progression` `{level?, xp?, stage?, reason}` (`progression.edit`) → command
-  `gm.progression.set` của SampleGame, audit before/after.
+  `progression.set` của SampleGame, audit before/after.
 - **FR-010**: Audit = outbox `gm_audit` → projection `gm_audit::{entryId}` trong `gm_audit` với 7 trường SEC-14: actor,
   permission/action, target, reason, before/after hoặc `receiptId`, thời gian UTC, correlation.
 - **FR-011**: Mutation GM bị từ chối khi `Sec-Fetch-Site = cross-site` (phần P0 của SEC-05).
