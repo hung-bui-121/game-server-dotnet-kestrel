@@ -40,4 +40,4 @@ description: "Task list for 006 unity-sdk"
 ## Phase 7: Polish
 
 - [X] T014 [P] PCR `docs/pcr/unity-sdk.md`, platform PCR (gate headers), README, quickstart notes for device acceptance
-- [ ] T015 Full suite, AgentMemories, final report
+- [X] T015 Full suite, AgentMemories, final report

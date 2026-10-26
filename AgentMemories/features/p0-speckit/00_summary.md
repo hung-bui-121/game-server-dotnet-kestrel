@@ -10,9 +10,9 @@
 | 003 SampleGame (economy, GetConfig, IAP fake + Apple/Google, battle, shop, cheat) | `003-sample-game` (tách từ 002) | DONE 26/26 task |
 | 004 GM backend + frontend tối thiểu | `004-gm` (tách từ 003) | DONE 18/18 task (`71dfc84` feat, `36d5eed` sửa sau review tech-lead: 0 Blocker, 4 Major, 4 Minor — đã sửa hết) |
 | 005 observability/ops | `005-observability-ops` (tách từ 004) | DONE 15/15 task (`86fbafa` feat, `bd7b471` sửa sau review tech-lead: 0 Blocker, 5 Major, 6 Minor — đã sửa hết) |
-| 006 Unity SDK | — | |
+| 006 Unity SDK | `006-unity-sdk` (tách từ 005) | DONE 15/15 task (`9644edc` feat, `184613d` sửa sau review: 0 Blocker, 6 Major, 5 Minor — đã sửa hết) |
 
-Test (26/10, cuối 005): 311 — 278 pass, 33 skip (integration Couchbase, thiếu `COUCHBASE_CONNSTR`), 0 fail.
+Test (26/10, cuối 006): 337 — 304 pass, 33 skip (integration Couchbase, thiếu `COUCHBASE_CONNSTR`), 0 fail.
 
 **Quyết định owner 26/10/2026:** 6 slice tuần tự; không Docker/Couchbase trên máy → unit test bằng store
 in-memory, integration/TST-04 viết sẵn và skip có lý do; chỉ dừng review sau spec+plan 001.
@@ -40,6 +40,13 @@ Heredoc trong Bash tool hay lỗi với ký tự đặc biệt → viết script
   logger của host khác (test song song mất log). `LogSinkMonitor` static (SelfLog là process-wide). Health `/health/live|ready`
   (Public, chỉ status, ready cache 1 s), chi tiết `GET /gm/v1/health` (`ops.read`). Drain: `IHostedLifecycleService.StoppingAsync`
   chạy **trước** `ApplicationStopping` → dùng `ShutdownSignal`. TestHost đặt `DrainDelaySeconds=0`.
-- Chưa kiểm được trên hạ tầng thật: Couchbase (TST-04, N1QL paging EXPLAIN), OTLP tới collector thật, Apple/Google sandbox.
+- SDK (006): một nguồn code trong gói UPM `sdk/unity/com.gameserver.client` (C# 9, netstandard2.1), build .NET qua
+  `sdk/GameServer.Client` (codegen proto vào gói, commit). Sample client = **KestrelDemo** (Unity 6000.3.22f1, owner thêm 26/10, editor ở
+  `D:\DevTools\Unity\Unity 6000.3.22f1`) tham chiếu gói bằng `file:`. CI-02: `sdk/unity/ci/smoke-build.ps1` (`-Setup`, `-CompileOnly`,
+  `-E2E -ServerUrl`); Android IL2CPP stripping High đạt trên Unity 6 và 2022.3. V7 xác nhận: phải kèm
+  `System.Runtime.CompilerServices.Unsafe.dll` 4.5.2. Login SDK không tự retry khi kết quả không chắc (server chưa khử trùng login —
+  follow-up server). Windows: đường dẫn project Unity phải ngắn (MAX_PATH).
+- Chưa kiểm được trên hạ tầng thật: Couchbase (TST-04, N1QL paging EXPLAIN), OTLP tới collector thật, Apple/Google sandbox,
+  thiết bị Android/iOS (ACC-18), build iOS.
 
-**Việc tiếp theo:** slice 006 Unity SDK tách từ `005-observability-ops`.
+**Việc tiếp theo:** P0 xong 6/6 slice (nhánh chồng main → 001 → … → 006, chưa merge/push). Chờ owner: review/merge, chạy TST-04 trên Couchbase, nghiệm thu thiết bị, quyết định DAT-11 GetMulti, dedupe login phía server.
