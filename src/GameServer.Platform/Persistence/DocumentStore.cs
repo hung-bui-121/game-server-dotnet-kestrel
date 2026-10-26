@@ -76,3 +76,12 @@ public sealed class DocumentExistsException(DocumentKey key) : Exception($"Docum
 {
     public DocumentKey Key { get; } = key;
 }
+
+/// <summary>
+/// A document changed between the bundle read and the write of the same attempt (stores whose bundle read
+/// returns no write handle). The command runner re-runs the command.
+/// </summary>
+public sealed class StaleReadException(DocumentKey key) : Exception($"Document {key} changed during the transaction.")
+{
+    public DocumentKey Key { get; } = key;
+}

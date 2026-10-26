@@ -67,13 +67,14 @@ public sealed class CommandRunner(
             {
                 return await ExecuteTransactionAsync(registration, invocation, playerId, receiptId, receiptKey, requestAborted);
             }
-            catch (DocumentExistsException ex)
+            catch (Exception ex) when (ex is DocumentExistsException or StaleReadException)
             {
-                // Another instance committed the same receipt (or claim) between our read and insert. Couchbase
-                // reports this as "document exists" instead of retrying, so re-run: the receipt check above replays it.
+                // Another instance committed the same receipt/claim between our read and insert (Couchbase reports
+                // "document exists" instead of retrying), or a document changed after the bundle read.
+                // Re-run: the receipt check above replays a committed duplicate.
                 if (round >= MaxInsertRaceRounds)
                 {
-                    throw new GameServerException(CoreErrorCodes.ConcurrentUpdate, $"Insert race on {ex.Key} for {descriptor.Operation}.", ex) { RetryAfterMs = 200 };
+                    throw new GameServerException(CoreErrorCodes.ConcurrentUpdate, $"Write race for {descriptor.Operation}.", ex) { RetryAfterMs = 200 };
                 }
             }
         }

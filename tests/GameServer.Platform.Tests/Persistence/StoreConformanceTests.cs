@@ -42,14 +42,15 @@ public abstract class StoreConformanceTests
     [Fact]
     public async Task Body_exception_rolls_back_and_is_rethrown()
     {
+        var store = Store;
         var a = NewKey();
-        await Should.ThrowAsync<ApplicationException>(() => Store.RunTransactionAsync<bool>(async tx =>
+        await Should.ThrowAsync<ApplicationException>(() => store.RunTransactionAsync<bool>(async tx =>
         {
             await tx.InsertAsync(a, Doc(1));
             throw new ApplicationException("boom");
         }, Options));
 
-        (await Store.GetAsync(a, CancellationToken.None)).ShouldBeNull();
+        (await store.GetAsync(a, CancellationToken.None)).ShouldBeNull();
     }
 
     [Fact]
