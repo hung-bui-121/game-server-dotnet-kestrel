@@ -3,7 +3,7 @@
 Published Contract Register của nền tảng (PCR-01). Thay đổi mục **semantic** là breaking change (ARC-08);
 thay đổi mục **vận hành** chỉ cần ghi changelog. Nguồn yêu cầu: `Requirements/Game_Server_System_Requirements_v1.2.md` rev 4.
 
-Phiên bản: 0.3.0 (slice 001 + sửa sau review + slice 002 identity, 2026-10-26).
+Phiên bản: 0.4.0 (slice 001 + sửa sau review + slice 002 identity + slice 004 GM, 2026-10-26).
 
 ## 1. Limits và timeout theo nhóm endpoint (vận hành — API-06, PERF-04)
 
@@ -124,6 +124,8 @@ startup chặn ngoài Development/Test.
 | --- | --- |
 | `GET /v1/time` | server time (TIME-01) |
 | `POST /api/v1/identity/login/guest` | guest login (khai báo bởi module identity qua `ModuleDescriptor.PublicEndpoints`) |
+| `POST /gm/v1/auth/login` | GM local login, chỉ map ở Development/Test (module gm) |
+| `GET /gm/v1/ui` | trang GM tĩnh (module gm) |
 
 `GetConfig` (`POST /api/v1/config/get`) là endpoint **Player** (SEC-09, CFG-03): trả các file `clientVisible` (bytes sau
 overlay), `not_modified` khi client gửi đúng version; bundle > `GameServer:Limits:ConfigBundleBytes` (1 MiB) → 413.
@@ -140,6 +142,22 @@ Health endpoints (`/health/live`, `/health/ready`) thêm ở slice 005.
 | Outbox consumer | đăng ký `IOutboxConsumer` cho một `kind` |
 | Document store | `ITransactionalDocumentStore` + `IKeyValueStore` (Couchbase; in-memory chỉ Development/Test — startup chặn ở môi trường khác) |
 | Command guard | `ICommandGuard` (chạy trước mỗi lần thực thi mới) |
+| Truy vấn phân trang | `IPagedQueryStore` (in-memory; Couchbase N1QL `RequestPlus`) |
+
+## 12. GM API dùng chung (semantic — slice 004)
+
+- `IPagedQueryStore.QueryPageAsync(PagedQuery)`: lọc bằng nhau một trường, sắp một trường (+ key), keyset cursor opaque;
+  `pageSize` 1–200 (ngoài khoảng → 400); đường dẫn trường chỉ gồm định danh (chặn injection). Chỉ dùng ngoài hot path
+  (PERF-07); collection cần index `(trường lọc, trường sắp)`.
+- `GmHttp`: `ReadPageRequest` (`pageSize` bắt buộc), `QueryAsync`, `ReadJsonAsync` (body JSON ≤ GM limit), `RequirePlayerId`.
+- `MapGmCommand<TBody, TRequest, TResult>(pattern, operation, permission, toDomain)`: route phải có `{playerId}`; `TBody :
+  IGmCommandBody` (reason bắt buộc); xem PCR gm.
+- `ICommandContext.AddAudit(...)` (Core): outbox kind `gm_audit`; module gm projection vào `gm_audit`.
+- `PlayerSnapshotReader.ReadAllAsync(playerId)`: mọi aggregate kể cả hidden (cho GM).
+- Runner: command profile `Player` chỉ cho actor player, `Gm` chỉ cho actor GM có permission của command, `Dev` cho cả hai
+  → sai → 403 `FORBIDDEN`.
+- Middleware profile: mutation GM có `Sec-Fetch-Site: cross-site` → 403.
+- Startup validator: endpoint GM phải có permission trong catalog của các module đã đăng ký (SEC-08).
 
 ## 11. TST-04 — kết quả thực nghiệm
 

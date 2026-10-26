@@ -1,6 +1,6 @@
 # PCR — economy
 
-Module framework `economy` (slice 003, version 0.1.0). Nguồn: ECO-01..08, OPS-09.
+Module framework `economy` (slice 003, version 0.2.0 từ slice 004). Nguồn: ECO-01..08, OPS-09, GM-03.
 
 ## Aggregate
 
@@ -36,6 +36,20 @@ sinh outbox `ledger` → projection `ledger::{entryId}` trong collection `ledger
 | 11003 | QUANTITY_LIMIT_EXCEEDED |
 | 11004 | INVALID_QUANTITY |
 | 11005 | ALREADY_GRANTED |
+
+## GM (slice 004 — GM-03, SEC-14)
+
+Permission `resource.adjust` (thuộc catalog của module này).
+
+| Route | Permission | Command |
+| --- | --- | --- |
+| `POST /gm/v1/players/{playerId}/resources/adjust` `{resource, delta, reason}` | `resource.adjust` | `economy.adjust` |
+| `GET /gm/v1/players/{playerId}/ledger?pageSize=&cursor=` | `player.read` (module gm) | — (list `ledger`, mới nhất trước) |
+
+`economy.adjust`: profile `Gm`, Touches `wallet`, `inventory`. `delta > 0` → Grant, `delta < 0` → Debit, `delta = 0` →
+`INVALID_QUANTITY`; ledger `sourceType = gm_adjust`, `actorId` = staff; audit `{permission: resource.adjust, action:
+economy.adjust, reason}` tham chiếu `receiptId` (không chép delta). Result `{balanceBefore, balanceAfter}`. Quy tắc
+chung của command GM (reason, `X-Request-Id`, replay) ở PCR gm.
 
 ## Cheat (module `economy.cheat`, chỉ Development/Test)
 

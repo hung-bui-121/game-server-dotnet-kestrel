@@ -19,6 +19,7 @@ thưởng chụp lúc start (PLY-05).
 | `battle.start` | `POST /api/v1/battle/start` | `battle` | `progression` |
 | `battle.end` | `POST /api/v1/battle/end` | `battle`, `progression`, `wallet`, `inventory` | — |
 | `shop.buy` | `POST /api/v1/shop/buy` | `wallet`, `inventory` | — |
+| `progression.set` (GM) | `POST /gm/v1/players/{playerId}/progression` | `progression` | — |
 
 Login (SMP-01) = module identity; IAPurchase (SMP-04) = module iap.
 
@@ -31,6 +32,12 @@ Login (SMP-01) = module identity; IAPurchase (SMP-04) = module iap.
   thua → `lost++`; thắng → thưởng qua Economy (`sourceType = battle`), xp, mở stage kế tiếp.
 - Evidence = eligibility-only (`IBattleResultPolicy` thay được).
 - Shop: `shop.json` `{items: {id: {price{resource, amount}, grant{resource, quantity}}}}`; quantity 1–100.
+
+## GM (slice 004)
+
+`progression.set`: profile `Gm`, permission `progression.edit` (catalog của module này). Body `{level?, xp?, stage?, reason}`;
+ít nhất một trường, `level ≥ 1`, `xp ≥ 0`, `stage ≥ 1` (sai → 400); `stage > maxStage` → `STAGE_LOCKED`. Trường null giữ
+nguyên. Audit ghi `before`/`after` (progression không có ledger).
 
 ## Error codes (40000–40099)
 

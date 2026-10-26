@@ -12,6 +12,8 @@ State: `displayName`, `sessionEpoch`, `ban{reason, untilUtc, scope[], actor}`, `
 
 ## Collections ngoài transaction (CMD-05)
 
+Tên collection `identities` công bố ở `IdentityCollections.Identities` (module business) để module gm tra mapping.
+
 | Collection | Key | Nội dung | Expiry |
 | --- | --- | --- | --- |
 | `identities` | `guest:{localId}` | `{playerId, linkedAtUtc, providerAttributes.secretHash}` | không |

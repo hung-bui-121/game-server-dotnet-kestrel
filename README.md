@@ -6,9 +6,17 @@ progression/resource chính thức (server-authoritative); client gửi action, 
 
 ## Trạng thái
 
-P0 được làm theo Spec Kit, chia 6 slice (`specs/`). Đã xong: **001 platform-core** — host + module registry +
-startup validation, Player API Protobuf / GM API JSON, command runner một transaction với receipt/replay,
-outbox + sweeper, store Couchbase và in-memory, module mẫu `Sample.Counter`.
+P0 được làm theo Spec Kit, chia 6 slice (`specs/`). Đã xong:
+
+- **001 platform-core** — host + module registry + startup validation, Player API Protobuf / GM API JSON, command
+  runner một transaction với receipt/replay, outbox + sweeper, store Couchbase và in-memory, module mẫu `Sample.Counter`.
+- **002 identity-session** — guest login, session một thiết bị (takeover), kiểm ban/xoá tài khoản.
+- **003 sample-game** — Economy (wallet/inventory/ledger), IAP (verifier Apple/Google + fake), GetConfig, game mẫu
+  (battle start/end, shop).
+- **004 gm** — module GM: staff/grant/role template, cookie session, permission + scope game/env mỗi request,
+  tra cứu player (PII theo permission), list phân trang keyset, điều chỉnh resource và progression có audit, trang GM tĩnh.
+
+Còn lại: 005 observability/ops, 006 Unity SDK.
 
 ## Yêu cầu
 
@@ -23,6 +31,9 @@ dotnet build GameServer.slnx -c Release          # warnings-as-errors, analyzers
 dotnet test --solution GameServer.slnx -c Release # unit + HTTP + arch; integration Skipped nếu thiếu COUCHBASE_CONNSTR
 dotnet run --project samples/SampleHost          # store in-memory, xác thực thử nghiệm qua header X-Test-Player
 ```
+
+GM tool khi chạy SampleHost (Development): mở `http://localhost:5000/gm/v1/ui`, đăng nhập staff seed trong
+`samples/SampleHost/appsettings.json` (`Gm:Bootstrap:Staff`, chỉ hợp lệ ở Development/Test).
 
 Integration test với Couchbase thật:
 
@@ -41,7 +52,10 @@ dotnet test --project tests/GameServer.Platform.Couchbase.IntegrationTests -c Re
 | `src/GameServer.Platform.Web` | hosting (`AddGameServer`/`UseGameServer`), Protobuf, lỗi, profile, limit |
 | `src/GameServer.Platform.Couchbase` | store Couchbase (transactions, GetMulti, provisioning) |
 | `src/GameServer.Platform.Testing` | store in-memory + tiêm lỗi, `FakeClock` |
-| `src/GameServer.Modules.Identity*` | aggregate bắt buộc `profile` (login ở slice 002) |
+| `src/GameServer.Modules.Identity*` | aggregate bắt buộc `profile`, guest login, session |
+| `src/GameServer.Modules.Economy*`, `src/GameServer.Modules.Iap*` | wallet/inventory/ledger; mua IAP |
+| `src/GameServer.Modules.Gm*` | GM: staff, cookie session, lookup, audit, trang `/gm/v1/ui` |
+| `samples/SampleGame`, `samples/SampleHost` | game mẫu và host chạy thử |
 | `modules/Sample.Counter` | module mẫu (ACC-13) |
 | `templates/module` | khung module 2 project |
 | `docs/pcr`, `docs/adr`, `docs/guides` | Published Contract Register, ADR, hướng dẫn viết module |
