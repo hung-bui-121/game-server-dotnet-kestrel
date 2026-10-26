@@ -31,6 +31,17 @@ public sealed class GameServerOptions
     /// <summary>Public endpoints allowed (SEC-09). Arrays are replaced, not merged, by config binding.</summary>
     public string[] PublicEndpointAllowlist { get; set; } = ["/v1/time"];
 
+    /// <summary>
+    /// Configuration keys holding secrets (OPS-08). Outside Development/Test they must not come from a JSON file
+    /// (appsettings committed to source); use environment variables or a secret provider.
+    /// </summary>
+    public string[] SecretKeys { get; set; } =
+    [
+        "Identity:GuestPepper",
+        "Couchbase:Password",
+        "Iap:Google:ServiceAccountPrivateKeyPem",
+    ];
+
     public TransactionSettings Transactions { get; set; } = new();
 
     public CommandSettings Commands { get; set; } = new();
@@ -57,6 +68,26 @@ public sealed class HostingSettings
     public bool MapPlayerApi { get; set; } = true;
 
     public bool MapGmApi { get; set; } = true;
+
+    /// <summary>Reverse-proxy headers (OPS-02); trusted only from the listed proxies/networks.</summary>
+    public ForwardedHeadersSettings ForwardedHeaders { get; set; } = new();
+
+    /// <summary>Graceful shutdown drain (OPS-03): in-flight requests get this long after SIGTERM.</summary>
+    public int ShutdownTimeoutSeconds { get; set; } = 25;
+}
+
+public sealed class ForwardedHeadersSettings
+{
+    public bool Enabled { get; set; }
+
+    /// <summary>IP addresses of trusted proxies.</summary>
+    public string[] KnownProxies { get; set; } = [];
+
+    /// <summary>CIDR networks of trusted proxies, e.g. <c>10.0.0.0/8</c>.</summary>
+    public string[] KnownNetworks { get; set; } = [];
+
+    /// <summary>Number of proxy hops to honour.</summary>
+    public int ForwardLimit { get; set; } = 1;
 }
 
 public sealed class TransactionSettings

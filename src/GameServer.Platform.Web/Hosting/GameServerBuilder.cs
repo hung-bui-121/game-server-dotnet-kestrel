@@ -121,6 +121,7 @@ public static class GameServerBuilderExtensions
         services.AddSingleton<PlayerSnapshotReader>();
         services.AddSingleton<IPlayerAggregateWriter, PlayerAggregateWriter>();
         services.AddSingleton<ReceiptReader>();
+        services.TryAddSingleton<GameServer.Platform.Persistence.IStoreHealthProbe, GameServer.Platform.Persistence.DocumentStoreHealthProbe>();
         services.AddSingleton<IGameConfig>(sp =>
         {
             var environment = sp.GetRequiredService<IHostEnvironment>();
@@ -133,6 +134,9 @@ public static class GameServerBuilderExtensions
         services.TryAddSingleton<IGateEvaluator, AllowAllGateEvaluator>();
         services.AddAuthentication();
         services.AddOptions<ActorSchemeOptions>();
+
+        // OPS-03: drain in-flight requests (commits complete, PERF-02) before the host stops.
+        services.Configure<HostOptions>(host => host.ShutdownTimeout = TimeSpan.FromSeconds(options.Hosting.ShutdownTimeoutSeconds));
 
         AddLimits(builder, options);
         return new GameServerBuilder(builder, options, registry);

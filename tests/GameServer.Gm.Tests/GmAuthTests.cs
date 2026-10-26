@@ -46,7 +46,7 @@ public sealed class GmAuthTests : IAsyncLifetime
         me["staffId"]!.GetValue<string>().ShouldBe("admin");
         me["displayName"]!.GetValue<string>().ShouldBe("Staff admin");
         me["permissions"]!.AsArray().Select(p => p!.GetValue<string>()).ShouldBe(
-            ["counter.read", "gm.access", "player.read", "player.read.pii", "progression.edit", "resource.adjust"]);
+            ["counter.read", "gm.access", "ops.read", "player.read", "player.read.pii", "progression.edit", "resource.adjust"]);
     }
 
     [Fact]
@@ -164,7 +164,7 @@ public sealed class GmAuthTests : IAsyncLifetime
 /// <summary>Pure rules: role templates, password hashing, bootstrap validation.</summary>
 public sealed class GmRulesTests
 {
-    private static readonly string[] Catalog = ["gm.access", "player.read", "player.read.pii", "progression.edit", "resource.adjust"];
+    private static readonly string[] Catalog = ["gm.access", "ops.read", "player.read", "player.read.pii", "progression.edit", "resource.adjust"];
 
     [Fact]
     public void Role_templates_expand_within_the_catalog()

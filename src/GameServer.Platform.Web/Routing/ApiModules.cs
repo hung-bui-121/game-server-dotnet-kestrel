@@ -17,6 +17,15 @@ public interface IGmApiModule
     void MapGmApi(IEndpointRouteBuilder routes);
 }
 
+/// <summary>
+/// Module exposing host-level endpoints (health, metrics) that every host maps, whatever
+/// <c>Hosting:MapPlayerApi</c>/<c>MapGmApi</c> say.
+/// </summary>
+public interface IHostEndpointsModule
+{
+    void MapHostEndpoints(IEndpointRouteBuilder routes);
+}
+
 /// <summary>Helpers that attach the mandatory metadata to endpoints.</summary>
 public static class ApiRouteExtensions
 {

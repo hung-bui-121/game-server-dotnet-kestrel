@@ -22,6 +22,7 @@
     <Project Path="src/GameServer.Modules.Identity.Adapters/GameServer.Modules.Identity.Adapters.csproj" />
     <Project Path="src/GameServer.Modules.Identity/GameServer.Modules.Identity.csproj" />
     <Project Path="src/GameServer.Platform.Couchbase/GameServer.Platform.Couchbase.csproj" />
+    <Project Path="src/GameServer.Platform.Observability/GameServer.Platform.Observability.csproj" />
     <Project Path="src/GameServer.Platform.Testing/GameServer.Platform.Testing.csproj" />
     <Project Path="src/GameServer.Platform.Web/GameServer.Platform.Web.csproj" />
     <Project Path="src/GameServer.Platform/GameServer.Platform.csproj" />
@@ -34,6 +35,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/GameServer.Architecture.Tests/GameServer.Architecture.Tests.csproj" />
     <Project Path="tests/GameServer.Gm.Tests/GameServer.Gm.Tests.csproj" />
+    <Project Path="tests/GameServer.Observability.Tests/GameServer.Observability.Tests.csproj" />
     <Project Path="tests/GameServer.Platform.Couchbase.IntegrationTests/GameServer.Platform.Couchbase.IntegrationTests.csproj" />
     <Project Path="tests/GameServer.Platform.Tests/GameServer.Platform.Tests.csproj" />
     <Project Path="tests/GameServer.Platform.Web.Tests/GameServer.Platform.Web.Tests.csproj" />

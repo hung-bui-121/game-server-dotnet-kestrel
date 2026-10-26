@@ -42,7 +42,16 @@ public static class GameServerApplicationExtensions
         errors.AddRange(registry.Validate(options, config));
         ValidateServices(services, options, registry, errors);
 
+        DeploymentChecks.ValidateSecretSources(app.Configuration, options, errors);
+        var forwarded = DeploymentChecks.BuildForwardedHeaders(options, errors);
+
         // Endpoints are mapped even when errors exist so that every violation is reported at once.
+        if (forwarded is not null)
+        {
+            // First: the client IP used by rate limits and audit comes from trusted proxies only (OPS-02).
+            app.UseForwardedHeaders(forwarded);
+        }
+
         app.UseMiddleware<ExceptionMiddleware>();
         app.UseMiddleware<CorrelationMiddleware>();
         app.UseRouting();
@@ -59,6 +68,11 @@ public static class GameServerApplicationExtensions
 
         foreach (var module in registry.Modules.Where(m => !m.ServiceOnly))
         {
+            if (module.Module is IHostEndpointsModule hostEndpoints)
+            {
+                hostEndpoints.MapHostEndpoints(app);
+            }
+
             if (options.Hosting.MapPlayerApi && module.Module is IPlayerApiModule player)
             {
                 player.MapPlayerApi(app);

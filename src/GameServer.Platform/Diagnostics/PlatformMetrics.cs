@@ -26,6 +26,8 @@ public sealed class PlatformMetrics : IDisposable
     private readonly Counter<long> _relayFailures;
     private readonly Counter<long> _deadLetters;
     private readonly Histogram<double> _outboxPendingAge;
+    private readonly Counter<long> _commandResults;
+    private readonly Counter<long> _httpErrors;
     private string _configVersion = string.Empty;
 
     public PlatformMetrics()
@@ -43,6 +45,8 @@ public sealed class PlatformMetrics : IDisposable
         _relayFailures = _meter.CreateCounter<long>("outbox_relay_inline_failures_total");
         _deadLetters = _meter.CreateCounter<long>("outbox_dead_letter_total");
         _outboxPendingAge = _meter.CreateHistogram<double>("outbox_pending_age_seconds", "s");
+        _commandResults = _meter.CreateCounter<long>("command_results_total", description: "Command outcomes by operation and result code");
+        _httpErrors = _meter.CreateCounter<long>("http_errors_total", description: "Error responses by catalog code");
         _meter.CreateObservableGauge(
             "config_version_info",
             () => new Measurement<int>(1, new KeyValuePair<string, object?>("version", _configVersion)));
@@ -85,6 +89,16 @@ public sealed class PlatformMetrics : IDisposable
     public void OutboxPendingAge(TimeSpan age) => _outboxPendingAge.Record(age.TotalSeconds);
 
     public void SetConfigVersion(string version) => _configVersion = version;
+
+    /// <summary>One command outcome (OBS-01 errors/rejections by code). Never tagged with player or request ids (OBS-02).</summary>
+    public void CommandCompleted(string operation, string code, bool replayed) =>
+        _commandResults.Add(
+            1,
+            new KeyValuePair<string, object?>("operation", operation),
+            new KeyValuePair<string, object?>("code", code),
+            new KeyValuePair<string, object?>("replayed", replayed));
+
+    public void HttpError(string code) => _httpErrors.Add(1, new KeyValuePair<string, object?>("code", code));
 
     public void Dispose() => _meter.Dispose();
 }

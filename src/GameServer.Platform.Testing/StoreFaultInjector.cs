@@ -26,6 +26,17 @@ public sealed class StoreFaultInjector
 
     public TimeSpan CommitDelay { get; set; } = TimeSpan.FromSeconds(1);
 
+    /// <summary>When true, every read and transaction fails as if the store were unreachable (health tests).</summary>
+    public bool Unavailable { get; set; }
+
+    internal void ThrowIfUnavailable()
+    {
+        if (Unavailable)
+        {
+            throw new InvalidOperationException("Store unavailable (injected fault).");
+        }
+    }
+
     /// <summary>When set, only transactions that write a key in this collection consume faults.</summary>
     public string? OnlyWhenWritingCollection { get; set; }
 

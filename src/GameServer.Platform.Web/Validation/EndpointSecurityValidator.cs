@@ -38,7 +38,8 @@ public static partial class EndpointSecurityValidator
                     "Fix: declare exactly one with AsPlayerEndpoint/AsGmEndpoint/AsPublicEndpoint/AsDevEndpoint (SEC-08).");
             }
 
-            if (!VersionSegment().IsMatch(route))
+            // Health probes have fixed, unversioned paths for load balancers and orchestrators (OBS-03).
+            if (!VersionSegment().IsMatch(route) && !route.StartsWith("/health/", StringComparison.OrdinalIgnoreCase))
             {
                 errors.Add($"[endpoint {label}] route has no version segment. Fix: prefix with /v{{n}}/ (API-02).");
             }

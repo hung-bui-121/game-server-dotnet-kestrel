@@ -4,6 +4,7 @@ using GameServer.Modules.Iap;
 using GameServer.Modules.Identity;
 using GameServer.Platform;
 using GameServer.Platform.Couchbase;
+using GameServer.Platform.Observability;
 using GameServer.Platform.Testing;
 using GameServer.Platform.Web.Hosting;
 using Sample.Counter.Adapters;
@@ -12,6 +13,9 @@ using SampleGame.Adapters;
 var builder = WebApplication.CreateBuilder(args);
 
 var gameServer = builder.AddGameServer();
+
+// File logs per instance, OpenTelemetry (OTLP when Observability:Otlp:Endpoint is set), /health/live and /health/ready.
+gameServer.AddObservability();
 if (gameServer.Options.Store == StoreKind.Couchbase)
 {
     // Secrets come from environment variables (Couchbase__Password), not from appsettings (OPS-08).

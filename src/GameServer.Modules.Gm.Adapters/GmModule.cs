@@ -12,11 +12,22 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 
 namespace GameServer.Modules.Gm;
 
 public sealed record GmLoginRequest(string? StaffId, string? Password);
+
+public sealed record GmHealthEntry(
+    string Name,
+    string Status,
+    string? Description,
+    double DurationMs,
+    IReadOnlyList<string> Tags,
+    IReadOnlyDictionary<string, string?> Data);
+
+public sealed record GmHealthReport(string Status, double DurationMs, IReadOnlyList<GmHealthEntry> Entries);
 
 public sealed record GmMeResponse(string StaffId, string DisplayName, string GameId, string EnvironmentId, IReadOnlyList<string> Permissions);
 
@@ -32,6 +43,7 @@ public sealed class GmModule : IGameModule, IGmApiModule
     public const string LogoutRoute = "/gm/v1/auth/logout";
     public const string MeRoute = "/gm/v1/me";
     public const string UiRoute = "/gm/v1/ui";
+    public const string HealthRoute = "/gm/v1/health";
 
     public ModuleDescriptor Describe() => new()
     {
@@ -81,6 +93,7 @@ public sealed class GmModule : IGameModule, IGmApiModule
         routes.MapPost(LogoutRoute, (Func<HttpContext, Task<IResult>>)LogoutAsync).AsGmEndpoint(GmPermissions.Access);
         routes.MapGet(MeRoute, (HttpContext http) => GmHttp.Json(Me(http))).AsGmEndpoint(GmPermissions.Access);
         routes.MapGet(UiRoute, GmUi.Serve).AsPublicEndpoint(protobuf: false);
+        routes.MapGet(HealthRoute, (Func<HttpContext, Task<IResult>>)HealthAsync).AsGmEndpoint(GmPermissions.OpsRead);
         GmPlayerEndpoints.Map(routes);
     }
 
@@ -124,6 +137,24 @@ public sealed class GmModule : IGameModule, IGmApiModule
 
         http.Response.Cookies.Delete(GmCookieAuthenticationHandler.CookieName, CookieOptions(http, null));
         return Results.NoContent();
+    }
+
+    /// <summary>Per-check health with descriptions (OBS-03: details only for GM, never on the Public endpoints).</summary>
+    private static async Task<IResult> HealthAsync(HttpContext http)
+    {
+        var health = http.RequestServices.GetService<HealthCheckService>()
+            ?? throw new GameServerException(CoreErrorCodes.NotFound, "Health checks are not configured on this host.");
+        var report = await health.CheckHealthAsync(http.RequestAborted);
+        return GmHttp.Json(new GmHealthReport(
+            report.Status.ToString(),
+            report.TotalDuration.TotalMilliseconds,
+            report.Entries.Select(e => new GmHealthEntry(
+                e.Key,
+                e.Value.Status.ToString(),
+                e.Value.Description,
+                e.Value.Duration.TotalMilliseconds,
+                e.Value.Tags.ToArray(),
+                e.Value.Data.ToDictionary(d => d.Key, d => d.Value?.ToString()))).ToArray()));
     }
 
     private static GmMeResponse Me(HttpContext http)

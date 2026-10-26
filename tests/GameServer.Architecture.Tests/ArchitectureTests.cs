@@ -6,6 +6,7 @@ using GameServer.Modules.Iap;
 using GameServer.Modules.Identity;
 using GameServer.Platform.Commands;
 using GameServer.Platform.Couchbase;
+using GameServer.Platform.Observability;
 using GameServer.Platform.Persistence;
 using GameServer.Platform.Testing;
 using GameServer.Platform.Web.Hosting;
@@ -29,6 +30,7 @@ public sealed class ArchitectureTests
     private static readonly Assembly PlatformWeb = typeof(GameServerBuilder).Assembly;
     private static readonly Assembly PlatformCouchbase = typeof(CouchbaseDocumentStore).Assembly;
     private static readonly Assembly PlatformTesting = typeof(InMemoryDocumentStore).Assembly;
+    private static readonly Assembly PlatformObservability = typeof(ObservabilityModule).Assembly;
     private static readonly Assembly IdentityBusiness = typeof(ProfileState).Assembly;
     private static readonly Assembly IdentityAdapters = typeof(IdentityModule).Assembly;
     private static readonly Assembly CounterBusiness = typeof(IncrementHandler).Assembly;
@@ -48,7 +50,7 @@ public sealed class ArchitectureTests
         [IdentityBusiness, IdentityAdapters, CounterBusiness, CounterAdapters, EconomyBusiness, EconomyAdapters, IapBusiness, IapAdapters, GameBusiness, GameAdapters, GmBusiness, GmAdapters];
 
     private static readonly Assembly[] AllFrameworkAndModules =
-        [Core, Platform, PlatformWeb, PlatformCouchbase, PlatformTesting, .. ModuleAssemblies];
+        [Core, Platform, PlatformWeb, PlatformCouchbase, PlatformTesting, PlatformObservability, .. ModuleAssemblies];
 
     private static void ShouldPass(ConditionList rule, string because)
     {
@@ -76,6 +78,17 @@ public sealed class ArchitectureTests
                 Types.InAssembly(assembly).ShouldNot().HaveDependencyOnAny(
                     "Microsoft.AspNetCore", "Couchbase", "Google.Protobuf", "Serilog", "GameServer.Platform"),
                 $"{assembly.GetName().Name} must not depend on HTTP, Couchbase, Protobuf, Serilog or Platform (ARC-01)");
+        }
+    }
+
+    [Fact]
+    public void Only_the_observability_project_uses_serilog_and_opentelemetry()
+    {
+        foreach (var assembly in AllFrameworkAndModules.Where(a => a != PlatformObservability))
+        {
+            ShouldPass(
+                Types.InAssembly(assembly).ShouldNot().HaveDependencyOnAny("Serilog", "OpenTelemetry"),
+                $"{assembly.GetName().Name} must log through Microsoft.Extensions.Logging and instrument with ActivitySource/Meter only (OBS-04)");
         }
     }
 

@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json.Nodes;
 using GameServer.Config;
 using GameServer.Errors;
+using GameServer.Platform.Diagnostics;
 using GameServer.Platform.Web.Middleware;
 using GameServer.Platform.Web.Routing;
 using GameServer.Protocol.Core.V1;
@@ -15,7 +16,7 @@ namespace GameServer.Platform.Web.Errors;
 /// Writes errors in the format of the endpoint (API-04): Protobuf <c>ErrorEnvelope</c> for Player/Protobuf
 /// endpoints, Problem Details JSON otherwise. Never includes exception details.
 /// </summary>
-public sealed class ErrorResponseWriter(IClock clock, IGameConfig config)
+public sealed class ErrorResponseWriter(IClock clock, IGameConfig config, PlatformMetrics metrics)
 {
     public const string ProtobufContentType = "application/x-protobuf";
 
@@ -26,6 +27,7 @@ public sealed class ErrorResponseWriter(IClock clock, IGameConfig config)
             return;
         }
 
+        metrics.HttpError(code.Name);
         var requestId = CorrelationMiddleware.GetCorrelationId(context);
         var retryAfter = code.Retryable ? retryAfterMs ?? 1000 : 0;
 

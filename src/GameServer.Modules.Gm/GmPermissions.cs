@@ -11,5 +11,8 @@ public static class GmPermissions
     /// <summary>Shows identity mapping keys (PII, GM-02).</summary>
     public const string PlayerReadPii = "player.read.pii";
 
-    public static IReadOnlyList<string> All { get; } = [Access, PlayerRead, PlayerReadPii];
+    /// <summary>Operational details: per-check health (OBS-03).</summary>
+    public const string OpsRead = "ops.read";
+
+    public static IReadOnlyList<string> All { get; } = [Access, PlayerRead, PlayerReadPii, OpsRead];
 }

@@ -34,6 +34,26 @@ public sealed class CommandRunner(
 {
     public async Task<CommandExecution> ExecuteAsync(CommandInvocation invocation, CancellationToken requestAborted)
     {
+        try
+        {
+            var execution = await ExecuteCoreAsync(invocation, requestAborted);
+            metrics.CommandCompleted(invocation.Operation, execution.Code.Name, execution.Replayed);
+            return execution;
+        }
+        catch (GameServerException ex)
+        {
+            metrics.CommandCompleted(invocation.Operation, ex.Code.Name, replayed: false);
+            throw;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            metrics.CommandCompleted(invocation.Operation, CoreErrorCodes.Internal.Name, replayed: false);
+            throw;
+        }
+    }
+
+    private async Task<CommandExecution> ExecuteCoreAsync(CommandInvocation invocation, CancellationToken requestAborted)
+    {
         var registration = registry.GetCommand(invocation.Operation);
         var descriptor = registration.Descriptor;
         var actor = invocation.Actor;

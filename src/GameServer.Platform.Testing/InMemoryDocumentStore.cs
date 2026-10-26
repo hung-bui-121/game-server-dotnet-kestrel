@@ -83,6 +83,7 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
 
     public async Task<T> RunTransactionAsync<T>(Func<ITransactionContext, Task<T>> body, TransactionRunOptions options)
     {
+        Faults.ThrowIfUnavailable();
         var stopwatch = Stopwatch.StartNew();
         while (true)
         {
@@ -129,6 +130,7 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
 
     public Task<StoredDocument?> GetAsync(DocumentKey key, CancellationToken cancellationToken)
     {
+        Faults.ThrowIfUnavailable();
         lock (_lock)
         {
             return Task.FromResult(ReadCommitted(key));
@@ -178,6 +180,7 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
 
     public Task<IReadOnlyList<StoredDocument?>> GetManyAsync(IReadOnlyList<DocumentKey> keys, CancellationToken cancellationToken)
     {
+        Faults.ThrowIfUnavailable();
         lock (_lock)
         {
             IReadOnlyList<StoredDocument?> result = keys.Select(ReadCommitted).ToArray();
