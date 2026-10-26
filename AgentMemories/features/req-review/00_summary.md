@@ -1,12 +1,10 @@
-# RESUME — ĐỌC ĐẦU TIÊN (cập nhật 2026-10-23)
+# RESUME — ĐỌC ĐẦU TIÊN (cập nhật 2026-10-26)
 
-**Trạng thái:** Requirement **v1.2 rev 3** là bản hiện hành (`Requirements/Game_Server_System_Requirements_v1.2.md`, local, gitignored). Mọi TBD đã chốt hoặc có giả định thiết kế; không còn [VERIFY] chặn P0. Chưa có dòng code nào.
+**Trạng thái:** Requirement **v1.2 rev 4** là bản hiện hành (`Requirements/Game_Server_System_Requirements_v1.2.md`, local, gitignored). Mọi TBD đã chốt hoặc có giả định thiết kế; **không còn [MẶC ĐỊNH]** (owner vòng 3 26/10 chấp nhận R3-17-login); không còn [VERIFY] chặn P0. **Leaderboard và League ngoài phạm vi framework** (owner 26/10: làm sau với yêu cầu riêng) — LDB-01..03, ACC-14, Phụ lục A, TBD-10 đã bỏ. Bản rev 3 sao lưu ở scratchpad phiên 26/10 (không commit).
 
-**Còn mở:**
-1. Vòng 3 trên trang quyết định https://claude.ai/artifact/LW7xjjfNrJFPaBGVZwTEre — 1 mục `answers/R3-17-login` (TBD-17: Login chỉ trả `configVersion`, bundle qua `GetConfig`). Đọc bằng ArtifactData `list answers`; nếu owner đã trả lời → áp vào v1.2 (rev 4, sửa D7/CFG-03, bỏ nhãn [MẶC ĐỊNH] cuối).
-2. TBD-09 (RPO/RTO), TBD-21 (GM frontend stack) Mở — chặn P0.5, không chặn P0.
+**Còn mở:** TBD-09 (RPO/RTO), TBD-21 (GM frontend stack) — chặn P0.5, không chặn P0.
 
-**Bước kế tiếp đã đề xuất với owner (chưa xác nhận chạy):** system-architect thiết kế P0 từ v1.2 rev 3 (solution structure, `IModule`/`PlayerAggregateDescriptor`/`CommandDescriptor`, transaction runner + `GetMulti`, Platform.Web Protobuf, Identity PGS/Game Center, SampleGame 5 command, GM backend tối thiểu) → task-planner chia work item → code-implementer. Sprint 0 phải chạy TST-04 (8 test thực nghiệm Couchbase transactions).
+**Bước kế tiếp (owner yêu cầu 26/10):** cài Spec Kit và dùng flow Spec Kit (constitution → specify → plan → tasks → implement) để rã task P0 từ v1.2 rev 4 và implement. Theo dõi tiến độ ở `features/p0-speckit/00_summary.md`.
 
 **File trong thư mục này (đọc theo nhu cầu):** 01 chất lượng yêu cầu v1.0 · 02 độ phù hợp kỹ thuật v1.0 · 03 review chéo v1.1 · 04 câu trả lời owner (vòng 1 + 2) · 05 thiết kế lại theo owner (nhiều aggregate, transaction) · 06 xác minh Couchbase transactions. Lịch sử chi tiết các rev ở dưới.
 
@@ -82,7 +80,12 @@ Remote/game config service · resource/item catalog · maintenance mode + versio
 - Hệ quả thiết kế: **loại bỏ vĩnh viễn** fast path CAS thường cho `pa_*`/`rcpt::*` (V15: trộn ghi undefined kể cả CAS) — DAT-04/DAT-09 "không ngoại lệ", đọc ngoài transaction Read Committed hợp lệ; DAT-11 = `ctx.GetMulti` trong transaction (SDK ≥ 3.9.1, volatile → adapter), không `Task.WhenAll` trên `ctx.GetAsync`, chỉ tiêu "≈ 1 RTT" thay "1 round-trip"; GFT-03/04 counter ngoài lambda, hoàn trả theo kết quả transaction; DAT-07/OPS-05 `txn_meta` tạo trước, `MetadataCollection` giống hệt mọi instance, cleanup per Cluster, `CleanupWindow` 60 s, cần ≥ 1 instance chạy; Dev replicas = 0, `None` cấm; 2.2/TBD-20: transactions tích hợp `CouchbaseNetClient`, `Couchbase.Transactions` deprecated, pin SDK ≥ 3.9.1, Server ≥ 6.6.2 (khuyến nghị 7.6), `ExpirationTime` override 10 s; **TST-04** 8 test thực nghiệm (P0, CI).
 - Thống kê: 172 yêu cầu (164 MUST / 8 SHOULD; P0 = 129, P0.5 = 32, P1 = 10, P2 = 1), 53 ACC; **còn 1 [MẶC ĐỊNH]** (TBD-17: Login chỉ trả `configVersion`, bundle qua `GetConfig` — D7, CFG-03) chờ vòng 3; [VERIFY] inline còn 18 chỗ (V1, V2, V3 phần còn lại, V6–V11, V14, V18–V21), không chặn P0.
 
-## Việc tiếp theo
+## v1.2 rev 4 (2026-10-26, owner vòng 3 + thu hẹp phạm vi)
+
+- R3-17-login = accept → bỏ nhãn [MẶC ĐỊNH] ở D7, CFG-03; TBD-17 `Chốt 2026-10-26`. Không còn [MẶC ĐỊNH] nào.
+- Owner: Leaderboard và League không làm trong framework này. Xoá LDB-01..03; ACC-14 giữ dòng "đã bỏ" (ID không tái sử dụng); 5.2 xoá; Phụ lục A thành ghi chú; TBD-10 `Huỷ 2026-10-26`; dây chuyền: ARC-04, EXT-05, JOB-01 (ví dụ `evclaim::{eventId}::{playerId}`), ACC-15, PERF-05/07, Phụ lục B (bỏ limiter `leaderboard`), SEC-07 (`league.manage`), GM-05, PCR-01, DAT-01/05/09, D2, thuật ngữ, 2.6, 19.1, DoD. Changelog "v1.2 rev 3 → rev 4" ở cuối tài liệu.
+
+## Việc tiếp theo (lịch sử, trước rev 4)
 
 1. Owner vòng 3: duyệt mục `[MẶC ĐỊNH]` cuối cùng (TBD-17: Login chỉ trả `configVersion`, không nhúng bundle). TBD-09 (RPO/RTO) và TBD-21 (GM frontend stack) vẫn Mở, chặn P0.5 — không chặn P0.
 2. System-architect thiết kế P0 từ DAT-09 + DAT-04(a/b/c) + DAT-11 (`GetMulti`) + API-10 + CMD-01..09 + CFG-03 + SMP-01..05; Sprint 0 chạy TST-04 (test thực nghiệm transactions) và đo V22.

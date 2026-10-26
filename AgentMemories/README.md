@@ -4,6 +4,6 @@
 
 | Thư mục | Trạng thái | RESUME |
 | --- | --- | --- |
-| `features/req-review/` | DONE 2026-10-22 — v1.0 → v1.1 (rev 2) → owner trả lời TBD (04) + thiết kế lại (05) → `Requirements/Game_Server_System_Requirements_v1.2.md` **rev 3** (owner duyệt vòng 2 11/11; xác minh Couchbase transactions 06: V4/V15/V16/V17/V23 đã xác minh, fast path CAS loại bỏ hẳn, DAT-11 = `GetMulti`, TST-04 test thực nghiệm); không còn [VERIFY] chặn P0; còn 1 [MẶC ĐỊNH] (TBD-17 Login chỉ trả version) chờ vòng 3 | `features/req-review/00_summary.md` |
+| `features/req-review/` | DONE 2026-10-26 — v1.0 → v1.1 (rev 2) → owner trả lời TBD (04) + thiết kế lại (05) → `Requirements/Game_Server_System_Requirements_v1.2.md` **rev 4** (owner duyệt vòng 2 11/11, vòng 3 R3-17-login; xác minh Couchbase transactions 06; Leaderboard/League ngoài phạm vi framework); không còn [MẶC ĐỊNH], không còn [VERIFY] chặn P0 | `features/req-review/00_summary.md` |
 
-Chưa có code. Tài liệu yêu cầu (v1.0, v1.1 rev 2, **v1.2 rev 3 = hiện hành**) nằm trong `Requirements/` — thư mục này bị gitignore, không có trên remote.
+Chưa có code. Tài liệu yêu cầu (v1.0, v1.1 rev 2, **v1.2 rev 4 = hiện hành**) nằm trong `Requirements/` — thư mục này bị gitignore, không có trên remote.
