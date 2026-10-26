@@ -47,8 +47,14 @@ public static class ProtobufBinding
     public static T Parse<T>(byte[] body)
         where T : IMessage<T>, new()
     {
-        using var input = CodedInputStream.CreateWithLimits(new MemoryStream(body), body.Length, RecursionLimit);
         var message = new T();
+        if (body.Length == 0)
+        {
+            // An empty body is a valid proto3 message with all default values.
+            return message;
+        }
+
+        using var input = CodedInputStream.CreateWithLimits(new MemoryStream(body), body.Length, RecursionLimit);
         message.MergeFrom(input);
         return message;
     }

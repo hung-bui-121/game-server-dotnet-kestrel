@@ -62,12 +62,14 @@ public static class ApiRouteExtensions
 
     internal static bool IsProtobuf(this HttpContext context)
     {
-        var endpoint = context.GetEndpoint();
-        if (endpoint is not null)
+        var metadata = context.GetEndpoint()?.Metadata;
+        if (metadata?.GetMetadata<ProtobufEndpointMetadata>() is not null)
         {
-            return endpoint.Metadata.GetMetadata<ProtobufEndpointMetadata>() is not null;
+            return true;
         }
 
-        return context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase);
+        // Endpoints with a declared non-Protobuf profile use JSON; unmatched or unprofiled routes follow the path.
+        return metadata?.GetMetadata<SecurityProfileMetadata>() is null
+            && context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase);
     }
 }

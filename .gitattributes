@@ -1,0 +1,4 @@
+# Normalize text files to LF in the repository and working tree (Linux is the deployment target).
+* text=auto eol=lf
+*.png binary
+*.jpg binary

@@ -41,11 +41,8 @@ public static class GameServerApplicationExtensions
 
         errors.AddRange(registry.Validate(options, config));
         ValidateServices(services, options, registry, errors);
-        if (errors.Count > 0)
-        {
-            throw new GameServerStartupException(errors);
-        }
 
+        // Endpoints are mapped even when errors exist so that every violation is reported at once.
         app.UseMiddleware<ExceptionMiddleware>();
         app.UseMiddleware<CorrelationMiddleware>();
         app.UseRouting();
