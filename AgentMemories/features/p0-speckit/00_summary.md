@@ -8,11 +8,11 @@
 | 001 platform-core | `001-platform-core` | DONE 88/88 task; review tech-lead (1 Blocker, 6 Major) đã sửa trên nhánh 002 (`801304a`) |
 | 002 identity-session (guest) | `002-identity-session` (tách từ 001) | DONE 29/29 task (`16d8f5a`) |
 | 003 SampleGame (economy, GetConfig, IAP fake + Apple/Google, battle, shop, cheat) | `003-sample-game` (tách từ 002) | DONE 26/26 task |
-| 004 GM backend + frontend tối thiểu | — | |
+| 004 GM backend + frontend tối thiểu | `004-gm` (tách từ 003) | DONE 18/18 task (`71dfc84` feat, `36d5eed` sửa sau review tech-lead: 0 Blocker, 4 Major, 4 Minor — đã sửa hết) |
 | 005 observability/ops | — | |
 | 006 Unity SDK | — | |
 
-Test (26/10, cuối 003): 235 — 206 pass, 29 skip (integration Couchbase, thiếu `COUCHBASE_CONNSTR`), 0 fail.
+Test (26/10, cuối 004): 286 — 253 pass, 33 skip (integration Couchbase, thiếu `COUCHBASE_CONNSTR`), 0 fail.
 
 **Quyết định owner 26/10/2026:** 6 slice tuần tự; không Docker/Couchbase trên máy → unit test bằng store
 in-memory, integration/TST-04 viết sẵn và skip có lý do; chỉ dừng review sau spec+plan 001.
@@ -30,5 +30,10 @@ Heredoc trong Bash tool hay lỗi với ký tự đặc biệt → viết script
 - Insert race báo DocumentExists (không retry) → runner/writer tự chạy lại ≤ 3 vòng.
 - Xác thực theo profile endpoint (SEC-02); test auth + in-memory chỉ Development/Test.
 - Outbox: backoff 30 s×2^n ≤ 1 h, dead-letter sau 10 lần.
+- GM (004): module `gm` (staff/grant/role template, cookie `gs_gm`, login local chỉ Dev/Test, bootstrap `Gm:Bootstrap:Staff`);
+  command GM qua `MapGmCommand` (JSON, reason bắt buộc, player đích từ route, phải tồn tại); runner bắt buộc đúng 1 audit
+  cho command `Gm`, 0 cho command khác; audit = outbox `gm_audit` → projection. `IPagedQueryStore` keyset, trường chuỗi;
+  N1QL paging **chưa chạy trên Couchbase thật** (cần EXPLAIN). Operation phải đúng 2 đoạn `<x>.<y>` → `progression.set`.
+- `player.read` khai ở cả module gm và economy (catalog = hợp) để Economy không phụ thuộc gm.
 
-**Việc tiếp theo:** slice 004 GM (backend permission/scope/audit, lookup, adjust, frontend tối thiểu) tách từ `003-sample-game`.
+**Việc tiếp theo:** slice 005 observability/ops (OTel, Serilog, health live/ready, metrics OBS-01, graceful shutdown, ForwardedHeaders) tách từ `004-gm`.
