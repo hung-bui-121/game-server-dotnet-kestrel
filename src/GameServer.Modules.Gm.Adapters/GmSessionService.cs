@@ -25,7 +25,7 @@ public sealed class GmSessionService
     private readonly IClock _clock;
     private readonly GameServerOptions _gameServer;
     private readonly GmOptions _options;
-    private readonly ExpiringCache<string, GmSession?> _cache;
+    private readonly ExpiringCache<string, GmSession> _cache;
 
     public GmSessionService(IKeyValueStore store, IClock clock, GameServerOptions gameServer, IOptions<GmOptions> options)
     {
@@ -33,7 +33,7 @@ public sealed class GmSessionService
         _clock = clock;
         _gameServer = gameServer;
         _options = options.Value;
-        _cache = new ExpiringCache<string, GmSession?>(clock, TimeSpan.FromSeconds(_options.CacheSeconds));
+        _cache = new ExpiringCache<string, GmSession>(clock, TimeSpan.FromSeconds(_options.CacheSeconds));
     }
 
     public static string KeyOf(string token) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
@@ -67,15 +67,19 @@ public sealed class GmSessionService
         {
             var document = await _store.GetAsync(new DocumentKey(Collection, key), cancellationToken);
             var content = document?.Content;
-            session = content is not null
-                && content["gameId"]?.GetValue<string>() == _gameServer.GameId
-                && content["environmentId"]?.GetValue<string>() == _gameServer.EnvironmentId
-                    ? new GmSession(key, content["staffId"]!.GetValue<string>(), AggregateDocumentSerializer.ParseTime(content["expiresAtUtc"]!.GetValue<string>()))
-                    : null;
+            if (content is null
+                || content["gameId"]?.GetValue<string>() != _gameServer.GameId
+                || content["environmentId"]?.GetValue<string>() != _gameServer.EnvironmentId)
+            {
+                // Unknown tokens are not cached: random cookies must not grow the cache.
+                return null;
+            }
+
+            session = new GmSession(key, content["staffId"]!.GetValue<string>(), AggregateDocumentSerializer.ParseTime(content["expiresAtUtc"]!.GetValue<string>()));
             _cache.Set(key, session);
         }
 
-        return session is not null && session.ExpiresAt > _clock.UtcNow ? session : null;
+        return session.ExpiresAt > _clock.UtcNow ? session : null;
     }
 
     public async Task RemoveAsync(string sessionKey, CancellationToken cancellationToken)

@@ -15,13 +15,15 @@ namespace GameServer.Gm.Tests;
 public sealed class GmAuthTests : IAsyncLifetime
 {
     private TestHost _host = null!;
+    private string _playerId = null!;
 
     public async ValueTask InitializeAsync()
     {
         _host = await GmTestHost.StartAsync();
 
         // A player with data so lookups have something to return.
-        var player = new GamePlayer(_host.Player("p1"), "p1");
+        var player = await _host.NewPlayerAsync();
+        _playerId = player.PlayerId;
         await player.CheatAsync("gold", 10);
     }
 
@@ -51,6 +53,7 @@ public sealed class GmAuthTests : IAsyncLifetime
     public async Task Logout_ends_the_session()
     {
         var gm = await _host.GmClientAsync("support");
+        (await gm.GetAsync(GmModule.MeRoute)).Headers.CacheControl!.NoStore.ShouldBeTrue();
         await gm.PostAsync(GmModule.LogoutRoute, null).ShouldBeAsync(204);
         (await gm.GetAsync(GmModule.MeRoute).ShouldBeAsync(401))["code"]!.GetValue<string>().ShouldBe("UNAUTHENTICATED");
     }
@@ -70,13 +73,13 @@ public sealed class GmAuthTests : IAsyncLifetime
     public async Task Role_templates_expand_to_permissions_checked_per_endpoint()
     {
         var support = await _host.GmClientAsync("support");
-        await support.GetAsync("/gm/v1/players/p1").ShouldBeAsync(200);
-        (await support.PostCommandAsync(Adjust("p1"), new { resource = "gold", delta = 1, reason = "test" }).ShouldBeAsync(403))
+        await support.GetAsync($"/gm/v1/players/{_playerId}").ShouldBeAsync(200);
+        (await support.PostCommandAsync(Adjust(_playerId), new { resource = "gold", delta = 1, reason = "test" }).ShouldBeAsync(403))
             ["code"]!.GetValue<string>().ShouldBe("FORBIDDEN");
 
         var econ = await _host.GmClientAsync("econ");
-        await econ.PostCommandAsync(Adjust("p1"), new { resource = "gold", delta = 1, reason = "test" }).ShouldBeAsync(200);
-        await econ.PostCommandAsync("/gm/v1/players/p1/progression", new { stage = 2, reason = "test" }).ShouldBeAsync(403);
+        await econ.PostCommandAsync(Adjust(_playerId), new { resource = "gold", delta = 1, reason = "test" }).ShouldBeAsync(200);
+        await econ.PostCommandAsync($"/gm/v1/players/{_playerId}/progression", new { stage = 2, reason = "test" }).ShouldBeAsync(403);
     }
 
     [Theory]
@@ -86,8 +89,8 @@ public sealed class GmAuthTests : IAsyncLifetime
     {
         var gm = await _host.GmClientAsync(staffId);
         await gm.GetAsync(GmModule.MeRoute).ShouldBeAsync(403);
-        await gm.GetAsync("/gm/v1/players/p1").ShouldBeAsync(403);
-        await gm.PostCommandAsync(Adjust("p1"), new { resource = "gold", delta = 1, reason = "test" }).ShouldBeAsync(403);
+        await gm.GetAsync($"/gm/v1/players/{_playerId}").ShouldBeAsync(403);
+        await gm.PostCommandAsync(Adjust(_playerId), new { resource = "gold", delta = 1, reason = "test" }).ShouldBeAsync(403);
     }
 
     [Fact]
@@ -125,7 +128,7 @@ public sealed class GmAuthTests : IAsyncLifetime
     public async Task Cross_site_mutations_are_refused()
     {
         var gm = await _host.GmClientAsync("econ");
-        var request = new HttpRequestMessage(HttpMethod.Post, Adjust("p1"))
+        var request = new HttpRequestMessage(HttpMethod.Post, Adjust(_playerId))
         {
             Content = JsonContent.Create(new { resource = "gold", delta = 1, reason = "test" }),
         };
@@ -133,7 +136,7 @@ public sealed class GmAuthTests : IAsyncLifetime
         request.Headers.Add("Sec-Fetch-Site", "cross-site");
         (await gm.SendAsync(request).ShouldBeAsync(403))["code"]!.GetValue<string>().ShouldBe("FORBIDDEN");
 
-        var read = new HttpRequestMessage(HttpMethod.Get, "/gm/v1/players/p1");
+        var read = new HttpRequestMessage(HttpMethod.Get, $"/gm/v1/players/{_playerId}");
         read.Headers.Add("Sec-Fetch-Site", "cross-site");
         await gm.SendAsync(read).ShouldBeAsync(200);
     }
@@ -152,7 +155,7 @@ public sealed class GmAuthTests : IAsyncLifetime
     public async Task Gm_endpoint_with_a_permission_outside_the_catalog_fails_startup()
     {
         var ex = await Should.ThrowAsync<GameServerStartupException>(() => TestHost.StartAsync(
-            GameHttp.FullGame,
+            b => GameHttp.FullGame(b.AddModule<GmModule>()),
             beforeUseGameServer: app => app.MapGet("/gm/v1/rogue", () => Results.Ok()).AsGmEndpoint("rogue.permission")));
         ex.Message.ShouldContain("rogue.permission");
     }

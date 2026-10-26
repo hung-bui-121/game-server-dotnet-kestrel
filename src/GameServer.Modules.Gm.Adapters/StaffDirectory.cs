@@ -13,7 +13,7 @@ public sealed class StaffDirectory(IKeyValueStore store, IClock clock, IOptions<
 {
     public const string Collection = "gm_staff";
 
-    private readonly ExpiringCache<string, StaffRecord?> _cache = new(clock, TimeSpan.FromSeconds(options.Value.CacheSeconds));
+    private readonly ExpiringCache<string, StaffRecord> _cache = new(clock, TimeSpan.FromSeconds(options.Value.CacheSeconds));
 
     public async Task<StaffRecord?> GetAsync(string staffId, CancellationToken cancellationToken)
     {
@@ -24,7 +24,12 @@ public sealed class StaffDirectory(IKeyValueStore store, IClock clock, IOptions<
 
         var document = await store.GetAsync(Key(staffId), cancellationToken);
         var record = document?.Content.Deserialize<StaffRecord>(GameServerJson.Options);
-        _cache.Set(staffId, record);
+        if (record is not null)
+        {
+            // Unknown ids are not cached: login attempts with random ids must not grow the cache.
+            _cache.Set(staffId, record);
+        }
+
         return record;
     }
 

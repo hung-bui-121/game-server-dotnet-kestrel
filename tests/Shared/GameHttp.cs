@@ -77,8 +77,7 @@ public static class GameHttp
             .AddModule<IapModule>()
             .AddModule<SampleGameModule>()
             .AddModule<CounterModule>()
-            .AddModule<CheatModule>()
-            .AddModule<GameServer.Modules.Gm.GmModule>();
+            .AddModule<CheatModule>();
 
     public static Task<TestHost> StartGameAsync(
         Action<Dictionary<string, string?>>? settings = null,

@@ -23,9 +23,6 @@ public sealed class EconomyModule : IGameModule, IGmApiModule
     public const string AdjustRoute = "/gm/v1/players/{playerId}/resources/adjust";
     public const string LedgerRoute = "/gm/v1/players/{playerId}/ledger";
 
-    /// <summary>Owned by the GM module; the startup validator requires it in the catalog when the GM API is mapped.</summary>
-    public const string PlayerReadPermission = "player.read";
-
     public ModuleDescriptor Describe() => EconomyModuleDefinition.Describe();
 
     public void MapGmApi(IEndpointRouteBuilder routes)
@@ -47,7 +44,7 @@ public sealed class EconomyModule : IGameModule, IGmApiModule
                     "committedAtUtc",
                     descending: true,
                     d => d.Content)))
-            .AsGmEndpoint(PlayerReadPermission);
+            .AsGmEndpoint(EconomyPermissions.PlayerRead);
     }
 
     public void ConfigureServices(IServiceCollection services, ModuleContext context)

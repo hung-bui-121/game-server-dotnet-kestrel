@@ -39,12 +39,13 @@ sinh outbox `ledger` → projection `ledger::{entryId}` trong collection `ledger
 
 ## GM (slice 004 — GM-03, SEC-14)
 
-Permission `resource.adjust` (thuộc catalog của module này).
+Permission `resource.adjust` và `player.read` (cả hai khai trong catalog của module này; `player.read` dùng chung tên với
+module gm nên Economy chạy được khi không đăng ký module gm). Index `ledger(playerId, committedAtUtc DESC, META().id DESC)`.
 
 | Route | Permission | Command |
 | --- | --- | --- |
 | `POST /gm/v1/players/{playerId}/resources/adjust` `{resource, delta, reason}` | `resource.adjust` | `economy.adjust` |
-| `GET /gm/v1/players/{playerId}/ledger?pageSize=&cursor=` | `player.read` (module gm) | — (list `ledger`, mới nhất trước) |
+| `GET /gm/v1/players/{playerId}/ledger?pageSize=&cursor=` | `player.read` | — (list `ledger`, mới nhất trước) |
 
 `economy.adjust`: profile `Gm`, Touches `wallet`, `inventory`. `delta > 0` → Grant, `delta < 0` → Debit, `delta = 0` →
 `INVALID_QUANTITY`; ledger `sourceType = gm_adjust`, `actorId` = staff; audit `{permission: resource.adjust, action:

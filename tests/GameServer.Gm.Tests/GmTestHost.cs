@@ -15,7 +15,7 @@ public static class GmTestHost
     /// <summary>Staff seeded by <see cref="StartAsync"/>: id → (roles, extra permissions, scope override, disabled).</summary>
     public static Task<TestHost> StartAsync(Action<Dictionary<string, string?>>? settings = null) =>
         TestHost.StartAsync(
-            GameHttp.FullGame,
+            b => GameHttp.FullGame(b.AddModule<GmModule>()),
             values =>
             {
                 Seed(values, 0, "support", ["Support"]);
@@ -55,6 +55,13 @@ public static class GmTestHost
         {
             values[$"{prefix}Permissions:{i}"] = permissions![i];
         }
+    }
+
+    /// <summary>Creates a real player (guest login → profile) and returns it with a bearer client.</summary>
+    public static async Task<GamePlayer> NewPlayerAsync(this TestHost host)
+    {
+        var login = await host.Client().LoginAsync(IdentityHttp.NewLocalId(), IdentityHttp.NewSecret());
+        return new GamePlayer(host.BearerClient(login.SessionToken), login.PlayerId);
     }
 
     public static Task<HttpResponseMessage> PostLoginAsync(this TestHost host, string staffId, string password = Password) =>

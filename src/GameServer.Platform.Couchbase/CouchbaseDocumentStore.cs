@@ -149,11 +149,13 @@ public sealed class CouchbaseDocumentStore(CouchbaseConnection connection) : ITr
         var order = Path(query.OrderByField);
         var direction = query.Descending ? "DESC" : "ASC";
         var comparison = query.Descending ? "<" : ">";
+        // Order and compare on the raw field (strings only) so an index (filter, order, META().id) serves the
+        // ORDER BY and the LIMIT is pushed down: each page reads pageSize + 1 index entries.
         var statement =
-            $"SELECT META(d).id AS id, d AS doc, TOSTRING(IFMISSINGORNULL({order}, '')) AS ord FROM `{query.Collection}` AS d " +
-            $"WHERE {filter} = $value " +
-            (after is null ? string.Empty : $"AND (TOSTRING(IFMISSINGORNULL({order}, '')) {comparison} $cv OR (TOSTRING(IFMISSINGORNULL({order}, '')) = $cv AND META(d).id {comparison} $ck)) ") +
-            $"ORDER BY ord {direction}, META(d).id {direction} LIMIT $limit";
+            $"SELECT META(d).id AS id, d AS doc, {order} AS ord FROM `{query.Collection}` AS d " +
+            $"WHERE {filter} = $value AND IS_STRING({order}) " +
+            (after is null ? string.Empty : $"AND ({order} {comparison} $cv OR ({order} = $cv AND META(d).id {comparison} $ck)) ") +
+            $"ORDER BY {order} {direction}, META(d).id {direction} LIMIT $limit";
         var options = new QueryOptions()
             .Parameter("value", query.FilterValue)
             .Parameter("limit", query.PageSize + 1)

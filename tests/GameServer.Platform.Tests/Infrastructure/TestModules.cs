@@ -40,6 +40,7 @@ public static class TestModules
             Command.Define<int, Unit>(OutboxFloodHandler.Descriptor).HandledBy<OutboxFloodHandler>(),
             Command.Define<int, Unit>(BigResultHandler.Descriptor).HandledBy<BigResultHandler>(),
             Command.Define<long, Unit>(GmAddHandler.Descriptor).HandledBy<GmAddHandler>(),
+            Command.Define<Unit, Unit>(ForgeAuditHandler.Descriptor).HandledBy<ForgeAuditHandler>(),
         ],
         Permissions = [GmAddHandler.Permission],
         ErrorCodes = ProbeErrors.All,
@@ -127,7 +128,10 @@ public sealed class ClaimHandler : ICommandHandler<ClaimRequest, Unit>
     }
 }
 
-/// <summary>GM command adding to the target player's counter (profile Gm, permission <c>probe.edit</c>).</summary>
+/// <summary>
+/// GM command adding to the target player's counter (profile Gm, permission <c>probe.edit</c>). A zero amount simulates a
+/// module bug that forgets the audit.
+/// </summary>
 public sealed class GmAddHandler : ICommandHandler<long, Unit>
 {
     public const string Permission = "probe.edit";
@@ -139,6 +143,24 @@ public sealed class GmAddHandler : ICommandHandler<long, Unit>
     {
         var counter = context.Get<CounterState>(CounterAggregates.Counter);
         context.Set(CounterAggregates.Counter, counter with { Value = counter.Value + request });
+        if (request != 0)
+        {
+            context.AddAudit(Permission, Descriptor.Operation, "probe");
+        }
+
+        return ValueTask.FromResult(CommandOutcome<Unit>.Ok(Unit.Value));
+    }
+}
+
+/// <summary>Player command that tries to write a GM audit entry (must be refused).</summary>
+public sealed class ForgeAuditHandler : ICommandHandler<Unit, Unit>
+{
+    public static CommandDescriptor Descriptor { get; } = new("probe.forge_audit", touches: [ProbeAggregates.Probe]);
+
+    public ValueTask<CommandOutcome<Unit>> HandleAsync(Unit request, ICommandContext context)
+    {
+        context.Set(ProbeAggregates.Probe, new ProbeState { Blob = "forged" });
+        context.AddAudit("probe.edit", "probe.gm_add", "forged");
         return ValueTask.FromResult(CommandOutcome<Unit>.Ok(Unit.Value));
     }
 }

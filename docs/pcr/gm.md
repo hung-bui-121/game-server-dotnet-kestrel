@@ -11,7 +11,7 @@ catalog → startup fail (SEC-08).
 | Permission | Module sở hữu | Dùng cho |
 | --- | --- | --- |
 | `gm.access` | gm | `/gm/v1/me`, logout |
-| `player.read` | gm | lookup, search, receipts, audit, ledger |
+| `player.read` | gm, economy (tên dùng chung; catalog là hợp của các module) | lookup, search, receipts, audit, ledger |
 | `player.read.pii` | gm | hiện `identities` (mapping key) trong lookup |
 | `resource.adjust` | economy | `economy.adjust` |
 | `progression.edit` | sample.game | `progression.set` |
@@ -35,7 +35,9 @@ Template không cấp permission mà deployment không có (module chưa đăng 
 | `gm_sessions` | SHA-256 hex của session id | `{staffId, gameId, environmentId, createdAtUtc, expiresAtUtc}`, expiry 8 h |
 | `gm_audit` | `gm_audit::{entryId}` | projection outbox `gm_audit` (xem dưới); index `(playerId, committedAtUtc)` |
 
-Module cũng khai index `receipts(playerId, committedAtUtc)` và `pa_profile(state.displayName, playerId)` cho list/search.
+Module cũng khai index `receipts(playerId, committedAtUtc DESC, META().id DESC)` và
+`pa_profile(state.displayName, playerId, META().id)` cho list/search. `gm_audit` chỉ được ghi bởi projection
+(`IKeyValueStore` từ chối collection này).
 
 ## Xác thực và phạm vi (semantic)
 
@@ -46,6 +48,8 @@ Module cũng khai index `receipts(playerId, committedAtUtc)` và `pa_profile(sta
 - Staff `disabled` hoặc không tồn tại → 401. Cache staff + session per instance ≤ `Gm:CacheSeconds` (mặc định 60, tối
   đa 60 — SEC-10); logout xoá session ngay trên instance xử lý, instance khác chậm tối đa bằng thời gian cache.
 - Mutation GM (method khác GET/HEAD/OPTIONS) có `Sec-Fetch-Site: cross-site` → 403 (phần P0 của SEC-05).
+- Mọi response GM có `Cache-Control: no-store` (có thể chứa PII). Cookie luôn `Secure` ngoài Development.
+- Cache staff/session chỉ giữ kết quả tìm thấy (token/staffId lạ không làm phình cache).
 - Token player trên GM API → 401; cookie GM trên Player API → 401 (scheme tách theo profile, SEC-02).
 - Runner kiểm lại: command profile `Gm` chỉ chạy cho actor GM có permission của command; command `Player` chỉ cho
   actor player (phòng thủ nhiều lớp sau metadata endpoint).
@@ -81,6 +85,8 @@ cuối. Cursor keyset opaque = base64url(`{v: giá trị orderBy, k: key}`); cur
 
 `MapGmCommand`: body JSON (`application/json`, ≤ 1 MiB) phải có `reason` 1–500 ký tự (thiếu → 400); header `X-Request-Id`
 UUID bắt buộc; actor = staff, player đích = `{playerId}` của route; `receiptId = hash(staffId|playerId|operation|requestId)`.
+Player đích phải tồn tại (có `profile`) và không chờ xoá, nếu không → 404 `NOT_FOUND`, không ghi gì (`IGmTargetValidator`
+do module gm đăng ký).
 Retry cùng `X-Request-Id` → replay (`replayed: true`); cùng id khác body → 409 `IDEMPOTENCY_PAYLOAD_MISMATCH`.
 Response `{code, codeNumber, receiptId, replayed, configVersion, serverTimeUtcMs, result, updates[{id, baseRev, newRev, state}]}`;
 lỗi nghiệp vụ = HTTP 200 + `code`, không receipt, không audit.
@@ -88,7 +94,9 @@ lỗi nghiệp vụ = HTTP 200 + `code`, không receipt, không audit.
 ## Audit (semantic — SEC-14, ACC-27)
 
 Command gọi `ctx.AddAudit(permission, action, reason, before?, after?)` → outbox kind `gm_audit` trong **cùng receipt**
-(commit cùng thay đổi) → projection `gm_audit::{entryId}`:
+(commit cùng thay đổi) → projection `gm_audit::{entryId}`. Runner **bắt buộc**: command profile `Gm` commit với đúng
+một entry audit; command khác không được có entry `gm_audit` (vi phạm → INTERNAL, không commit — chống quên audit và
+giả mạo audit từ command player).
 
 `{entryId, kind, gameId, environmentId, receiptId, playerId, actorId, operation, committedAtUtc,
 payload{actorId, permission, action, targetPlayerId, reason, before, after, correlationId}}`

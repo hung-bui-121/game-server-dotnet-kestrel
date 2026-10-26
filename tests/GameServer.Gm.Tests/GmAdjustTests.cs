@@ -12,22 +12,25 @@ namespace GameServer.Gm.Tests;
 /// <summary>Resource adjustment and progression edit with audit (US3: GM-03, SEC-14, ACC-27, ACC-45).</summary>
 public sealed class GmAdjustTests : IAsyncLifetime
 {
-    private const string PlayerId = "p-adjust";
     private TestHost _host = null!;
     private GamePlayer _player = null!;
 
     public async ValueTask InitializeAsync()
     {
         _host = await GmTestHost.StartAsync();
-        _player = new GamePlayer(_host.Player(PlayerId), PlayerId);
+        _player = await _host.NewPlayerAsync();
         await _player.CheatAsync("gold", 50);
     }
 
     public async ValueTask DisposeAsync() => await _host.DisposeAsync();
 
-    private static string AdjustRoute => EconomyModule.AdjustRoute.Replace("{playerId}", PlayerId, StringComparison.Ordinal);
+    private string PlayerId => _player.PlayerId;
 
-    private static string ProgressionRoute => SampleGameModule.GmProgressionRoute.Replace("{playerId}", PlayerId, StringComparison.Ordinal);
+    private string AdjustRoute => AdjustRouteFor(PlayerId);
+
+    private string ProgressionRoute => SampleGameModule.GmProgressionRoute.Replace("{playerId}", PlayerId, StringComparison.Ordinal);
+
+    private static string AdjustRouteFor(string playerId) => EconomyModule.AdjustRoute.Replace("{playerId}", playerId, StringComparison.Ordinal);
 
     private IReadOnlyList<JsonObject> Audits() => _host.Store.All(GmModule.AuditCollection).Select(d => d.Content).ToArray();
 
@@ -130,6 +133,16 @@ public sealed class GmAdjustTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Mutations_on_unknown_players_are_404_and_write_nothing()
+    {
+        var gm = await _host.GmClientAsync("econ");
+        var problem = await gm.PostCommandAsync(AdjustRouteFor("no-such-player"), new { resource = "gold", delta = 1000, reason = "typo" }).ShouldBeAsync(404);
+        problem["code"]!.GetValue<string>().ShouldBe("NOT_FOUND");
+        _host.Store.Count("pa_wallet").ShouldBe(1);
+        Audits().ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task Command_without_request_id_is_400()
     {
         var gm = await _host.GmClientAsync("econ");
@@ -163,7 +176,8 @@ public sealed class GmAdjustTests : IAsyncLifetime
     {
         await using var host = await GmTestHost.StartAsync(s => s["GameServer:Outbox:InlineRelayEnabled"] = "false");
         var gm = await host.GmClientAsync("econ");
-        await gm.PostCommandAsync(AdjustRoute, new { resource = "gold", delta = 5, reason = "late audit" }).ShouldBeAsync(200);
+        var player = await host.NewPlayerAsync();
+        await gm.PostCommandAsync(AdjustRouteFor(player.PlayerId), new { resource = "gold", delta = 5, reason = "late audit" }).ShouldBeAsync(200);
         host.Store.All(GmModule.AuditCollection).ShouldBeEmpty();
 
         host.Clock.Advance(TimeSpan.FromSeconds(11));

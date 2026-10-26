@@ -28,8 +28,8 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
         {
             var rows = _documents
                 .Where(d => d.Key.Collection == query.Collection && Live(d.Key) is not null)
-                .Select(d => (d.Key, Content: d.Value.Content, Order: PageCursor.ValueAt(d.Value.Content, query.OrderByField) ?? string.Empty))
-                .Where(r => PageCursor.ValueAt(r.Content, query.FilterField) == query.FilterValue);
+                .Select(d => (d.Key, Content: d.Value.Content, Order: PageCursor.StringAt(d.Value.Content, query.OrderByField)!))
+                .Where(r => r.Order is not null && PageCursor.StringAt(r.Content, query.FilterField) == query.FilterValue);
             rows = query.Descending
                 ? rows.OrderByDescending(r => r.Order, StringComparer.Ordinal).ThenByDescending(r => r.Key.Key, StringComparer.Ordinal)
                 : rows.OrderBy(r => r.Order, StringComparer.Ordinal).ThenBy(r => r.Key.Key, StringComparer.Ordinal);

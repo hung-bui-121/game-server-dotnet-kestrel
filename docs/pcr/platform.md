@@ -147,15 +147,20 @@ Health endpoints (`/health/live`, `/health/ready`) thêm ở slice 005.
 ## 12. GM API dùng chung (semantic — slice 004)
 
 - `IPagedQueryStore.QueryPageAsync(PagedQuery)`: lọc bằng nhau một trường, sắp một trường (+ key), keyset cursor opaque;
-  `pageSize` 1–200 (ngoài khoảng → 400); đường dẫn trường chỉ gồm định danh (chặn injection). Chỉ dùng ngoài hot path
-  (PERF-07); collection cần index `(trường lọc, trường sắp)`.
+  `pageSize` 1–200 (ngoài khoảng → 400); tên collection và đường dẫn trường chỉ gồm định danh (chặn injection). Trường
+  lọc và trường sắp phải là **chuỗi JSON**; document thiếu hoặc khác kiểu không khớp (in-memory và Couchbase như nhau).
+  Chỉ dùng ngoài hot path (PERF-07); collection cần index `(trường lọc, trường sắp [DESC], META().id [DESC])` theo
+  hướng truy vấn để `ORDER BY … LIMIT` đọc từ index. **Chưa chạy trên Couchbase thật** (cần EXPLAIN khi có cluster).
 - `GmHttp`: `ReadPageRequest` (`pageSize` bắt buộc), `QueryAsync`, `ReadJsonAsync` (body JSON ≤ GM limit), `RequirePlayerId`.
 - `MapGmCommand<TBody, TRequest, TResult>(pattern, operation, permission, toDomain)`: route phải có `{playerId}`; `TBody :
   IGmCommandBody` (reason bắt buộc); xem PCR gm.
 - `ICommandContext.AddAudit(...)` (Core): outbox kind `gm_audit`; module gm projection vào `gm_audit`.
 - `PlayerSnapshotReader.ReadAllAsync(playerId)`: mọi aggregate kể cả hidden (cho GM).
 - Runner: command profile `Player` chỉ cho actor player, `Gm` chỉ cho actor GM có permission của command, `Dev` cho cả hai
-  → sai → 403 `FORBIDDEN`.
+  → sai → 403 `FORBIDDEN`. Command `Gm` phải commit với đúng một audit; command khác không được có audit (SEC-14).
+- `IGmTargetValidator`: kiểm player đích trước khi chạy command GM (module gm: tồn tại + không chờ xoá → 404).
+- `IKeyValueStore` từ chối ghi `receipts`, `pa_*` và `gm_audit`.
+- Response GM: `Cache-Control: no-store`.
 - Middleware profile: mutation GM có `Sec-Fetch-Site: cross-site` → 403.
 - Startup validator: endpoint GM phải có permission trong catalog của các module đã đăng ký (SEC-08).
 

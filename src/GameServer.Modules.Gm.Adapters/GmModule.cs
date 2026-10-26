@@ -4,6 +4,7 @@ using GameServer.Modules.Identity;
 using GameServer.Platform;
 using GameServer.Platform.Commands;
 using GameServer.Platform.Web.Auth;
+using GameServer.Platform.Web.Commands;
 using GameServer.Platform.Web.Endpoints;
 using GameServer.Platform.Web.Routing;
 using Microsoft.AspNetCore.Authentication;
@@ -42,9 +43,11 @@ public sealed class GmModule : IGameModule, IGmApiModule
         [
             new CollectionSpec(StaffDirectory.Collection),
             new CollectionSpec(GmSessionService.Collection),
-            new CollectionSpec(AuditCollection, [new IndexSpec("ix_gm_audit_player", "playerId, committedAtUtc")]),
-            new CollectionSpec(ReceiptDocument.Collection, [new IndexSpec("ix_receipts_player", "playerId, committedAtUtc")]),
-            new CollectionSpec(IdentityAggregates.ProfileDescriptor.Collection, [new IndexSpec("ix_profile_display_name", "`state`.`displayName`, playerId")]),
+            new CollectionSpec(AuditCollection, [new IndexSpec("ix_gm_audit_player", "playerId, committedAtUtc DESC, META().id DESC")]),
+            new CollectionSpec(ReceiptDocument.Collection, [new IndexSpec("ix_receipts_player", "playerId, committedAtUtc DESC, META().id DESC")]),
+            new CollectionSpec(
+                IdentityAggregates.ProfileDescriptor.Collection,
+                [new IndexSpec("ix_profile_display_name", "`state`.`displayName`, playerId, META().id")]),
         ],
         OutboxProjections = [new OutboxProjection(AuditExtensions.OutboxKind, AuditCollection)],
         PublicEndpoints = [LoginRoute, UiRoute],
@@ -57,6 +60,7 @@ public sealed class GmModule : IGameModule, IGmApiModule
         services.AddSingleton<StaffDirectory>();
         services.AddSingleton<GmSessionService>();
         services.AddHostedService<GmBootstrapper>();
+        services.AddSingleton<IGmTargetValidator, GmTargetValidator>();
 
         services.AddAuthentication()
             .AddScheme<AuthenticationSchemeOptions, GmCookieAuthenticationHandler>(GmCookieAuthenticationHandler.SchemeName, null);
@@ -137,7 +141,8 @@ public sealed class GmModule : IGameModule, IGmApiModule
     {
         HttpOnly = true,
         SameSite = SameSiteMode.Lax,
-        Secure = http.Request.IsHttps,
+        // Behind a TLS-terminating proxy IsHttps is false: only plain-HTTP Development may drop Secure.
+        Secure = http.Request.IsHttps || !http.RequestServices.GetRequiredService<GameServerOptions>().IsDevelopment,
         Path = "/gm",
         Expires = expiresAt,
         IsEssential = true,

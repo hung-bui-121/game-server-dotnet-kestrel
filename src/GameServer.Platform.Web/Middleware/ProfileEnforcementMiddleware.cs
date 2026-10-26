@@ -44,6 +44,12 @@ public sealed class ProfileEnforcementMiddleware(
             return;
         }
 
+        if (profile.Value == SecurityProfile.Gm)
+        {
+            // GM responses may hold PII (player.read.pii): never cache them in browsers or proxies.
+            context.Response.Headers.CacheControl = "no-store";
+        }
+
         SetBodyLimit(context, profile.Value);
         if (profile.Value != SecurityProfile.Public)
         {

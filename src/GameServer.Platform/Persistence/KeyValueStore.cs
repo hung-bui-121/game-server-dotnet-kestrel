@@ -32,5 +32,10 @@ public static class KeyValueCollections
             throw new InvalidOperationException(
                 $"Collection '{key.Collection}' is written only through the command runner or IPlayerAggregateWriter (CMD-05).");
         }
+
+        if (key.Collection == GameServer.Commands.AuditExtensions.OutboxKind)
+        {
+            throw new InvalidOperationException($"Collection '{key.Collection}' is written only by the audit projection (SEC-14).");
+        }
     }
 }

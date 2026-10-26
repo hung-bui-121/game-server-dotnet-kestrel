@@ -76,6 +76,8 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
 let currentPlayer = null;
+// One X-Request-Id per adjustment entry: a double click or retry replays instead of applying twice.
+let adjustRequestId = crypto.randomUUID();
 
 function showError(message) { $("error").textContent = message || ""; }
 
@@ -165,16 +167,24 @@ $("lookup-form").addEventListener("submit", async (event) => {
   try { await lookup(form.get("by"), String(form.get("value")).trim()); } catch (e) { showError(e.message); }
 });
 
+$("adjust-form").addEventListener("input", () => { adjustRequestId = crypto.randomUUID(); });
+
 $("adjust-form").addEventListener("submit", async (event) => {
   event.preventDefault(); showError();
+  const submit = event.target.querySelector("button[type=submit]");
+  if (submit.disabled) { return; }
   const form = new FormData(event.target);
-  const body = { resource: form.get("resource"), delta: Number(form.get("delta")), reason: form.get("reason") };
+  // delta as a string: JSON numbers above 2^53 would lose precision in JavaScript.
+  const body = { resource: form.get("resource"), delta: String(form.get("delta")).trim(), reason: form.get("reason") };
+  submit.disabled = true;
   try {
-    const result = await api("POST", `/gm/v1/players/${encodeURIComponent(currentPlayer)}/resources/adjust`, body, { "X-Request-Id": crypto.randomUUID() });
+    const result = await api("POST", `/gm/v1/players/${encodeURIComponent(currentPlayer)}/resources/adjust`, body, { "X-Request-Id": adjustRequestId });
     $("adjust-result").hidden = false;
     $("adjust-result").textContent = JSON.stringify(result, null, 2);
+    adjustRequestId = crypto.randomUUID();
     await lookup("id", currentPlayer);
   } catch (e) { showError(e.message); }
+  finally { submit.disabled = false; }
 });
 
 api("GET", "/gm/v1/me").then(setSignedIn).catch(() => setSignedIn(null));

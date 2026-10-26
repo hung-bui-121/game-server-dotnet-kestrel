@@ -15,12 +15,12 @@ public static class EconomyModuleDefinition
         Version = "0.2.0",
         DependsOn = ["identity"],
         RequiredConfigFiles = [ResourceCatalog.ConfigFile],
-        Permissions = [EconomyPermissions.ResourceAdjust],
+        Permissions = [EconomyPermissions.ResourceAdjust, EconomyPermissions.PlayerRead],
         Commands = [Command.Define<AdjustResourceCommand, AdjustResourceResult>(AdjustResourceHandler.Descriptor).HandledBy<AdjustResourceHandler>()],
         Aggregates = [EconomyAggregates.WalletDescriptor, EconomyAggregates.InventoryDescriptor],
         Collections =
         [
-            new CollectionSpec(EconomyOperations.LedgerCollection, [new IndexSpec("ix_ledger_player", "playerId, committedAtUtc")]),
+            new CollectionSpec(EconomyOperations.LedgerCollection, [new IndexSpec("ix_ledger_player", "playerId, committedAtUtc DESC, META().id DESC")]),
             new CollectionSpec(EconomyOperations.ClaimCollection),
         ],
         ErrorCodes = EconomyErrors.All,

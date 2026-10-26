@@ -8,7 +8,9 @@ namespace GameServer.Platform.Persistence;
 
 /// <summary>
 /// One-field equality filter, one-field ordering, keyset pagination (GM-06): every list is bounded by
-/// <see cref="PageSize"/> (1..200) and continues with an opaque <see cref="Cursor"/>.
+/// <see cref="PageSize"/> (1..200) and continues with an opaque <see cref="Cursor"/>. Filter and order fields must hold
+/// JSON strings; documents where they are missing or not strings do not match. The collection needs an index on
+/// (filter field, order field, document id) in the query direction so pages are read from the index.
 /// </summary>
 public sealed partial record PagedQuery(
     string Collection,
@@ -31,14 +33,17 @@ public sealed partial record PagedQuery(
             throw new GameServerException(CoreErrorCodes.BadRequest, $"pageSize must be 1..{MaxPageSize}.");
         }
 
-        if (!IsValidField(FilterField) || !IsValidField(OrderByField))
+        if (!IsValidField(FilterField) || !IsValidField(OrderByField) || !CollectionPattern().IsMatch(Collection))
         {
-            throw new ArgumentException("Invalid field path.");
+            throw new ArgumentException("Invalid collection or field path.");
         }
     }
 
     [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$")]
     private static partial Regex FieldPattern();
+
+    [GeneratedRegex("^[A-Za-z0-9_][A-Za-z0-9_-]{0,250}$")]
+    private static partial Regex CollectionPattern();
 }
 
 public sealed record Page(IReadOnlyList<StoredDocument> Items, string? NextCursor);
@@ -75,8 +80,8 @@ public sealed record PageCursor(string Value, string Key)
         }
     }
 
-    /// <summary>Reads a dotted path from a document as a string (null when missing).</summary>
-    public static string? ValueAt(JsonObject document, string path)
+    /// <summary>Reads a dotted path holding a JSON string (null when missing or not a string).</summary>
+    public static string? StringAt(JsonObject document, string path)
     {
         JsonNode? node = document;
         foreach (var segment in path.Split('.'))
@@ -88,6 +93,6 @@ public sealed record PageCursor(string Value, string Key)
             }
         }
 
-        return node is JsonValue value ? value.ToString() : node.ToJsonString();
+        return node is JsonValue value && value.GetValueKind() == JsonValueKind.String ? value.GetValue<string>() : null;
     }
 }

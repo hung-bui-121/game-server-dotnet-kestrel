@@ -271,6 +271,7 @@ public sealed class CommandRunner(
             await tx.InsertAsync(claimKey, claim);
         }
 
+        EnsureAudit(descriptor, context);
         var resultCode = outcome.Error ?? CoreErrorCodes.Ok;
         var receipt = BuildReceipt(invocation, descriptor.Operation, playerId, receiptId, resultCode, resultBytes, loaded, writes, context, now);
         var receiptJson = receipt.ToJson();
@@ -292,6 +293,22 @@ public sealed class CommandRunner(
         }
 
         return AttemptResult.Commit(receipt, receiptSize, writes, resultBytes);
+    }
+
+    /// <summary>
+    /// SEC-14: every committed GM command carries exactly one audit entry in its receipt; other commands carry none, so
+    /// the audit trail cannot be forged by Player or Dev commands. A violation is a module bug (INTERNAL, nothing commits).
+    /// </summary>
+    private static void EnsureAudit(GameServer.Commands.CommandDescriptor descriptor, CommandContext context)
+    {
+        var audits = context.Outbox.Count(e => e.Kind == GameServer.Commands.AuditExtensions.OutboxKind);
+        var expected = descriptor.Profile == SecurityProfile.Gm ? 1 : 0;
+        if (audits != expected)
+        {
+            throw new InvalidOperationException(
+                $"Command '{descriptor.Operation}' ({descriptor.Profile}) wrote {audits} audit entries; expected {expected} (SEC-14). " +
+                "Fix: GM commands call ctx.AddAudit(...) exactly once; other commands never do.");
+        }
     }
 
     private ReceiptDocument BuildReceipt(

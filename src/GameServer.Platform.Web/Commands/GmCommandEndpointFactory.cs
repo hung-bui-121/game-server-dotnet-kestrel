@@ -21,6 +21,16 @@ public interface IGmCommandBody
     string? Reason { get; }
 }
 
+/// <summary>
+/// Checks the target player of a GM mutation before the command runs (e.g. the player exists and is not deleted).
+/// Registered by the module owning player identity; without one, any well-formed playerId is accepted.
+/// </summary>
+public interface IGmTargetValidator
+{
+    /// <summary>Throws <see cref="GameServerException"/> when the player must not be changed by GM.</summary>
+    Task ValidateAsync(string playerId, CancellationToken cancellationToken);
+}
+
 /// <summary>JSON response of a GM command (same fields as the Player <c>CommandResponse</c>).</summary>
 public sealed record GmCommandResponse(
     string Code,
@@ -77,6 +87,11 @@ public static class GmCommandEndpointFactory
                 }
 
                 var request = toDomain(wire);
+                foreach (var validator in services.GetServices<IGmTargetValidator>())
+                {
+                    await validator.ValidateAsync(playerId, http.RequestAborted);
+                }
+
                 var actor = services.GetRequiredService<ActorContextAccessor>().GetActor(http) with { PlayerId = playerId };
                 var invocation = new CommandInvocation(
                     operation,

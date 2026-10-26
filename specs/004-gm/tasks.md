@@ -42,5 +42,5 @@ description: "Task list for 004 gm"
 
 ## Phase 7: Polish
 
-- [ ] T017 [P] PCR `docs/pcr/gm.md`; update platform/economy/sample-game PCR; arch tests include GM assemblies
+- [X] T017 [P] PCR `docs/pcr/gm.md`; update platform/economy/sample-game PCR; arch tests include GM assemblies
 - [ ] T018 Full suite, quickstart log, AgentMemories

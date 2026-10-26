@@ -8,6 +8,9 @@ namespace GameServer.Modules.Economy;
 public static class EconomyPermissions
 {
     public const string ResourceAdjust = "resource.adjust";
+
+    /// <summary>Shared read permission (also declared by module gm); the catalog is the union of all modules.</summary>
+    public const string PlayerRead = "player.read";
 }
 
 /// <summary>GM resource adjustment (GM-03): positive delta grants, negative delta debits.</summary>

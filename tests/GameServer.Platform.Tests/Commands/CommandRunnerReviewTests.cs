@@ -109,6 +109,19 @@ public sealed class CommandRunnerReviewTests : IDisposable
         CounterValue().ShouldBe(0);
     }
 
+    [Fact]
+    public async Task Gm_commands_must_audit_once_and_other_commands_never()
+    {
+        var gm = Gm(GmAddHandler.Permission) with { PlayerId = "p1" };
+        await Should.ThrowAsync<Exception>(_h.Runner.ExecuteAsync(
+            new CommandInvocation(GmAddHandler.Descriptor.Operation, gm, Guid.NewGuid().ToString("D"), "h", 0L, _ => [1]),
+            CancellationToken.None));
+        await Should.ThrowAsync<Exception>(_h.RunAsync(ForgeAuditHandler.Descriptor.Operation, Unit.Value));
+
+        _h.Store.Count("receipts").ShouldBe(0);
+        _h.Store.Peek(new DocumentKey("pa_probe", "p1")).ShouldBeNull();
+    }
+
     private static ActorContext Gm(params string[] permissions) =>
         new("gm-1", ActorType.Gm, null, "test", "dev", permissions.ToHashSet(), "c");
 
