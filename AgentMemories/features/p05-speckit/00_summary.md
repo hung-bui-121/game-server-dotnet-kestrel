@@ -18,7 +18,7 @@ P0 is merged into `main` and pushed (fda9f00). The real-environment test tools f
 | --- | --- | --- |
 | 007 gm-security | `007-gm-security` | DONE: 35/35 tasks. `5232fa1` feat, `3fce8ab` review fixes (0 Blocker, 5 Major, 8 Minor, all fixed) |
 | 008 gate-ban | `008-gate-ban` | DONE: 15/15 tasks. `f2b8d98` feat, review fixes commit "fix: ... (008 review)" (gate cache snapshot, ban scope validation, display-name Unicode rules, audit permission) |
-| 009 identity-providers | — | PGS v2 + Game Center, link/conflict/SWITCH_ACCOUNT, SDK (ACC-03, 29) |
+| 009 identity-providers | `009-identity-providers` | DONE: 18/18 tasks, review (0 Blocker, 4 Major, 9 Minor) fixed before commit. ACC-03/29 with real devices still manual |
 | 010 jobs-account-deletion | — | Minimal lease jobs, PRIV-01 deletion with 30-day grace, purge and anonymization (ACC-37) |
 | 011 giftcode | — | GFT-01..06, GM-04 API, reaper (ACC-08, 22, 23) |
 | 012 iap-notifications | — | IAP-03 S2S: Google RTDN, Apple v2, refund/revoke |
@@ -77,4 +77,20 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
   grapheme.
 - Tests: 428/428 pass, including Couchbase.
 
-**Next:** slice 009 identity-providers, branched from `008-gate-ban`.
+## Technical notes from 009
+
+- `IIdentityProviderAdapter` + `IdentityProviders` (deadline min(TimeoutSeconds, 0.8 × PlayerTimeout), bulkhead, link
+  limit per player); built-ins `PlayGamesAdapter`, `GameCenterAdapter` (pins in `GameCenterTrust.cs`, host allowlist
+  `static.gc.apple.com/public-key/`, no redirects); `FakeIdentityAdapter` default only in Development.
+- Link = `identity.link` command using `TryClaimAsync(collection, key, attributes)`; first provider login inserts the
+  mapping with platform `ClaimStore` (transaction; modules may not open transactions — arch test).
+- Platform: `CommandOutcome.Reject(code, details)` with HTTP ≠ 200 → error envelope; `ICommandRunner.TryReplayAsync`
+  runs before async decode (single-use codes).
+- Failure classification: only client-caused proof failures count against the IP limit; server/pin problems →
+  PROVIDER_UNAVAILABLE + LogError.
+- Game Center chain verified 2026-10-27: gc-prod-12 (to 2027-05-27) → DigiCert Trusted G4 Code Signing RSA4096 SHA384
+  2021 CA1 → DigiCert Trusted Root G4. Fixture `tests/GameServer.Platform.Web.Tests/Fixtures/gc-prod-12.cer`.
+- Tests: 489/489 including Couchbase. `TelemetryTests.A_command_is_one_trace...` failed once under full-suite load
+  (passes alone) — watch for flakiness.
+
+**Next:** slice 010 jobs-account-deletion, branched from `009-identity-providers`.
