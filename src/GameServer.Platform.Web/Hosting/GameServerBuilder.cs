@@ -123,6 +123,7 @@ public static class GameServerBuilderExtensions
         services.AddSingleton<IPlayerAggregateWriter, PlayerAggregateWriter>();
         services.AddSingleton<GameServer.Platform.Persistence.IAuditedStore, GameServer.Platform.Persistence.AuditedStore>();
         services.AddSingleton<ReceiptReader>();
+        services.AddSingleton<GameServer.Platform.Persistence.ClaimStore>();
         services.TryAddSingleton<GameServer.Platform.Persistence.IStoreHealthProbe, GameServer.Platform.Persistence.DocumentStoreHealthProbe>();
         services.AddSingleton<IGameConfig>(sp =>
         {

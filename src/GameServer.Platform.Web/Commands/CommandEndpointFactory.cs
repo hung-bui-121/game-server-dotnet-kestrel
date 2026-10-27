@@ -34,7 +34,8 @@ public static class CommandEndpointFactory
 
     /// <summary>
     /// Player command whose domain request needs async work before the transaction (e.g. IAP receipt verification,
-    /// IAP-01: outbound calls happen before the runner, never inside the transaction).
+    /// IAP-01: outbound calls happen before the runner, never inside the transaction). A retry of a committed request is
+    /// replayed before <paramref name="toDomainAsync"/> runs, so that work is not repeated (single-use codes, IDN-05).
     /// </summary>
     public static IEndpointConventionBuilder MapPlayerCommand<TWireRequest, TRequest, TResult>(
         this IEndpointRouteBuilder routes,
@@ -44,7 +45,7 @@ public static class CommandEndpointFactory
         Func<TResult, IMessage> toWire)
         where TWireRequest : IMessage<TWireRequest>, new()
         where TRequest : notnull =>
-        routes.MapCommand(pattern, operation, toDomainAsync, toWire).AsPlayerEndpoint();
+        routes.MapCommand(pattern, operation, toDomainAsync, toWire, replayFirst: true).AsPlayerEndpoint();
 
     /// <summary>Development-only command (OPS-09): profile Dev, Protobuf, forbidden in Production by the validator.</summary>
     public static IEndpointConventionBuilder MapDevCommand<TWireRequest, TRequest, TResult>(
@@ -64,7 +65,8 @@ public static class CommandEndpointFactory
         string pattern,
         string operation,
         Func<TWireRequest, HttpContext, Task<TRequest>> toDomainAsync,
-        Func<TResult, IMessage> toWire)
+        Func<TResult, IMessage> toWire,
+        bool replayFirst = false)
         where TWireRequest : IMessage<TWireRequest>, new()
         where TRequest : notnull =>
         routes.MapPost(pattern, async (HttpContext http) =>
@@ -74,17 +76,23 @@ public static class CommandEndpointFactory
                 var body = await ProtobufBinding.ReadBodyAsync(http, options.Limits.PlayerBodyBytes);
                 var requestId = CorrelationMiddleware.GetClientRequestId(http)
                     ?? throw new GameServerException(CoreErrorCodes.BadRequest, $"Header {CorrelationMiddleware.HeaderName} must be a UUID for commands.");
-                var request = await toDomainAsync(ProtobufBinding.Parse<TWireRequest>(body), http);
+                var wire = ProtobufBinding.Parse<TWireRequest>(body);
                 var actor = services.GetRequiredService<ActorContextAccessor>().GetActor(http);
+                var runner = services.GetRequiredService<ICommandRunner>();
+                var bodyHash = ReceiptIds.BodyHash(body);
 
-                var invocation = new CommandInvocation(
-                    operation,
-                    actor,
-                    requestId,
-                    ReceiptIds.BodyHash(body),
-                    request,
-                    result => toWire((TResult)result).ToByteArray());
-                var execution = await services.GetRequiredService<ICommandRunner>().ExecuteAsync(invocation, http.RequestAborted);
+                var execution = replayFirst ? await runner.TryReplayAsync(operation, actor, requestId, bodyHash, http.RequestAborted) : null;
+                if (execution is null)
+                {
+                    var invocation = new CommandInvocation(
+                        operation,
+                        actor,
+                        requestId,
+                        bodyHash,
+                        await toDomainAsync(wire, http),
+                        result => toWire((TResult)result).ToByteArray());
+                    execution = await runner.ExecuteAsync(invocation, http.RequestAborted);
+                }
 
                 var response = BuildResponse(execution, services.GetRequiredService<AggregateWireMapperRegistry>(), services.GetRequiredService<IClock>());
                 await ProtobufBinding.WriteAsync(http, response);

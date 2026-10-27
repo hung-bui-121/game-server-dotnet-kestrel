@@ -111,6 +111,55 @@ public sealed class CouchbaseRunnerTests(CouchbaseFixture fixture) : IClassFixtu
     }
 
     [Fact]
+    public async Task Racing_claims_of_two_players_have_one_winner()
+    {
+        // ACC-03: identity.link claims the mapping like this; one transaction commits, the other sees the claim.
+        using var h = Harness();
+        var runners = new[] { h.CreateRunner(), h.CreateRunner() };
+        for (var round = 0; round < 5; round++)
+        {
+            var key = "claim-" + Guid.NewGuid().ToString("N");
+            var players = new[] { NewPlayer(), NewPlayer() };
+
+            var results = await Task.WhenAll(players.Select((p, i) => Task.Run(() =>
+                h.RunAsync("probe.claim", new ClaimRequest(key, false), p, runner: runners[i]))));
+
+            results.Count(r => r.Code == CoreErrorCodes.Ok).ShouldBe(1);
+            results.Count(r => r.Code == ProbeErrors.AlreadyClaimed).ShouldBe(1);
+            var winner = players[Array.FindIndex(results, r => r.Code == CoreErrorCodes.Ok)];
+            var claim = await fixture.Store.GetAsync(new DocumentKey("probe_claims", key), CancellationToken.None);
+            claim!.Content["playerId"]!.GetValue<string>().ShouldBe(winner);
+        }
+    }
+
+    [Fact]
+    public async Task Claim_store_and_command_claim_on_one_key_have_one_winner()
+    {
+        // A first provider login (ClaimStore) racing identity.link (command claim) on the same mapping key (IDN-01).
+        using var h = Harness();
+        var claims = new ClaimStore(fixture.Store, new GameServerOptions());
+        for (var round = 0; round < 5; round++)
+        {
+            var key = "claim-" + Guid.NewGuid().ToString("N");
+            var player = NewPlayer();
+
+            var insert = Task.Run(() => claims.InsertOrGetAsync(
+                new DocumentKey("probe_claims", key),
+                new System.Text.Json.Nodes.JsonObject { ["playerId"] = "login-player" },
+                CancellationToken.None));
+            var command = Task.Run(() => h.RunAsync("probe.claim", new ClaimRequest(key, false), player));
+            await Task.WhenAll(insert, command);
+
+            var (stored, inserted) = await insert;
+            var commandWon = (await command).Code == CoreErrorCodes.Ok;
+            (inserted ^ commandWon).ShouldBeTrue();
+            var owner = (await fixture.Store.GetAsync(new DocumentKey("probe_claims", key), CancellationToken.None))!.Content["playerId"]!.GetValue<string>();
+            owner.ShouldBe(inserted ? "login-player" : player);
+            stored["playerId"]!.GetValue<string>().ShouldBe(owner);
+        }
+    }
+
+    [Fact]
     public async Task Outbox_is_relayed_and_receipt_marked()
     {
         using var h = Harness();

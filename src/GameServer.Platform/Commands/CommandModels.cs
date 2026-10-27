@@ -42,4 +42,12 @@ public interface ICommandRunner
     /// <param name="invocation">The command.</param>
     /// <param name="requestAborted">Used only before the commit step (PERF-02).</param>
     Task<CommandExecution> ExecuteAsync(CommandInvocation invocation, CancellationToken requestAborted);
+
+    /// <summary>
+    /// The committed outcome of this request (same actor, player, operation and requestId) within the replay window, or
+    /// null. Lets an endpoint skip work that must not be repeated before <see cref="ExecuteAsync"/>, e.g. redeeming a
+    /// single-use provider code on a retry of a committed link (IDN-05, CMD-04).
+    /// </summary>
+    Task<CommandExecution?> TryReplayAsync(string operation, ActorContext actor, string requestId, string bodyHash, CancellationToken requestAborted) =>
+        Task.FromResult<CommandExecution?>(null);
 }

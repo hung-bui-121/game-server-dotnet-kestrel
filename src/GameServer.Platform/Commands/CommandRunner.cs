@@ -114,6 +114,31 @@ public sealed class CommandRunner(
 
     private const int MaxInsertRaceRounds = 3;
 
+    public async Task<CommandExecution?> TryReplayAsync(string operation, ActorContext actor, string requestId, string bodyHash, CancellationToken requestAborted)
+    {
+        var descriptor = registry.GetCommand(operation).Descriptor;
+        var playerId = actor.PlayerId
+            ?? throw new GameServerException(CoreErrorCodes.BadRequest, "Command has no target player.");
+        EnsureActorAllowed(descriptor, actor);
+
+        var receiptId = ReceiptIds.Compute(actor.ActorId, playerId, operation, requestId);
+        var existing = await store.GetAsync(ReceiptDocument.KeyFor(receiptId), requestAborted);
+        if (existing is null)
+        {
+            return null;
+        }
+
+        var committed = ReceiptDocument.FromJson(existing.Content);
+        if (!IsInReplayWindow(committed, clock.UtcNow))
+        {
+            return null;
+        }
+
+        var execution = await ReplayAsync(committed, bodyHash, requestId, requestAborted);
+        metrics.CommandCompleted(operation, execution.Code.Name, replayed: true);
+        return execution;
+    }
+
     /// <summary>
     /// Defense in depth behind endpoint metadata (SEC-07, SEC-08): Player commands run for players only, GM commands
     /// for GM actors holding the command's permission; Dev commands accept either (OPS-09 keeps them out of Production).
@@ -157,6 +182,12 @@ public sealed class CommandRunner(
         }
         catch (CommandRejectedException rejected)
         {
+            // Only business codes travel in a command response (HTTP 200); e.g. IDENTITY_CONFLICT is a 409 envelope.
+            if (rejected.Code.HttpStatus != 200)
+            {
+                throw new GameServerException(rejected.Code, $"Command {descriptor.Operation} rejected with {rejected.Code.Name}.") { Details = rejected.Details };
+            }
+
             return new CommandExecution(rejected.Code, null, [], [], false, config.ConfigVersion);
         }
         catch (TransactionCommitAmbiguousException ex)
@@ -245,7 +276,7 @@ public sealed class CommandRunner(
         if (!outcome.IsOk)
         {
             // Throwing rolls back claim markers and anything staged (research R5: no receipt for rejections).
-            throw new CommandRejectedException(outcome.Error ?? CoreErrorCodes.Internal);
+            throw new CommandRejectedException(outcome.Error ?? CoreErrorCodes.Internal, outcome.Details);
         }
 
         var resultBytes = invocation.EncodeResult(outcome.Result!);
@@ -370,13 +401,16 @@ public sealed class CommandRunner(
             CorrelationId = invocation.Actor.CorrelationId,
         };
 
-    private async Task<CommandExecution> ReplayAsync(ReceiptDocument receipt, CommandInvocation invocation, CancellationToken cancellationToken)
+    private Task<CommandExecution> ReplayAsync(ReceiptDocument receipt, CommandInvocation invocation, CancellationToken cancellationToken) =>
+        ReplayAsync(receipt, invocation.BodyHash, invocation.RequestId, cancellationToken);
+
+    private async Task<CommandExecution> ReplayAsync(ReceiptDocument receipt, string bodyHash, string requestId, CancellationToken cancellationToken)
     {
-        if (!string.Equals(receipt.BodyHash, invocation.BodyHash, StringComparison.Ordinal))
+        if (!string.Equals(receipt.BodyHash, bodyHash, StringComparison.Ordinal))
         {
             throw new GameServerException(
                 CoreErrorCodes.IdempotencyPayloadMismatch,
-                $"requestId {invocation.RequestId} reused with a different body for {receipt.Operation}.");
+                $"requestId {requestId} reused with a different body for {receipt.Operation}.");
         }
 
         var visible = receipt.Aggregates
@@ -424,8 +458,10 @@ public sealed class CommandRunner(
     }
 
     /// <summary>Business rejection: thrown inside the attempt so the transaction rolls back.</summary>
-    private sealed class CommandRejectedException(ErrorCode code) : Exception(code.Name)
+    private sealed class CommandRejectedException(ErrorCode code, IReadOnlyDictionary<string, string>? details = null) : Exception(code.Name)
     {
         public ErrorCode Code { get; } = code;
+
+        public IReadOnlyDictionary<string, string>? Details { get; } = details;
     }
 }

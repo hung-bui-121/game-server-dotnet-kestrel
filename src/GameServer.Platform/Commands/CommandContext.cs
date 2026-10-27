@@ -78,7 +78,9 @@ internal sealed class CommandContext : ICommandContext
         _newStates[aggregateId] = AggregateDocumentSerializer.SerializeState(state, loaded.Descriptor.StateType);
     }
 
-    public async ValueTask<bool> TryClaimAsync(string collection, string claimKey)
+    public ValueTask<bool> TryClaimAsync(string collection, string claimKey) => TryClaimAsync(collection, claimKey, null);
+
+    public async ValueTask<bool> TryClaimAsync(string collection, string claimKey, IReadOnlyDictionary<string, string>? attributes)
     {
         if (collection == ReceiptDocument.Collection || collection.StartsWith("pa_", StringComparison.Ordinal))
         {
@@ -112,6 +114,17 @@ internal sealed class CommandContext : ICommandContext
             ["environmentId"] = Actor.EnvironmentId,
             ["createdAtUtc"] = AggregateDocumentSerializer.FormatTime(Now),
         };
+        if (attributes is { Count: > 0 })
+        {
+            var node = new JsonObject();
+            foreach (var (name, value) in attributes)
+            {
+                node[name] = value;
+            }
+
+            _claims[key]["attributes"] = node;
+        }
+
         return true;
     }
 

@@ -23,7 +23,20 @@ public static class IdentityErrors
     public static readonly ErrorCode DisplayNameRejected = new(14001, "DISPLAY_NAME_REJECTED", 200, false,
         "The display name is not allowed.");
 
-    public static ErrorCodeSet All { get; } = new(14000, 14099, DisplayNameInvalid, DisplayNameRejected);
+    /// <summary>The player already has another identity of this provider (one per provider, IDN-04).</summary>
+    public static readonly ErrorCode ProviderAlreadyLinked = new(14002, "PROVIDER_ALREADY_LINKED", 200, false,
+        "Another account of this provider is already linked.");
+
+    /// <summary>The provider rejected the credential: bad signature, expired, wrong app, single-use code reused (IDN-03).</summary>
+    public static readonly ErrorCode IdentityProofInvalid = new(14003, "IDENTITY_PROOF_INVALID", 401, false,
+        "The sign-in proof could not be verified.");
+
+    /// <summary>The provider could not be reached or failed; nothing was written.</summary>
+    public static readonly ErrorCode ProviderUnavailable = new(14004, "PROVIDER_UNAVAILABLE", 503, true,
+        "The sign-in provider is unavailable. Retry later.");
+
+    public static ErrorCodeSet All { get; } = new(
+        14000, 14099, DisplayNameInvalid, DisplayNameRejected, ProviderAlreadyLinked, IdentityProofInvalid, ProviderUnavailable);
 }
 
 public sealed record BanPlayerCommand(string Reason, DateTimeOffset? UntilUtc, IReadOnlyList<string> Scope);

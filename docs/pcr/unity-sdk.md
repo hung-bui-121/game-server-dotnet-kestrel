@@ -35,8 +35,16 @@ Yêu cầu: Unity 2021.3+ (C# 9, .NET Standard 2.1). Code SDK giữ C# 9, không
   `ArgumentException` khi tạo client.
 - **200 phải là Protobuf** của server; login không có token hoặc command không có `code` → `INVALID_RESPONSE`, không tạo phiên.
 - **Không retry**: mã nghiệp vụ (HTTP 200 + `code` ≠ OK → `CommandResult.Code`), lỗi 4xx, và các mã có sự kiện dưới đây.
+- **Provider** (slice 009): `LoginWithProviderAsync(ProviderCredential, switchAccount = false)` — như login guest (không retry khi
+  mơ hồ), gửi kèm token hiện có để server trả `SWITCH_ACCOUNT` (phiên giữ nguyên) thay vì rời player hiện tại; game hỏi người chơi
+  rồi gọi lại với `switchAccount: true` và **proof mới** (mã Play Games dùng một lần). `LinkProviderAsync(credential)` là command
+  (retry cùng bytes, server replay mà không xác minh lại): `OK` (`AlreadyLinked`), `PROVIDER_ALREADY_LINKED`; ném
+  `IDENTITY_CONFLICT` (409, details `provider`) khi identity thuộc player khác — không merge. `IDENTITY_PROOF_INVALID` → lấy proof mới;
+  `PROVIDER_UNAVAILABLE` → thử lại sau (link tự retry cùng bytes: với mã Play Games dùng một lần, retry có thể kết thúc bằng
+  `IDENTITY_PROOF_INVALID` → lấy mã mới). Lỗi `ACCOUNT_DELETED`/`ACCOUNT_SUSPENDED` từ `LoginWithProviderAsync` nói về tài khoản
+  đích: SDK vẫn phát `AccountBlocked` nhưng **không xoá** phiên hiện tại.
 - **Sự kiện**: `SessionReplaced` (xoá token; **không** tự đăng nhập lại), `AccountBlocked` (`ACCOUNT_SUSPENDED`, `ACCOUNT_DELETED` —
-  xoá token, `SWITCH_ACCOUNT`), `Maintenance`, `UpdateRequired`, `ConfigVersionChanged(version)`, `Sections.SectionChanged(id)`.
+  xoá token, `SWITCH_ACCOUNT` — giữ token), `Maintenance`, `UpdateRequired`, `ConfigVersionChanged(version)`, `Sections.SectionChanged(id)`.
   Handler của game ném lỗi → SDK bắt, báo qua `HandlerFailed`, xử lý request không bị ảnh hưởng.
 - **Section** (API-10): login xoá rồi ghi lại; snapshot chỉ ghi khi `rev` ≥ rev cục bộ (snapshot đến muộn không làm lùi); update `full` áp dụng nếu `newRev ≥ rev` cục bộ;
   update không `full` chỉ áp khi `baseRev = rev` và `newRev = baseRev + 1`, nếu không SDK gọi snapshot cho đúng section đó.

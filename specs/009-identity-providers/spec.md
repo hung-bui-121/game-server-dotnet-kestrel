@@ -96,7 +96,8 @@ Game đăng ký adapter cho provider khác (vd. Facebook) qua `IIdentityProvider
   `fake` chỉ Development/Test.
 - **FR-002** (IDN-03, V18): PGS v2: đổi server auth code tại Google OAuth (client id/secret từ secret provider), gọi
   `games/v1/players/me` lấy `playerId`; `gamePlayerId`, `originalPlayerId` lưu trong attributes.
-- **FR-003** (IDN-03, V19): Game Center: `publicKeyURL` https thuộc `*.apple.com`; chứng chỉ tải về (≤ 16 KiB, cache ≤ 24 h)
+- **FR-003** (IDN-03, V19): Game Center: `publicKeyURL` https trên host Apple được phép (mặc định `static.gc.apple.com`,
+  path `/public-key/`, không query, không theo redirect); `gamePlayerID` không được ký → lưu là chưa xác minh; chứng chỉ tải về (≤ 16 KiB, cache ≤ 24 h)
   phải chuỗi tới root đã pin, subject Apple Inc., EKU code signing, còn hạn; `|now − timestamp| ≤ 10 phút`;
   `bundleId` thuộc cấu hình; RSA-SHA256 PKCS#1 trên `teamPlayerID ‖ bundleId ‖ timestamp(uint64 BE) ‖ salt`.
 - **FR-004** (IDN-04): Mapping key `{provider}:{subject}`; subject 1–128 ký tự in được, không khoảng trắng.
@@ -107,7 +108,9 @@ Game đăng ký adapter cho provider khác (vd. Facebook) qua `IIdentityProvider
   insert mapping trong transaction; thua race → player thắng) → account checks → epoch +1 → phiên mới → snapshot.
 - **FR-007** (IDN-11): Login provider kèm `Authorization` của phiên hợp lệ thuộc player khác player kết quả (hoặc tài khoản
   mới) và không có `switch_account = true` → 409 `SWITCH_ACCOUNT` details `provider`, `account` (`existing`|`new`).
-- **FR-008** (SEC-13): Login provider dùng chung giới hạn lỗi theo IP với guest; xác minh thất bại tính là lỗi.
+- **FR-008** (SEC-13, PERF-03): Login và link provider dùng chung giới hạn lỗi theo IP với guest; chỉ lỗi do proof của
+  client tính là lỗi (lỗi cấu hình server / pin → `PROVIDER_UNAVAILABLE`, log Error). Link giới hạn theo player; mỗi lần
+  xác minh có deadline < timeout request và bulkhead theo instance.
 - **FR-009** (SDK-02): SDK `LoginWithProviderAsync(credential, switchAccount)` (không retry khi mơ hồ, như guest) và
   `LinkProviderAsync(credential)` (command, retry cùng bytes); `SWITCH_ACCOUNT` giữ phiên hiện tại.
 - **FR-010**: Mã lỗi identity: `PROVIDER_ALREADY_LINKED` (14002, 200), `IDENTITY_PROOF_INVALID` (14003, 401),

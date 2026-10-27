@@ -21,6 +21,15 @@ namespace GameServer.Client
         public const string AccountDeleted = "ACCOUNT_DELETED";
         public const string SessionReplaced = "SESSION_REPLACED";
         public const string SwitchAccount = "SWITCH_ACCOUNT";
+        public const string IdentityConflict = "IDENTITY_CONFLICT";
+
+        /// <summary>Business code of <c>LinkProviderAsync</c>: the player already has another account of that provider.</summary>
+        public const string ProviderAlreadyLinked = "PROVIDER_ALREADY_LINKED";
+
+        /// <summary>The provider rejected the proof (expired or reused code, bad signature). Get a fresh one before retrying.</summary>
+        public const string IdentityProofInvalid = "IDENTITY_PROOF_INVALID";
+
+        public const string ProviderUnavailable = "PROVIDER_UNAVAILABLE";
 
         /// <summary>Client-side code: no HTTP response after every retry.</summary>
         public const string NetworkError = "NETWORK_ERROR";

@@ -26,16 +26,23 @@ public interface ICommandOutcome
     /// committed outcome (e.g. BATTLE_EXPIRED); null means OK.
     /// </summary>
     ErrorCode? Error { get; }
+
+    /// <summary>
+    /// Details of a rejection whose code is not HTTP 200 (sent in the error envelope), e.g. IDENTITY_CONFLICT. Business
+    /// codes (HTTP 200) travel in the command response, which has no details: they are not sent.
+    /// </summary>
+    IReadOnlyDictionary<string, string>? Details => null;
 }
 
 /// <summary>Result of a handler: success with a result, or a business rejection (HTTP 200 + code).</summary>
 public readonly record struct CommandOutcome<TResult> : ICommandOutcome
 {
-    private CommandOutcome(bool isOk, TResult? result, ErrorCode? error)
+    private CommandOutcome(bool isOk, TResult? result, ErrorCode? error, IReadOnlyDictionary<string, string>? details = null)
     {
         IsOk = isOk;
         Result = result;
         Error = error;
+        Details = details;
     }
 
     public bool IsOk { get; }
@@ -44,6 +51,8 @@ public readonly record struct CommandOutcome<TResult> : ICommandOutcome
 
     public ErrorCode? Error { get; }
 
+    public IReadOnlyDictionary<string, string>? Details { get; }
+
     object? ICommandOutcome.Result => Result;
 
     public static CommandOutcome<TResult> Ok(TResult result) => new(true, result, null);
@@ -51,8 +60,12 @@ public readonly record struct CommandOutcome<TResult> : ICommandOutcome
     /// <summary>Commits the changes but reports a business code (HTTP 200), e.g. an expired battle that is cleared.</summary>
     public static CommandOutcome<TResult> Commit(TResult result, ErrorCode code) => new(true, result, code);
 
-    /// <summary>Rejects the command: nothing is written and no receipt is created.</summary>
-    public static CommandOutcome<TResult> Reject(ErrorCode error) => new(false, default, error);
+    /// <summary>
+    /// Rejects the command: nothing is written and no receipt is created. A business code (HTTP 200) is returned in the
+    /// command response; any other code (e.g. 409 IDENTITY_CONFLICT) as an error envelope carrying <paramref name="details"/>.
+    /// </summary>
+    public static CommandOutcome<TResult> Reject(ErrorCode error, IReadOnlyDictionary<string, string>? details = null) =>
+        new(false, default, error, details);
 }
 
 /// <summary>Everything a handler may use. Writes are buffered and committed in one transaction (DAT-04).</summary>
@@ -80,6 +93,15 @@ public interface ICommandContext
     /// The marker is inserted only if the command commits.
     /// </summary>
     ValueTask<bool> TryClaimAsync(string collection, string claimKey);
+
+    /// <summary>
+    /// <see cref="TryClaimAsync(string, string)"/> storing <paramref name="attributes"/> in the marker (e.g. the provider
+    /// attributes of an identity mapping, IDN-04). Contexts that cannot store attributes refuse non-empty ones.
+    /// </summary>
+    ValueTask<bool> TryClaimAsync(string collection, string claimKey, IReadOnlyDictionary<string, string>? attributes) =>
+        attributes is { Count: > 0 }
+            ? throw new NotSupportedException("This command context cannot store claim attributes.")
+            : TryClaimAsync(collection, claimKey);
 
     /// <summary>Adds an outbox entry committed inside the receipt (JOB-02).</summary>
     void AddOutbox(string kind, object payload);

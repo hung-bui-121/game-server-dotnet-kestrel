@@ -55,6 +55,8 @@ namespace GameServer.Client
     {
         public const string ProtobufContentType = "application/x-protobuf";
         public const string LoginRoute = "api/v1/identity/login/guest";
+        public const string ProviderLoginRoute = "api/v1/identity/login/provider";
+        public const string LinkRoute = "api/v1/identity/link";
         public const string LogoutRoute = "api/v1/identity/logout";
         public const string SnapshotRoute = "api/v1/player/snapshot";
         public const string ConfigRoute = "api/v1/config/get";
@@ -116,7 +118,12 @@ namespace GameServer.Client
         /// <summary>The token was revoked by a newer login elsewhere (IDN-10). The SDK cleared it and will not log in again.</summary>
         public event Action<GameServerError>? SessionReplaced;
 
-        /// <summary>ACCOUNT_SUSPENDED, ACCOUNT_DELETED or SWITCH_ACCOUNT.</summary>
+        /// <summary>
+        /// ACCOUNT_SUSPENDED, ACCOUNT_DELETED or SWITCH_ACCOUNT. For SWITCH_ACCOUNT the current session is kept: ask the
+        /// player, then call <see cref="LoginWithProviderAsync"/> again with <c>switchAccount: true</c> and a fresh proof.
+        /// Raised by <see cref="LoginWithProviderAsync"/> these codes describe the account being entered, and the current
+        /// session is kept (the exception tells the caller which call failed).
+        /// </summary>
         public event Action<GameServerError>? AccountBlocked;
 
         public event Action<GameServerError>? Maintenance;
@@ -156,6 +163,36 @@ namespace GameServer.Client
         {
             var request = new GuestLoginRequest { LocalId = localId, Secret = ByteString.CopyFrom(secret) };
             var response = await SendAsync("POST", LoginRoute, request.ToByteArray(), null, RetryMode.RejectedOnly, LoginResponse.Parser, r => r.ServerTimeUtcMs, cancellationToken);
+            return ApplyLogin(response);
+        }
+
+        /// <summary>
+        /// Login with Play Games / Game Center / a game provider (IDN-11): returns the player linked to that identity on any
+        /// device, or a new player for an unknown identity. The current session (if any) is sent so the server can answer
+        /// SWITCH_ACCOUNT (session kept, <see cref="AccountBlocked"/> raised) instead of silently leaving this player; pass
+        /// <paramref name="switchAccount"/> = true once the player confirmed. Not retried after a lost attempt (like guest
+        /// login); Play Games codes are single use, so request a new one for every call.
+        /// </summary>
+        public async Task<LoginResponse> LoginWithProviderAsync(ProviderCredential credential, bool switchAccount = false, CancellationToken cancellationToken = default)
+        {
+            var request = new ProviderLoginRequest { Credential = credential, SwitchAccount = switchAccount };
+            var current = string.IsNullOrEmpty(_session.Token) ? null : _session.Token;
+            var response = await SendAsync("POST", ProviderLoginRoute, request.ToByteArray(), current, RetryMode.RejectedOnly, LoginResponse.Parser, r => r.ServerTimeUtcMs, cancellationToken);
+            return ApplyLogin(response);
+        }
+
+        /// <summary>
+        /// Links a provider identity to the logged-in player (IDN-05) so a reinstall can log in with it. Result codes: OK
+        /// (<c>AlreadyLinked</c> when it was), PROVIDER_ALREADY_LINKED. Throws IDENTITY_CONFLICT when another player owns
+        /// the identity: offer <see cref="LoginWithProviderAsync"/> instead; nothing is merged. Retries resend the same
+        /// bytes: a retry after a commit is replayed, but a retry while the provider was failing re-presents a single-use
+        /// Play Games code and may end in IDENTITY_PROOF_INVALID — fetch a new code and call again.
+        /// </summary>
+        public Task<CommandResult<LinkIdentityResult>> LinkProviderAsync(ProviderCredential credential, CancellationToken cancellationToken = default) =>
+            SendCommandAsync(LinkRoute, new LinkIdentityRequest { Credential = credential }, LinkIdentityResult.Parser, cancellationToken);
+
+        private LoginResponse ApplyLogin(LoginResponse response)
+        {
             if (string.IsNullOrEmpty(response.SessionToken) || string.IsNullOrEmpty(response.PlayerId))
             {
                 throw new GameServerException(GameServerError.Client(ErrorCodes.InvalidResponse, "Login response without a session."));
@@ -367,7 +404,7 @@ namespace GameServer.Client
                     TrackConfig(envelope.ConfigVersion);
                 }
 
-                if (Notify(error))
+                if (Notify(error, route))
                 {
                     throw new GameServerException(error);
                 }
@@ -386,8 +423,11 @@ namespace GameServer.Client
         }
 
         /// <summary>Raises the account/session/gate events. True when the error must not be retried by the SDK.</summary>
-        private bool Notify(GameServerError error)
+        private bool Notify(GameServerError error, string route)
         {
+            // A provider login reports the state of the account it would enter, not of the session this client holds:
+            // ACCOUNT_DELETED / ACCOUNT_SUSPENDED / SWITCH_ACCOUNT there leave the current session alone (review m4).
+            var aboutTarget = route == ProviderLoginRoute;
             switch (error.Code)
             {
                 case ErrorCodes.SessionReplaced:
@@ -398,7 +438,7 @@ namespace GameServer.Client
                 case ErrorCodes.AccountSuspended:
                 case ErrorCodes.AccountDeleted:
                 case ErrorCodes.SwitchAccount:
-                    if (error.Code == ErrorCodes.AccountDeleted)
+                    if (error.Code == ErrorCodes.AccountDeleted && !aboutTarget)
                     {
                         _session.Clear();
                     }

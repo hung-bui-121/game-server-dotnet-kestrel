@@ -23,22 +23,23 @@ namespace GameServer.Modules.Identity;
 
 /// <summary>
 /// Framework Identity module (slice 002): mandatory <c>profile</c> aggregate, guest login, single-session takeover,
-/// <c>PlayerBearer</c> scheme, ban checks. Provider linking (PGS / Game Center) arrives in P0.5.
+/// <c>PlayerBearer</c> scheme, ban checks; provider login and linking (Play Games, Game Center, game adapters, slice 009).
 /// </summary>
-public sealed class IdentityModule : IGameModule, IPlayerApiModule, IGmApiModule
+public sealed partial class IdentityModule : IGameModule, IPlayerApiModule, IGmApiModule
 {
     public const string ModuleName = "identity";
     public const string LoginRoute = "/api/v1/identity/login/guest";
     public const string LogoutRoute = "/api/v1/identity/logout";
     public const string DisplayNameRoute = "/api/v1/identity/display-name";
+    public const string ProviderLoginRoute = "/api/v1/identity/login/provider";
+    public const string LinkRoute = "/api/v1/identity/link";
     public const string BanRoute = "/gm/v1/players/{playerId}/ban";
     public const string UnbanRoute = "/gm/v1/players/{playerId}/unban";
-
 
     public ModuleDescriptor Describe() => new()
     {
         Name = ModuleName,
-        Version = "0.8.0",
+        Version = "0.9.0",
         Aggregates = [IdentityAggregates.ProfileDescriptor],
         Permissions = [IdentityPermissions.PlayerBan],
         ErrorCodes = IdentityErrors.All,
@@ -47,9 +48,10 @@ public sealed class IdentityModule : IGameModule, IPlayerApiModule, IGmApiModule
             Command.Define<BanPlayerCommand, BanResult>(BanPlayerHandler.Descriptor).HandledBy<BanPlayerHandler>(),
             Command.Define<UnbanPlayerCommand, BanResult>(UnbanPlayerHandler.Descriptor).HandledBy<UnbanPlayerHandler>(),
             Command.Define<SetDisplayNameCommand, SetDisplayNameResult>(SetDisplayNameHandler.Descriptor).HandledBy<SetDisplayNameHandler>(),
+            Command.Define<LinkIdentityCommand, LinkIdentityResult>(LinkIdentityHandler.Descriptor).HandledBy<LinkIdentityHandler>(),
         ],
         Collections = [new CollectionSpec(GuestLoginService.IdentitiesCollection), new CollectionSpec(SessionService.Collection)],
-        PublicEndpoints = [LoginRoute],
+        PublicEndpoints = [LoginRoute, ProviderLoginRoute],
     };
 
     public void ConfigureServices(IServiceCollection services, ModuleContext context)
@@ -59,7 +61,17 @@ public sealed class IdentityModule : IGameModule, IPlayerApiModule, IGmApiModule
         services.AddSingleton<IdentityMetrics>();
         services.AddSingleton<ProfileCache>();
         services.AddSingleton<SessionService>();
+        services.AddSingleton<LoginRateLimits>();
+        services.AddSingleton<LoginCompletion>();
         services.AddSingleton<GuestLoginService>();
+        services.AddOptions<IdentityProviderOptions>().BindConfiguration(IdentityProviderOptions.SectionName).ValidateOnStart();
+        services.AddSingleton<IValidateOptions<IdentityProviderOptions>, IdentityProviderOptionsValidator>();
+        // Never follow redirects: the Game Center key URL comes from the client and must stay on the allowlisted host.
+        services.AddHttpClient(IdentityProviders.HttpClientName, (sp, client) =>
+                client.Timeout = TimeSpan.FromSeconds(sp.GetRequiredService<IOptions<IdentityProviderOptions>>().Value.TimeoutSeconds))
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, PooledConnectionLifetime = TimeSpan.FromMinutes(5) });
+        services.AddSingleton<IdentityProviders>();
+        services.AddSingleton<ProviderLoginService>();
         services.AddSingleton<ICommandGuard, BanCommandGuard>();
         services.TryAddSingleton<IDisplayNamePolicy, AcceptAllDisplayNamePolicy>();
 
@@ -74,33 +86,40 @@ public sealed class IdentityModule : IGameModule, IPlayerApiModule, IGmApiModule
 
     public void MapPlayerApi(IEndpointRouteBuilder routes)
     {
+        // Built now so a duplicate or misnamed provider adapter fails startup (EXT-01).
+        routes.ServiceProvider.GetRequiredService<IdentityProviders>();
+
         routes.MapPost(LoginRoute, async (HttpContext http) =>
             {
                 var services = http.RequestServices;
                 var options = services.GetRequiredService<GameServerOptions>();
                 var request = ProtobufBinding.Parse<Wire.GuestLoginRequest>(await ProtobufBinding.ReadBodyAsync(http, options.Limits.PlayerBodyBytes));
-                var clientIp = http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
                 var result = await services.GetRequiredService<GuestLoginService>()
-                    .LoginAsync(request.LocalId, request.Secret.Memory, clientIp, http.RequestAborted);
-
-                var mappers = services.GetRequiredService<AggregateWireMapperRegistry>();
-                var response = new Wire.LoginResponse
-                {
-                    SessionToken = result.Token,
-                    PlayerId = result.PlayerId,
-                    ConfigVersion = services.GetRequiredService<IGameConfig>().ConfigVersion,
-                    ServerTimeUtcMs = services.GetRequiredService<IClock>().UtcNow.ToUnixTimeMilliseconds(),
-                    SessionExpiresAtUtcMs = result.ExpiresAt.ToUnixTimeMilliseconds(),
-                };
-                response.Sections.AddRange(result.Sections.Select(s => new GameServer.Protocol.Core.V1.Section
-                {
-                    Id = s.Descriptor.AggregateId,
-                    Rev = s.Rev,
-                    Payload = mappers.ToPayload(s.Descriptor.AggregateId, s.State),
-                }));
-                await ProtobufBinding.WriteAsync(http, response);
+                    .LoginAsync(request.LocalId, request.Secret.Memory, ClientIp(http), http.RequestAborted);
+                await ProtobufBinding.WriteAsync(http, LoginResponse(services, result));
             })
             .AsPublicPlayerEndpoint();
+
+        routes.MapPost(ProviderLoginRoute, async (HttpContext http) =>
+            {
+                var services = http.RequestServices;
+                var options = services.GetRequiredService<GameServerOptions>();
+                var request = ProtobufBinding.Parse<Wire.ProviderLoginRequest>(await ProtobufBinding.ReadBodyAsync(http, options.Limits.PlayerBodyBytes));
+                var result = await services.GetRequiredService<ProviderLoginService>().LoginAsync(
+                    ToDomain(request.Credential),
+                    request.SwitchAccount,
+                    BearerToken(http),
+                    ClientIp(http),
+                    http.RequestAborted);
+                await ProtobufBinding.WriteAsync(http, LoginResponse(services, result));
+            })
+            .AsPublicPlayerEndpoint();
+
+        routes.MapPlayerCommand<Wire.LinkIdentityRequest, LinkIdentityCommand, LinkIdentityResult>(
+            LinkRoute,
+            LinkIdentityHandler.Operation,
+            VerifyLinkAsync,
+            result => new Wire.LinkIdentityResult { Provider = result.Provider, AlreadyLinked = result.AlreadyLinked });
 
         routes.MapPost(LogoutRoute, async (HttpContext http) =>
             {
@@ -161,6 +180,79 @@ public sealed class IdentityModule : IGameModule, IPlayerApiModule, IGmApiModule
             IdentityPermissions.PlayerBan,
             body => new UnbanPlayerCommand(body.Reason!));
     }
+}
+
+public sealed partial class IdentityModule
+{
+    private static string ClientIp(HttpContext http) => http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+    /// <summary>
+    /// Outbound verification of <c>identity.link</c>, after the replay check and before the runner: limited per player
+    /// and per IP like logins (failed proofs count), under the providers' deadline and bulkhead (review M3).
+    /// </summary>
+    private static async Task<LinkIdentityCommand> VerifyLinkAsync(Wire.LinkIdentityRequest wire, HttpContext http)
+    {
+        var services = http.RequestServices;
+        var providers = services.GetRequiredService<IdentityProviders>();
+        var limits = services.GetRequiredService<LoginRateLimits>();
+        var playerId = services.GetRequiredService<ActorContextAccessor>().GetActor(http).PlayerId!;
+        var clientIp = ClientIp(http);
+        var credential = ToDomain(wire.Credential);
+        limits.Enter(clientIp);
+        providers.EnterLink(playerId);
+        try
+        {
+            return new LinkIdentityCommand(await providers.VerifyAsync(credential, http.RequestAborted));
+        }
+        catch (GameServerException ex) when (ex.Code == IdentityErrors.IdentityProofInvalid)
+        {
+            limits.Failed(clientIp);
+            throw;
+        }
+    }
+
+    /// <summary>Token of the session the device already has, if any (only used for the SWITCH_ACCOUNT check).</summary>
+    private static string? BearerToken(HttpContext http)
+    {
+        var header = http.Request.Headers.Authorization.ToString();
+        return header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? header["Bearer ".Length..].Trim() : null;
+    }
+
+    private static Wire.LoginResponse LoginResponse(IServiceProvider services, LoginResult result)
+    {
+        var mappers = services.GetRequiredService<AggregateWireMapperRegistry>();
+        var response = new Wire.LoginResponse
+        {
+            SessionToken = result.Token,
+            PlayerId = result.PlayerId,
+            ConfigVersion = services.GetRequiredService<IGameConfig>().ConfigVersion,
+            ServerTimeUtcMs = services.GetRequiredService<IClock>().UtcNow.ToUnixTimeMilliseconds(),
+            SessionExpiresAtUtcMs = result.ExpiresAt.ToUnixTimeMilliseconds(),
+        };
+        response.Sections.AddRange(result.Sections.Select(s => new GameServer.Protocol.Core.V1.Section
+        {
+            Id = s.Descriptor.AggregateId,
+            Rev = s.Rev,
+            Payload = mappers.ToPayload(s.Descriptor.AggregateId, s.State),
+        }));
+        return response;
+    }
+
+    private static IdentityCredential ToDomain(Wire.ProviderCredential? credential) => credential?.CredentialCase switch
+    {
+        Wire.ProviderCredential.CredentialOneofCase.PlayGames => new PlayGamesCredential(credential.PlayGames.ServerAuthCode),
+        Wire.ProviderCredential.CredentialOneofCase.GameCenter => new GameCenterCredential(
+            credential.GameCenter.PublicKeyUrl,
+            credential.GameCenter.Signature.ToByteArray(),
+            credential.GameCenter.Salt.ToByteArray(),
+            credential.GameCenter.Timestamp,
+            credential.GameCenter.TeamPlayerId,
+            credential.GameCenter.GamePlayerId,
+            credential.GameCenter.BundleId),
+        Wire.ProviderCredential.CredentialOneofCase.Custom when ProviderIdentities.IsValidProvider(credential.Custom.Provider) =>
+            new CustomCredential(credential.Custom.Provider, credential.Custom.Data.ToByteArray()),
+        _ => throw new GameServerException(CoreErrorCodes.BadRequest, "credential must be play_games, game_center or custom with a valid provider."),
+    };
 }
 
 /// <summary>Body of <c>POST /gm/v1/players/{playerId}/ban</c>; no end time = permanent, no scope = login.</summary>

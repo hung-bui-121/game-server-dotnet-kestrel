@@ -14,5 +14,6 @@
   <ItemGroup>
     <Compile Include="../Shared/*.cs" LinkBase="Shared" />
     <None Include="../Shared/config/**/*" LinkBase="config" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Fixtures/**/*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

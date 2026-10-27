@@ -28,6 +28,57 @@ message LoginResponse {
   int64 session_expires_at_utc_ms = 6;
 }
 
+// Proof of a provider identity (IDN-03). The server verifies it with the provider; ids sent here are never trusted.
+message ProviderCredential {
+  oneof credential {
+    PlayGamesCredential play_games = 1;
+    GameCenterCredential game_center = 2;
+    CustomCredential custom = 15;
+  }
+}
+
+// Google Play Games Services v2: PlayGamesPlatform.RequestServerSideAccess. Single use: request a new code per call.
+message PlayGamesCredential {
+  string server_auth_code = 1;
+}
+
+// Apple Game Center: GKLocalPlayer.fetchItems(forIdentityVerificationSignature:).
+message GameCenterCredential {
+  string public_key_url = 1;
+  bytes signature = 2;
+  bytes salt = 3;
+  uint64 timestamp = 4;        // milliseconds since the Unix epoch, as returned by GameKit
+  string team_player_id = 5;
+  string game_player_id = 6;
+  string bundle_id = 7;
+}
+
+// Provider added by the game through IIdentityProviderAdapter.
+message CustomCredential {
+  string provider = 1;
+  bytes data = 2;
+}
+
+// POST /api/v1/identity/login/provider  (Public, gated; IDN-11)
+// Send Authorization: Bearer <current token> when the device has a session: if the identity belongs to another player
+// (or to no player yet) the server answers 409 SWITCH_ACCOUNT (details provider, account = existing|new) unless
+// switch_account is true. Errors: IDENTITY_PROOF_INVALID (401), PROVIDER_UNAVAILABLE (503), ACCOUNT_SUSPENDED/DELETED.
+message ProviderLoginRequest {
+  ProviderCredential credential = 1;
+  bool switch_account = 2;
+}
+
+// POST /api/v1/identity/link  (Player command identity.link, IDN-05)
+// 409 IDENTITY_CONFLICT (details provider) when another player has the identity; business code PROVIDER_ALREADY_LINKED.
+message LinkIdentityRequest {
+  ProviderCredential credential = 1;
+}
+
+message LinkIdentityResult {
+  string provider = 1;
+  bool already_linked = 2;
+}
+
 // POST /api/v1/identity/display-name  (Player command identity.set_display_name, PRF-01)
 // Business codes: DISPLAY_NAME_INVALID (format), DISPLAY_NAME_REJECTED (game policy).
 message SetDisplayNameRequest {

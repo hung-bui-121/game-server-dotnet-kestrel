@@ -39,7 +39,13 @@ Budget tổng = giá trị × số instance.
   thấy (đang unstaging) được bỏ qua cho sweeper. Rủi ro còn lại: receipt hết replay window bị transaction mới thay
   thế cùng lúc với `MutateIn` (hiếm; xem V15).
 - Business rejection (HTTP 200 + code) **không tạo receipt**: transaction rollback, kể cả claim marker. Retry
-  cùng `requestId` sau rejection được xử lý lại như mới.
+  cùng `requestId` sau rejection được xử lý lại như mới. Rejection bằng mã có HTTP ≠ 200
+  (`CommandOutcome.Reject(code, details)`, vd. 409 `IDENTITY_CONFLICT`) cũng rollback, nhưng trả **error envelope**
+  đúng status kèm `details` thay vì `CommandResponse` (slice 009).
+- Claim marker có thể mang `attributes` (`TryClaimAsync(collection, key, attributes)`), lưu trong document claim.
+  Document insert-only cùng key space với claim nhưng tạo ngoài command (vd. mapping của login provider lần đầu) đi
+  qua `ClaimStore.InsertOrGetAsync` (transaction đọc → insert, đua → trả bản thắng) — không bao giờ ghi KV vào key
+  mà transaction có thể insert (V15-T2).
 - Insert race (hai instance cùng ghi receipt/claim) hoặc stale read → runner chạy lại tối đa 3 vòng; hết vòng →
   409 `CONCURRENT_UPDATE` (retryable).
 
@@ -60,6 +66,7 @@ Budget tổng = giá trị × số instance.
 | Guard (`ICommandGuard`, ví dụ ban theo nhóm command) | chỉ chặn lần thực thi mới; retry của command đã commit vẫn replay |
 | Commit kèm mã nghiệp vụ | `CommandOutcome.Commit(result, code)`: state + receipt được ghi, `resultCode = code`, HTTP 200; replay trả lại đúng mã |
 | Id xác định | `ctx.NewId(purpose)` / `ctx.NewSeed(purpose)` = SHA-256(receiptId|purpose) — ổn định qua attempt và retry |
+| Command có bước xác minh async (`MapPlayerCommand(..., toDomainAsync, ...)`: IAP, `identity.link`) | receipt đã commit trong window được replay **trước** `toDomainAsync` (`ICommandRunner.TryReplayAsync`): retry không gọi lại store/provider (mã dùng một lần); khác body → 409 trước khi gọi ra ngoài |
 
 ## 4. Revision và section (semantic — API-10)
 
@@ -145,6 +152,7 @@ Health endpoints (`/health/live`, `/health/ready`) do module `platform.observabi
 | Outbox consumer | đăng ký `IOutboxConsumer` cho một `kind` |
 | Document store | `ITransactionalDocumentStore` + `IKeyValueStore` (Couchbase; in-memory chỉ Development/Test — startup chặn ở môi trường khác) |
 | Command guard | `ICommandGuard` (chạy trước mỗi lần thực thi mới) |
+| Identity provider | `IIdentityProviderAdapter` (module identity, slice 009) |
 | Truy vấn phân trang | `IPagedQueryStore` (in-memory; Couchbase N1QL `RequestPlus`) |
 | Health của store | `IStoreHealthProbe` (mặc định: một KV get key không tồn tại) |
 | Endpoint cấp host | `IHostEndpointsModule` (map ở mọi host, bất kể `MapPlayerApi`/`MapGmApi`) |
