@@ -241,6 +241,23 @@ CDN + load balancer cần `ForwardLimit` = số hop tin cậy (để 1 thì IP c
 `Couchbase:Password`, `Iap:Google:ServiceAccountPrivateKeyPem`) không được có giá trị trong **bất kỳ** file cấu hình nào (kể cả
 khi biến môi trường ghi đè) → startup fail; dùng biến môi trường (`Identity__GuestPepper`) hoặc secret provider.
 
+## 15. Gate: bảo trì và phiên bản client tối thiểu (slice 008 — GATE-01, GATE-02, PERF-08)
+
+**Document `gate/gate`** (collection platform `gate`, chỉ ghi trong transaction có audit, qua GM API — PCR gm):
+`{maintenance{enabled, message, expectedEndUtc}, minClientVersions{platform: {minVersion, updateUrl}}, rev}`.
+
+| Mục | Giá trị (semantic với client) |
+| --- | --- |
+| Phạm vi | Endpoint có `GateMetadata`: mọi Player API + login. GM, health, Dev không bị chặn. Chạy **trước** authentication |
+| Bảo trì | 503 `MAINTENANCE`, details `message`, `expectedEndUtc` (ISO UTC); `retryAfterMs` = thời gian tới giờ dự kiến (30 s … 1 h), không có giờ → 300 000 |
+| Phiên bản | Header `X-Platform` (so khớp không phân biệt hoa thường) có `minVersion` → `X-Client-Version` (`a.b[.c[.d]]`, số) nhỏ hơn, thiếu hoặc sai → 426 `UPDATE_REQUIRED`, details `minClientVersion`, `updateUrl`. Bảo trì ưu tiên |
+| Cache | `GameServer:Gate:CacheSeconds` (mặc định 10, tối đa 10) per instance; instance xử lý thay đổi áp dụng ngay; lỗi đọc store → giữ bản cũ (fail-open, log Warning) |
+| Thay thế | `IGateEvaluator` (EXT-04); mặc định `StoreGateEvaluator` |
+
+**TTL cache đọc chung (PERF-08):** session + `pa_profile` (epoch, ban) `Identity:CacheSeconds` ≤ 60; staff/permission/
+ticket GM `Gm:CacheSeconds` ≤ 60; gate ≤ 10. Giá trị ngoài khoảng → startup fail. Config không cache TTL (bất biến theo
+`configVersion`). Không cache nào quyết định trừ tiền: số dư đọc trong transaction.
+
 ## 14. Data Protection, CSRF, CORS, audited store, OpenAPI (slice 007 — OPS-04, SEC-05, SEC-06, SEC-14)
 
 **Key ring dùng chung (semantic với vận hành):** mọi instance của một deployment (`gameId` + `environmentId`, application

@@ -135,6 +135,7 @@ public sealed class GmModule : IGameModule, IGmApiModule
             .Produces<GmRotateResponse>()
             .AsGmEndpoint(GmPermissions.KeysRotate);
         StaffEndpoints.Map(routes);
+        GateEndpoints.Map(routes);
         GmPlayerEndpoints.Map(routes);
     }
 

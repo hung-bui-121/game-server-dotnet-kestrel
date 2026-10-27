@@ -38,14 +38,24 @@ public sealed class IdentityOptions
         Encoding.UTF8.GetBytes(string.IsNullOrEmpty(GuestPepper) && gameServer.AllowsDevelopmentTools ? DevelopmentPepper : GuestPepper);
 }
 
-/// <summary>Fails startup when no pepper is configured outside Development/Test.</summary>
+/// <summary>Fails startup when no pepper is configured outside Development/Test, or the cache TTL exceeds 60 s (PERF-08).</summary>
 internal sealed class IdentityOptionsValidator(GameServerOptions gameServer) : IValidateOptions<IdentityOptions>
 {
-    public ValidateOptionsResult Validate(string? name, IdentityOptions options) =>
-        string.IsNullOrEmpty(options.GuestPepper) && !gameServer.AllowsDevelopmentTools
-            ? ValidateOptionsResult.Fail(
-                "[module identity] Identity:GuestPepper is not set. Fix: provide it through the secret provider (environment variable Identity__GuestPepper) (OPS-08).")
-            : ValidateOptionsResult.Success;
+    public ValidateOptionsResult Validate(string? name, IdentityOptions options)
+    {
+        var errors = new List<string>();
+        if (string.IsNullOrEmpty(options.GuestPepper) && !gameServer.AllowsDevelopmentTools)
+        {
+            errors.Add("[module identity] Identity:GuestPepper is not set. Fix: provide it through the secret provider (environment variable Identity__GuestPepper) (OPS-08).");
+        }
+
+        if (options.CacheSeconds is < 0 or > 60)
+        {
+            errors.Add("[module identity] Identity:CacheSeconds must be 0..60: revocation, takeover and bans apply within it (IDN-08, PERF-08).");
+        }
+
+        return errors.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(errors);
+    }
 }
 
 /// <summary>Identity instruments. Player ids and tokens are never tags (OBS-02, LOG-05).</summary>

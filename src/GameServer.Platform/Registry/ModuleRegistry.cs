@@ -42,10 +42,11 @@ public sealed partial class ModuleRegistry
     public IReadOnlySet<string> TransactionOnlyCollections() =>
         _modules.SelectMany(m => m.Descriptor.Collections).Where(c => c.TransactionOnly).Select(c => c.Name)
             .Append(PlatformCollections.DataProtection)
+            .Append(PlatformCollections.Gate)
             .ToHashSet(StringComparer.Ordinal);
 
     public IReadOnlyList<string> RequiredCollections() =>
-        new[] { GameServer.Platform.Commands.ReceiptDocument.Collection, PlatformCollections.DataProtection, PlatformCollections.Audit }
+        new[] { GameServer.Platform.Commands.ReceiptDocument.Collection, PlatformCollections.DataProtection, PlatformCollections.Audit, PlatformCollections.Gate }
             .Concat(Aggregates.Values.Select(a => a.Collection))
             .Concat(_modules.SelectMany(m => m.Descriptor.Collections).Select(c => c.Name))
             .Concat(OutboxProjections.Select(p => p.Collection))
@@ -401,4 +402,7 @@ public static class PlatformCollections
 
     /// <summary>Audit entries of the deployment (GM changes, platform key creation — SEC-14), whether or not module gm is registered.</summary>
     public const string Audit = GameServer.Commands.AuditExtensions.OutboxKind;
+
+    /// <summary>Maintenance flag and minimum client versions, document <c>gate</c> (GATE-01, GATE-02).</summary>
+    public const string Gate = "gate";
 }

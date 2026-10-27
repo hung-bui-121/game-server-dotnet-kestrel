@@ -552,6 +552,107 @@
         "x-gm-csrf": true
       }
     },
+    "/gm/v1/ops/gate": {
+      "get": {
+        "tags": [
+          "GameServer.Gm.Tests"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateView"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "ops.read",
+        "x-gm-csrf": false
+      }
+    },
+    "/gm/v1/ops/gate/maintenance": {
+      "put": {
+        "tags": [
+          "GameServer.Gm.Tests"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaintenanceBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateView"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "ops.maintenance",
+        "x-gm-csrf": true
+      }
+    },
+    "/gm/v1/ops/gate/min-client-version": {
+      "put": {
+        "tags": [
+          "GameServer.Gm.Tests"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MinClientVersionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateView"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "ops.maintenance",
+        "x-gm-csrf": true
+      }
+    },
     "/gm/v1/players/by-mapping/{mappingKey}": {
       "get": {
         "tags": [
@@ -720,6 +821,46 @@
         },
         "x-gm-permission": "player.read",
         "x-gm-csrf": false
+      }
+    },
+    "/gm/v1/players/{playerId}/ban": {
+      "post": {
+        "tags": [
+          "GameServer.Gm.Tests"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "player.ban",
+        "x-gm-csrf": true
+      }
+    },
+    "/gm/v1/players/{playerId}/unban": {
+      "post": {
+        "tags": [
+          "GameServer.Gm.Tests"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "player.ban",
+        "x-gm-csrf": true
       }
     },
     "/gm/v1/players/{playerId}/resources/adjust": {
@@ -891,6 +1032,37 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "GateView": {
+        "required": [
+          "maintenance",
+          "minClientVersions",
+          "rev"
+        ],
+        "type": "object",
+        "properties": {
+          "maintenance": {
+            "$ref": "#/components/schemas/MaintenanceState"
+          },
+          "minClientVersions": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/MinClientVersion"
+            }
+          },
+          "rev": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "replayed": {
+            "type": "boolean",
+            "default": false
           }
         }
       },
@@ -1071,6 +1243,109 @@
           },
           "replayed": {
             "type": "boolean"
+          }
+        }
+      },
+      "MaintenanceBody": {
+        "required": [
+          "enabled",
+          "message",
+          "expectedEndUtc",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "expectedEndUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "MaintenanceState": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "expectedEndUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "MinClientVersion": {
+        "type": "object",
+        "properties": {
+          "minVersion": {
+            "type": "string"
+          },
+          "updateUrl": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "MinClientVersionBody": {
+        "required": [
+          "platform",
+          "minVersion",
+          "updateUrl",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "platform": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "minVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "updateUrl": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

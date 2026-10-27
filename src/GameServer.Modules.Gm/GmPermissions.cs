@@ -23,5 +23,8 @@ public static class GmPermissions
     /// <summary>Schedule a new Data Protection key (OPS-04).</summary>
     public const string KeysRotate = "ops.keys.rotate";
 
-    public static IReadOnlyList<string> All { get; } = [Access, PlayerRead, PlayerReadPii, OpsRead, StaffRead, StaffManage, KeysRotate];
+    /// <summary>Maintenance flag and minimum client versions (GATE-01, GATE-02).</summary>
+    public const string OpsMaintenance = "ops.maintenance";
+
+    public static IReadOnlyList<string> All { get; } = [Access, PlayerRead, PlayerReadPii, OpsRead, StaffRead, StaffManage, KeysRotate, OpsMaintenance];
 }

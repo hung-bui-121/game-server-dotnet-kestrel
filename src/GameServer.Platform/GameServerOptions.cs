@@ -54,6 +54,8 @@ public sealed class GameServerOptions
 
     public HostingSettings Hosting { get; set; } = new();
 
+    public GateSettings Gate { get; set; } = new();
+
     public bool IsProduction => string.Equals(DeploymentEnvironment, "Production", StringComparison.OrdinalIgnoreCase);
 
     public bool IsDevelopment => string.Equals(DeploymentEnvironment, "Development", StringComparison.OrdinalIgnoreCase);
@@ -166,4 +168,11 @@ public sealed class LimitSettings
 
     /// <summary>Maximum GetConfig bundle size (CFG-03, API-06).</summary>
     public int ConfigBundleBytes { get; set; } = 1024 * 1024;
+}
+
+/// <summary>Section <c>GameServer:Gate</c> (GATE-01, GATE-02, PERF-08).</summary>
+public sealed class GateSettings
+{
+    /// <summary>Per-instance cache of the gate document; at most 10 s (PERF-08), so a toggle applies everywhere within it.</summary>
+    public int CacheSeconds { get; set; } = 10;
 }

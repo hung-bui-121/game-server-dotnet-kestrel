@@ -142,6 +142,6 @@ public sealed class IdentityLoginTests : IAsyncLifetime
 
     private sealed class MaintenanceGate : IGateEvaluator
     {
-        public ValueTask<GateDecision> EvaluateAsync(HttpContext context) => ValueTask.FromResult(GateDecision.Maintenance);
+        public ValueTask<GateResult> EvaluateAsync(HttpContext context) => ValueTask.FromResult(new GateResult(GateDecision.Maintenance));
     }
 }

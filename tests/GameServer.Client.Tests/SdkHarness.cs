@@ -84,7 +84,7 @@ public sealed class SwitchableGate : IGateEvaluator
 {
     public GateDecision Decision { get; set; } = GateDecision.Allow;
 
-    public ValueTask<GateDecision> EvaluateAsync(HttpContext context) => ValueTask.FromResult(Decision);
+    public ValueTask<GateResult> EvaluateAsync(HttpContext context) => ValueTask.FromResult(new GateResult(Decision));
 }
 
 /// <summary>Full SampleGame host + SDK clients talking to it through TestServer.</summary>

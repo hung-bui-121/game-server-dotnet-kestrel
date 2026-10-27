@@ -17,6 +17,8 @@ catalog → startup fail (SEC-08).
 | `ops.read` | gm | `GET /gm/v1/health` (chi tiết health, slice 005) |
 | `staff.read` | gm | xem danh sách/chi tiết/audit staff |
 | `staff.manage` | gm | tạo staff, đổi grant, khoá/mở, thu hồi phiên của người khác |
+| `ops.maintenance` | gm | bật/tắt bảo trì, đặt `minClientVersion` (GATE-01/02) |
+| `player.ban` | identity | ban/unban player (GM-07); huỷ yêu cầu xoá tài khoản (slice 010) |
 | `ops.keys.rotate` | gm | lên lịch key Data Protection mới |
 | `resource.adjust` | economy | `economy.adjust` |
 | `progression.edit` | sample.game | `progression.set` |
@@ -103,6 +105,11 @@ Module cũng khai index `receipts(playerId, committedAtUtc DESC, META().id DESC)
 | `POST /gm/v1/staff/{staffId}/disable` \| `/enable` `{reason}` | `staff.manage` | khoá tăng `sessionEpoch` |
 | `POST /gm/v1/staff/{staffId}/sessions/revoke` `{reason}` | `gm.access` (chính mình) / `staff.manage` (người khác) | `sessionEpoch++` |
 | `POST /gm/v1/ops/dataprotection/rotate` `{reason}` | `ops.keys.rotate` | `{keyId, activatesAtUtc, replayed}` |
+| `GET /gm/v1/ops/gate` | `ops.read` | `{maintenance, minClientVersions, rev}` |
+| `PUT /gm/v1/ops/gate/maintenance` `{enabled, message?, expectedEndUtc?, reason}` | `ops.maintenance` | audit `ops.gate.maintenance` (before/after) |
+| `PUT /gm/v1/ops/gate/min-client-version` `{platform, minVersion? (null = bỏ), updateUrl? (https), reason}` | `ops.maintenance` | audit `ops.gate.min_client_version` |
+| `POST /gm/v1/players/{playerId}/ban` `{reason, untilUtc?, scope[]?}` | `player.ban` | (module identity) command `identity.ban`; không `untilUtc` = vĩnh viễn, không scope = `login` |
+| `POST /gm/v1/players/{playerId}/unban` `{reason}` | `player.ban` | (module identity) command `identity.unban` |
 | `GET /gm/v1/openapi/gm.json` | Public (chỉ Development/Test) | OpenAPI GM: mỗi operation có `x-gm-permission`, `x-gm-csrf` |
 
 `StaffView` = `{staffId, displayName, email, status, disabled, oidcBound, permissions[] (game/env này), updatedAtUtc, replayed}`

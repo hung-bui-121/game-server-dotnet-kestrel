@@ -133,7 +133,7 @@ public static class GameServerBuilderExtensions
         services.AddSingleton<AggregateWireMapperRegistry>();
         services.AddSingleton<ErrorResponseWriter>();
         services.AddSingleton<ActorContextAccessor>();
-        services.TryAddSingleton<IGateEvaluator, AllowAllGateEvaluator>();
+        services.TryAddSingleton<IGateEvaluator, StoreGateEvaluator>();
         services.AddAuthentication();
         services.AddOptions<ActorSchemeOptions>();
 

@@ -46,6 +46,10 @@ public static class GameServerApplicationExtensions
         DeploymentChecks.ValidateSecretSources(app.Configuration, options, errors);
         DeploymentChecks.ValidateShutdown(options, errors);
         errors.AddRange(services.GetRequiredService<DataProtectionSettings>().Validate(options));
+        if (options.Gate.CacheSeconds is < 0 or > 10)
+        {
+            errors.Add("[gate] GameServer:Gate:CacheSeconds must be 0..10 (PERF-08: a maintenance toggle applies within 10 s).");
+        }
         var forwarded = DeploymentChecks.BuildForwardedHeaders(options, errors);
 
         // Endpoints are mapped even when errors exist so that every violation is reported at once.

@@ -28,6 +28,16 @@ message LoginResponse {
   int64 session_expires_at_utc_ms = 6;
 }
 
+// POST /api/v1/identity/display-name  (Player command identity.set_display_name, PRF-01)
+// Business codes: DISPLAY_NAME_INVALID (format), DISPLAY_NAME_REJECTED (game policy).
+message SetDisplayNameRequest {
+  string display_name = 1;   // 2-20 letters/digits, single spaces, '_', '-', '.'
+}
+
+message SetDisplayNameResult {
+  string display_name = 1;
+}
+
 // POST /api/v1/identity/logout  (Player)
 message LogoutRequest {}
 

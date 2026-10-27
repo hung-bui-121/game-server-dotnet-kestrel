@@ -51,3 +51,20 @@ Tên collection `identities` công bố ở `IdentityCollections.Identities` (mo
 | Login thất bại / IP / phút | 60 (chặn) |
 | Login / IP / phút | 600 (chỉ metric `login_ip_burst_warnings_total`) |
 | Metrics | `login_total{result}`, `login_ip_burst_warnings_total`, `session_replaced_total` |
+
+## Ban, unban, tên hiển thị (slice 008 — GM-07, BAN-01, PRF-01)
+
+| Command | Profile | Touches | Ghi chú |
+| --- | --- | --- | --- |
+| `identity.ban` `{reason, untilUtc?, scope[]}` | Gm, `player.ban` | `profile` | `untilUtc` phải ở tương lai (400); scope ≤ 10 phần tử, `login` hoặc nhóm command `[a-z][a-z0-9_]{0,31}` (= tiền tố operation, vd. `shop`); scope có `login` → `sessionEpoch++` (phiên hiện có kết thúc ≤ 60 s và vẫn chết sau unban); audit before/after = ban cũ/mới |
+| `identity.unban` `{reason}` | Gm, `player.ban` | `profile` | xoá `ban`; audit before/after |
+| `identity.set_display_name` (`POST /api/v1/identity/display-name`, `SetDisplayNameRequest{display_name}` → `SetDisplayNameResult{display_name}`) | Player | `profile` | 2–20 ký tự (grapheme), chữ cái/dấu Unicode, chữ số, `_ - .`, khoảng trắng đơn ở giữa; không duy nhất. Sai định dạng → `DISPLAY_NAME_INVALID`; policy game từ chối → `DISPLAY_NAME_REJECTED` |
+
+Kiểm tra ban (P0, giữ nguyên): login → `ACCOUNT_SUSPENDED` kèm `until` (ISO UTC hoặc `permanent`), ưu tiên trước
+`SESSION_REPLACED`; ban nhóm chỉ chặn command của nhóm, không thu hồi phiên; ban hết hạn tự mở.
+
+**Policy tên hiển thị (EXT-02):** `IDisplayNamePolicy.IsAllowed(name)` — thuần, đồng bộ (chạy trong command, CMD-03);
+mặc định chấp nhận; game đăng ký implementation riêng (vd. danh sách từ cấm).
+
+Mã lỗi module identity (14000–14099): `DISPLAY_NAME_INVALID` (14000, business), `DISPLAY_NAME_REJECTED` (14001, business).
+Permission: `player.ban`. `Identity:CacheSeconds` 0–60 (PERF-08).

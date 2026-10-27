@@ -46,7 +46,7 @@ public sealed class GmAuthTests : IAsyncLifetime
         me["staffId"]!.GetValue<string>().ShouldBe("admin");
         me["displayName"]!.GetValue<string>().ShouldBe("Staff admin");
         me["permissions"]!.AsArray().Select(p => p!.GetValue<string>()).ShouldBe(
-            ["counter.read", "gm.access", "ops.keys.rotate", "ops.read", "player.read", "player.read.pii", "progression.edit", "resource.adjust", "staff.manage", "staff.read"]);
+            ["counter.read", "gm.access", "ops.keys.rotate", "ops.maintenance", "ops.read", "player.ban", "player.read", "player.read.pii", "progression.edit", "resource.adjust", "staff.manage", "staff.read"]);
     }
 
     [Fact]

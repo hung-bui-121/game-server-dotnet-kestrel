@@ -251,7 +251,7 @@ public sealed class StaffAdminService(
     /// Audit entry (key + content) for an operation committed by another audited transaction, e.g. the key-ring
     /// rotation that the platform writes together with this entry (review M3). Target <c>system</c>.
     /// </summary>
-    public (DocumentKey Key, Func<object, JsonObject> Build) SystemAudit(StaffChange change, string operation)
+    public (DocumentKey Key, Func<object, JsonObject> Build) SystemAudit(StaffChange change, string operation, object? body = null)
     {
         if (string.IsNullOrWhiteSpace(change.Reason) || change.Reason.Length > 500)
         {
@@ -261,7 +261,7 @@ public sealed class StaffAdminService(
         var key = AuditKey(change, operation, "system");
         return (key, details =>
         {
-            var document = AuditDocument(change, operation, "system", Hash(change.RequestId), key, null, null, clock.UtcNow);
+            var document = AuditDocument(change, operation, "system", BodyHash(body ?? change.RequestId), key, null, null, clock.UtcNow);
             document["payload"]!["after"] = System.Text.Json.JsonSerializer.SerializeToNode(details, GameServerJson.Options);
             return document;
         });
@@ -506,6 +506,9 @@ public sealed class StaffAdminService(
             ["permissions"] = new JsonArray(staff.EffectivePermissions(gameServer.GameId, gameServer.EnvironmentId)
                 .Order(StringComparer.Ordinal).Select(p => (JsonNode)p).ToArray()),
         };
+
+    /// <summary>Hash of a request body, stored in the audit entry to detect a reused request id with another body.</summary>
+    public static string BodyHash(object body) => Hash(JsonSerializer.Serialize(body, GameServerJson.Options));
 
     internal static string Hash(string value) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
 }
