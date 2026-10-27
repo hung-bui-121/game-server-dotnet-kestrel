@@ -28,6 +28,12 @@ public static class CoreErrorCodes
     public static readonly ErrorCode IdentityConflict = new(19, "IDENTITY_CONFLICT", 409, false, "The identity is linked to another account.");
     public static readonly ErrorCode SwitchAccount = new(20, "SWITCH_ACCOUNT", 409, false, "The identity belongs to another account.");
 
+    /// <summary>Cookie-authenticated mutation without a valid <c>X-CSRF-Token</c>, or sent cross-site (SEC-05).</summary>
+    public static readonly ErrorCode CsrfFailed = new(21, "CSRF_FAILED", 403, false, "The request failed cross-site request forgery validation.");
+
+    /// <summary>The route exists but not for this HTTP method (e.g. GET on the POST-only GM logout, SEC-05).</summary>
+    public static readonly ErrorCode MethodNotAllowed = new(22, "METHOD_NOT_ALLOWED", 405, false, "The HTTP method is not allowed for this route.");
+
     public static ErrorCodeSet All { get; } = new(
         RangeStart,
         RangeEnd,
@@ -51,5 +57,7 @@ public static class CoreErrorCodes
         AccountDeleted,
         SessionReplaced,
         IdentityConflict,
-        SwitchAccount);
+        SwitchAccount,
+        CsrfFailed,
+        MethodNotAllowed);
 }

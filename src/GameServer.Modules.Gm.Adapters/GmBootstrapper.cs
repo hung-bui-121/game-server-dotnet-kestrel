@@ -1,61 +1,88 @@
+using GameServer.Errors;
 using GameServer.Platform;
+using GameServer.Platform.Persistence;
 using GameServer.Platform.Registry;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace GameServer.Modules.Gm;
 
-/// <summary>Seeds <c>Gm:Bootstrap:Staff</c> into <c>gm_staff</c> at startup (Development/Test only, FR-004).</summary>
+/// <summary>
+/// Before traffic: seeds <c>Gm:Bootstrap:Staff</c> (Development/Test only, FR-004 of slice 004) and, when the
+/// deployment has no staff manager, creates <c>Gm:Oidc:BootstrapManagers</c> as Administrators (research R11).
+/// Every write goes through <see cref="StaffAdminService"/> (one transaction with its audit entry); both steps are
+/// idempotent, so several instances starting together are safe.
+/// </summary>
 public sealed class GmBootstrapper(
-    StaffDirectory directory,
-    ModuleRegistry registry,
+    StaffAdminService staff,
     GameServerOptions gameServer,
     IOptions<GmOptions> options,
-    ILogger<GmBootstrapper> logger) : IHostedService
+    IServiceProvider services,
+    ILogger<GmBootstrapper> logger) : IHostedLifecycleService
 {
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public async Task StartingAsync(CancellationToken cancellationToken)
     {
-        if (!gameServer.AllowsDevelopmentTools)
+        if (services.GetService<IStoreInitializer>() is { } initializer)
+        {
+            await initializer.EnsureInitializedAsync(cancellationToken);
+        }
+
+        if (gameServer.AllowsDevelopmentTools)
+        {
+            foreach (var seed in options.Value.Bootstrap.Staff)
+            {
+                var result = await staff.SeedAsync(
+                    new NewStaff(
+                        seed.StaffId,
+                        seed.DisplayName ?? seed.StaffId,
+                        Email: null,
+                        Oidc: null,
+                        seed.Roles,
+                        seed.Permissions,
+                        DevPasswordHasher.Hash(seed.Password),
+                        seed.Disabled) { Scope = (seed.GameId, seed.EnvironmentId) },
+                    cancellationToken);
+                logger.LogInformation("Seeded GM staff {StaffId}{Replayed}.", seed.StaffId, result.Replayed ? " (unchanged)" : string.Empty);
+            }
+        }
+
+        var managers = options.Value.Oidc.BootstrapManagers;
+        if (managers.Count == 0 || await staff.CountManagersAsync(cancellationToken) > 0)
         {
             return;
         }
 
-        var catalog = PermissionCatalog(registry);
-        foreach (var seed in options.Value.Bootstrap.Staff)
+        foreach (var manager in managers)
         {
-            var unknown = seed.Permissions.Where(p => !catalog.Contains(p)).ToArray();
-            if (unknown.Length > 0)
+            var oidc = manager.Issuer is not null && manager.Subject is not null
+                ? new StaffOidcIdentity { Issuer = manager.Issuer, Subject = manager.Subject }
+                : null;
+            try
             {
-                throw new InvalidOperationException(
-                    $"Gm:Bootstrap:Staff '{seed.StaffId}' grants permissions not in the catalog: {string.Join(", ", unknown)}.");
+                await staff.CreateAsync(
+                    new StaffChange("system:bootstrap", null, StaffAdminService.Hash("bootstrap-manager:" + manager.StaffId), "Gm:Oidc:BootstrapManagers", "bootstrap"),
+                    new NewStaff(manager.StaffId!, manager.StaffId!, manager.Email, oidc, [GmRoles.Administrator], []),
+                    cancellationToken);
+                logger.LogInformation("Created bootstrap GM staff manager {StaffId}.", manager.StaffId);
             }
-
-            var permissions = seed.Roles.SelectMany(r => GmRoles.Expand(r, catalog)).Concat(seed.Permissions)
-                .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
-            await directory.SaveAsync(
-                new StaffRecord
-                {
-                    StaffId = seed.StaffId,
-                    DisplayName = seed.DisplayName ?? seed.StaffId,
-                    Disabled = seed.Disabled,
-                    PasswordHash = DevPasswordHasher.Hash(seed.Password),
-                    Grants =
-                    [
-                        new StaffGrant
-                        {
-                            GameId = seed.GameId ?? gameServer.GameId,
-                            EnvironmentId = seed.EnvironmentId ?? gameServer.EnvironmentId,
-                            Permissions = permissions,
-                        },
-                    ],
-                },
-                cancellationToken);
-            logger.LogInformation("Seeded GM staff {StaffId} with {PermissionCount} permissions.", seed.StaffId, permissions.Length);
+            catch (GameServerException ex) when (ex.Code == GmErrorCodes.StaffExists)
+            {
+                // Created earlier or by another instance starting at the same time.
+            }
         }
     }
 
+    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     /// <summary>Every permission declared by the registered modules (SEC-07 catalog).</summary>
     public static IReadOnlySet<string> PermissionCatalog(ModuleRegistry registry) =>

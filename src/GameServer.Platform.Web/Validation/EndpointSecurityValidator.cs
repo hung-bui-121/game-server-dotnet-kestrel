@@ -62,6 +62,16 @@ public static partial class EndpointSecurityValidator
                     "Fix: add it to the allowlist and the PCR (SEC-09) or change its profile.");
             }
 
+            // SEC-05 deny-by-default: an anonymous GM mutation (e.g. local login) would otherwise skip CSRF, because
+            // only cookie-authenticated callers are checked automatically.
+            if (profiles.Any(p => p.Profile == SecurityProfile.Public)
+                && route.StartsWith("/gm/", StringComparison.OrdinalIgnoreCase)
+                && methods.Any(m => m == "*" || Security.CsrfValidation.IsUnsafe(m))
+                && endpoint.Metadata.GetMetadata<Security.CsrfRequiredMetadata>() is null)
+            {
+                errors.Add($"[endpoint {label}] is a Public GM mutation without CSRF protection. Fix: add RequireCsrf() (SEC-05).");
+            }
+
             if (permissions is not null && profiles.Any(p => p.Profile == SecurityProfile.Gm))
             {
                 var permission = endpoint.Metadata.GetMetadata<RequiredPermissionMetadata>()?.Permission;

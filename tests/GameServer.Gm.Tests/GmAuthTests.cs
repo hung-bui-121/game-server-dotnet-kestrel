@@ -46,7 +46,7 @@ public sealed class GmAuthTests : IAsyncLifetime
         me["staffId"]!.GetValue<string>().ShouldBe("admin");
         me["displayName"]!.GetValue<string>().ShouldBe("Staff admin");
         me["permissions"]!.AsArray().Select(p => p!.GetValue<string>()).ShouldBe(
-            ["counter.read", "gm.access", "ops.read", "player.read", "player.read.pii", "progression.edit", "resource.adjust"]);
+            ["counter.read", "gm.access", "ops.keys.rotate", "ops.read", "player.read", "player.read.pii", "progression.edit", "resource.adjust", "staff.manage", "staff.read"]);
     }
 
     [Fact]
@@ -97,9 +97,11 @@ public sealed class GmAuthTests : IAsyncLifetime
     public async Task Disabled_staff_loses_access_within_the_cache_window()
     {
         var gm = await _host.GmClientAsync("support");
-        var directory = _host.Services.GetRequiredService<StaffDirectory>();
-        var record = (await directory.GetAsync("support", CancellationToken.None))!;
-        await directory.SaveAsync(record with { Disabled = true }, CancellationToken.None);
+
+        // Disabled on another "instance": this host's cache keeps the old record for at most 60 s.
+        var other = await _host.GmClientAsync("admin");
+        _host.Services.GetRequiredService<StaffDirectory>().Invalidate("admin");
+        await other.PostCommandAsync("/gm/v1/staff/support/disable", new { reason = "left the team" }).ShouldBeAsync(200);
 
         _host.Clock.Advance(TimeSpan.FromSeconds(61));
         await gm.GetAsync(GmModule.MeRoute).ShouldBeAsync(401);

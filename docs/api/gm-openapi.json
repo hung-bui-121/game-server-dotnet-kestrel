@@ -1,0 +1,1187 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "title": "Game Server GM API",
+    "description": "JSON API for GM tools. Errors are Problem Details with a \u0060code\u0060 (error-code catalog). Cookie-authenticated mutations need the \u0060X-CSRF-Token\u0060 header from GET /gm/v1/auth/csrf; GM commands need an \u0060X-Request-Id\u0060 UUID and a \u0060reason\u0060.",
+    "version": "v1"
+  },
+  "servers": [
+    {
+      "url": "http://localhost/"
+    }
+  ],
+  "paths": {
+    "/gm/v1/auth/login": {
+      "post": {
+        "tags": [
+          "GmModule"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GmLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmMeResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "public",
+        "x-gm-csrf": true
+      }
+    },
+    "/gm/v1/auth/sso/start": {
+      "get": {
+        "tags": [
+          "GameServer.Gm.Tests"
+        ],
+        "parameters": [
+          {
+            "name": "returnUrl",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "public",
+        "x-gm-csrf": false
+      }
+    },
+    "/gm/v1/auth/sso/callback": {
+      "get": {
+        "tags": [
+          "GameServer.Gm.Tests"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "public",
+        "x-gm-csrf": false
+      }
+    },
+    "/gm/v1/auth/csrf": {
+      "get": {
+        "tags": [
+          "GmModule"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmCsrfResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "public",
+        "x-gm-csrf": false
+      }
+    },
+    "/gm/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "GmModule"
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "gm.access",
+        "x-gm-csrf": true
+      }
+    },
+    "/gm/v1/me": {
+      "get": {
+        "tags": [
+          "GameServer.Gm.Tests"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmMeResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "gm.access",
+        "x-gm-csrf": false
+      }
+    },
+    "/gm/v1/health": {
+      "get": {
+        "tags": [
+          "GmModule"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmHealthReport"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "ops.read",
+        "x-gm-csrf": false
+      }
+    },
+    "/gm/v1/ops/dataprotection/rotate": {
+      "post": {
+        "tags": [
+          "GmModule"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffReasonBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmRotateResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "ops.keys.rotate",
+        "x-gm-csrf": true
+      }
+    },
+    "/gm/v1/staff": {
+      "get": {
+        "tags": [
+          "GameServer.Gm.Tests"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmPageOfStaffView"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "staff.read",
+        "x-gm-csrf": false
+      },
+      "post": {
+        "tags": [
+          "GameServer.Gm.Tests"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateStaffBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffView"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "staff.manage",
+        "x-gm-csrf": true
+      }
+    },
+    "/gm/v1/staff/{staffId}": {
+      "get": {
+        "tags": [
+          "GameServer.Gm.Tests"
+        ],
+        "parameters": [
+          {
+            "name": "staffId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffView"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "staff.read",
+        "x-gm-csrf": false
+      }
+    },
+    "/gm/v1/staff/{staffId}/audit": {
+      "get": {
+        "tags": [
+          "GameServer.Gm.Tests"
+        ],
+        "parameters": [
+          {
+            "name": "staffId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "staff.read",
+        "x-gm-csrf": false
+      }
+    },
+    "/gm/v1/staff/{staffId}/grant": {
+      "put": {
+        "tags": [
+          "GameServer.Gm.Tests"
+        ],
+        "parameters": [
+          {
+            "name": "staffId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffGrantBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffView"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "staff.manage",
+        "x-gm-csrf": true
+      }
+    },
+    "/gm/v1/staff/{staffId}/disable": {
+      "post": {
+        "tags": [
+          "GameServer.Gm.Tests"
+        ],
+        "parameters": [
+          {
+            "name": "staffId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffReasonBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffView"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "staff.manage",
+        "x-gm-csrf": true
+      }
+    },
+    "/gm/v1/staff/{staffId}/enable": {
+      "post": {
+        "tags": [
+          "GameServer.Gm.Tests"
+        ],
+        "parameters": [
+          {
+            "name": "staffId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffReasonBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffView"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "staff.manage",
+        "x-gm-csrf": true
+      }
+    },
+    "/gm/v1/staff/{staffId}/sessions/revoke": {
+      "post": {
+        "tags": [
+          "GameServer.Gm.Tests"
+        ],
+        "parameters": [
+          {
+            "name": "staffId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffReasonBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffView"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "gm.access",
+        "x-gm-csrf": true
+      }
+    },
+    "/gm/v1/players/by-mapping/{mappingKey}": {
+      "get": {
+        "tags": [
+          "GameServer.Gm.Tests"
+        ],
+        "parameters": [
+          {
+            "name": "mappingKey",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "player.read",
+        "x-gm-csrf": false
+      }
+    },
+    "/gm/v1/players/search": {
+      "get": {
+        "tags": [
+          "GameServer.Gm.Tests"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "player.read",
+        "x-gm-csrf": false
+      }
+    },
+    "/gm/v1/players/{playerId}": {
+      "get": {
+        "tags": [
+          "GameServer.Gm.Tests"
+        ],
+        "parameters": [
+          {
+            "name": "playerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "player.read",
+        "x-gm-csrf": false
+      }
+    },
+    "/gm/v1/players/{playerId}/receipts": {
+      "get": {
+        "tags": [
+          "GameServer.Gm.Tests"
+        ],
+        "parameters": [
+          {
+            "name": "playerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "player.read",
+        "x-gm-csrf": false
+      }
+    },
+    "/gm/v1/players/{playerId}/audit": {
+      "get": {
+        "tags": [
+          "GameServer.Gm.Tests"
+        ],
+        "parameters": [
+          {
+            "name": "playerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "player.read",
+        "x-gm-csrf": false
+      }
+    },
+    "/gm/v1/receipts/{receiptId}": {
+      "get": {
+        "tags": [
+          "GameServer.Gm.Tests"
+        ],
+        "parameters": [
+          {
+            "name": "receiptId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "player.read",
+        "x-gm-csrf": false
+      }
+    },
+    "/gm/v1/players/{playerId}/resources/adjust": {
+      "post": {
+        "tags": [
+          "GameServer.Gm.Tests"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "resource.adjust",
+        "x-gm-csrf": true
+      }
+    },
+    "/gm/v1/players/{playerId}/ledger": {
+      "get": {
+        "tags": [
+          "GameServer.Gm.Tests"
+        ],
+        "parameters": [
+          {
+            "name": "playerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "player.read",
+        "x-gm-csrf": false
+      }
+    },
+    "/gm/v1/players/{playerId}/progression": {
+      "post": {
+        "tags": [
+          "GameServer.Gm.Tests"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "progression.edit",
+        "x-gm-csrf": true
+      }
+    },
+    "/gm/v1/counter/{playerId}": {
+      "get": {
+        "tags": [
+          "GameServer.Gm.Tests"
+        ],
+        "parameters": [
+          {
+            "name": "playerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "counter.read",
+        "x-gm-csrf": false
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CreateStaffBody": {
+        "required": [
+          "staffId",
+          "displayName",
+          "email",
+          "issuer",
+          "subject",
+          "roles",
+          "permissions",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "staffId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "displayName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "email": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "issuer": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "subject": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "roles": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "permissions": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "GmCsrfResponse": {
+        "required": [
+          "token"
+        ],
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          }
+        }
+      },
+      "GmHealthEntry": {
+        "required": [
+          "name",
+          "status",
+          "description",
+          "durationMs",
+          "tags",
+          "data"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "durationMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "GmHealthReport": {
+        "required": [
+          "status",
+          "durationMs",
+          "entries"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "durationMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GmHealthEntry"
+            }
+          }
+        }
+      },
+      "GmLoginRequest": {
+        "required": [
+          "staffId",
+          "password"
+        ],
+        "type": "object",
+        "properties": {
+          "staffId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "password": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "GmMeResponse": {
+        "required": [
+          "staffId",
+          "displayName",
+          "gameId",
+          "environmentId",
+          "permissions"
+        ],
+        "type": "object",
+        "properties": {
+          "staffId": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "gameId": {
+            "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "GmPageOfStaffView": {
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StaffView"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "GmRotateResponse": {
+        "required": [
+          "keyId",
+          "activatesAtUtc",
+          "replayed"
+        ],
+        "type": "object",
+        "properties": {
+          "keyId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "activatesAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "StaffGrantBody": {
+        "required": [
+          "roles",
+          "permissions",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "roles": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "permissions": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "StaffReasonBody": {
+        "required": [
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "StaffView": {
+        "required": [
+          "staffId",
+          "displayName",
+          "email",
+          "status",
+          "disabled",
+          "oidcBound",
+          "permissions",
+          "updatedAtUtc"
+        ],
+        "type": "object",
+        "properties": {
+          "staffId": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "email": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "disabled": {
+            "type": "boolean"
+          },
+          "oidcBound": {
+            "type": "boolean"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "updatedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "replayed": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "GmModule"
+    },
+    {
+      "name": "GameServer.Gm.Tests"
+    }
+  ]
+}

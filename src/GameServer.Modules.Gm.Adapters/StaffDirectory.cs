@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using GameServer.Platform;
 using GameServer.Platform.Caching;
 using GameServer.Platform.Persistence;
@@ -8,7 +7,10 @@ using Microsoft.Extensions.Options;
 
 namespace GameServer.Modules.Gm;
 
-/// <summary>Reads and writes <c>gm_staff</c>; cached per instance for at most <see cref="GmOptions.CacheSeconds"/>.</summary>
+/// <summary>
+/// Reads <c>gm_staff</c>, cached per instance for at most <see cref="GmOptions.CacheSeconds"/> (SEC-10: a change made on
+/// another instance takes effect within that window). Writes go through <see cref="StaffAdminService"/> only.
+/// </summary>
 public sealed class StaffDirectory(IKeyValueStore store, IClock clock, IOptions<GmOptions> options)
 {
     public const string Collection = "gm_staff";
@@ -22,8 +24,7 @@ public sealed class StaffDirectory(IKeyValueStore store, IClock clock, IOptions<
             return cached;
         }
 
-        var document = await store.GetAsync(Key(staffId), cancellationToken);
-        var record = document?.Content.Deserialize<StaffRecord>(GameServerJson.Options);
+        var record = Parse(await store.GetAsync(Key(staffId), cancellationToken));
         if (record is not null)
         {
             // Unknown ids are not cached: login attempts with random ids must not grow the cache.
@@ -33,25 +34,10 @@ public sealed class StaffDirectory(IKeyValueStore store, IClock clock, IOptions<
         return record;
     }
 
-    /// <summary>Creates or replaces the staff document (bootstrap and ops scripts).</summary>
-    public async Task SaveAsync(StaffRecord record, CancellationToken cancellationToken)
-    {
-        var content = (JsonObject)JsonSerializer.SerializeToNode(record, GameServerJson.Options)!;
-        for (var attempt = 0; attempt < 3; attempt++)
-        {
-            var existing = await store.GetAsync(Key(record.StaffId), cancellationToken);
-            var saved = existing is null
-                ? await store.InsertAsync(Key(record.StaffId), content, null, cancellationToken)
-                : await store.ReplaceAsync(existing, content, null, cancellationToken);
-            if (saved)
-            {
-                _cache.Remove(record.StaffId);
-                return;
-            }
-        }
+    /// <summary>Drops the cached copy on this instance after a change (other instances follow within the TTL).</summary>
+    public void Invalidate(string staffId) => _cache.Remove(staffId);
 
-        throw new InvalidOperationException($"Staff '{record.StaffId}' changed concurrently; save not applied.");
-    }
+    public static DocumentKey Key(string staffId) => new(Collection, staffId);
 
-    private static DocumentKey Key(string staffId) => new(Collection, staffId);
+    public static StaffRecord? Parse(StoredDocument? document) => document?.Content.Deserialize<StaffRecord>(GameServerJson.Options);
 }

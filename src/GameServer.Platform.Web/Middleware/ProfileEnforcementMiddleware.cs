@@ -3,9 +3,12 @@ using GameServer.Errors;
 using GameServer.Platform.Web.Auth;
 using GameServer.Platform.Web.Errors;
 using GameServer.Platform.Web.Routing;
+using GameServer.Platform.Web.Security;
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace GameServer.Platform.Web.Middleware;
@@ -19,7 +22,10 @@ public sealed class ProfileEnforcementMiddleware(
     RequestDelegate next,
     ErrorResponseWriter writer,
     GameServerOptions options,
-    IOptions<ActorSchemeOptions> schemes)
+    IOptions<ActorSchemeOptions> schemes,
+    IOptions<CsrfOptions> csrf,
+    IAntiforgery antiforgery,
+    ILogger<ProfileEnforcementMiddleware> logger)
 {
     public async Task InvokeAsync(HttpContext context)
     {
@@ -31,6 +37,14 @@ public sealed class ProfileEnforcementMiddleware(
         }
 
         var profile = endpoint.GetProfile();
+        if (profile is null && endpoint.DisplayName == MethodNotAllowedEndpoint)
+        {
+            // Routing's own endpoint for "path exists, method does not" (e.g. GET logout, SEC-05): answer 405 with the
+            // usual error contract instead of its empty body.
+            await writer.WriteAsync(context, CoreErrorCodes.MethodNotAllowed);
+            return;
+        }
+
         if (profile is null)
         {
             await writer.WriteAsync(context, CoreErrorCodes.Forbidden);
@@ -51,21 +65,33 @@ public sealed class ProfileEnforcementMiddleware(
         }
 
         SetBodyLimit(context, profile.Value);
+        string? scheme = null;
         if (profile.Value != SecurityProfile.Public)
         {
-            var authenticated = profile.Value switch
+            scheme = profile.Value switch
             {
                 SecurityProfile.Player => await AuthenticateAsync(context, schemes.Value.PlayerSchemes, ActorType.Player),
                 SecurityProfile.Gm => await AuthenticateAsync(context, schemes.Value.GmSchemes, ActorType.Gm),
                 _ => await AuthenticateAsync(context, schemes.Value.PlayerSchemes, ActorType.Player)
-                     || await AuthenticateAsync(context, schemes.Value.GmSchemes, ActorType.Gm),
+                     ?? await AuthenticateAsync(context, schemes.Value.GmSchemes, ActorType.Gm),
             };
-            if (!authenticated)
+            if (scheme is null)
             {
                 var (code, details) = AuthenticationFailures.Get(context);
                 await writer.WriteAsync(context, code, details: details);
                 return;
             }
+        }
+
+        // SEC-05: cookie-authenticated mutations (and endpoints that ask for it, e.g. local GM login) need the CSRF
+        // token; header/bearer schemes cannot be replayed by a browser and do not.
+        if (CsrfValidation.IsUnsafe(context.Request.Method)
+            && (endpoint.Metadata.GetMetadata<CsrfRequiredMetadata>() is not null || (scheme is not null && csrf.Value.CookieSchemes.Contains(scheme)))
+            && !await CsrfValidation.IsValidAsync(context, antiforgery, csrf.Value))
+        {
+            logger.LogWarning("CSRF validation failed for {Method} {Path}.", context.Request.Method, context.Request.Path.Value);
+            await writer.WriteAsync(context, CoreErrorCodes.CsrfFailed);
+            return;
         }
 
         var permission = endpoint.Metadata.GetMetadata<RequiredPermissionMetadata>()?.Permission;
@@ -78,7 +104,11 @@ public sealed class ProfileEnforcementMiddleware(
         await next(context);
     }
 
-    private static async Task<bool> AuthenticateAsync(HttpContext context, IReadOnlyList<string> schemeNames, ActorType expected)
+    /// <summary>Display name of the endpoint ASP.NET Core routing selects when only the HTTP method does not match.</summary>
+    private const string MethodNotAllowedEndpoint = "405 HTTP Method Not Supported";
+
+    /// <summary>Returns the scheme that authenticated the caller, or null.</summary>
+    private static async Task<string?> AuthenticateAsync(HttpContext context, IReadOnlyList<string> schemeNames, ActorType expected)
     {
         foreach (var scheme in schemeNames)
         {
@@ -86,11 +116,11 @@ public sealed class ProfileEnforcementMiddleware(
             if (result.Succeeded && ActorClaims.GetActorType(result.Principal) == expected)
             {
                 context.User = result.Principal;
-                return true;
+                return scheme;
             }
         }
 
-        return false;
+        return null;
     }
 
     private static bool IsCrossSiteMutation(HttpRequest request) =>

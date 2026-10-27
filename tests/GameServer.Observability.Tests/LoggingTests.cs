@@ -63,11 +63,9 @@ public sealed class LoggingTests
             await player.CheatAsync("gold", 100);
             await player.BuyAsync("potion_pack", 1);
 
-            var gmLogin = await host.Client().PostAsJsonAsync(GmModule.LoginRoute, new { staffId = "admin", password = ObservedHost.StaffPassword });
-            gmLogin.EnsureSuccessStatusCode();
-            gmCookie = gmLogin.Headers.GetValues("Set-Cookie").First().Split(';')[0].Split('=')[1];
-            var gm = host.Client();
-            gm.DefaultRequestHeaders.Add("Cookie", "gs_gm=" + gmCookie);
+            var jar = new System.Net.CookieContainer();
+            var gm = await host.GmLoginAsync("admin", ObservedHost.StaffPassword, jar);
+            gmCookie = jar.GetCookies(new Uri("http://localhost/gm/"))[GmCookieAuthenticationHandler.CookieName]!.Value;
             var adjust = new HttpRequestMessage(HttpMethod.Post, EconomyModule.AdjustRoute.Replace("{playerId}", login.PlayerId, StringComparison.Ordinal))
             {
                 Content = JsonContent.Create(new { resource = "gold", delta = 5, reason = "log scan" }),

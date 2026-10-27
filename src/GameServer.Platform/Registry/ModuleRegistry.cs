@@ -39,7 +39,7 @@ public sealed partial class ModuleRegistry
 
     /// <summary>Collections to provision: <c>receipts</c>, every <c>pa_*</c>, module collections and projection targets (DAT-07).</summary>
     public IReadOnlyList<string> RequiredCollections() =>
-        new[] { GameServer.Platform.Commands.ReceiptDocument.Collection }
+        new[] { GameServer.Platform.Commands.ReceiptDocument.Collection, PlatformCollections.DataProtection }
             .Concat(Aggregates.Values.Select(a => a.Collection))
             .Concat(_modules.SelectMany(m => m.Descriptor.Collections).Select(c => c.Name))
             .Concat(OutboxProjections.Select(p => p.Collection))
@@ -385,4 +385,11 @@ public sealed partial class ModuleRegistry
 
     [GeneratedRegex("^[A-Z][A-Z0-9_]*$")]
     private static partial Regex ErrorNamePattern();
+}
+
+/// <summary>Collections owned by the platform itself (not by a module).</summary>
+public static class PlatformCollections
+{
+    /// <summary>Shared Data Protection key ring, one document <c>keyring</c> (OPS-04).</summary>
+    public const string DataProtection = "dataprotection";
 }

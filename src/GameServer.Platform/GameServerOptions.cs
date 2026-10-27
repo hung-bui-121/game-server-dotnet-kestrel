@@ -40,6 +40,8 @@ public sealed class GameServerOptions
         "Identity:GuestPepper",
         "Couchbase:Password",
         "Iap:Google:ServiceAccountPrivateKeyPem",
+        "DataProtection:MasterKey",
+        "Gm:Oidc:ClientSecret",
     ];
 
     public TransactionSettings Transactions { get; set; } = new();

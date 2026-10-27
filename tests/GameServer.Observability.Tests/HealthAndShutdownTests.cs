@@ -20,14 +20,7 @@ public sealed class HealthAndShutdownTests
         return ((int)response.StatusCode, await response.Content.ReadAsStringAsync());
     }
 
-    private static async Task<HttpClient> AdminAsync(TestHost host)
-    {
-        var login = await host.Client().PostAsJsonAsync(GmModule.LoginRoute, new { staffId = "admin", password = ObservedHost.StaffPassword });
-        login.EnsureSuccessStatusCode();
-        var client = host.Client();
-        client.DefaultRequestHeaders.Add("Cookie", login.Headers.GetValues("Set-Cookie").First().Split(';')[0]);
-        return client;
-    }
+    private static Task<HttpClient> AdminAsync(TestHost host) => host.GmLoginAsync("admin", ObservedHost.StaffPassword);
 
     [Fact]
     public async Task Live_and_ready_answer_with_the_status_only()
@@ -107,9 +100,7 @@ public sealed class HealthAndShutdownTests
             s["Gm:Bootstrap:Staff:1:Password"] = ObservedHost.StaffPassword;
             s["Gm:Bootstrap:Staff:1:Roles:0"] = "Support";
         });
-        var login = await observed.Host.Client().PostAsJsonAsync(GmModule.LoginRoute, new { staffId = "support", password = ObservedHost.StaffPassword });
-        var support = observed.Host.Client();
-        support.DefaultRequestHeaders.Add("Cookie", login.Headers.GetValues("Set-Cookie").First().Split(';')[0]);
+        var support = await observed.Host.GmLoginAsync("support", ObservedHost.StaffPassword);
         (await GetAsync(support, GmModule.HealthRoute)).Status.ShouldBe(403);
     }
 

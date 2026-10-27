@@ -12,6 +12,7 @@ using GameServer.Platform.Web.Auth;
 using GameServer.Platform.Web.Errors;
 using GameServer.Platform.Web.Middleware;
 using GameServer.Platform.Web.Routing;
+using GameServer.Platform.Web.Security;
 using GameServer.Time;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
@@ -120,6 +121,7 @@ public static class GameServerBuilderExtensions
         services.AddHostedService(sp => sp.GetRequiredService<OutboxSweeper>());
         services.AddSingleton<PlayerSnapshotReader>();
         services.AddSingleton<IPlayerAggregateWriter, PlayerAggregateWriter>();
+        services.AddSingleton<GameServer.Platform.Persistence.IAuditedStore, GameServer.Platform.Persistence.AuditedStore>();
         services.AddSingleton<ReceiptReader>();
         services.TryAddSingleton<GameServer.Platform.Persistence.IStoreHealthProbe, GameServer.Platform.Persistence.DocumentStoreHealthProbe>();
         services.AddSingleton<IGameConfig>(sp =>
@@ -134,6 +136,17 @@ public static class GameServerBuilderExtensions
         services.TryAddSingleton<IGateEvaluator, AllowAllGateEvaluator>();
         services.AddAuthentication();
         services.AddOptions<ActorSchemeOptions>();
+
+        // OPS-04: one key ring per deployment, shared by every instance (GM cookies, antiforgery, OIDC correlation).
+        SharedDataProtection.Add(services, builder.Configuration, options);
+        services.AddAntiforgery(antiforgery => antiforgery.HeaderName = CsrfOptions.HeaderName);
+        services.AddOptions<CsrfOptions>();
+        services.AddCors();
+        if (options.AllowsDevelopmentTools)
+        {
+            // GM API contract for frontend developers (deliverable #8); not served outside Development/Test.
+            OpenApi.GmOpenApi.Add(services);
+        }
 
         // OPS-03: drain in-flight requests (commits complete, PERF-02) before the host stops.
         services.Configure<HostOptions>(host => host.ShutdownTimeout = TimeSpan.FromSeconds(options.Hosting.ShutdownTimeoutSeconds));

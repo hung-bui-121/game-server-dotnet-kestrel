@@ -241,3 +241,36 @@ CDN + load balancer cần `ForwardLimit` = số hop tin cậy (để 1 thì IP c
 `Couchbase:Password`, `Iap:Google:ServiceAccountPrivateKeyPem`) không được có giá trị trong **bất kỳ** file cấu hình nào (kể cả
 khi biến môi trường ghi đè) → startup fail; dùng biến môi trường (`Identity__GuestPepper`) hoặc secret provider.
 
+## 14. Data Protection, CSRF, CORS, audited store, OpenAPI (slice 007 — OPS-04, SEC-05, SEC-06, SEC-14)
+
+**Key ring dùng chung (semantic với vận hành):** mọi instance của một deployment (`gameId` + `environmentId`, application
+name `gameserver:{gameId}:{environmentId}`) dùng một key ring trong document `dataprotection/keyring`
+(`{keys[], rev}`, Insert/Replace có CAS, gộp khi ghi đồng thời). Bảo vệ cookie GM, antiforgery token, cookie
+correlation/nonce của OIDC.
+
+| Mục | Giá trị |
+| --- | --- |
+| Mã hoá at rest | AES-256-GCM bằng `DataProtection:MasterKey` (base64 32 byte, secret provider); phần tử lưu `masterKeyId`, `nonce`, `tag`; `DataProtection:PreviousMasterKeys` giữ khoá cũ còn giải mã được. Thiếu/sai ngoài Dev/Test → startup fail; Dev/Test không có khoá → lưu không mã hoá (log Warning) |
+| Không sync-over-async | `IXmlRepository` đọc snapshot trong RAM; `KeyRingService` tải trước khi nhận request (`StartingAsync`), làm mới mỗi `RefreshMinutes` (5) |
+| Tạo key | Request không bao giờ tạo key. Key đầu tiên khi khởi động; key kế tiếp tạo trước `ActivationLeadHours` (48 h) khi key hiện tại hết hạn (`KeyLifetimeDays` 90). Rotate theo yêu cầu (`POST /gm/v1/ops/dataprotection/rotate`) kích hoạt sau `RotationDelaySeconds` (600; ≥ 2 × refresh ngoài Dev/Test) |
+| Grace | Key cũ không bị xoá: cookie phát hành trước rotate vẫn giải mã được (ACC-49) |
+| Instance khác | Key ring tải về làm Data Protection bỏ cache ngay (`RefreshingKeyManager`); key id lạ → làm mới một lần |
+
+**CSRF (SEC-05):** `ProfileEnforcementMiddleware` sau xác thực: method unsafe + (scheme cookie trong
+`CsrfOptions.CookieSchemes` hoặc endpoint `RequireCsrf()`) → `IAntiforgery` (header `X-CSRF-Token` + cookie) +
+`Sec-Fetch-Site` ≠ `cross-site` + `Origin` cùng origin/allowlist; lỗi 403 `CSRF_FAILED`. Endpoint Public `/gm/**` unsafe
+thiếu `RequireCsrf()` → startup fail. Đường dẫn có nhưng sai method → 405 `METHOD_NOT_ALLOWED` (ErrorEnvelope/Problem Details).
+
+**CORS (SEC-06):** middleware CORS chỉ trên `/gm/**`, policy `gs-gm` do module gm đăng ký khi có allowlist; không có
+policy → không header CORS.
+
+**`IAuditedStore` (SEC-14):** transaction cho document không phải dữ liệu player (staff, cấu hình vận hành): từ chối
+`pa_*`/`receipts`; transaction có ghi phải insert đúng 1 `gm_audit`, audit không sửa được. `gm_staff`,
+`gm_staff_identities` chỉ ghi trong transaction (`IKeyValueStore` từ chối — TST-04 V15-T2).
+
+**OpenAPI:** document `gm` (`GET /gm/v1/openapi/gm.json`, chỉ Development/Test), bản commit `docs/api/gm-openapi.json`
+được test so khớp (`UPDATE_OPENAPI=1` để ghi lại). Mỗi operation: `x-gm-permission` (`public` hoặc permission),
+`x-gm-csrf`, response `4XX`/`5XX` = Problem Details.
+
+**Khởi tạo store dùng chung (`IStoreInitializer`):** Couchbase provisioner chạy một lần mỗi process; key ring và
+bootstrap staff chờ nó trước khi đọc store, bất kể thứ tự hosted service.

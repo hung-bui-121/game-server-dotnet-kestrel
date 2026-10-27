@@ -12,6 +12,7 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <ProjectReference Include="../../src/GameServer.Platform.Couchbase/GameServer.Platform.Couchbase.csproj" />
     <ProjectReference Include="../../src/GameServer.Platform.Testing/GameServer.Platform.Testing.csproj" />
+    <ProjectReference Include="../../src/GameServer.Platform.Web/GameServer.Platform.Web.csproj" />
     <ProjectReference Include="../GameServer.Platform.Tests/GameServer.Platform.Tests.csproj" />
   </ItemGroup>
 </Project>

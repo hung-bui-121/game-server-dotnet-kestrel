@@ -28,6 +28,7 @@ public static class CouchbaseServiceCollectionExtensions
         services.AddSingleton<IPagedQueryStore>(sp => sp.GetRequiredService<CouchbaseDocumentStore>());
         services.AddSingleton<CouchbaseProvisioner>();
         services.AddHostedService(sp => sp.GetRequiredService<CouchbaseProvisioner>());
+        services.AddSingleton<IStoreInitializer>(sp => sp.GetRequiredService<CouchbaseProvisioner>());
         return services;
     }
 }

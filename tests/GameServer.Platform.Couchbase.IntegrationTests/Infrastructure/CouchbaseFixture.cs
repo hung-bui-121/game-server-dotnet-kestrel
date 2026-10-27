@@ -63,6 +63,8 @@ public sealed class CouchbaseFixture : IAsyncLifetime
             [
                 new CollectionSpec("conf_docs", [new IndexSpec("ix_conf_docs_group_at", "`group`, `at`")]),
                 new CollectionSpec("tst04"),
+                new CollectionSpec("gm_staff"),
+                new CollectionSpec("gm_audit"),
             ],
         }), serviceOnly: false);
 

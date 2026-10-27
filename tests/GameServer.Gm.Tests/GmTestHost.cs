@@ -1,7 +1,10 @@
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using GameServer.Modules.Gm;
 using GameServer.Platform.Web.Auth;
+using GameServer.Platform.Web.Security;
+using Microsoft.AspNetCore.TestHost;
 using GameServer.Tests.Shared;
 using Shouldly;
 
@@ -13,7 +16,11 @@ public static class GmTestHost
     public const string Password = "dev-password";
 
     /// <summary>Staff seeded by <see cref="StartAsync"/>: id → (roles, extra permissions, scope override, disabled).</summary>
-    public static Task<TestHost> StartAsync(Action<Dictionary<string, string?>>? settings = null) =>
+    public static Task<TestHost> StartAsync(
+        Action<Dictionary<string, string?>>? settings = null,
+        GameServer.Platform.Testing.InMemoryDocumentStore? store = null,
+        GameServer.Platform.Testing.FakeClock? clock = null,
+        Action<Microsoft.Extensions.DependencyInjection.IServiceCollection>? services = null) =>
         TestHost.StartAsync(
             b => GameHttp.FullGame(b.AddModule<GmModule>()),
             values =>
@@ -27,7 +34,10 @@ public static class GmTestHost
                 Seed(values, 6, "other-env", ["Administrator"], environmentId: "prod");
                 Seed(values, 7, "disabled", ["Administrator"], disabled: true);
                 settings?.Invoke(values);
-            });
+            },
+            store: store,
+            clock: clock,
+            services: services);
 
     private static void Seed(
         Dictionary<string, string?> values,
@@ -64,17 +74,23 @@ public static class GmTestHost
         return new GamePlayer(host.BearerClient(login.SessionToken), login.PlayerId);
     }
 
-    public static Task<HttpResponseMessage> PostLoginAsync(this TestHost host, string staffId, string password = Password) =>
-        host.Client().PostAsJsonAsync(GmModule.LoginRoute, new { staffId, password });
-
-    /// <summary>Logs in and returns a client that sends the <c>gs_gm</c> cookie (TestServer has no cookie jar).</summary>
-    public static async Task<HttpClient> GmClientAsync(this TestHost host, string staffId)
+    /// <summary>Local login with a CSRF token (as the GM page does); returns the raw response.</summary>
+    public static async Task<HttpResponseMessage> PostLoginAsync(this HttpClient client, string staffId, string password = Password)
     {
-        var response = await host.PostLoginAsync(staffId);
+        await client.RefreshCsrfAsync();
+        return await client.PostAsJsonAsync(GmModule.LoginRoute, new { staffId, password });
+    }
+
+    public static Task<HttpResponseMessage> PostLoginAsync(this TestHost host, string staffId, string password = Password) =>
+        host.Browser().PostLoginAsync(staffId, password);
+
+    /// <summary>Logs in and returns a cookie-keeping client that sends the session's CSRF token on every request.</summary>
+    public static async Task<HttpClient> GmClientAsync(this TestHost host, string staffId, CookieContainer? cookies = null)
+    {
+        var client = host.Browser(cookies);
+        var response = await client.PostLoginAsync(staffId);
         response.StatusCode.ShouldBe(System.Net.HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
-        var cookie = SessionCookie(response) ?? throw new InvalidOperationException("No gs_gm cookie.");
-        var client = host.Client();
-        client.DefaultRequestHeaders.Add("Cookie", cookie.Split(';')[0]);
+        await client.RefreshCsrfAsync();
         return client;
     }
 

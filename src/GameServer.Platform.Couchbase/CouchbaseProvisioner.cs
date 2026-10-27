@@ -1,6 +1,7 @@
 using Couchbase.Core.Exceptions;
 using Couchbase.Management.Collections;
 using GameServer.Platform.Commands;
+using GameServer.Platform.Persistence;
 using GameServer.Platform.Registry;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -17,8 +18,11 @@ public sealed class CouchbaseProvisioner(
     CouchbaseConnection connection,
     ModuleRegistry registry,
     GameServerOptions gameServer,
-    ILogger<CouchbaseProvisioner> logger) : IHostedService
+    ILogger<CouchbaseProvisioner> logger) : IHostedService, IStoreInitializer
 {
+    private readonly object _gate = new();
+    private Task? _initialization;
+
     public const string PendingOutboxIndex = "ix_receipts_outbox_pending";
 
     private const int IndexAttempts = 6;
@@ -115,11 +119,28 @@ public sealed class CouchbaseProvisioner(
         }
     }
 
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public Task StartAsync(CancellationToken cancellationToken) => EnsureInitializedAsync(cancellationToken);
+
+    /// <summary>
+    /// Provisions once per process when <c>ProvisionOnStartup</c> (default: Development) is on. Startup services that
+    /// read the store before traffic (key ring, staff bootstrap) await the same task.
+    /// </summary>
+    public Task EnsureInitializedAsync(CancellationToken cancellationToken)
     {
-        if (connection.Options.ProvisionOnStartup ?? gameServer.IsDevelopment)
+        if (!(connection.Options.ProvisionOnStartup ?? gameServer.IsDevelopment))
         {
-            await ProvisionAsync(cancellationToken);
+            return Task.CompletedTask;
+        }
+
+        lock (_gate)
+        {
+            // A failed attempt is not cached: the next caller retries.
+            if (_initialization is null || _initialization.IsFaulted || _initialization.IsCanceled)
+            {
+                _initialization = ProvisionAsync(cancellationToken);
+            }
+
+            return _initialization;
         }
     }
 

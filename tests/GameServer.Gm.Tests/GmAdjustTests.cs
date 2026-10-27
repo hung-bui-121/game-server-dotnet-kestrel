@@ -32,7 +32,9 @@ public sealed class GmAdjustTests : IAsyncLifetime
 
     private static string AdjustRouteFor(string playerId) => EconomyModule.AdjustRoute.Replace("{playerId}", playerId, StringComparison.Ordinal);
 
-    private IReadOnlyList<JsonObject> Audits() => _host.Store.All(GmModule.AuditCollection).Select(d => d.Content).ToArray();
+    /// <summary>Player audit entries (staff changes, e.g. the bootstrap seed, are audited in the same collection).</summary>
+    private IReadOnlyList<JsonObject> Audits() =>
+        _host.Store.All(GmModule.AuditCollection).Select(d => d.Content).Where(d => d["kind"]?.GetValue<string>() != StaffAdminService.AuditKind).ToArray();
 
     private IReadOnlyList<JsonObject> Ledger(string sourceType) =>
         _host.Store.All(EconomyOperations.LedgerCollection).Select(d => d.Content)
@@ -178,10 +180,10 @@ public sealed class GmAdjustTests : IAsyncLifetime
         var gm = await host.GmClientAsync("econ");
         var player = await host.NewPlayerAsync();
         await gm.PostCommandAsync(AdjustRouteFor(player.PlayerId), new { resource = "gold", delta = 5, reason = "late audit" }).ShouldBeAsync(200);
-        host.Store.All(GmModule.AuditCollection).ShouldBeEmpty();
+        host.Store.All(GmModule.AuditCollection).Where(d => d.Content["kind"]?.GetValue<string>() != StaffAdminService.AuditKind).ShouldBeEmpty();
 
         host.Clock.Advance(TimeSpan.FromSeconds(11));
         (await host.Services.GetRequiredService<OutboxSweeper>().SweepOnceAsync(CancellationToken.None)).ShouldBe(1);
-        host.Store.All(GmModule.AuditCollection).ShouldHaveSingleItem().Content["payload"]!["reason"]!.GetValue<string>().ShouldBe("late audit");
+        host.Store.All(GmModule.AuditCollection).Where(d => d.Content["kind"]?.GetValue<string>() != StaffAdminService.AuditKind).ShouldHaveSingleItem().Content["payload"]!["reason"]!.GetValue<string>().ShouldBe("late audit");
     }
 }

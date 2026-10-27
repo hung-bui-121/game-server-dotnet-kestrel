@@ -7,6 +7,7 @@ using GameServer.Platform.Web.Aggregates;
 using GameServer.Platform.Web.Endpoints;
 using GameServer.Platform.Web.Middleware;
 using GameServer.Platform.Web.Routing;
+using GameServer.Platform.Web.Security;
 using GameServer.Platform.Web.Validation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
@@ -44,6 +45,7 @@ public static class GameServerApplicationExtensions
 
         DeploymentChecks.ValidateSecretSources(app.Configuration, options, errors);
         DeploymentChecks.ValidateShutdown(options, errors);
+        errors.AddRange(services.GetRequiredService<DataProtectionSettings>().Validate(options));
         var forwarded = DeploymentChecks.BuildForwardedHeaders(options, errors);
 
         // Endpoints are mapped even when errors exist so that every violation is reported at once.
@@ -56,6 +58,10 @@ public static class GameServerApplicationExtensions
         app.UseMiddleware<ExceptionMiddleware>();
         app.UseMiddleware<CorrelationMiddleware>();
         app.UseRouting();
+
+        // GM CORS (SEC-06) before authentication: preflights are answered here, never authenticated. Without a
+        // registered policy (default: same-origin) the middleware does nothing.
+        app.UseWhen(context => context.Request.Path.StartsWithSegments("/gm"), branch => branch.UseCors(GmCorsPolicy.Name));
         app.UseMiddleware<GateMiddleware>();
         app.UseMiddleware<ProfileEnforcementMiddleware>();
         app.UseRequestTimeouts();
@@ -85,11 +91,18 @@ public static class GameServerApplicationExtensions
             }
         }
 
+        var platformPublic = new List<string>();
+        if (options.AllowsDevelopmentTools && options.Hosting.MapGmApi)
+        {
+            GameServer.Platform.Web.OpenApi.GmOpenApi.Map(app);
+            platformPublic.Add(GameServer.Platform.Web.OpenApi.GmOpenApi.Route);
+        }
+
         var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints);
         errors.AddRange(EndpointSecurityValidator.Validate(
             endpoints,
             options,
-            registry.Modules.SelectMany(m => m.Descriptor.PublicEndpoints),
+            registry.Modules.SelectMany(m => m.Descriptor.PublicEndpoints).Concat(platformPublic),
             registry.Modules.SelectMany(m => m.Descriptor.Permissions)));
         if (errors.Count > 0)
         {

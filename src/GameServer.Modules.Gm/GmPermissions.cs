@@ -14,5 +14,14 @@ public static class GmPermissions
     /// <summary>Operational details: per-check health (OBS-03).</summary>
     public const string OpsRead = "ops.read";
 
-    public static IReadOnlyList<string> All { get; } = [Access, PlayerRead, PlayerReadPii, OpsRead];
+    /// <summary>List and view staff and their audit (SEC-15).</summary>
+    public const string StaffRead = "staff.read";
+
+    /// <summary>Create staff, change grants, disable/enable, revoke sessions (SEC-10, SEC-15).</summary>
+    public const string StaffManage = "staff.manage";
+
+    /// <summary>Schedule a new Data Protection key (OPS-04).</summary>
+    public const string KeysRotate = "ops.keys.rotate";
+
+    public static IReadOnlyList<string> All { get; } = [Access, PlayerRead, PlayerReadPii, OpsRead, StaffRead, StaffManage, KeysRotate];
 }

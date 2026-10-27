@@ -81,8 +81,19 @@ let adjustRequestId = crypto.randomUUID();
 
 function showError(message) { $("error").textContent = message || ""; }
 
+// CSRF token (SEC-05): bound to the session, so it is fetched again after login and logout.
+let csrfToken = null;
+async function csrf() {
+  if (!csrfToken) {
+    const response = await fetch("/gm/v1/auth/csrf", { credentials: "same-origin" });
+    csrfToken = (await response.json()).token;
+  }
+  return csrfToken;
+}
+
 async function api(method, path, body, headers) {
   const init = { method, credentials: "same-origin", headers: Object.assign({}, headers) };
+  if (method !== "GET") { init.headers["X-CSRF-Token"] = await csrf(); }
   if (body !== undefined) { init.headers["Content-Type"] = "application/json"; init.body = JSON.stringify(body); }
   const response = await fetch(path, init);
   const text = await response.text();
@@ -151,13 +162,14 @@ async function lookup(by, value) {
 $("login-form").addEventListener("submit", async (event) => {
   event.preventDefault(); showError();
   const form = new FormData(event.target);
-  try { setSignedIn(await api("POST", "/gm/v1/auth/login", { staffId: form.get("staffId"), password: form.get("password") })); event.target.reset(); }
+  try { setSignedIn(await api("POST", "/gm/v1/auth/login", { staffId: form.get("staffId"), password: form.get("password") })); csrfToken = null; event.target.reset(); }
   catch (e) { showError(e.message); }
 });
 
 $("logout").addEventListener("click", async () => {
   showError();
   try { await api("POST", "/gm/v1/auth/logout"); } catch (e) { showError(e.message); }
+  csrfToken = null;
   setSignedIn(null); $("player").hidden = true;
 });
 
