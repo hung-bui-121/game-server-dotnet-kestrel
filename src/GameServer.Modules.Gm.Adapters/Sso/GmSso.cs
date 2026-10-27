@@ -102,6 +102,7 @@ public static class GmSso
     /// <summary>Only a local GM path: no scheme, no host, no protocol-relative <c>//</c> (open redirect).</summary>
     public static string SafeReturnUrl(string? returnUrl) =>
         returnUrl is { Length: <= 512 }
+        && returnUrl.All(c => c is > ' ' and < (char)127)
         && returnUrl.StartsWith("/gm/", StringComparison.Ordinal)
         && !returnUrl.Contains("//", StringComparison.Ordinal)
         && !returnUrl.Contains('\\', StringComparison.Ordinal)
@@ -133,7 +134,7 @@ public static class GmSso
         }
         else
         {
-            var emailVerified = string.Equals(principal.FindFirst("email_verified")?.Value, "true", StringComparison.OrdinalIgnoreCase);
+            var emailVerified = string.Equals(principal.FindFirst(gm.Oidc.EmailVerifiedClaim)?.Value, "true", StringComparison.OrdinalIgnoreCase);
             staff = await services.GetRequiredService<StaffIdentityMatcher>().MatchAsync(
                 issuer, subject.Value, principal.FindFirst("email")?.Value, emailVerified, http.TraceIdentifier, http.RequestAborted);
             if (staff is null)
@@ -148,13 +149,16 @@ public static class GmSso
 
         if (denial is not null || staff is null)
         {
-            // Security log: reason and issuer only; no token, no subject.
-            logger.LogWarning("GM SSO sign-in denied: {Reason} (issuer {Issuer}).", denial, issuer);
+            // Security log: reason, issuer and the hashed identity key (same as gm_staff_identities); no token, no subject.
+            var identityKey = subject is not null && issuer is not null ? StaffAdminService.OidcKey(issuer, subject.Value).Key : "none";
+            logger.LogWarning("GM SSO sign-in denied: {Reason} (issuer {Issuer}, identity {IdentityKey}).", denial, issuer, identityKey);
             http.Response.Redirect(DeniedRedirect);
             return;
         }
 
-        var (cookie, expiresAt) = await services.GetRequiredService<GmSessionService>().CreateAsync(staff, http.RequestAborted);
+        var sessions = services.GetRequiredService<GmSessionService>();
+        await sessions.EndCurrentAsync(http);
+        var (cookie, expiresAt) = await sessions.CreateAsync(staff, http.RequestAborted);
         http.Response.Cookies.Append(GmCookieAuthenticationHandler.CookieName, cookie, GmCookies.Session(http, expiresAt));
         logger.LogInformation("GM SSO sign-in for staff {StaffId}.", staff.StaffId);
         http.Response.Redirect(SafeReturnUrl(context.ReturnUri));

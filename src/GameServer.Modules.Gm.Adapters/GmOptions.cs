@@ -42,6 +42,12 @@ public sealed class GmOidcOptions
 
     public List<string> MfaAmrValues { get; set; } = ["mfa", "otp", "hwk", "swk", "sms", "fpt", "face"];
 
+    /// <summary>
+    /// Claim whose value must be <c>true</c> before an email invitation binds (default <c>email_verified</c>). Some IdPs
+    /// (e.g. Microsoft Entra ID) do not send it by default: configure an optional claim, or invite by issuer + subject.
+    /// </summary>
+    public string EmailVerifiedClaim { get; set; } = "email_verified";
+
     /// <summary>First staff managers, created when the deployment has none (email invitation or issuer + subject).</summary>
     public List<GmBootstrapManager> BootstrapManagers { get; set; } = [];
 

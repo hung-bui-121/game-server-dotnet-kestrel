@@ -20,8 +20,13 @@ namespace GameServer.Platform.Couchbase;
 /// <see cref="ITransactionalDocumentStore"/> and <see cref="IKeyValueStore"/> on Couchbase (DAT-04, DAT-09, DAT-11,
 /// CMD-05). The only component of the framework that calls the Couchbase SDK.
 /// </summary>
-public sealed class CouchbaseDocumentStore(CouchbaseConnection connection) : ITransactionalDocumentStore, IKeyValueStore, IPagedQueryStore
+public sealed class CouchbaseDocumentStore(CouchbaseConnection connection) : ITransactionalDocumentStore, IKeyValueStore, IPagedQueryStore, ITransactionOnlyAwareStore
 {
+    private IReadOnlySet<string> _transactionOnly = new HashSet<string>(StringComparer.Ordinal);
+
+    /// <summary>Collections that refuse plain key-value writes (set at startup from the module registry).</summary>
+    public void UseTransactionOnlyCollections(IReadOnlySet<string> collections) => _transactionOnly = collections;
+
     private const int CasRetries = 5;
 
     public async Task<T> RunTransactionAsync<T>(Func<ITransactionContext, Task<T>> body, TransactionRunOptions options)
@@ -183,7 +188,7 @@ public sealed class CouchbaseDocumentStore(CouchbaseConnection connection) : ITr
 
     async Task<bool> IKeyValueStore.InsertAsync(DocumentKey key, JsonObject content, TimeSpan? expiry, CancellationToken cancellationToken)
     {
-        KeyValueCollections.EnsureWritable(key);
+        KeyValueCollections.EnsureWritable(key, _transactionOnly);
         var collection = await connection.GetCollectionAsync(key.Collection);
         var options = new InsertOptions().Durability(DurabilityLevel.Majority).CancellationToken(cancellationToken);
         if (expiry is { } e)
@@ -204,7 +209,7 @@ public sealed class CouchbaseDocumentStore(CouchbaseConnection connection) : ITr
 
     async Task<bool> IKeyValueStore.ReplaceAsync(StoredDocument existing, JsonObject content, TimeSpan? expiry, CancellationToken cancellationToken)
     {
-        KeyValueCollections.EnsureWritable(existing.Key);
+        KeyValueCollections.EnsureWritable(existing.Key, _transactionOnly);
         var collection = await connection.GetCollectionAsync(existing.Key.Collection);
         var options = new ReplaceOptions().Cas((ulong)existing.Handle!).Durability(DurabilityLevel.Majority).CancellationToken(cancellationToken);
         if (expiry is { } e)
@@ -225,7 +230,7 @@ public sealed class CouchbaseDocumentStore(CouchbaseConnection connection) : ITr
 
     async Task IKeyValueStore.RemoveAsync(DocumentKey key, CancellationToken cancellationToken)
     {
-        KeyValueCollections.EnsureWritable(key);
+        KeyValueCollections.EnsureWritable(key, _transactionOnly);
         var collection = await connection.GetCollectionAsync(key.Collection);
         try
         {

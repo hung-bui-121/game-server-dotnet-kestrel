@@ -51,7 +51,7 @@ public sealed class ProfileEnforcementMiddleware(
             return;
         }
 
-        if (profile.Value == SecurityProfile.Gm && IsCrossSiteMutation(context.Request))
+        if (profile.Value == SecurityProfile.Gm && CsrfValidation.IsUnsafe(context.Request.Method) && CsrfValidation.IsCrossSite(context.Request, csrf.Value))
         {
             // P0 part of SEC-05: a cookie-authenticated GM mutation must come from the same site.
             await writer.WriteAsync(context, CoreErrorCodes.Forbidden);
@@ -83,10 +83,26 @@ public sealed class ProfileEnforcementMiddleware(
             }
         }
 
+        var requiresCsrf = endpoint.Metadata.GetMetadata<CsrfRequiredMetadata>() is not null;
+        if (requiresCsrf && profile.Value == SecurityProfile.Public)
+        {
+            // An anonymous endpoint (local login) called from a signed-in browser: the token it fetched is bound to
+            // that session, so validate against the same identity (review m3). Failure just means anonymous.
+            foreach (var cookieScheme in csrf.Value.CookieSchemes)
+            {
+                var result = await context.AuthenticateAsync(cookieScheme);
+                if (result.Succeeded)
+                {
+                    context.User = result.Principal;
+                    break;
+                }
+            }
+        }
+
         // SEC-05: cookie-authenticated mutations (and endpoints that ask for it, e.g. local GM login) need the CSRF
         // token; header/bearer schemes cannot be replayed by a browser and do not.
         if (CsrfValidation.IsUnsafe(context.Request.Method)
-            && (endpoint.Metadata.GetMetadata<CsrfRequiredMetadata>() is not null || (scheme is not null && csrf.Value.CookieSchemes.Contains(scheme)))
+            && (requiresCsrf || (scheme is not null && csrf.Value.CookieSchemes.Contains(scheme)))
             && !await CsrfValidation.IsValidAsync(context, antiforgery, csrf.Value))
         {
             logger.LogWarning("CSRF validation failed for {Method} {Path}.", context.Request.Method, context.Request.Path.Value);
@@ -122,12 +138,6 @@ public sealed class ProfileEnforcementMiddleware(
 
         return null;
     }
-
-    private static bool IsCrossSiteMutation(HttpRequest request) =>
-        !HttpMethods.IsGet(request.Method)
-        && !HttpMethods.IsHead(request.Method)
-        && !HttpMethods.IsOptions(request.Method)
-        && string.Equals(request.Headers["Sec-Fetch-Site"], "cross-site", StringComparison.OrdinalIgnoreCase);
 
     private void SetBodyLimit(HttpContext context, SecurityProfile profile)
     {

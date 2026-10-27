@@ -252,7 +252,9 @@ correlation/nonce của OIDC.
 | --- | --- |
 | Mã hoá at rest | AES-256-GCM bằng `DataProtection:MasterKey` (base64 32 byte, secret provider); phần tử lưu `masterKeyId`, `nonce`, `tag`; `DataProtection:PreviousMasterKeys` giữ khoá cũ còn giải mã được. Thiếu/sai ngoài Dev/Test → startup fail; Dev/Test không có khoá → lưu không mã hoá (log Warning) |
 | Không sync-over-async | `IXmlRepository` đọc snapshot trong RAM; `KeyRingService` tải trước khi nhận request (`StartingAsync`), làm mới mỗi `RefreshMinutes` (5) |
-| Tạo key | Request không bao giờ tạo key. Key đầu tiên khi khởi động; key kế tiếp tạo trước `ActivationLeadHours` (48 h) khi key hiện tại hết hạn (`KeyLifetimeDays` 90). Rotate theo yêu cầu (`POST /gm/v1/ops/dataprotection/rotate`) kích hoạt sau `RotationDelaySeconds` (600; ≥ 2 × refresh ngoài Dev/Test) |
+| Tạo key | Request không bao giờ tạo key. Key đầu tiên khi khởi động (instance khởi động cùng lúc: chỉ key ghi trước được giữ); key kế tiếp tạo trước `ActivationLeadHours` (48 h) khi key hiện tại hết hạn (`KeyLifetimeDays` 90). Rotate theo yêu cầu (`POST /gm/v1/ops/dataprotection/rotate`) kích hoạt sau `RotationDelaySeconds` (900; ≥ 2 × refresh + 5 phút ngoài Dev/Test) |
+| Ghi | Mỗi lần thêm key = một transaction `IAuditedStore` {key ring, 1 audit}: key tạo theo lịch → audit `platform_audit` (`dataprotection.key_created`); rotate → audit `ops.keys.rotate` của staff, retry cùng `X-Request-Id` → replay, không tạo key thứ hai. `dataprotection` chỉ ghi trong transaction |
+| Key kích hoạt | Lần làm mới gặp key kích hoạt từ lần trước (± 5 phút) → Data Protection dựng lại key ring, key mới thành mặc định ngay (không chờ ~24 h) |
 | Grace | Key cũ không bị xoá: cookie phát hành trước rotate vẫn giải mã được (ACC-49) |
 | Instance khác | Key ring tải về làm Data Protection bỏ cache ngay (`RefreshingKeyManager`); key id lạ → làm mới một lần |
 
@@ -266,7 +268,9 @@ policy → không header CORS.
 
 **`IAuditedStore` (SEC-14):** transaction cho document không phải dữ liệu player (staff, cấu hình vận hành): từ chối
 `pa_*`/`receipts`; transaction có ghi phải insert đúng 1 `gm_audit`, audit không sửa được. `gm_staff`,
-`gm_staff_identities` chỉ ghi trong transaction (`IKeyValueStore` từ chối — TST-04 V15-T2).
+`gm_staff_identities` chỉ ghi trong transaction (`IKeyValueStore` từ chối — TST-04 V15-T2): module khai
+`CollectionSpec(TransactionOnly: true)`, platform tự thêm `dataprotection`. `gm_audit` là collection của platform (có cả
+khi không đăng ký module gm).
 
 **OpenAPI:** document `gm` (`GET /gm/v1/openapi/gm.json`, chỉ Development/Test), bản commit `docs/api/gm-openapi.json`
 được test so khớp (`UPDATE_OPENAPI=1` để ghi lại). Mỗi operation: `x-gm-permission` (`public` hoặc permission),

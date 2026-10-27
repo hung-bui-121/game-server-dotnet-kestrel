@@ -26,7 +26,7 @@ public sealed class DataProtectionSettings
     /// Delay before a key created by an on-demand rotation activates; at least two refreshes outside Development/Test
     /// so every instance knows the key before it protects anything with it.
     /// </summary>
-    public int RotationDelaySeconds { get; set; } = 600;
+    public int RotationDelaySeconds { get; set; } = 900;
 
     internal byte[]? MasterKeyBytes() => Decode(MasterKey);
 
@@ -89,9 +89,10 @@ public sealed class DataProtectionSettings
             yield return "[dataprotection] DataProtection:ActivationLeadHours must cover at least two refreshes and be shorter than the key lifetime.";
         }
 
-        if (RotationDelaySeconds < 0 || (!gameServer.AllowsDevelopmentTools && RotationDelaySeconds < 2 * RefreshMinutes * 60))
+        // Data Protection may pick a key up to 5 minutes before it activates: two refreshes plus that skew.
+        if (RotationDelaySeconds < 0 || (!gameServer.AllowsDevelopmentTools && RotationDelaySeconds < (2 * RefreshMinutes * 60) + 300))
         {
-            yield return "[dataprotection] DataProtection:RotationDelaySeconds must be at least two refreshes (2 × RefreshMinutes) outside Development/Test.";
+            yield return "[dataprotection] DataProtection:RotationDelaySeconds must be at least two refreshes plus 5 minutes (2 × RefreshMinutes × 60 + 300) outside Development/Test.";
         }
     }
 }

@@ -21,15 +21,20 @@ public sealed class SharedKeyRingAndAuditedStoreTests(CouchbaseFixture fixture) 
     public async Task Two_instances_writing_keys_concurrently_both_end_up_in_the_shared_ring()
     {
         fixture.RequireCouchbase();
-        using var a = new KeyRingRepository(Kv);
-        using var b = new KeyRingRepository(Kv);
+        var audited = new AuditedStore(fixture.Store, fixture.GameServer);
+        var clock = new GameServer.Platform.Testing.FakeClock();
+        using var a = new KeyRingRepository(Kv, audited, fixture.GameServer, clock);
+        using var b = new KeyRingRepository(Kv, audited, fixture.GameServer, clock);
         var idA = Guid.NewGuid().ToString("D");
         var idB = Guid.NewGuid().ToString("D");
         a.StoreElement(Key(idA), "a");
         b.StoreElement(Key(idB), "b");
 
         // Concurrent flushes conflict on the one document; CAS retries merge instead of overwriting.
-        await Task.WhenAll(a.FlushAsync(CancellationToken.None), b.FlushAsync(CancellationToken.None));
+        var outcomes = await Task.WhenAll(
+            a.FlushAsync(audit: null, onlyIfNoActiveKey: false, CancellationToken.None),
+            b.FlushAsync(audit: null, onlyIfNoActiveKey: false, CancellationToken.None));
+        outcomes.ShouldAllBe(o => o == KeyRingFlushOutcome.Written);
         await a.LoadAsync(CancellationToken.None);
         await b.LoadAsync(CancellationToken.None);
 

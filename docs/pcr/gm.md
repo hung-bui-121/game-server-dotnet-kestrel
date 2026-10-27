@@ -66,7 +66,10 @@ Module cũng khai index `receipts(playerId, committedAtUtc DESC, META().id DESC)
   có endpoint Public GM unsafe thiếu CSRF. Logout chỉ POST; `GET` → 405 `METHOD_NOT_ALLOWED`.
 - **CORS (SEC-06)**: tắt mặc định (same-origin). `Gm:Cors:AllowedOrigins[]` (khớp chính xác scheme+host+port) bật CORS
   có credentials cho `/gm/**`; `*`, path, `/` cuối, origin không tuyệt đối, `http` ngoài Development → startup fail. CORS
-  không thay CSRF.
+  không thay CSRF: frontend ở origin cấu hình gửi mutation `cross-site` được (cookie `SameSite=None; Secure`) nhưng vẫn
+  phải có `X-CSRF-Token`; mọi origin khác bị chặn.
+- Đăng nhập lại (local hoặc SSO) khi trình duyệt còn phiên → phiên cũ bị huỷ ở server. Endpoint login nhận CSRF token
+  lấy khi đang đăng nhập (token gắn phiên).
 - Mọi response GM có `Cache-Control: no-store` (có thể chứa PII). Cookie luôn `Secure` ngoài Development.
 - Cache staff/session chỉ giữ kết quả tìm thấy (token/staffId lạ không làm phình cache).
 - Token player trên GM API → 401; cookie GM trên Player API → 401 (scheme tách theo profile, SEC-02).
@@ -149,15 +152,21 @@ payload{actorId, permission, action, targetPlayerId, reason, before, after, corr
   transaction; sau đó email không còn tác dụng.
 - MFA: `Gm:Oidc:RequireMfa` (mặc định bật ngoài Dev/Test) đòi claim `amr` chứa một giá trị trong `MfaAmrValues`
   (`mfa otp hwk swk sms fpt face`). IdP ép MFA bằng chính sách mà không phát `amr` → đặt `false` và ghi nhận ở đây.
+- Email đã xác minh: claim `Gm:Oidc:EmailVerifiedClaim` (mặc định `email_verified`) phải là `true`. Microsoft Entra ID
+  không gửi claim này mặc định → cấu hình optional claim, hoặc tạo staff bằng issuer + subject.
+- Log từ chối SSO: lý do, issuer, khoá danh tính đã băm (`oidc:{sha256}`) — không subject, không token.
 - `Gm:Oidc:BootstrapManagers[]` (`{staffId, email}` hoặc `{staffId, issuer, subject}`): tạo Administrator khi deployment
   chưa có staff nào giữ `staff.manage` (idempotent).
 - Mỗi thay đổi staff (và rotate key) = **một transaction** `IAuditedStore` {staff, identities, managers, `gm_audit`} — có
   ghi thì phải có đúng 1 audit, nếu không rollback. Idempotent theo `X-Request-Id` (`entryId = sha256(actor|op|target|requestId)`);
   cùng id khác body → 409 `IDEMPOTENCY_PAYLOAD_MISMATCH`. Audit staff: `kind = gm_staff_audit`, `targetStaffId`, payload
   `{actorId, permission, action, targetStaffId, reason, before, after, correlationId, requestId, bodyHash}`.
-- Chống leo thang: chỉ cấp permission người thao tác đang có (403 `PERMISSION_NOT_GRANTABLE`); không được để 0 staff
-  không khoá giữ `staff.manage` (409 `LAST_STAFF_MANAGER`); role/permission ngoài catalog → 400; staffId/email trùng →
-  409 `STAFF_EXISTS`.
+- Chống leo thang: chỉ cấp permission người thao tác đang có, và chỉ đổi grant/khoá/mở/thu hồi phiên của staff có tập
+  permission nằm trong tập của mình (403 `PERMISSION_NOT_GRANTABLE`); không được để 0 staff **đăng nhập được** (active,
+  không khoá) giữ `staff.manage` — lời mời chưa dùng không tính (409 `LAST_STAFF_MANAGER`); role/permission ngoài catalog
+  → 400; staffId/email trùng → 409 `STAFF_EXISTS`.
+- Bootstrap: manager cấu hình đã tồn tại nhưng không phải manager dùng được (khoá, thiếu `staff.manage`) → startup fail
+  ngoài Development/Test. Seed Development: request id theo nội dung seed → seed không đổi thì không ghi lại khi restart.
 - Thu hồi ≤ 60 s trên mọi instance: staff + ticket cache ≤ `Gm:CacheSeconds`; instance xử lý thay đổi xoá cache ngay.
 
 Mã lỗi module gm (13000–13099): `STAFF_EXISTS` (13000, 409), `LAST_STAFF_MANAGER` (13001, 409),

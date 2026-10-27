@@ -65,8 +65,8 @@ public sealed class GmModule : IGameModule, IGmApiModule
         ErrorCodes = GmErrorCodes.All,
         Collections =
         [
-            new CollectionSpec(StaffDirectory.Collection, [new IndexSpec("ix_gm_staff_type", "type, staffId, META().id")]),
-            new CollectionSpec(StaffAdminService.IdentityCollection),
+            new CollectionSpec(StaffDirectory.Collection, [new IndexSpec("ix_gm_staff_type", "type, staffId, META().id")], TransactionOnly: true),
+            new CollectionSpec(StaffAdminService.IdentityCollection, TransactionOnly: true),
             new CollectionSpec(GmSessionService.Collection),
             new CollectionSpec(
                 AuditCollection,
@@ -176,7 +176,9 @@ public sealed class GmModule : IGameModule, IGmApiModule
             throw new GameServerException(CoreErrorCodes.Unauthenticated, "Invalid staff credentials.");
         }
 
-        var (cookie, expiresAt) = await services.GetRequiredService<GmSessionService>().CreateAsync(record, http.RequestAborted);
+        var sessions = services.GetRequiredService<GmSessionService>();
+        await sessions.EndCurrentAsync(http);
+        var (cookie, expiresAt) = await sessions.CreateAsync(record, http.RequestAborted);
         http.Response.Cookies.Append(GmCookieAuthenticationHandler.CookieName, cookie, GmCookies.Session(http, expiresAt));
         logger.LogInformation("GM local sign-in for staff {StaffId}.", record.StaffId);
 
@@ -213,15 +215,11 @@ public sealed class GmModule : IGameModule, IGmApiModule
         var services = http.RequestServices;
         var body = await GmHttp.ReadJsonAsync<StaffReasonBody>(http);
         var change = StaffEndpoints.Change(http, body.Reason);
-        var admin = services.GetRequiredService<StaffAdminService>();
-        if (await admin.IsRecordedAsync(change, "ops.keys.rotate", http.RequestAborted))
-        {
-            return GmHttp.Json(new GmRotateResponse(null, null, Replayed: true));
-        }
+        var (auditKey, build) = services.GetRequiredService<StaffAdminService>().SystemAudit(change, "ops.keys.rotate");
 
-        var (keyId, activatesAt) = await services.GetRequiredService<KeyRingService>().RotateAsync(CancellationToken.None);
-        await admin.RecordAsync(change, "ops.keys.rotate", new { keyId, activatesAt }, CancellationToken.None);
-        return GmHttp.Json(new GmRotateResponse(keyId.ToString("D"), activatesAt.ToString("O"), Replayed: false));
+        // The key ring and the audit entry commit in one transaction; the audit key makes a retry a replay.
+        var rotation = await services.GetRequiredService<KeyRingService>().RotateAsync(new KeyRingAudit(auditKey, build), CancellationToken.None);
+        return GmHttp.Json(new GmRotateResponse(rotation.KeyId?.ToString("D"), rotation.ActivatesAt?.ToString("O"), rotation.Replayed));
     }
 
     /// <summary>Per-check health with descriptions (OBS-03: details only for GM, never on the Public endpoints).</summary>

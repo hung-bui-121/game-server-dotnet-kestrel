@@ -126,6 +126,7 @@ public sealed class StaffAdminService(
         return RunAsync(change, "staff.update", staffId, new { permissions }, [], (current, _) =>
         {
             var staff = current ?? throw new GameServerException(CoreErrorCodes.NotFound, $"Staff '{staffId}' does not exist.");
+            EnsureCanManage(change, staff);
             EnsureGrantable(change, permissions);
             return new Mutation(staff.WithGrant(gameServer.GameId, gameServer.EnvironmentId, permissions), []);
         }, cancellationToken);
@@ -136,6 +137,7 @@ public sealed class StaffAdminService(
         RunAsync(change, disabled ? "staff.disable" : "staff.enable", staffId, new { disabled }, [], (current, _) =>
         {
             var staff = current ?? throw new GameServerException(CoreErrorCodes.NotFound, $"Staff '{staffId}' does not exist.");
+            EnsureCanManage(change, staff);
             return new Mutation(staff with { Disabled = disabled, SessionEpoch = disabled ? staff.SessionEpoch + 1 : staff.SessionEpoch }, []);
         }, cancellationToken);
 
@@ -144,6 +146,11 @@ public sealed class StaffAdminService(
         RunAsync(change, "staff.revoke_sessions", staffId, new { }, [], (current, _) =>
         {
             var staff = current ?? throw new GameServerException(CoreErrorCodes.NotFound, $"Staff '{staffId}' does not exist.");
+            if (staff.StaffId != change.ActorId)
+            {
+                EnsureCanManage(change, staff);
+            }
+
             return new Mutation(staff with { SessionEpoch = staff.SessionEpoch + 1 }, []);
         }, cancellationToken);
 
@@ -183,11 +190,27 @@ public sealed class StaffAdminService(
         }
     }
 
-    /// <summary>Development/Test seed and SSO bootstrap: creates the staff, or brings an existing record to the seed.</summary>
-    public async Task<StaffResult> SeedAsync(NewStaff seed, CancellationToken cancellationToken)
+    /// <summary>
+    /// Development/Test seed: creates the staff, or brings an existing record to the seed. The request id depends on
+    /// the seed content (password as a fingerprint, not its salted hash), so an unchanged seed replays on restart and
+    /// does not undo changes made through the API.
+    /// </summary>
+    public async Task<StaffResult> SeedAsync(NewStaff seed, string passwordFingerprint, CancellationToken cancellationToken)
     {
         var permissions = Expand(seed.Roles, seed.Permissions);
-        var change = new StaffChange("system:bootstrap", null, Hash(JsonSerializer.Serialize(new { seed, permissions }, GameServerJson.Options)), "Configured bootstrap", "bootstrap");
+        var requestId = Hash(JsonSerializer.Serialize(
+            new { seed.StaffId, seed.DisplayName, permissions, seed.Disabled, seed.Scope.GameId, seed.Scope.EnvironmentId, passwordFingerprint },
+            GameServerJson.Options));
+        var change = new StaffChange("system:bootstrap", null, requestId, "Configured bootstrap", "bootstrap");
+        foreach (var operation in new[] { "staff.create", "staff.bootstrap" })
+        {
+            if (await store.GetAsync(AuditKey(change, operation, seed.StaffId), cancellationToken) is not null)
+            {
+                var unchanged = StaffDirectory.Parse(await store.GetAsync(StaffDirectory.Key(seed.StaffId), cancellationToken)) ?? new StaffRecord();
+                return new StaffResult(unchanged, true);
+            }
+        }
+
         var existing = StaffDirectory.Parse(await store.GetAsync(StaffDirectory.Key(seed.StaffId), cancellationToken));
         if (existing is null)
         {
@@ -216,17 +239,33 @@ public sealed class StaffAdminService(
         }, cancellationToken);
     }
 
-    /// <summary>Number of non-disabled staff (active or invited) holding <c>staff.manage</c> here (bootstrap, R11).</summary>
+    /// <summary>Reads the stored record (no cache): startup checks and administration.</summary>
+    public async Task<StaffRecord?> GetAsync(string staffId, CancellationToken cancellationToken) =>
+        StaffDirectory.Parse(await store.GetAsync(StaffDirectory.Key(staffId), cancellationToken));
+
+    /// <summary>Number of staff who can sign in and hold <c>staff.manage</c> here (bootstrap, R11).</summary>
     public async Task<int> CountManagersAsync(CancellationToken cancellationToken) =>
         ReadManagers(await store.GetAsync(ManagersKey, cancellationToken)).Count;
 
-    /// <summary>Audit-only entry for an operation that is not a staff change (e.g. key rotation), target <c>system</c>.</summary>
-    public Task<StaffResult> RecordAsync(StaffChange change, string operation, object details, CancellationToken cancellationToken) =>
-        RunAsync(change, operation, "system", details, [], (_, _) => new Mutation(null, []), cancellationToken);
+    /// <summary>
+    /// Audit entry (key + content) for an operation committed by another audited transaction, e.g. the key-ring
+    /// rotation that the platform writes together with this entry (review M3). Target <c>system</c>.
+    /// </summary>
+    public (DocumentKey Key, Func<object, JsonObject> Build) SystemAudit(StaffChange change, string operation)
+    {
+        if (string.IsNullOrWhiteSpace(change.Reason) || change.Reason.Length > 500)
+        {
+            throw new GameServerException(CoreErrorCodes.BadRequest, "reason is required (1-500 characters).");
+        }
 
-    /// <summary>Whether this request id already produced the audit entry (operations that cannot be replayed).</summary>
-    public async Task<bool> IsRecordedAsync(StaffChange change, string operation, CancellationToken cancellationToken) =>
-        await store.GetAsync(AuditKey(change, operation, "system"), cancellationToken) is not null;
+        var key = AuditKey(change, operation, "system");
+        return (key, details =>
+        {
+            var document = AuditDocument(change, operation, "system", Hash(change.RequestId), key, null, null, clock.UtcNow);
+            document["payload"]!["after"] = System.Text.Json.JsonSerializer.SerializeToNode(details, GameServerJson.Options);
+            return document;
+        });
+    }
 
     private static DocumentKey AuditKey(StaffChange change, string operation, string targetStaffId) =>
         new(GmModule.AuditCollection, "gm_audit::" + Hash($"{change.ActorId}|{operation}|{targetStaffId}|{change.RequestId}"));
@@ -267,6 +306,10 @@ public sealed class StaffAdminService(
             catch (DocumentExistsException ex) when (ex.Key == auditKey && attempt == 1)
             {
                 // The same request committed concurrently: run again to return its result as a replay.
+            }
+            catch (DocumentExistsException ex) when (ex.Key == ManagersKey && attempt < 3)
+            {
+                // Concurrent first write of the manager index: read it again (conflict on one document, by design).
             }
             catch (DocumentExistsException)
             {
@@ -374,11 +417,30 @@ public sealed class StaffAdminService(
         }
     }
 
+    /// <summary>Managers who can actually sign in (active, not disabled): an unused invitation does not count (review M2).</summary>
     private bool IsManager(StaffRecord staff) =>
-        !staff.Disabled && staff.EffectivePermissions(gameServer.GameId, gameServer.EnvironmentId).Contains(GmPermissions.StaffManage);
+        staff.CanSignIn && staff.EffectivePermissions(gameServer.GameId, gameServer.EnvironmentId).Contains(GmPermissions.StaffManage);
 
     private static HashSet<string> ReadManagers(StoredDocument? document) =>
         document?.Content["staffIds"]?.AsArray().Select(n => n!.GetValue<string>()).ToHashSet(StringComparer.Ordinal) ?? [];
+
+    /// <summary>
+    /// A manager may change only staff whose permissions are a subset of their own: no downgrading, disabling or
+    /// re-enabling someone more privileged (review M1).
+    /// </summary>
+    private void EnsureCanManage(StaffChange change, StaffRecord target)
+    {
+        if (change.ActorPermissions is null)
+        {
+            return;
+        }
+
+        var extra = target.EffectivePermissions(gameServer.GameId, gameServer.EnvironmentId).Except(change.ActorPermissions).Order(StringComparer.Ordinal).ToArray();
+        if (extra.Length > 0)
+        {
+            throw new GameServerException(GmErrorCodes.PermissionNotGrantable, $"Staff '{target.StaffId}' holds permissions you do not hold: {string.Join(", ", extra)}.");
+        }
+    }
 
     private static void EnsureGrantable(StaffChange change, IReadOnlyList<string> permissions)
     {

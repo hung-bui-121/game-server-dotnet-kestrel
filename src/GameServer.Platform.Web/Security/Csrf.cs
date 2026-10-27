@@ -38,6 +38,14 @@ public static class CsrfEndpointExtensions
 
 internal static class CsrfValidation
 {
+    /// <summary>
+    /// A browser-declared cross-site request, unless it comes from a configured GM frontend origin (SEC-06): that
+    /// frontend is cross-site by definition and still has to send the CSRF token (review M5).
+    /// </summary>
+    public static bool IsCrossSite(HttpRequest request, CsrfOptions options) =>
+        string.Equals(request.Headers["Sec-Fetch-Site"], "cross-site", StringComparison.OrdinalIgnoreCase)
+        && !options.TrustedOrigins.Contains(request.Headers.Origin.ToString(), StringComparer.OrdinalIgnoreCase);
+
     public static bool IsUnsafe(string method) =>
         !HttpMethods.IsGet(method) && !HttpMethods.IsHead(method) && !HttpMethods.IsOptions(method) && !HttpMethods.IsTrace(method);
 
@@ -48,12 +56,12 @@ internal static class CsrfValidation
     public static async Task<bool> IsValidAsync(HttpContext context, IAntiforgery antiforgery, CsrfOptions options)
     {
         var request = context.Request;
-        if (string.Equals(request.Headers["Sec-Fetch-Site"], "cross-site", StringComparison.OrdinalIgnoreCase))
+        var origin = request.Headers.Origin.ToString();
+        if (IsCrossSite(request, options))
         {
             return false;
         }
 
-        var origin = request.Headers.Origin.ToString();
         if (origin.Length > 0
             && !string.Equals(origin, $"{request.Scheme}://{request.Host}", StringComparison.OrdinalIgnoreCase)
             && !options.TrustedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase))

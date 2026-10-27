@@ -43,6 +43,7 @@ public sealed class GmBootstrapper(
                         seed.Permissions,
                         DevPasswordHasher.Hash(seed.Password),
                         seed.Disabled) { Scope = (seed.GameId, seed.EnvironmentId) },
+                    StaffAdminService.Hash("seed-password:" + seed.Password),
                     cancellationToken);
                 logger.LogInformation("Seeded GM staff {StaffId}{Replayed}.", seed.StaffId, result.Replayed ? " (unchanged)" : string.Empty);
             }
@@ -69,7 +70,26 @@ public sealed class GmBootstrapper(
             }
             catch (GameServerException ex) when (ex.Code == GmErrorCodes.StaffExists)
             {
-                // Created earlier or by another instance starting at the same time.
+                // Created earlier or by another instance starting at the same time; checked below.
+            }
+        }
+
+        // A configured manager that exists but is not a usable manager (wrong staffId reused, disabled, no
+        // staff.manage) would leave the deployment without anyone able to manage staff (review M2).
+        foreach (var manager in managers)
+        {
+            var record = await staff.GetAsync(manager.StaffId!, cancellationToken);
+            var usable = record is not null && !record.Disabled
+                && record.EffectivePermissions(gameServer.GameId, gameServer.EnvironmentId).Contains(GmPermissions.StaffManage);
+            if (!usable)
+            {
+                var message = $"Gm:Oidc:BootstrapManagers staffId '{manager.StaffId}' exists but is not an enabled staff manager; the deployment has no staff manager.";
+                if (!gameServer.AllowsDevelopmentTools)
+                {
+                    throw new InvalidOperationException(message);
+                }
+
+                logger.LogError("{Message}", message);
             }
         }
     }

@@ -66,6 +66,12 @@ public interface ICollectionAwareStore
     void UseCollections(IEnumerable<string> collections);
 }
 
+/// <summary>Store told at startup which collections refuse plain key-value writes (<c>CollectionSpec.TransactionOnly</c>).</summary>
+public interface ITransactionOnlyAwareStore
+{
+    void UseTransactionOnlyCollections(IReadOnlySet<string> collections);
+}
+
 /// <summary>Marker for stores allowed only in Development/Test deployments (startup validation).</summary>
 public interface IDevelopmentOnlyStore;
 

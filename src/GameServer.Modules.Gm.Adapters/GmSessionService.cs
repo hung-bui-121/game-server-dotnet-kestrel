@@ -113,6 +113,16 @@ public sealed class GmSessionService
         return session.ExpiresAt > now && now - session.LastActiveAt < Idle ? session : null;
     }
 
+    /// <summary>Signing in again over a live session ends the old ticket (no orphaned sessions, review m3).</summary>
+    public async Task EndCurrentAsync(Microsoft.AspNetCore.Http.HttpContext http)
+    {
+        var cookie = http.Request.Cookies[GmCookieAuthenticationHandler.CookieName];
+        if (!string.IsNullOrEmpty(cookie) && cookie.Length <= 512 && await ValidateAsync(cookie, http.RequestAborted) is { } current)
+        {
+            await RemoveAsync(current.Key, http.RequestAborted);
+        }
+    }
+
     public async Task RemoveAsync(string sessionKey, CancellationToken cancellationToken)
     {
         _cache.Remove(sessionKey);

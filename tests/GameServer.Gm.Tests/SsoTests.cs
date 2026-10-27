@@ -135,6 +135,7 @@ public sealed class SsoTests : IAsyncLifetime
 
         (await SignInAsync(Claims("sub-redir"), returnUrl: "https://evil.example/steal")).Location.ShouldBe(GmSso.DefaultReturnUrl);
         (await SignInAsync(Claims("sub-redir"), returnUrl: "//evil.example")).Location.ShouldBe(GmSso.DefaultReturnUrl);
+        (await SignInAsync(Claims("sub-redir"), returnUrl: "/gm/v1/é")).Location.ShouldBe(GmSso.DefaultReturnUrl);
         _idp.RejectedTokenRequests.ShouldBe(0);
     }
 
@@ -157,7 +158,7 @@ public sealed class SsoTests : IAsyncLifetime
         staff.ShouldNotBeNull(string.Join(" | ", host.Logs.Where(l => l.Contains("staff", StringComparison.OrdinalIgnoreCase)).TakeLast(15)));
         staff.Status.ShouldBe(StaffStatus.Invited);
         staff.EffectivePermissions("test", "dev").ShouldContain(GmPermissions.StaffManage);
-        (await host.Services.GetRequiredService<StaffAdminService>().CountManagersAsync(CancellationToken.None)).ShouldBe(1);
+        (await host.Services.GetRequiredService<StaffAdminService>().CountManagersAsync(CancellationToken.None)).ShouldBe(0);
     }
 
     [Fact]

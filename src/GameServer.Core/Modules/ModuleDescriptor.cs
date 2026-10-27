@@ -41,7 +41,11 @@ public sealed class ModuleDescriptor
 }
 
 /// <summary>A collection to provision, with optional secondary indexes.</summary>
-public sealed record CollectionSpec(string Name, IReadOnlyList<IndexSpec>? Indexes = null);
+/// <param name="TransactionOnly">
+/// Written only inside transactions (with its audit entry or aggregate change): plain key-value writes are refused,
+/// because a plain insert racing a transactional insert of the same key silently wins (TST-04 V15-T2).
+/// </param>
+public sealed record CollectionSpec(string Name, IReadOnlyList<IndexSpec>? Indexes = null, bool TransactionOnly = false);
 
 /// <summary>N1QL index: <c>CREATE INDEX {Name} ON {collection}({Keys}) WHERE {Where}</c>.</summary>
 public sealed record IndexSpec(string Name, string Keys, string? Where = null);

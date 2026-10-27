@@ -89,7 +89,7 @@ public sealed class CsrfAndSessionTests : IAsyncLifetime
         var gm = await _host.GmClientAsync("support", jar);
         var session = jar.GetCookies(new Uri("http://localhost/gm/"))[GmCookieAuthenticationHandler.CookieName]!.Value;
 
-        (await gm.GetAsync(GmModule.LogoutRoute)).StatusCode.ShouldBe(HttpStatusCode.MethodNotAllowed);
+        (await gm.GetAsync(GmModule.LogoutRoute).ShouldBeAsync(405))["code"]!.GetValue<string>().ShouldBe("METHOD_NOT_ALLOWED");
         await gm.GetAsync(GmModule.MeRoute).ShouldBeAsync(200);
 
         await gm.PostAsync(GmModule.LogoutRoute, null).ShouldBeAsync(204);
@@ -98,6 +98,22 @@ public sealed class CsrfAndSessionTests : IAsyncLifetime
         var copy = _host.Client();
         copy.DefaultRequestHeaders.Add("Cookie", $"{GmCookieAuthenticationHandler.CookieName}={session}");
         await copy.GetAsync(GmModule.MeRoute).ShouldBeAsync(401);
+    }
+
+    [Fact]
+    public async Task Signing_in_again_ends_the_previous_session()
+    {
+        var jar = new CookieContainer();
+        var browser = await _host.GmClientAsync("support", jar);
+        var first = jar.GetCookies(new Uri("http://localhost/gm/"))[GmCookieAuthenticationHandler.CookieName]!.Value;
+
+        // The token the signed-in page holds is accepted by the (anonymous) login endpoint.
+        (await browser.PostAsJsonAsync(GmModule.LoginRoute, new { staffId = "support", password = GmTestHost.Password })).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var copy = _host.Client();
+        copy.DefaultRequestHeaders.Add("Cookie", $"{GmCookieAuthenticationHandler.CookieName}={first}");
+        await copy.GetAsync(GmModule.MeRoute).ShouldBeAsync(401);
+        await browser.GetAsync(GmModule.MeRoute).ShouldBeAsync(200);
     }
 
     [Fact]

@@ -143,12 +143,34 @@ public sealed class RevocationAndKeyRingTests : IAsyncLifetime
         var newOnA = await _a.GmClientAsync("econ", newJar);
         await (await SameBrowserOnAsync(_b, newJar, newOnA)).GetAsync(GmModule.MeRoute).ShouldBeAsync(200);
 
-        // Audited, and a retried request id does not rotate twice.
+        // Audited in the same transaction, and a retried request id does not rotate twice.
+        _store.All(GmModule.AuditCollection).ShouldContain(d => d.Content["operation"]!.GetValue<string>() == "ops.keys.rotate");
         var requestId = Guid.NewGuid().ToString("D");
         await admin.PostCommandAsync(GmModule.RotateKeysRoute, new { reason = "again" }, requestId).ShouldBeAsync(200);
         var keys = _store.Peek(KeyRingRepository.DocumentKey)!["keys"]!.AsArray().Count;
         (await admin.PostCommandAsync(GmModule.RotateKeysRoute, new { reason = "again" }, requestId).ShouldBeAsync(200))["replayed"]!.GetValue<bool>().ShouldBeTrue();
         _store.Peek(KeyRingRepository.DocumentKey)!["keys"]!.AsArray().Count.ShouldBe(keys);
+    }
+
+    [Fact]
+    public void Instances_starting_together_keep_a_single_first_key()
+    {
+        _store.Peek(KeyRingRepository.DocumentKey)!["keys"]!.AsArray().Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task A_key_activating_makes_data_protection_rebuild_its_cached_ring()
+    {
+        var repository = _a.Services.GetRequiredService<KeyRingRepository>();
+        var keyManager = _a.Services.GetRequiredService<Microsoft.AspNetCore.DataProtection.KeyManagement.IKeyManager>();
+        var service = _a.Services.GetRequiredService<KeyRingService>();
+        await service.RefreshNowAsync(CancellationToken.None);
+        var token = repository.ChangeToken;
+
+        var activation = DateTimeOffset.UtcNow.AddMinutes(2);
+        keyManager.CreateNewKey(activation, activation.AddDays(90));
+        await service.RefreshNowAsync(CancellationToken.None);
+        token.IsCancellationRequested.ShouldBeTrue();
     }
 
     [Fact]

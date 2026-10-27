@@ -82,10 +82,41 @@ public sealed class StaffAdminTests : IAsyncLifetime
         (await PutAsync(_admin, "/gm/v1/staff/admin/grant", new { roles = new[] { "Support" }, reason = "oops" }).ShouldBeAsync(409))
             ["code"]!.GetValue<string>().ShouldBe("LAST_STAFF_MANAGER");
 
-        // With a second manager, the first can step down.
-        await _admin.PostCommandAsync(StaffEndpoints.ListRoute, new { staffId = "admin2", email = "a2@example.com", roles = new[] { "Administrator" }, reason = "backup" })
+        // An unused invitation is not a manager: it cannot sign in, so it does not keep the deployment manageable.
+        await _admin.PostCommandAsync(StaffEndpoints.ListRoute, new { staffId = "invited-admin", email = "a2@example.com", roles = new[] { "Administrator" }, reason = "backup" })
+            .ShouldBeAsync(201);
+        await PutAsync(_admin, "/gm/v1/staff/admin/grant", new { roles = new[] { "Support" }, reason = "oops" }).ShouldBeAsync(409);
+
+        // With a second manager who can sign in, the first can step down.
+        await _admin.PostCommandAsync(StaffEndpoints.ListRoute, new { staffId = "admin2", issuer = "https://idp.test", subject = "admin2", roles = new[] { "Administrator" }, reason = "backup" })
             .ShouldBeAsync(201);
         await PutAsync(_admin, "/gm/v1/staff/admin/grant", new { roles = new[] { "Support" }, reason = "step down" }).ShouldBeAsync(200);
+    }
+
+    [Fact]
+    public async Task A_manager_cannot_downgrade_disable_or_revoke_someone_more_privileged()
+    {
+        var lead = _host.GmClient("lead", GmPermissions.Access, GmPermissions.StaffManage, GmPermissions.PlayerRead);
+        foreach (var call in new Func<Task<HttpResponseMessage>>[]
+                 {
+                     () => PutAsync(lead, "/gm/v1/staff/admin/grant", new { roles = new[] { "Support" }, reason = "x" }),
+                     () => lead.PostCommandAsync("/gm/v1/staff/admin/disable", new { reason = "x" }),
+                     () => lead.PostCommandAsync("/gm/v1/staff/admin/sessions/revoke", new { reason = "x" }),
+                     () => lead.PostCommandAsync("/gm/v1/staff/econ/disable", new { reason = "x" }),
+                 })
+        {
+            (await call().ShouldBeAsync(403))["code"]!.GetValue<string>().ShouldBe("PERMISSION_NOT_GRANTABLE");
+        }
+
+        // Someone with a subset of the lead's permissions can be managed.
+        await lead.PostCommandAsync("/gm/v1/staff/support/disable", new { reason = "x" }).ShouldBeAsync(200);
+    }
+
+    [Fact]
+    public async Task An_unchanged_seed_does_not_rewrite_staff_on_restart()
+    {
+        await using var second = await GmTestHost.StartAsync(store: _host.Store, clock: _host.Clock);
+        StaffAudit("support").Count.ShouldBe(1);
     }
 
     [Fact]

@@ -129,6 +129,9 @@ public static class GameServerApplicationExtensions
             }
 
             (store as ICollectionAwareStore)?.UseCollections(registry.RequiredCollections());
+            var transactionOnly = registry.TransactionOnlyCollections();
+            (store as ITransactionOnlyAwareStore)?.UseTransactionOnlyCollections(transactionOnly);
+            (services.GetService<IKeyValueStore>() as ITransactionOnlyAwareStore)?.UseTransactionOnlyCollections(transactionOnly);
         }
 
         if (!options.AllowsDevelopmentTools && services.GetService<TestAuthenticationMarker>() is not null)

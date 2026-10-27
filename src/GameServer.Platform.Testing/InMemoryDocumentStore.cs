@@ -12,8 +12,13 @@ namespace GameServer.Platform.Testing;
 /// invisible outside the transaction, and injectable ambiguous/failed commits.
 /// </summary>
 public sealed class InMemoryDocumentStore(IClock? clock = null)
-    : ITransactionalDocumentStore, IKeyValueStore, IPagedQueryStore, ICollectionAwareStore, IDevelopmentOnlyStore
+    : ITransactionalDocumentStore, IKeyValueStore, IPagedQueryStore, ICollectionAwareStore, IDevelopmentOnlyStore, ITransactionOnlyAwareStore
 {
+    private IReadOnlySet<string> _transactionOnly = new HashSet<string>(StringComparer.Ordinal);
+
+    /// <summary>Collections that refuse plain key-value writes (set at startup from the module registry).</summary>
+    public void UseTransactionOnlyCollections(IReadOnlySet<string> collections) => _transactionOnly = collections;
+
     private readonly Dictionary<DocumentKey, Entry> _documents = [];
     private readonly Lock _lock = new();
     private readonly IClock _clock = clock ?? new SystemClock();
@@ -139,7 +144,7 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
 
     Task<bool> IKeyValueStore.InsertAsync(DocumentKey key, JsonObject content, TimeSpan? expiry, CancellationToken cancellationToken)
     {
-        KeyValueCollections.EnsureWritable(key);
+        KeyValueCollections.EnsureWritable(key, _transactionOnly);
         lock (_lock)
         {
             if (Live(key) is not null)
@@ -154,7 +159,7 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
 
     Task<bool> IKeyValueStore.ReplaceAsync(StoredDocument existing, JsonObject content, TimeSpan? expiry, CancellationToken cancellationToken)
     {
-        KeyValueCollections.EnsureWritable(existing.Key);
+        KeyValueCollections.EnsureWritable(existing.Key, _transactionOnly);
         lock (_lock)
         {
             var current = Live(existing.Key);
@@ -170,7 +175,7 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
 
     Task IKeyValueStore.RemoveAsync(DocumentKey key, CancellationToken cancellationToken)
     {
-        KeyValueCollections.EnsureWritable(key);
+        KeyValueCollections.EnsureWritable(key, _transactionOnly);
         lock (_lock)
         {
             _documents.Remove(key);

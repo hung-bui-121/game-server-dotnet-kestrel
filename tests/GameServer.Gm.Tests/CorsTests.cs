@@ -68,6 +68,30 @@ public sealed class CorsTests
         await gm.SendAsync(request).ShouldBeAsync(200);
     }
 
+    [Fact]
+    public async Task The_configured_cross_site_frontend_can_send_cookie_mutations_with_its_token()
+    {
+        await using var host = await GmTestHost.StartAsync(s => s["Gm:Cors:AllowedOrigins:0"] = Allowed);
+        var gm = host.Browser(https: true);
+        await gm.PostLoginAsync("support");
+        await gm.RefreshCsrfAsync();
+
+        HttpRequestMessage Revoke(string origin)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, "/gm/v1/staff/support/sessions/revoke")
+            {
+                Content = System.Net.Http.Json.JsonContent.Create(new { reason = "cross-site frontend" }),
+            };
+            request.Headers.Add("X-Request-Id", Guid.NewGuid().ToString("D"));
+            request.Headers.Add("Origin", origin);
+            request.Headers.Add("Sec-Fetch-Site", "cross-site");
+            return request;
+        }
+
+        (await gm.SendAsync(Revoke("https://evil.example")).ShouldBeAsync(403))["code"]!.GetValue<string>().ShouldBe("FORBIDDEN");
+        await gm.SendAsync(Revoke(Allowed)).ShouldBeAsync(200);
+    }
+
     [Theory]
     [InlineData("*")]
     [InlineData("https://*.example.com")]
