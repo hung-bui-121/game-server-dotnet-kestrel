@@ -5,6 +5,7 @@
 | Thư mục | Trạng thái | RESUME |
 | --- | --- | --- |
 | `features/req-review/` | DONE 2026-10-26 — v1.0 → v1.1 (rev 2) → owner trả lời TBD (04) + thiết kế lại (05) → `Requirements/Game_Server_System_Requirements_v1.2.md` **rev 4** (owner duyệt vòng 2 11/11, vòng 3 R3-17-login; xác minh Couchbase transactions 06; Leaderboard/League ngoài phạm vi framework); không còn [MẶC ĐỊNH], không còn [VERIFY] chặn P0 | `features/req-review/00_summary.md` |
-| `features/p0-speckit/` | IN PROGRESS 2026-10-26 — Spec Kit; 001 platform-core DONE (+ review fixes), 002 identity-session DONE, 003 sample-game DONE, 004 GM DONE, 005 observability-ops DONE, 006 unity-sdk DONE (+ review fixes) — P0 6/6 slice xong, chờ owner review/merge | `features/p0-speckit/00_summary.md` |
+| `features/p0-speckit/` | DONE 2026-10-27 (merged main) — Spec Kit; 001 platform-core DONE (+ review fixes), 002 identity-session DONE, 003 sample-game DONE, 004 GM DONE, 005 observability-ops DONE, 006 unity-sdk DONE (+ review fixes) — P0 6/6 slice xong, merged + pushed | `features/p0-speckit/00_summary.md` |
+| `features/p05-speckit/` | IN PROGRESS 2026-10-27 — P0.5 (007–013) rồi P1; 007 gm-security DONE | `features/p05-speckit/00_summary.md` |
 
 Code ở `src/`, `modules/`, `samples/`, `tests/`; specs Spec Kit ở `specs/`. Tài liệu yêu cầu (v1.0, v1.1 rev 2, **v1.2 rev 4 = hiện hành**) nằm trong `Requirements/` — thư mục này bị gitignore, không có trên remote.
