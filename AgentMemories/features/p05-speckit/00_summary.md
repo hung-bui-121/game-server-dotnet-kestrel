@@ -17,7 +17,7 @@ P0 is merged into `main` and pushed (fda9f00). The real-environment test tools f
 | Slice | Branch | Status |
 | --- | --- | --- |
 | 007 gm-security | `007-gm-security` | DONE: 35/35 tasks. `5232fa1` feat, `3fce8ab` review fixes (0 Blocker, 5 Major, 8 Minor, all fixed) |
-| 008 gate-ban | — | Maintenance + minClientVersion (gate document), ban/unban (GM-07), PERF-08 TTL, PRF-01 (ACC-30, 31) |
+| 008 gate-ban | `008-gate-ban` | DONE: 15/15 tasks. `f2b8d98` feat, review fixes commit "fix: ... (008 review)" (gate cache snapshot, ban scope validation, display-name Unicode rules, audit permission) |
 | 009 identity-providers | — | PGS v2 + Game Center, link/conflict/SWITCH_ACCOUNT, SDK (ACC-03, 29) |
 | 010 jobs-account-deletion | — | Minimal lease jobs, PRIV-01 deletion with 30-day grace, purge and anonymization (ACC-37) |
 | 011 giftcode | — | GFT-01..06, GM-04 API, reaper (ACC-08, 22, 23) |
@@ -66,4 +66,15 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
 
 **Tests:** 392/392 pass, including Couchbase.
 
-**Next:** slice 008 gate-ban, branched from `007-gm-security`.
+## Technical notes from 008
+
+- Gate document `gate/gate` is written through `IAuditedStore` (audit key `ops.gate` + request id, action in payload;
+  replay returns `payload.after`). `StoreGateEvaluator` = volatile snapshot + generation counter (`IGateCacheInvalidator`).
+- `StaffAdminService.SystemAudit(change, operation, permission, body?, action?)` builds platform audits; payload carries
+  `permission`.
+- Ban scope must be `login` or a registered command group; `scope: []` → 400.
+- `DisplayNameRules.Normalize`: NFC stored, NFKC to `IDisplayNamePolicy`, invisible chars refused, ≤ 4 UTF-16 units per
+  grapheme.
+- Tests: 428/428 pass, including Couchbase.
+
+**Next:** slice 009 identity-providers, branched from `008-gate-ban`.
