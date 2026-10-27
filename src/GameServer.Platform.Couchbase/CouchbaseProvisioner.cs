@@ -32,16 +32,24 @@ public sealed class CouchbaseProvisioner(
         var bucket = await cluster.BucketAsync(connection.BucketName);
         var manager = bucket.Collections;
 
+        // Create only what is missing: the SDK logs every "already exists" at Error level (false alarms on each restart).
+        // The catches remain for instances provisioning at the same time.
+        var scope = (await manager.GetAllScopesAsync(new GetAllScopesOptions().CancellationToken(cancellationToken)))
+            .FirstOrDefault(s => s.Name == connection.ScopeName);
+        var existing = scope?.Collections.Select(c => c.Name).ToHashSet(StringComparer.Ordinal) ?? [];
         try
         {
-            await manager.CreateScopeAsync(connection.ScopeName, new CreateScopeOptions().CancellationToken(cancellationToken));
-            logger.LogInformation("Created scope {Scope}.", connection.ScopeName);
+            if (scope is null)
+            {
+                await manager.CreateScopeAsync(connection.ScopeName, new CreateScopeOptions().CancellationToken(cancellationToken));
+                logger.LogInformation("Created scope {Scope}.", connection.ScopeName);
+            }
         }
         catch (ScopeExistsException)
         {
         }
 
-        foreach (var collection in RequiredCollections())
+        foreach (var collection in RequiredCollections().Where(c => !existing.Contains(c)))
         {
             try
             {

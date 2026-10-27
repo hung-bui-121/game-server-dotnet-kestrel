@@ -33,6 +33,20 @@ public sealed class LoggingSettings
 
     public string MinimumLevel { get; set; } = "Information";
 
+    /// <summary>
+    /// Minimum level per source-context prefix (keys case-insensitive); configuration entries are merged over these
+    /// defaults. The Couchbase SDK transaction code logs ~6 Information lines per transaction (attempt, ATR, cleanup —
+    /// measured 2026-10-27), ~95 % of all lines under load, so it starts at Warning; SDK bootstrap/topology lines stay.
+    /// <c>ExecuteApplicationLambda</c> is an SDK transaction category without a namespace. A level below the
+    /// Microsoft <c>Logging:LogLevel</c> filter is still cut by that filter first.
+    /// </summary>
+    public Dictionary<string, string> LevelOverrides { get; set; } = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Microsoft.AspNetCore"] = "Warning",
+        ["Couchbase.Client.Transactions"] = "Warning",
+        ["ExecuteApplicationLambda"] = "Warning",
+    };
+
     /// <summary>LOG-02: 100 MiB per file.</summary>
     public long FileSizeLimitBytes { get; set; } = 100L * 1024 * 1024;
 

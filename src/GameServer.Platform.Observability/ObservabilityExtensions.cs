@@ -49,9 +49,13 @@ public static class ObservabilityExtensions
         services.AddSerilog(
             (_, logger) =>
             {
+                logger.MinimumLevel.Is(Enum.Parse<LogEventLevel>(settings.MinimumLevel, ignoreCase: true));
+                foreach (var (source, level) in settings.LevelOverrides)
+                {
+                    logger.MinimumLevel.Override(source, Enum.Parse<LogEventLevel>(level, ignoreCase: true));
+                }
+
                 logger
-                    .MinimumLevel.Is(Enum.Parse<LogEventLevel>(settings.MinimumLevel, ignoreCase: true))
-                    .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
                     .Enrich.FromLogContext()
                     .Enrich.WithProperty("InstanceId", instanceId)
                     .Enrich.WithProperty("GameId", gameServer.GameId)
@@ -132,9 +136,20 @@ public static class ObservabilityExtensions
     {
         var errors = new List<string>();
         var logging = options.Logging;
-        if (!Enum.TryParse<LogEventLevel>(logging.MinimumLevel, ignoreCase: true, out _))
+        static bool IsLevel(string? value) => Enum.TryParse<LogEventLevel>(value, ignoreCase: true, out var parsed) && Enum.IsDefined(parsed) &&
+            !int.TryParse(value, out _);
+
+        if (!IsLevel(logging.MinimumLevel))
         {
             errors.Add($"[observability] Observability:Logging:MinimumLevel '{logging.MinimumLevel}' is not a level ({string.Join(", ", Enum.GetNames<LogEventLevel>())}).");
+        }
+
+        foreach (var (source, level) in logging.LevelOverrides)
+        {
+            if (string.IsNullOrWhiteSpace(source) || !IsLevel(level))
+            {
+                errors.Add($"[observability] Observability:Logging:LevelOverrides:{source} '{level}' is not a level ({string.Join(", ", Enum.GetNames<LogEventLevel>())}).");
+            }
         }
 
         if (logging.FileSizeLimitBytes < 1024 || logging.RetainedFileCountLimit < 1 || logging.BufferSize < 1 || logging.RetainedFileTimeLimitDays < 1)

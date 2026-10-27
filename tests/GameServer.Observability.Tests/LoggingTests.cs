@@ -123,6 +123,37 @@ public sealed class LoggingTests
         after.ShouldContain("restart-marker");
     }
 
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("Information", true)]
+    public async Task Couchbase_sdk_information_is_off_by_default_and_can_be_turned_on(string? level, bool expected)
+    {
+        string directory;
+        var marker = Guid.NewGuid().ToString("N");
+        await using (var observed = await ObservedHost.StartAsync(settings: s =>
+        {
+            s["Observability:Logging:MinimumLevel"] = "Information";
+            if (level != null)
+            {
+                s["Observability:Logging:LevelOverrides:couchbase.client.transactions"] = level;   // keys are case-insensitive
+            }
+        }))
+        {
+            directory = observed.LogDirectory;
+            var factory = observed.Host.Services.GetRequiredService<ILoggerFactory>();
+            factory.CreateLogger("Couchbase.Client.Transactions.AttemptContext").LogInformation("Sdk detail {Marker}", marker);
+            factory.CreateLogger("ExecuteApplicationLambda").LogInformation("Sdk lambda {Marker}", marker);
+            factory.CreateLogger("Couchbase.Core.ClusterContext").LogWarning("Sdk warning {Marker}", marker);
+            factory.CreateLogger("Couchbase.Core.ClusterContext").LogInformation("Sdk bootstrap {Marker}", marker);
+        }
+
+        var content = ObservedHost.ReadShared(Directory.GetFiles(directory).ShouldHaveSingleItem());
+        content.Contains("Sdk warning", StringComparison.Ordinal).ShouldBeTrue();
+        content.Contains("Sdk detail", StringComparison.Ordinal).ShouldBe(expected);
+        content.Contains("Sdk lambda", StringComparison.Ordinal).ShouldBeFalse();
+        content.Contains("Sdk bootstrap", StringComparison.Ordinal).ShouldBeTrue();
+    }
+
     [Fact]
     public async Task A_full_queue_drops_and_counts_instead_of_blocking()
     {

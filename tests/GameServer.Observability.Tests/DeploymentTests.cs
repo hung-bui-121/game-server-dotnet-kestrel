@@ -86,6 +86,9 @@ public sealed class DeploymentTests
     [InlineData("Observability:Logging:MinimumLevel", "Verbose-ish")]
     [InlineData("Observability:Otlp:Endpoint", "not a uri")]
     [InlineData("Observability:Otlp:Protocol", "udp")]
+    [InlineData("Observability:Logging:LevelOverrides:Couchbase", "Loud")]
+    [InlineData("Observability:Logging:LevelOverrides:Couchbase", "7")]
+    [InlineData("Observability:Logging:MinimumLevel", "Warning,Error")]
     public async Task Invalid_observability_settings_fail_startup_with_a_readable_violation(string key, string value)
     {
         var ex = await Should.ThrowAsync<GameServerStartupException>(() => ObservedHost.StartAsync(settings: s => s[key] = value));
