@@ -35,6 +35,9 @@
     <Project Path="templates/module/Template.Module.Adapters/Template.Module.Adapters.csproj" />
     <Project Path="templates/module/Template.Module/Template.Module.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/GameServer.LoadTest/GameServer.LoadTest.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/GameServer.Architecture.Tests/GameServer.Architecture.Tests.csproj" />
     <Project Path="tests/GameServer.Client.Tests/GameServer.Client.Tests.csproj" />

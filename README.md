@@ -22,7 +22,8 @@ P0 được làm theo Spec Kit, chia 6 slice (`specs/`). Đã xong:
 - **006 unity-sdk** — gói UPM `com.gameserver.client`: transport Protobuf (`UnityWebRequest`), session, header gate, retry gửi lại
   đúng bytes, sự kiện session/tài khoản/gate, `rev` từng section, giờ server, config; `link.xml`, Google.Protobuf pin, sample client.
 
-Chưa kiểm trên hạ tầng thật: Couchbase (TST-04), collector OTLP, sandbox Apple/Google, thiết bị Android/iOS và Unity LTS mới nhất.
+Đã chạy trên Couchbase EE 7.6.12 một node (2026-10-27): integration + TST-04, 2 instance, burst, tranh chấp, dừng êm, crash —
+xem `docs/guides/local-real-env-testing.md`. Chưa kiểm: cluster nhiều node, collector OTLP, sandbox Apple/Google, thiết bị Android/iOS.
 
 ## Yêu cầu
 
@@ -44,7 +45,7 @@ collector: đặt `Observability__Otlp__Endpoint=http://localhost:4317`.
 GM tool khi chạy SampleHost (Development): mở `http://localhost:5000/gm/v1/ui`, đăng nhập staff seed trong
 `samples/SampleHost/appsettings.json` (`Gm:Bootstrap:Staff`, chỉ hợp lệ ở Development/Test).
 
-Integration test với Couchbase thật:
+Integration test với Couchbase thật (chạy nhiều instance, tải và drill sự cố: `docs/guides/local-real-env-testing.md`):
 
 ```powershell
 $env:COUCHBASE_CONNSTR="couchbase://localhost"; $env:COUCHBASE_USERNAME="Administrator"
@@ -71,5 +72,6 @@ dotnet test --project tests/GameServer.Platform.Couchbase.IntegrationTests -c Re
 | `sdk/unity/ci/smoke-build.ps1` | CI-02: build smoke Android IL2CPP + stripping High của KestrelDemo |
 | `modules/Sample.Counter` | module mẫu (ACC-13) |
 | `templates/module` | khung module 2 project |
-| `docs/pcr`, `docs/adr`, `docs/guides` | Published Contract Register, ADR, hướng dẫn viết module |
+| `docs/pcr`, `docs/adr`, `docs/guides` | Published Contract Register, ADR, hướng dẫn viết module, kiểm thử như môi trường thật |
+| `tools/GameServer.LoadTest`, `tools/local` | công cụ tải/tranh chấp (ACC-06, ACC-16) và script chạy nhiều instance, drill dừng/crash/mất DB |
 | `specs/` | Spec Kit: spec, plan, tasks theo slice |
