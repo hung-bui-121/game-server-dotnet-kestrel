@@ -28,7 +28,9 @@ Budget tổng = giá trị × số instance.
   `TransactionGetResult`, nên ở chế độ `Couchbase:UseGetMulti=true` mỗi aggregate **thực sự bị ghi** cần thêm một
   `ctx.GetAsync` trước `ReplaceAsync`; nội dung được so với bản đọc bundle, khác → command chạy lại
   (`StaleReadException`). Chế độ GetMulti dùng `PrioritizeReadSkewDetection`. Chỉ tiêu "≈ 1 RTT" của DAT-11 **chưa
-  đạt** cho tới khi bật GetMulti — cần owner quyết định sau khi có số đo.
+  đạt** cho tới khi bật GetMulti — cần owner quyết định sau khi có số đo. Số đo đầu tiên (mục 11, V23-T1,
+  2026-10-27): `Task.WhenAll` nhiều `ctx.GetAsync` chạy được trong transaction và nhanh nhất — phương án thứ ba,
+  ≈ 1 RTT mà không cần get lại trước khi ghi.
 - Conflict: Couchbase chỉ phát hiện **write-write**; document chỉ đọc (`Reads`) có thể đổi trong lúc transaction
   chạy (read skew). Store in-memory mô phỏng đúng như vậy.
 - Mọi ghi `pa_*` và `rcpt::*` chỉ qua `ICommandRunner` / `IPlayerAggregateWriter` (arch test). Ngoại lệ: các cờ
@@ -171,20 +173,25 @@ Health endpoints (`/health/live`, `/health/ready`) do module `platform.observabi
 
 ## 11. TST-04 — kết quả thực nghiệm
 
-**Chưa chạy** (2026-10-26): máy phát triển không có Couchbase/Docker. Test có sẵn ở
-`tests/GameServer.Platform.Couchbase.IntegrationTests/Tst04TransactionExperiments.cs`, báo Skipped khi thiếu
-`COUCHBASE_CONNSTR`. Chạy trong CI hoặc máy có Couchbase rồi chép output `[TST-04 …]` vào bảng dưới.
+Test ở `tests/GameServer.Platform.Couchbase.IntegrationTests/Tst04TransactionExperiments.cs` (Skipped khi thiếu
+`COUCHBASE_CONNSTR`). Lần chạy đầu: **2026-10-27, SDK 3.10.0, Couchbase Server Enterprise 7.6.12 (một node,
+localhost, Windows), bucket replicas = 0** — 33/33 integration test pass. Số đo thời gian trên localhost (RTT < 1 ms)
+chỉ để so sánh tương đối, không dùng làm số capacity.
 
-| Test | Kết quả | Ngày / SDK / Server |
+| Test | Kết quả | Hệ quả |
 | --- | --- | --- |
-| V15-T1 replace(cas) thường vào doc đang staged | — | — |
-| V15-T2 insert thường vào staged insert | — | — |
-| V15-T3 staged insert vô hình với Get/Exists/N1QL | — | — |
-| V23-T1 `Task.WhenAll` ctx.GetAsync; GetMulti vs tuần tự | — | — |
-| V17-T1 số ATR sau N transaction | — | — |
-| V17-T2 ATR nằm ở `txn_meta` | — | — |
-| V4-T1 `Majority` trên bucket replicas = 0 | — | — |
-| V16-T1 counter ngoài transaction không rollback | — | — |
+| V15-T1 replace(cas) thường vào doc đang staged | `CasMismatchException`; transaction commit; giá trị cuối = của transaction | Ghi CAS ngoài transaction không đè được bản staged |
+| V15-T2 insert thường vào staged insert | **insert thường thành công, transaction vẫn báo commit, giá trị cuối = của insert thường** — bản ghi của transaction bị mất mà không lỗi | Xác nhận luật DAT-04: không được ghi ngoài transaction vào key mà transaction insert (`rcpt::*`, claim marker). `IKeyValueStore` đã chặn `receipts`/`pa_*`/`gm_audit`; collection claim marker (vd. `extref_claims`) **chưa** bị chặn — follow-up: khai báo collection claim trong descriptor và chặn ở `EnsureWritable` |
+| V15-T3 staged insert vô hình với Get/Exists/N1QL | Vô hình với Get, Exists và N1QL `request_plus` (đúng tài liệu) | Đọc ngoài transaction không thấy receipt chưa commit |
+| V23-T1 đọc 4 doc trong transaction, 50 vòng sau 3 vòng làm nóng (2 lần chạy) | tuần tự: median 1,25–2,91 ms, p95 2,10–4,98 ms · `Task.WhenAll` 4 × `ctx.GetAsync`: **median 0,49–0,90 ms**, p95 1,81–2,27 ms, không lỗi · `GetMulti` (`PrioritizeLatency`): median 1,53–2,80 ms, p95 2,81–4,46 ms · `Task.WhenAll` rồi `Replace` từng `TransactionGetResult` (tuần tự): commit | Đọc song song bằng `Task.WhenAll` chạy được trong transaction và nhanh nhất, kết quả dùng thẳng cho `Replace` (không cần get lại như chế độ GetMulti). Quy tắc SDK cho thao tác đồng thời: chờ mọi thao tác song song xong trước bước tiếp theo; mutation đầu tiên không chạy song song. Đề xuất cho DAT-11 — owner quyết (mục 2), đo lại trên cluster có độ trễ mạng thật |
+| V17-T1 số ATR sau 200 transaction trên một key | Lần 1: 3 ATR trong `txn_meta`; lần 2 (đếm trước/sau): 3 → 4 (+1) | ATR dùng lại, không tăng theo số transaction (scope dùng chung với các thí nghiệm khác trong class) |
+| V17-T2 ATR nằm ở `txn_meta` | 0 → 1 ATR trong `txn_meta`, 0 trong collection dữ liệu; `_txn:client-record` có trong `txn_meta` | `MetadataCollection` có hiệu lực (DAT-07) |
+| V4-T1 `Majority` trên bucket replicas = 0 | Commit được | Một node dev phải dùng bucket replicas = 0 |
+| V16-T1 counter ngoài transaction không rollback | Counter giữ giá trị sau khi transaction lỗi; lambda chạy 1 lần; `TransactionFailedException` | Counter cấp số (vd. id) không được coi là một phần của transaction |
+
+Ghi chú đo: query/index **không** trả document hệ thống `_txn:*` (ATR, client record) — lần chạy đầu đếm ATR bằng
+N1QL ra 0. Test đếm bằng KV `Exists` trên danh sách ATR id cố định của SDK (`AtrIds.AllAtrIds`, internal, đọc bằng
+reflection — chỉ dùng trong test thực nghiệm).
 
 Phần chưa tự động hoá (drill thủ công): lost-attempt cleanup khi kill process giữa commit (V17-T1), hai
 process khác `MetadataCollection` (V17-T2), bucket replicas = 1 trên một node (V4-T1).
@@ -201,6 +208,7 @@ Bật bằng `gameServer.AddObservability()` (project `GameServer.Platform.Obser
 | Instance id | `Observability:InstanceId` → `HOSTNAME` → tên máy. Nhiều process cùng máy + cùng thư mục phải đặt id khác nhau (LOG-03) |
 | Rolling | ngày + kích thước (`FileSizeLimitBytes` 100 MiB), giữ `RetainedFileCountLimit` 30 file, `RetainedFileTimeLimitDays` tuỳ chọn; restart cùng instance append |
 | Queue | async, `BufferSize` 10 000, không chặn khi đầy → bỏ và đếm `log_dropped_total` (cộng dồn cả host đã dừng) |
+| Mức theo nguồn | `Logging:LevelOverrides` (prefix SourceContext → level, key không phân biệt hoa thường), cấu hình ghi đè lên mặc định `Microsoft.AspNetCore`, `Couchbase.Client.Transactions`, `ExecuteApplicationLambda` = Warning — phần transaction của Couchbase SDK ghi ~6 dòng Information mỗi transaction (đo 2026-10-27); log bootstrap/topology của SDK giữ nguyên. Level sai → startup fail. Mức thấp hơn `Logging:LogLevel` của Microsoft vẫn bị filter đó cắt trước |
 | Provider khác | Serilog thay `ILoggerFactory` và **không** ghi sang provider khác (console mặc định chờ khi queue đầy → có thể chặn request) |
 | Thuộc tính | `InstanceId`, `GameId`, `EnvironmentId`, `RequestId` (scope), `SourceContext`; trace/span id |
 | Che dữ liệu | giá trị thuộc tính (kể cả lồng trong object destructure `{@x}`) có tên chứa token/password/passwd/pwd/secret/pepper/authorization/bearer/jwt/cookie/privatekey/signingkey/apikey/connectionstring/receiptpayload/signeddata/credential → `***`. **Không** được che: object log bằng `{x}` (không `@`, bị `ToString()`), nội dung exception (`@x`), scope dạng chuỗi — module không được đưa secret vào các chỗ đó |

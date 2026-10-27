@@ -145,42 +145,90 @@ public sealed class Tst04TransactionExperiments(CouchbaseFixture fixture) : ICla
             await collection.InsertAsync(key, new JsonObject { ["v"] = key });
         }
 
-        string parallel = "ok";
-        TimeSpan sequential = default;
-        TimeSpan multi = default;
+        var rounds = int.TryParse(Environment.GetEnvironmentVariable("TST04_TIMING_ROUNDS"), out var r) ? r : 50;
+        var specs = keys.Select(k => new TransactionGetMultiSpec(collection, k, null!)).ToList();
+        var multiOptions = (TransactionGetMultiOptionsBuilder)TransactionGetMultiOptionsBuilder.Create().Mode(TransactionGetMultiMode.PrioritizeLatency);
+        var readers = new (string Name, Func<AttemptContext, Task> Read)[]
+        {
+            ("sequential 4 x GetAsync", async ctx =>
+            {
+                foreach (var key in keys)
+                {
+                    await ctx.GetAsync(collection, key);
+                }
+            }),
+            ("Task.WhenAll 4 x GetAsync", ctx => Task.WhenAll(keys.Select(k => ctx.GetAsync(collection, k)))),
+            ("GetMulti 4 specs", async ctx =>
+            {
+                var result = await ctx.GetMulti(specs, multiOptions);
+                Enumerable.Range(0, keys.Length).ShouldAllBe(i => result.Exists(i));
+            }),
+        };
+
+        var samples = readers.ToDictionary(x => x.Name, _ => new List<double>());
+        var failures = readers.ToDictionary(x => x.Name, _ => new List<string>());
+        for (var round = -3; round < rounds; round++)
+        {
+            // Rotate the order each round so no reader always pays for a cold connection; rounds < 0 are warm-up.
+            for (var i = 0; i < readers.Length; i++)
+            {
+                var (name, read) = readers[(i + Math.Max(round, 0)) % readers.Length];
+                var elapsed = TimeSpan.Zero;
+                try
+                {
+                    await cluster.Transactions.RunAsync(async ctx =>
+                    {
+                        var watch = Stopwatch.StartNew();
+                        await read(ctx);
+                        elapsed = watch.Elapsed;
+                    });
+                }
+                catch (Exception ex)
+                {
+                    failures[name].Add(ex.GetType().Name + ": " + ex.InnerException?.GetType().Name);
+                    continue;
+                }
+
+                if (round >= 0)
+                {
+                    samples[name].Add(elapsed.TotalMilliseconds);
+                }
+            }
+        }
+
+        static double Percentile(List<double> values, double p)
+        {
+            var sorted = values.Order().ToArray();
+            return sorted.Length == 0 ? double.NaN : sorted[(int)Math.Ceiling(p * sorted.Length) - 1];
+        }
+
+        var summary = string.Join("; ", readers.Select(x => x.Name).Select(name => samples[name].Count == 0
+            ? $"{name}: failed ({string.Join(", ", failures[name].Distinct())})"
+            : $"{name}: median {Percentile(samples[name], 0.5):F2} ms, p95 {Percentile(samples[name], 0.95):F2} ms"));
+        Log("V23-T1", $"{rounds} rounds (after 3 warm-up) in one transaction each — {summary}");
+        // A transient failure is tolerated (local single node under other test load); a systematic one is not.
+        foreach (var (name, failed) in failures)
+        {
+            failed.Count.ShouldBeLessThanOrEqualTo(Math.Max(1, (rounds + 3) / 20), $"{name}: {string.Join(", ", failed.Distinct())}");
+        }
+
+        // DAT-11 candidate: parallel gets, then replace each document with the result of its own get (no extra read).
+        // SDK rules for concurrent operations: wait for every concurrent op to finish before the next step; mutations run
+        // one after another here.
         await cluster.Transactions.RunAsync(async ctx =>
         {
-            try
+            var docs = await Task.WhenAll(keys.Select(k => ctx.GetAsync(collection, k)));
+            foreach (var doc in docs)
             {
-                await Task.WhenAll(keys.Select(k => ctx.GetAsync(collection, k)));
-            }
-            catch (Exception ex)
-            {
-                parallel = ex.GetType().Name;
+                await ctx.ReplaceAsync(doc!, new JsonObject { ["v"] = "replaced" });
             }
         });
-
-        await cluster.Transactions.RunAsync(async ctx =>
+        foreach (var key in keys)
         {
-            var watch = Stopwatch.StartNew();
-            foreach (var key in keys)
-            {
-                await ctx.GetAsync(collection, key);
-            }
+            (await collection.GetAsync(key)).ContentAs<JsonObject>()!["v"]!.GetValue<string>().ShouldBe("replaced");
+        }
 
-            sequential = watch.Elapsed;
-        });
-
-        await cluster.Transactions.RunAsync(async ctx =>
-        {
-            var watch = Stopwatch.StartNew();
-            var specs = keys.Select(k => new TransactionGetMultiSpec(collection, k, null!)).ToList();
-            var result = await ctx.GetMulti(specs, (TransactionGetMultiOptionsBuilder)TransactionGetMultiOptionsBuilder.Create().Mode(TransactionGetMultiMode.PrioritizeLatency));
-            multi = watch.Elapsed;
-            Enumerable.Range(0, keys.Length).ShouldAllBe(i => result.Exists(i));
-        });
-
-        Log("V23-T1", $"Task.WhenAll(4 x ctx.GetAsync): {parallel}; sequential 4 gets: {sequential.TotalMilliseconds:F1} ms; GetMulti 4 specs: {multi.TotalMilliseconds:F1} ms");
+        Log("V23-T1", "Task.WhenAll gets followed by Replace of each TransactionGetResult: committed.");
     }
 
     [Fact]
@@ -190,6 +238,7 @@ public sealed class Tst04TransactionExperiments(CouchbaseFixture fixture) : ICla
         var count = int.TryParse(Environment.GetEnvironmentVariable("TST04_TXN_COUNT"), out var n) ? n : 200;
         var key = NewKey();
         await collection.InsertAsync(key, new JsonObject { ["v"] = 0 });
+        var before = await CountAtrsAsync(CouchbaseConnection.TransactionMetadataCollection);
         for (var i = 0; i < count; i++)
         {
             await cluster.Transactions.RunAsync(async ctx =>
@@ -199,8 +248,9 @@ public sealed class Tst04TransactionExperiments(CouchbaseFixture fixture) : ICla
             });
         }
 
-        var atrs = await CountAtrsAsync(cluster, CouchbaseConnection.TransactionMetadataCollection);
-        Log("V17-T1", $"{count} transactions on one key -> {atrs} ATR documents in txn_meta. " +
+        var atrs = await CountAtrsAsync(CouchbaseConnection.TransactionMetadataCollection);
+        Log("V17-T1", $"{count} transactions on one key -> ATR documents in txn_meta {before} before, {atrs} after (+{atrs - before}; " +
+            "the scope is shared with the other experiments of this class). " +
             "Lost-attempt cleanup timing (process killed mid-commit) is not automated yet: run the manual drill in docs/pcr/platform.md.");
         atrs.ShouldBeGreaterThan(0);
     }
@@ -211,15 +261,18 @@ public sealed class Tst04TransactionExperiments(CouchbaseFixture fixture) : ICla
         var (cluster, collection) = await SetupAsync();
         var key = NewKey();
         await collection.InsertAsync(key, new JsonObject { ["v"] = 0 });
-        var before = await CountAtrsAsync(cluster, CouchbaseConnection.TransactionMetadataCollection);
+        var before = await CountAtrsAsync(CouchbaseConnection.TransactionMetadataCollection);
 
         await cluster.Transactions.RunAsync(async ctx => await ctx.ReplaceAsync(await ctx.GetAsync(collection, key), new JsonObject { ["v"] = 1 }));
 
-        var after = await CountAtrsAsync(cluster, CouchbaseConnection.TransactionMetadataCollection);
-        var inDefault = await CountAtrsAsync(cluster, Collection);
-        Log("V17-T2", $"ATRs in txn_meta before/after: {before}/{after}; ATRs in the data collection: {inDefault}. " +
+        var after = await CountAtrsAsync(CouchbaseConnection.TransactionMetadataCollection);
+        var inDefault = await CountAtrsAsync(Collection);
+        var meta = await fixture.CollectionAsync(CouchbaseConnection.TransactionMetadataCollection);
+        var clientRecord = (await meta.ExistsAsync("_txn:client-record")).Exists;
+        Log("V17-T2", $"ATRs in txn_meta before/after: {before}/{after}; ATRs in the data collection: {inDefault}; " +
+            $"cleanup client record in txn_meta: {clientRecord}. " +
             "Cross-instance cleanup with different MetadataCollection needs two processes: manual drill.");
-        after.ShouldBeGreaterThanOrEqualTo(before);
+        after.ShouldBeGreaterThan(0);
         inDefault.ShouldBe(0);
     }
 
@@ -257,13 +310,20 @@ public sealed class Tst04TransactionExperiments(CouchbaseFixture fixture) : ICla
         Log("V16-T1", $"counter reserved = {reserved.Content}, after failed transaction = {value} (not rolled back); lambda attempts = {attempts}; error = {ex.GetType().Name}.");
     }
 
-    private async Task<long> CountAtrsAsync(ICluster cluster, string collectionName)
+    /// <summary>
+    /// Counts ATR documents with KV <c>Exists</c> over the SDK's fixed ATR id list. N1QL cannot be used: the query/index
+    /// services do not return <c>_txn:</c> system documents (first run on 7.6.12 counted 0 ATRs after 200 commits).
+    /// The id list is internal to the SDK (<c>AtrIds.AllAtrIds</c>), read by reflection — experiment code only.
+    /// </summary>
+    private async Task<long> CountAtrsAsync(string collectionName)
     {
-        var keyspace = $"`{fixture.Options.BucketName}`.`{fixture.Connection.ScopeName}`.`{collectionName}`";
-        await cluster.QueryAsync<object>($"CREATE PRIMARY INDEX IF NOT EXISTS ON {keyspace}");
-        var result = await cluster.QueryAsync<long>(
-            $"SELECT RAW COUNT(*) FROM {keyspace} AS d WHERE META(d).id LIKE '_txn:atr-%'",
-            new QueryOptions().ScanConsistency(QueryScanConsistency.RequestPlus));
-        return await result.Rows.FirstAsync();
+        var atrIds = typeof(AttemptContext).Assembly
+            .GetType("Couchbase.Client.Transactions.ActiveTransactionRecords.AtrIds", throwOnError: true)!
+            .GetField("AllAtrIds", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public)!
+            .GetValue(null) as IEnumerable<string>
+            ?? throw new InvalidOperationException("Couchbase SDK no longer exposes AtrIds.AllAtrIds; update the TST-04 helper.");
+        var collection = await fixture.CollectionAsync(collectionName);
+        var exists = await Task.WhenAll(atrIds.Select(async id => (await collection.ExistsAsync(id)).Exists));
+        return exists.LongCount(e => e);
     }
 }
