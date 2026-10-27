@@ -56,14 +56,15 @@ Tên collection `identities` công bố ở `IdentityCollections.Identities` (mo
 
 | Command | Profile | Touches | Ghi chú |
 | --- | --- | --- | --- |
-| `identity.ban` `{reason, untilUtc?, scope[]}` | Gm, `player.ban` | `profile` | `untilUtc` phải ở tương lai (400); scope ≤ 10 phần tử, `login` hoặc nhóm command `[a-z][a-z0-9_]{0,31}` (= tiền tố operation, vd. `shop`); scope có `login` → `sessionEpoch++` (phiên hiện có kết thúc ≤ 60 s và vẫn chết sau unban); audit before/after = ban cũ/mới |
+| `identity.ban` `{reason, untilUtc?, scope[]}` | Gm, `player.ban` | `profile` | `untilUtc` phải ở tương lai (400); bỏ `scope` = `[login]`, `scope: []` → 400; scope ≤ 10 phần tử, mỗi phần tử là `login` hoặc nhóm command có trong deployment (= tiền tố operation, vd. `shop`), nhóm không tồn tại → 400; scope có `login` → `sessionEpoch++` (phiên hiện có kết thúc ≤ 60 s và vẫn chết sau unban); audit before/after = ban cũ/mới |
 | `identity.unban` `{reason}` | Gm, `player.ban` | `profile` | xoá `ban`; audit before/after |
-| `identity.set_display_name` (`POST /api/v1/identity/display-name`, `SetDisplayNameRequest{display_name}` → `SetDisplayNameResult{display_name}`) | Player | `profile` | 2–20 ký tự (grapheme), chữ cái/dấu Unicode, chữ số, `_ - .`, khoảng trắng đơn ở giữa; không duy nhất. Sai định dạng → `DISPLAY_NAME_INVALID`; policy game từ chối → `DISPLAY_NAME_REJECTED` |
+| `identity.set_display_name` (`POST /api/v1/identity/display-name`, `SetDisplayNameRequest{display_name}` → `SetDisplayNameResult{display_name}`) | Player | `profile` | 2–20 ký tự (grapheme), chữ cái/dấu Unicode, chữ số, `_ - .`, khoảng trắng đơn ở giữa; mỗi từ bắt đầu bằng chữ/số; tối đa 3 dấu trên một ký tự; ký tự vô hình (U+115F, U+1160, U+3164, U+FFA0, U+034F, U+FE00–FE0F, U+180B–180D, U+17B4–17B5) bị từ chối; lưu dạng NFC (trả về trong `display_name`); không duy nhất. Sai định dạng → `DISPLAY_NAME_INVALID`; policy game từ chối → `DISPLAY_NAME_REJECTED` |
 
 Kiểm tra ban (P0, giữ nguyên): login → `ACCOUNT_SUSPENDED` kèm `until` (ISO UTC hoặc `permanent`), ưu tiên trước
 `SESSION_REPLACED`; ban nhóm chỉ chặn command của nhóm, không thu hồi phiên; ban hết hạn tự mở.
 
-**Policy tên hiển thị (EXT-02):** `IDisplayNamePolicy.IsAllowed(name)` — thuần, đồng bộ (chạy trong command, CMD-03);
+**Policy tên hiển thị (EXT-02):** `IDisplayNamePolicy.IsAllowed(name)` — nhận tên dạng NFKC (fullwidth/compat đã gập,
+vd. `ｂａｄ` → `bad`); thuần, đồng bộ (chạy trong command, CMD-03);
 mặc định chấp nhận; game đăng ký implementation riêng (vd. danh sách từ cấm).
 
 Mã lỗi module identity (14000–14099): `DISPLAY_NAME_INVALID` (14000, business), `DISPLAY_NAME_REJECTED` (14001, business).

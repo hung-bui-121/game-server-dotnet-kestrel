@@ -23,7 +23,7 @@
 
 ## Phase 4: US4 — Display name (P2)
 
-- [X] T011 [US4] `DisplayNameRules` + `IDisplayNamePolicy` (mặc định chấp nhận, thay qua `ConfigureExtensions`) + handler `profile.set_display_name` (Touches `profile`) trong `src/GameServer.Modules.Identity/DisplayName.cs`; proto `SetDisplayNameRequest/Result`; route `POST /api/v1/profile/display-name`
+- [X] T011 [US4] `DisplayNameRules` + `IDisplayNamePolicy` (mặc định chấp nhận, thay qua `ConfigureExtensions`) + handler `identity.set_display_name` (Touches `profile`) trong `src/GameServer.Modules.Identity/DisplayName.cs`; proto `SetDisplayNameRequest/Result`; route `POST /api/v1/identity/display-name`
 - [X] T012 [US4] Test `tests/GameServer.Platform.Web.Tests/DisplayNameTests.cs` (hoặc SampleGame.Tests): hợp lệ, độ dài, ký tự, khoảng trắng, policy thay thế
 
 ## Phase 5: Polish

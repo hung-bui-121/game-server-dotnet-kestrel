@@ -1,9 +1,9 @@
+using GameServer.Commands;
 using GameServer.Config;
+using GameServer.Errors;
 using GameServer.Platform;
 using GameServer.Platform.Commands;
 using GameServer.Platform.Web.Aggregates;
-using GameServer.Commands;
-using GameServer.Errors;
 using GameServer.Platform.Web.Auth;
 using GameServer.Platform.Web.Commands;
 using GameServer.Platform.Web.Protobuf;
@@ -34,8 +34,6 @@ public sealed class IdentityModule : IGameModule, IPlayerApiModule, IGmApiModule
     public const string BanRoute = "/gm/v1/players/{playerId}/ban";
     public const string UnbanRoute = "/gm/v1/players/{playerId}/unban";
 
-    /// <summary>Ban scope entries: <c>login</c> or a command group (operation prefix).</summary>
-    private static readonly System.Text.RegularExpressions.Regex ScopePattern = new("^[a-z][a-z0-9_]{0,31}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
     public ModuleDescriptor Describe() => new()
     {
@@ -129,16 +127,30 @@ public sealed class IdentityModule : IGameModule, IPlayerApiModule, IGmApiModule
     /// <summary>GM-07: ban / unban with reason, end time and scope; audited command on the player's profile.</summary>
     public void MapGmApi(IEndpointRouteBuilder routes)
     {
+        // A scope must name something that exists: a typo would be a ban that silently blocks nothing (review M2).
+        var groups = routes.ServiceProvider.GetRequiredService<GameServer.Platform.Registry.ModuleRegistry>().Commands.Keys
+            .Select(operation => operation.Split('.', 2)[0])
+            .Append(BanInfo.LoginScope)
+            .ToHashSet(StringComparer.Ordinal);
         routes.MapGmCommand<BanBody, BanPlayerCommand, BanResult>(
             BanRoute,
             BanPlayerHandler.Operation,
             IdentityPermissions.PlayerBan,
             body =>
             {
-                var scope = body.Scope is { Count: > 0 } requested ? requested.Distinct(StringComparer.Ordinal).ToArray() : [BanInfo.LoginScope];
-                if (scope.Length > 10 || scope.Any(s => !ScopePattern.IsMatch(s)))
+                // Omitted scope = login ban; an explicit empty list is a client bug, not "ban everything".
+                if (body.Scope is { Count: 0 })
                 {
-                    throw new GameServerException(CoreErrorCodes.BadRequest, "scope holds up to 10 entries: 'login' or command groups ([a-z][a-z0-9_]{0,31}).");
+                    throw new GameServerException(CoreErrorCodes.BadRequest, "scope must not be empty; omit it for a login ban.");
+                }
+
+                var scope = body.Scope?.Distinct(StringComparer.Ordinal).ToArray() ?? [BanInfo.LoginScope];
+                var unknown = scope.Where(s => !groups.Contains(s)).ToArray();
+                if (scope.Length > 10 || unknown.Length > 0)
+                {
+                    throw new GameServerException(
+                        CoreErrorCodes.BadRequest,
+                        $"scope holds up to 10 entries: 'login' or a command group of this deployment ({string.Join(", ", groups.Order(StringComparer.Ordinal))}); unknown: {string.Join(", ", unknown)}.");
                 }
 
                 return new BanPlayerCommand(body.Reason!, body.UntilUtc?.ToUniversalTime(), scope);

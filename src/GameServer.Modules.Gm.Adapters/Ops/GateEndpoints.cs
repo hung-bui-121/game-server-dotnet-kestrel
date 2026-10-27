@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using GameServer.Errors;
 using GameServer.Platform;
@@ -54,7 +55,7 @@ public static class GateEndpoints
                     Message = string.IsNullOrWhiteSpace(body.Message) ? null : body.Message.Trim(),
                     ExpectedEndUtc = body.ExpectedEndUtc?.ToUniversalTime(),
                 };
-                return GmHttp.Json(await ChangeAsync(http, "ops.gate.maintenance", body.Reason, new { maintenance }, gate => gate with { Maintenance = maintenance }));
+                return GmHttp.Json(await ChangeAsync(http, "ops.gate.maintenance", body.Reason, new { maintenance, body.Reason }, gate => gate with { Maintenance = maintenance }));
             }))
             .Accepts<MaintenanceBody>(GmHttp.JsonContentType)
             .Produces<GateView>()
@@ -82,7 +83,7 @@ public static class GateEndpoints
                     throw new GameServerException(CoreErrorCodes.BadRequest, "updateUrl must be an absolute https URL (at most 512 characters).");
                 }
 
-                return GmHttp.Json(await ChangeAsync(http, "ops.gate.min_client_version", body.Reason, new { platform, body.MinVersion, body.UpdateUrl }, gate =>
+                return GmHttp.Json(await ChangeAsync(http, "ops.gate.min_client_version", body.Reason, new { platform, body.MinVersion, body.UpdateUrl, body.Reason }, gate =>
                 {
                     var versions = new Dictionary<string, MinClientVersion>(gate.MinClientVersions, StringComparer.Ordinal);
                     if (body.MinVersion is null)
@@ -106,8 +107,12 @@ public static class GateEndpoints
     {
         var services = http.RequestServices;
         var change = StaffEndpoints.Change(http, reason);
-        var (auditKey, build) = services.GetRequiredService<StaffAdminService>().SystemAudit(change, operation, body);
-        var bodyHash = StaffAdminService.BodyHash(body);
+
+        // One audit key per request id for every gate operation: reusing an id on another gate endpoint is a conflict
+        // (review m7); the operation is in the hashed body.
+        var hashed = new { operation, body };
+        var (auditKey, build) = services.GetRequiredService<StaffAdminService>().SystemAudit(change, "ops.gate", GmPermissions.OpsMaintenance, hashed, operation);
+        var bodyHash = StaffAdminService.BodyHash(hashed);
         var audited = services.GetRequiredService<IAuditedStore>();
         for (var attempt = 1; ; attempt++)
         {
@@ -124,7 +129,9 @@ public static class GateEndpoints
                             throw new GameServerException(CoreErrorCodes.IdempotencyPayloadMismatch, "X-Request-Id was already used with a different body.");
                         }
 
-                        return (current, true);
+                        // Replay: the result of the original call, not the current gate.
+                        var original = existing.Content["payload"]?["after"]?.Deserialize<GateDocument>(GameServerJson.Options) ?? current;
+                        return (original, true);
                     }
 
                     var next = mutate(current) with { Rev = current.Rev + 1 };
@@ -143,7 +150,12 @@ public static class GateEndpoints
                     return (next, false);
                 });
 
-                (services.GetService<IGateEvaluator>() as StoreGateEvaluator)?.Invalidate();
+                // This instance applies the change at once; the others pick it up within the gate cache TTL.
+                if (services.GetService<IGateEvaluator>() is IGateCacheInvalidator evaluator)
+                {
+                    evaluator.Invalidate();
+                }
+
                 if (!replayed)
                 {
                     services.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(GateEndpoints))

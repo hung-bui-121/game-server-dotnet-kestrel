@@ -90,10 +90,19 @@ public sealed class GuestLoginService
         var (updated, _) = await _writer.UpdateAsync<ProfileState>(
             playerId,
             IdentityAggregates.Profile,
-            p => p with
+            p =>
             {
+                // A ban or deletion committed after the read above wins: no token is issued (review m8).
+                if (AccountChecks.CheckAccess(p, _clock.UtcNow) is { } late)
+                {
+                    throw new GameServerException(late.Code, $"Login refused for {playerId}.") { Details = late.Details };
+                }
+
+                return p with
+                {
                 SessionEpoch = p.SessionEpoch + 1,
                 Identities = p.Identities.Contains(mappingKey, StringComparer.Ordinal) ? p.Identities : [.. p.Identities, mappingKey],
+                };
             },
             cancellationToken);
         _profiles.Set(playerId, updated);

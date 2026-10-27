@@ -250,8 +250,8 @@ khi biến môi trường ghi đè) → startup fail; dùng biến môi trườn
 | --- | --- |
 | Phạm vi | Endpoint có `GateMetadata`: mọi Player API + login. GM, health, Dev không bị chặn. Chạy **trước** authentication |
 | Bảo trì | 503 `MAINTENANCE`, details `message`, `expectedEndUtc` (ISO UTC); `retryAfterMs` = thời gian tới giờ dự kiến (30 s … 1 h), không có giờ → 300 000 |
-| Phiên bản | Header `X-Platform` (so khớp không phân biệt hoa thường) có `minVersion` → `X-Client-Version` (`a.b[.c[.d]]`, số) nhỏ hơn, thiếu hoặc sai → 426 `UPDATE_REQUIRED`, details `minClientVersion`, `updateUrl`. Bảo trì ưu tiên |
-| Cache | `GameServer:Gate:CacheSeconds` (mặc định 10, tối đa 10) per instance; instance xử lý thay đổi áp dụng ngay; lỗi đọc store → giữ bản cũ (fail-open, log Warning) |
+| Phiên bản | Header `X-Platform` (so khớp không phân biệt hoa thường) có `minVersion` → `X-Client-Version` (`a.b[.c[.d]]`, số) nhỏ hơn, thiếu hoặc sai → 426 `UPDATE_REQUIRED`, details `minClientVersion`, `updateUrl`. Thiếu `X-Platform` hoặc platform không có minimum → không kiểm phiên bản. Bảo trì ưu tiên |
+| Cache | `GameServer:Gate:CacheSeconds` (mặc định 10, tối đa 10) per instance; instance xử lý thay đổi áp dụng ngay (thay đổi xảy ra trong lúc đang đọc không bị mất); lỗi đọc store → giữ bản cũ (fail-open, log Warning); lần đọc đầu lỗi → cho qua và thử lại sau 1 s; đồng hồ lùi → coi như hết hạn |
 | Thay thế | `IGateEvaluator` (EXT-04); mặc định `StoreGateEvaluator` |
 
 **TTL cache đọc chung (PERF-08):** session + `pa_profile` (epoch, ban) `Identity:CacheSeconds` ≤ 60; staff/permission/

@@ -59,7 +59,7 @@ public sealed class GateAndBanTests : IAsyncLifetime
     private static Task<HttpResponseMessage> LoginAsync(HttpClient client) => client.PostLoginAsync(IdentityHttp.NewLocalId(), IdentityHttp.NewSecret());
 
     private int Audits(string operation) =>
-        _store.All(GmModule.AuditCollection).Count(d => d.Content["operation"]?.GetValue<string>() == operation);
+        _store.All(GmModule.AuditCollection).Count(d => d.Content["payload"]?["action"]?.GetValue<string>() == operation);
 
     [Fact]
     public async Task Maintenance_blocks_the_player_api_before_authentication_within_10_seconds_while_gm_keeps_working()
@@ -133,10 +133,21 @@ public sealed class GateAndBanTests : IAsyncLifetime
         await PutAsync(_admin, GateEndpoints.MaintenanceRoute, new { enabled = true, reason = "" }).ShouldBeAsync(400);
 
         var requestId = Guid.NewGuid().ToString("D");
-        await PutAsync(_admin, GateEndpoints.MaintenanceRoute, new { enabled = false, reason = "noop" }, requestId).ShouldBeAsync(200);
-        (await PutAsync(_admin, GateEndpoints.MaintenanceRoute, new { enabled = false, reason = "noop" }, requestId).ShouldBeAsync(200))["replayed"]!.GetValue<bool>().ShouldBeTrue();
-        await PutAsync(_admin, GateEndpoints.MaintenanceRoute, new { enabled = true, reason = "noop" }, requestId).ShouldBeAsync(409);
-        Audits("ops.gate.maintenance").ShouldBe(1);
+        await PutAsync(_admin, GateEndpoints.MaintenanceRoute, new { enabled = true, message = "first", reason = "noop" }, requestId).ShouldBeAsync(200);
+        await PutAsync(_admin, GateEndpoints.MaintenanceRoute, new { enabled = false, reason = "other" }).ShouldBeAsync(200);
+
+        // A replay returns the original result, not the current gate.
+        var replay = await PutAsync(_admin, GateEndpoints.MaintenanceRoute, new { enabled = true, message = "first", reason = "noop" }, requestId).ShouldBeAsync(200);
+        replay["replayed"]!.GetValue<bool>().ShouldBeTrue();
+        replay["maintenance"]!["message"]!.GetValue<string>().ShouldBe("first");
+
+        // Same id with another reason, or on another gate endpoint: conflict.
+        await PutAsync(_admin, GateEndpoints.MaintenanceRoute, new { enabled = true, message = "first", reason = "changed" }, requestId).ShouldBeAsync(409);
+        await PutAsync(_admin, GateEndpoints.MinClientVersionRoute, new { platform = "ios", minVersion = "1.0", reason = "noop" }, requestId).ShouldBeAsync(409);
+        Audits("ops.gate.maintenance").ShouldBe(2);
+        _store.All(GmModule.AuditCollection).Select(d => d.Content["payload"]!)
+            .Where(p => p["action"]?.GetValue<string>() == "ops.gate.maintenance")
+            .ShouldAllBe(p => p["permission"]!.GetValue<string>() == GmPermissions.OpsMaintenance);
     }
 
     [Fact]
@@ -208,6 +219,8 @@ public sealed class GateAndBanTests : IAsyncLifetime
         await _admin.PostCommandAsync("/gm/v1/players/p_nobody/ban", new { reason = "x" }).ShouldBeAsync(404);
         await _admin.PostCommandAsync($"/gm/v1/players/{player.PlayerId}/ban", new { reason = "x", untilUtc = _clock.UtcNow.AddMinutes(-1) }).ShouldBeAsync(400);
         await _admin.PostCommandAsync($"/gm/v1/players/{player.PlayerId}/ban", new { reason = "x", scope = new[] { "Shop!" } }).ShouldBeAsync(400);
+        await _admin.PostCommandAsync($"/gm/v1/players/{player.PlayerId}/ban", new { reason = "typo", scope = new[] { "shpo" } }).ShouldBeAsync(400);
+        await _admin.PostCommandAsync($"/gm/v1/players/{player.PlayerId}/ban", new { reason = "empty", scope = Array.Empty<string>() }).ShouldBeAsync(400);
     }
 
     [Theory]
@@ -219,6 +232,12 @@ public sealed class GateAndBanTests : IAsyncLifetime
     [InlineData("two  spaces", "DISPLAY_NAME_INVALID")]
     [InlineData("smile😀", "DISPLAY_NAME_INVALID")]
     [InlineData("tab\tname", "DISPLAY_NAME_INVALID")]
+    [InlineData("\u3164\u3164", "DISPLAY_NAME_INVALID")]
+    [InlineData("\uFFA0\uFFA0", "DISPLAY_NAME_INVALID")]
+    [InlineData("a\uFE0F\uFE0F\uFE0Fb", "DISPLAY_NAME_INVALID")]
+    [InlineData("a\u034Fb", "DISPLAY_NAME_INVALID")]
+    [InlineData("ab\u0301\u0301\u0301\u0301\u0301\u0301", "DISPLAY_NAME_INVALID")]
+    [InlineData("\u0301abc", "DISPLAY_NAME_INVALID")]
     public async Task Display_names_are_validated_by_the_server(string name, string code)
     {
         var player = await _a.NewPlayerAsync();
@@ -241,7 +260,20 @@ public sealed class GateAndBanTests : IAsyncLifetime
         await using var host = await GmTestHost.StartAsync(services: s => s.AddSingleton<IDisplayNamePolicy>(new BlockList("badword")));
         var player = await host.NewPlayerAsync();
         (await player.CommandAsync(IdentityModule.DisplayNameRoute, new SetDisplayNameRequest { DisplayName = "mybadword" })).Code.ShouldBe("DISPLAY_NAME_REJECTED");
+
+        // Fullwidth look-alikes are folded before the policy sees them.
+        (await player.CommandAsync(IdentityModule.DisplayNameRoute, new SetDisplayNameRequest { DisplayName = "ｂａｄｗｏｒｄ" })).Code.ShouldBe("DISPLAY_NAME_REJECTED");
         (await player.CommandAsync(IdentityModule.DisplayNameRoute, new SetDisplayNameRequest { DisplayName = "nice" })).Code.ShouldBe("OK");
+    }
+
+    [Fact]
+    public async Task Names_are_stored_in_one_normal_form()
+    {
+        var player = await _a.NewPlayerAsync();
+        var decomposed = "Nguye\u0302\u0303n";
+        var result = await player.CommandAsync(IdentityModule.DisplayNameRoute, new SetDisplayNameRequest { DisplayName = decomposed });
+        result.Code.ShouldBe("OK");
+        GameServer.Modules.Identity.Protocol.V1.ProfileState.Parser.ParseFrom(result.Updates.Single().Payload).DisplayName.ShouldBe("Nguyễn");
     }
 
     private sealed class BlockList(string word) : IDisplayNamePolicy

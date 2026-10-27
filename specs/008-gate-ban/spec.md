@@ -96,9 +96,11 @@ Player đổi tên hiển thị; server kiểm độ dài 2–20 ký tự, tập
   (`ops.maintenance`); validate URL https (ngoài Development), phiên bản đúng định dạng, message ≤ 500.
 - **FR-005** (GM-07): GM command `identity.ban` `{reason, untilUtc?, scope[]}` và `identity.unban` `{reason}`
   (`player.ban`) qua pipeline command (receipt + audit before/after); ban có scope `login` tăng `sessionEpoch`.
-- **FR-006** (PRF-01): Player command `profile.set_display_name`: 2–20 ký tự (grapheme), chữ cái/số Unicode, khoảng trắng
+  Bỏ `scope` = `[login]`; `scope` rỗng hoặc chứa nhóm không có trong deployment → 400.
+- **FR-006** (PRF-01): Player command `identity.set_display_name`: 2–20 ký tự (grapheme), chữ cái/số Unicode, khoảng trắng
   đơn, `_ - .`; không khoảng trắng đầu/cuối hay liên tiếp; policy `IDisplayNamePolicy` (EXT-02, thay được) quyết định từ
-  cấm; mã `DISPLAY_NAME_INVALID`, `DISPLAY_NAME_REJECTED` (business, HTTP 200).
+  cấm; mã `DISPLAY_NAME_INVALID`, `DISPLAY_NAME_REJECTED` (business, HTTP 200). Tên lưu dạng NFC; policy nhận dạng
+  NFKC; ký tự vô hình (Hangul filler, variation selector, CGJ…) và chồng dấu > 3 trên một ký tự bị từ chối.
 - **FR-007** (PERF-08): TTL cache ghi PCR và được kiểm khi khởi động: session/profile (`Identity:CacheSeconds` ≤ 60),
   staff/permission (`Gm:CacheSeconds` ≤ 60), gate (≤ 10). Config không cache TTL.
 - **FR-008**: OpenAPI GM cập nhật; SDK có test xử lý `MAINTENANCE`/`UPDATE_REQUIRED` từ server thật (sự kiện + details).

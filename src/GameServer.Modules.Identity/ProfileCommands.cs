@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
 using GameServer.Actors;
 using GameServer.Commands;
@@ -94,7 +95,8 @@ public sealed class UnbanPlayerHandler : ICommandHandler<UnbanPlayerCommand, Ban
 
 /// <summary>
 /// Game policy for display names (PRF-01, EXT-02): e.g. a profanity filter. Pure and synchronous — it runs inside the
-/// command (no I/O, CMD-03). The default accepts every name that passes <see cref="DisplayNameRules"/>.
+/// command (no I/O, CMD-03). It receives the NFKC-folded name. The default accepts every name that passes
+/// <see cref="DisplayNameRules"/>.
 /// </summary>
 public interface IDisplayNamePolicy
 {
@@ -106,26 +108,72 @@ public sealed class AcceptAllDisplayNamePolicy : IDisplayNamePolicy
     public bool IsAllowed(string displayName) => true;
 }
 
-/// <summary>Format of display names (PRF-01, PCR identity): 2–20 characters, letters/digits/single spaces/<c>_ - .</c>.</summary>
+/// <summary>
+/// Format of display names (PRF-01, PCR identity): 2–20 characters (graphemes) of letters, digits, single inner spaces
+/// and <c>_ - .</c>. Names are stored NFC (one byte form for the same Vietnamese name); policies see the NFKC form so
+/// fullwidth or compatibility look-alikes cannot bypass a word list. Invisible fillers, variation selectors and
+/// stacked combining marks (Zalgo) are refused (review M3).
+/// </summary>
 public static partial class DisplayNameRules
 {
     public const int MinLength = 2;
     public const int MaxLength = 20;
 
-    public static bool IsValid(string? name)
+    /// <summary>A grapheme may carry a base character and up to 3 combining marks (Vietnamese needs at most 2).</summary>
+    public const int MaxUnitsPerGrapheme = 4;
+
+    /// <summary>Normalized form to store (NFC), or null when the input is not a valid display name.</summary>
+    public static string? Normalize(string? input)
     {
-        if (name is null || name.Length > MaxLength * 4)
+        if (input is null || input.Length > MaxLength * MaxUnitsPerGrapheme)
         {
-            return false;
+            return null;
         }
 
-        var length = new StringInfo(name).LengthInTextElements;
-        return length is >= MinLength and <= MaxLength && Pattern().IsMatch(name);
+        string name;
+        try
+        {
+            name = input.Normalize(NormalizationForm.FormC);
+        }
+        catch (ArgumentException)
+        {
+            // Invalid UTF-16 (lone surrogates).
+            return null;
+        }
+
+        if (!Pattern().IsMatch(name) || Invisible().IsMatch(name))
+        {
+            return null;
+        }
+
+        var graphemes = 0;
+        var enumerator = StringInfo.GetTextElementEnumerator(name);
+        while (enumerator.MoveNext())
+        {
+            if (((string)enumerator.Current).Length > MaxUnitsPerGrapheme)
+            {
+                return null;
+            }
+
+            graphemes++;
+        }
+
+        return graphemes is >= MinLength and <= MaxLength ? name : null;
     }
 
-    // Unicode letters (incl. combining marks for Vietnamese) and decimal digits, single inner spaces only.
-    [GeneratedRegex(@"^[\p{L}\p{Mn}\p{Nd}_.\-]+( [\p{L}\p{Mn}\p{Nd}_.\-]+)*$")]
+    public static bool IsValid(string? name) => Normalize(name) is not null;
+
+    /// <summary>Compatibility-folded form given to <see cref="IDisplayNamePolicy"/> (e.g. fullwidth → ASCII).</summary>
+    public static string ForPolicy(string normalized) => normalized.Normalize(NormalizationForm.FormKC);
+
+    // Words start with a letter or digit (no leading mark); marks only follow a base character; single inner spaces.
+    [GeneratedRegex(@"^[\p{L}\p{Nd}_.\-][\p{L}\p{Mn}\p{Nd}_.\-]*( [\p{L}\p{Nd}_.\-][\p{L}\p{Mn}\p{Nd}_.\-]*)*$")]
     private static partial Regex Pattern();
+
+    // Hangul fillers, combining grapheme joiner, variation selectors, Mongolian free variation selectors, Khmer
+    // inherent vowels: letters/marks that render as nothing.
+    [GeneratedRegex(@"[\u115F\u1160\u3164\uFFA0\u034F\uFE00-\uFE0F\u180B-\u180D\u17B4\u17B5]")]
+    private static partial Regex Invisible();
 }
 
 public sealed record SetDisplayNameCommand(string DisplayName);
@@ -144,13 +192,13 @@ public sealed class SetDisplayNameHandler(IDisplayNamePolicy policy) : ICommandH
 
     public ValueTask<CommandOutcome<SetDisplayNameResult>> HandleAsync(SetDisplayNameCommand request, ICommandContext context)
     {
-        var name = request.DisplayName;
-        if (!DisplayNameRules.IsValid(name))
+        var name = DisplayNameRules.Normalize(request.DisplayName);
+        if (name is null)
         {
             return ValueTask.FromResult(CommandOutcome<SetDisplayNameResult>.Reject(IdentityErrors.DisplayNameInvalid));
         }
 
-        if (!policy.IsAllowed(name))
+        if (!policy.IsAllowed(DisplayNameRules.ForPolicy(name)))
         {
             return ValueTask.FromResult(CommandOutcome<SetDisplayNameResult>.Reject(IdentityErrors.DisplayNameRejected));
         }

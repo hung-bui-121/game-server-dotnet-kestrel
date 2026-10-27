@@ -45,75 +45,83 @@ public sealed class AllowAllGateEvaluator : IGateEvaluator
     public ValueTask<GateResult> EvaluateAsync(HttpContext context) => ValueTask.FromResult(GateResult.Allow);
 }
 
+/// <summary>Drops a cached gate after a GM change so this instance applies it at once (review m6, EXT-04 safe).</summary>
+public interface IGateCacheInvalidator
+{
+    void Invalidate();
+}
+
 /// <summary>
 /// Default evaluator: the <c>gate</c> document through a per-instance cache of at most
-/// <see cref="GateSettings.CacheSeconds"/> (PERF-08, research R2). One request refreshes an expired copy while the
-/// others keep using it; a failed read keeps the previous copy (fail-open) and logs a warning.
+/// <see cref="GateSettings.CacheSeconds"/> (PERF-08, research R2). The cache is one immutable snapshot (parsed minimum
+/// versions and maintenance details included) stamped with the time the read <b>started</b>, so staleness never
+/// exceeds the TTL plus nothing. One request refreshes an expired snapshot while the others keep using it; a failed
+/// read keeps the previous snapshot (fail-open) and, when there is none, retries after a second instead of a full TTL.
 /// </summary>
-public sealed class StoreGateEvaluator(IKeyValueStore store, IClock clock, GameServerOptions options, ILogger<StoreGateEvaluator> logger) : IGateEvaluator, IDisposable
+public sealed class StoreGateEvaluator(IKeyValueStore store, IClock clock, GameServerOptions options, ILogger<StoreGateEvaluator> logger)
+    : IGateEvaluator, IGateCacheInvalidator, IDisposable
 {
     /// <summary>Retry hint without an expected end time (research R6).</summary>
     public static readonly TimeSpan DefaultRetryAfter = TimeSpan.FromMinutes(5);
 
+    private static readonly TimeSpan FailedFirstReadRetry = TimeSpan.FromSeconds(1);
+
     private readonly SemaphoreSlim _refresh = new(1, 1);
-    private GateDocument? _gate;
-    private DateTimeOffset _readAt = DateTimeOffset.MinValue;
+    private volatile Snapshot? _snapshot;
+    private int _generation;
+
+    private sealed record Snapshot(
+        GateDocument Gate,
+        IReadOnlyDictionary<string, (ClientVersion Minimum, Dictionary<string, string> Details)> Minimums,
+        Dictionary<string, string> MaintenanceDetails,
+        DateTimeOffset ReadAt,
+        DateTimeOffset ExpiresAt);
 
     public async ValueTask<GateResult> EvaluateAsync(HttpContext context)
     {
-        var gate = await CurrentAsync(context.RequestAborted);
-        var now = clock.UtcNow;
+        var snapshot = await CurrentAsync(context.RequestAborted);
+        var gate = snapshot.Gate;
         if (gate.Maintenance.Enabled)
         {
             var retryAfter = gate.Maintenance.ExpectedEndUtc is { } end
-                ? TimeSpan.FromTicks(Math.Clamp((end - now).Ticks, TimeSpan.FromSeconds(30).Ticks, TimeSpan.FromHours(1).Ticks))
+                ? TimeSpan.FromTicks(Math.Clamp((end - clock.UtcNow).Ticks, TimeSpan.FromSeconds(30).Ticks, TimeSpan.FromHours(1).Ticks))
                 : DefaultRetryAfter;
-            var details = new Dictionary<string, string>(StringComparer.Ordinal);
-            if (gate.Maintenance.Message is { } message)
-            {
-                details["message"] = message;
-            }
-
-            if (gate.Maintenance.ExpectedEndUtc is { } expected)
-            {
-                details["expectedEndUtc"] = expected.UtcDateTime.ToString("O", CultureInfo.InvariantCulture);
-            }
-
-            return new GateResult(GateDecision.Maintenance, (int)retryAfter.TotalMilliseconds, details);
+            return new GateResult(GateDecision.Maintenance, (int)retryAfter.TotalMilliseconds, snapshot.MaintenanceDetails);
         }
 
-        var platform = context.Request.Headers[GateHeaders.Platform].ToString().ToLowerInvariant();
-        if (gate.MinClientVersions.TryGetValue(platform, out var min)
-            && ClientVersion.TryParse(min.MinVersion, out var minimum)
-            && (!ClientVersion.TryParse(context.Request.Headers[GateHeaders.ClientVersion].ToString(), out var client) || client < minimum))
+        // No X-Platform header: no platform minimum applies (the SDK always sends it, GATE-02).
+        var platform = context.Request.Headers[GateHeaders.Platform].ToString();
+        if (platform.Length > 0
+            && snapshot.Minimums.TryGetValue(platform.ToLowerInvariant(), out var min)
+            && (!ClientVersion.TryParse(context.Request.Headers[GateHeaders.ClientVersion].ToString(), out var client) || client < min.Minimum))
         {
-            var details = new Dictionary<string, string>(StringComparer.Ordinal) { ["minClientVersion"] = min.MinVersion };
-            if (min.UpdateUrl is { } url)
-            {
-                details["updateUrl"] = url;
-            }
-
-            return new GateResult(GateDecision.UpdateRequired, Details: details);
+            return new GateResult(GateDecision.UpdateRequired, Details: min.Details);
         }
 
         return GateResult.Allow;
     }
 
-    /// <summary>Drops the cached copy on this instance after a GM change (others follow within the TTL).</summary>
-    public void Invalidate() => _readAt = DateTimeOffset.MinValue;
+    public void Invalidate()
+    {
+        Interlocked.Increment(ref _generation);
+        _snapshot = _snapshot is { } current ? current with { ExpiresAt = DateTimeOffset.MinValue } : null;
+    }
 
     public void Dispose() => _refresh.Dispose();
 
-    private async ValueTask<GateDocument> CurrentAsync(CancellationToken cancellationToken)
+    private static bool IsFresh(Snapshot snapshot, DateTimeOffset now) =>
+        // A clock that stepped backwards counts as expired (review m3).
+        now >= snapshot.ReadAt && now < snapshot.ExpiresAt;
+
+    private async ValueTask<Snapshot> CurrentAsync(CancellationToken cancellationToken)
     {
-        var now = clock.UtcNow;
-        var cached = _gate;
-        if (cached is not null && now - _readAt < TimeSpan.FromSeconds(options.Gate.CacheSeconds))
+        var cached = _snapshot;
+        if (cached is not null && IsFresh(cached, clock.UtcNow))
         {
             return cached;
         }
 
-        // First read waits; later refreshes are done by one request while the others use the previous copy.
+        // First read waits; later refreshes are done by one request while the others use the previous snapshot.
         if (cached is null)
         {
             await _refresh.WaitAsync(cancellationToken);
@@ -125,29 +133,73 @@ public sealed class StoreGateEvaluator(IKeyValueStore store, IClock clock, GameS
 
         try
         {
-            if (_gate is not null && clock.UtcNow - _readAt < TimeSpan.FromSeconds(options.Gate.CacheSeconds))
+            cached = _snapshot;
+            if (cached is not null && IsFresh(cached, clock.UtcNow))
             {
-                return _gate;
+                return cached;
             }
 
+            var generation = Volatile.Read(ref _generation);
+            var started = clock.UtcNow;
+            var ttl = TimeSpan.FromSeconds(options.Gate.CacheSeconds);
+            Snapshot next;
             try
             {
-                _gate = GateDocument.Parse(await store.GetAsync(GateDocument.Key, cancellationToken));
+                next = Build(GateDocument.Parse(await store.GetAsync(GateDocument.Key, cancellationToken)), started, started + ttl);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 // Fail open: a store hiccup must not turn into a maintenance page; readiness reports the store.
                 logger.LogWarning(ex, "Gate document could not be read; keeping the previous gate state.");
-                _gate ??= new GateDocument();
+                next = cached is not null
+                    ? cached with { ReadAt = started, ExpiresAt = started + ttl }
+                    : Build(new GateDocument(), started, started + FailedFirstReadRetry);
             }
 
-            _readAt = clock.UtcNow;
-            return _gate;
+            // An invalidation during the read means the document changed: do not keep this copy for a full TTL.
+            if (Volatile.Read(ref _generation) != generation)
+            {
+                next = next with { ExpiresAt = DateTimeOffset.MinValue };
+            }
+
+            _snapshot = next;
+            return next;
         }
         finally
         {
             _refresh.Release();
         }
+    }
+
+    private static Snapshot Build(GateDocument gate, DateTimeOffset readAt, DateTimeOffset expiresAt)
+    {
+        var minimums = new Dictionary<string, (ClientVersion, Dictionary<string, string>)>(StringComparer.Ordinal);
+        foreach (var (platform, min) in gate.MinClientVersions)
+        {
+            if (ClientVersion.TryParse(min.MinVersion, out var minimum))
+            {
+                var details = new Dictionary<string, string>(StringComparer.Ordinal) { ["minClientVersion"] = min.MinVersion };
+                if (min.UpdateUrl is { } url)
+                {
+                    details["updateUrl"] = url;
+                }
+
+                minimums[platform] = (minimum, details);
+            }
+        }
+
+        var maintenance = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (gate.Maintenance.Message is { } message)
+        {
+            maintenance["message"] = message;
+        }
+
+        if (gate.Maintenance.ExpectedEndUtc is { } expected)
+        {
+            maintenance["expectedEndUtc"] = expected.UtcDateTime.ToString("O", CultureInfo.InvariantCulture);
+        }
+
+        return new Snapshot(gate, minimums, maintenance, readAt, expiresAt);
     }
 }
 

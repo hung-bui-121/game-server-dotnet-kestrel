@@ -54,34 +54,39 @@ public sealed partial record GateDocument
 /// <summary>Client versions <c>a.b[.c[.d]]</c> (non-negative integers); missing parts count as 0 (research R3).</summary>
 public readonly record struct ClientVersion(int Major, int Minor, int Patch, int Build) : IComparable<ClientVersion>
 {
-    public static bool TryParse(string? value, out ClientVersion version)
+    /// <summary>Allocation-free parse (runs on every gated request).</summary>
+    public static bool TryParse(ReadOnlySpan<char> value, out ClientVersion version)
     {
         version = default;
-        if (string.IsNullOrEmpty(value) || value.Length > 64)
+        if (value.IsEmpty || value.Length > 64)
         {
             return false;
         }
 
-        var parts = value.Split('.');
-        if (parts.Length is < 2 or > 4)
+        Span<int> numbers = stackalloc int[4];
+        var count = 0;
+        foreach (var range in value.Split('.'))
         {
-            return false;
-        }
-
-        var numbers = new int[4];
-        for (var i = 0; i < parts.Length; i++)
-        {
-            if (parts[i].Length == 0 || parts[i].Length > 9 || !parts[i].All(char.IsAsciiDigit))
+            var part = value[range];
+            if (count == 4 || part.IsEmpty || part.Length > 9
+                || !int.TryParse(part, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out numbers[count]))
             {
                 return false;
             }
 
-            numbers[i] = int.Parse(parts[i], System.Globalization.CultureInfo.InvariantCulture);
+            count++;
+        }
+
+        if (count < 2)
+        {
+            return false;
         }
 
         version = new ClientVersion(numbers[0], numbers[1], numbers[2], numbers[3]);
         return true;
     }
+
+    public static bool TryParse(string? value, out ClientVersion version) => TryParse(value.AsSpan(), out version);
 
     public int CompareTo(ClientVersion other) =>
         (Major, Minor, Patch, Build).CompareTo((other.Major, other.Minor, other.Patch, other.Build));

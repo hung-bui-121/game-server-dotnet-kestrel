@@ -216,7 +216,7 @@ public sealed class GmModule : IGameModule, IGmApiModule
         var services = http.RequestServices;
         var body = await GmHttp.ReadJsonAsync<StaffReasonBody>(http);
         var change = StaffEndpoints.Change(http, body.Reason);
-        var (auditKey, build) = services.GetRequiredService<StaffAdminService>().SystemAudit(change, "ops.keys.rotate");
+        var (auditKey, build) = services.GetRequiredService<StaffAdminService>().SystemAudit(change, "ops.keys.rotate", GmPermissions.KeysRotate);
 
         // The key ring and the audit entry commit in one transaction; the audit key makes a retry a replay.
         var rotation = await services.GetRequiredService<KeyRingService>().RotateAsync(new KeyRingAudit(auditKey, build), CancellationToken.None);

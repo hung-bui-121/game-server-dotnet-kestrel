@@ -251,7 +251,7 @@ public sealed class StaffAdminService(
     /// Audit entry (key + content) for an operation committed by another audited transaction, e.g. the key-ring
     /// rotation that the platform writes together with this entry (review M3). Target <c>system</c>.
     /// </summary>
-    public (DocumentKey Key, Func<object, JsonObject> Build) SystemAudit(StaffChange change, string operation, object? body = null)
+    public (DocumentKey Key, Func<object, JsonObject> Build) SystemAudit(StaffChange change, string operation, string permission, object? body = null, string? action = null)
     {
         if (string.IsNullOrWhiteSpace(change.Reason) || change.Reason.Length > 500)
         {
@@ -261,7 +261,7 @@ public sealed class StaffAdminService(
         var key = AuditKey(change, operation, "system");
         return (key, details =>
         {
-            var document = AuditDocument(change, operation, "system", BodyHash(body ?? change.RequestId), key, null, null, clock.UtcNow);
+            var document = AuditDocument(change, action ?? operation, "system", BodyHash(body ?? change.RequestId), key, null, null, clock.UtcNow, permission);
             document["payload"]!["after"] = System.Text.Json.JsonSerializer.SerializeToNode(details, GameServerJson.Options);
             return document;
         });
@@ -469,7 +469,8 @@ public sealed class StaffAdminService(
         DocumentKey auditKey,
         StaffRecord? before,
         StaffRecord? after,
-        DateTimeOffset now) => new()
+        DateTimeOffset now,
+        string permission = GmPermissions.StaffManage) => new()
     {
         ["entryId"] = auditKey.Key["gm_audit::".Length..],
         ["kind"] = AuditKind,
@@ -482,7 +483,7 @@ public sealed class StaffAdminService(
         ["payload"] = new JsonObject
         {
             ["actorId"] = change.ActorId,
-            ["permission"] = operation.StartsWith("ops.", StringComparison.Ordinal) ? operation : GmPermissions.StaffManage,
+            ["permission"] = permission,
             ["action"] = operation,
             ["targetStaffId"] = targetStaffId,
             ["reason"] = change.Reason,
