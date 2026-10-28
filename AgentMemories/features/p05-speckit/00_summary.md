@@ -93,4 +93,43 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
 - Tests: 489/489 including Couchbase. `TelemetryTests.A_command_is_one_trace...` failed once under full-suite load
   (passes alone) — watch for flakiness.
 
-**Next:** slice 010 jobs-account-deletion, branched from `009-identity-providers`.
+## Current state (2026-10-28, session restart)
+
+- Branch chain (local only, **not merged into main, not pushed**): `main` (fda9f00) → `007-gm-security` (89bb3b3) →
+  `008-gate-ban` (7fd9f19) → `009-identity-providers` (HEAD). Working tree clean after this resume commit.
+- `.specify/feature.json` (gitignored) still points to `specs/009-identity-providers`; slice 010 must repoint it.
+- Review summary of 009 is recorded at the end of `specs/009-identity-providers/tasks.md`.
+- No host is running.
+
+## How to resume
+
+1. Read this file, then `specs/009-identity-providers/{spec,plan,tasks}.md` as the latest template for slice docs.
+2. `git checkout -b 010-jobs-account-deletion` from `009-identity-providers`.
+3. Per slice: spec + plan + tasks (commit `docs: add spec, plan and tasks for 0NN …`) → implement → full tests incl.
+   Couchbase → tech-lead-reviewer → fix → `feat:` commit → update this file (`docs: update P0.5 resume after 0NN`).
+   No stop for owner review (the single gate was after 007 spec+plan). Owner runs slices autonomously.
+4. Commits: conventional, identity hung-bui-121, **no Claude signature / Co-Authored-By lines** (owner rule).
+
+## Environment
+
+- dotnet: `"$HOME/.dotnet10/dotnet.exe"`; build `build GameServer.slnx -c Release`; test
+  `test --solution GameServer.slnx -c Release --no-build` (single class: `--project X --filter-class "*Name"`).
+- Couchbase EE 7.6.12 local (service `CouchbaseServer`, buckets `gameserver-it`, `gameserver-dev`). Tests need
+  `COUCHBASE_CONNSTR=couchbase://localhost`, `COUCHBASE_USERNAME=Administrator`, `COUCHBASE_PASSWORD` = user env var
+  `COUCHBASE_PW` (read via `[Environment]::GetEnvironmentVariable('COUCHBASE_PW','User')`, never print),
+  `COUCHBASE_BUCKET=gameserver-it`. Run through PowerShell.
+- Do not grep recursively over `samples/` (Unity `Library/` hangs it). Unity sample client = KestrelDemo.
+- Secrets never committed/logged: pepper, Couchbase password, `DataProtection:MasterKey`, `Gm:Oidc:ClientSecret`,
+  `Identity:Providers:PlayGames:ClientSecret`.
+
+## Open items
+
+- ACC-03/ACC-29 with real Play Games / Game Center devices: manual before release.
+- Couchbase outage drill `tools/local/couchbase-outage.ps1` needs admin; owner has not run it yet.
+- TBD-21 (GM frontend) open; another developer owns it.
+- Possible flaky `TelemetryTests.A_command_is_one_trace...` under full-suite load.
+- Game Center pins: gc-prod-12 expires 2027-05-27; Apple chain change → `PROVIDER_UNAVAILABLE` + LogError, update pins.
+- Decide when to merge 007–009 (and later slices) into main and push; owner has not asked yet.
+
+**Next:** slice 010 jobs-account-deletion (minimal lease jobs, PRIV-01 deletion with 30-day grace, purge and
+anonymization; ACC-37), branched from `009-identity-providers`.

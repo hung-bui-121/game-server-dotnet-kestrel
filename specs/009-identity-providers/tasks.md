@@ -37,3 +37,18 @@
 - [X] T016 SDK `LoginWithProviderAsync(credential, switchAccount)` (RejectedOnly), `LinkProviderAsync(credential)`; regenerate proto; test `tests/GameServer.Client.Tests/ProviderClientTests.cs` với server thật (fake adapter): login, link, `SWITCH_ACCOUNT` giữ phiên, `IDENTITY_CONFLICT`
 - [X] T017 PCR `docs/pcr/identity.md` (login provider, link, mapping, cấu hình, mã lỗi), `platform.md` (claim attributes, non-200 reject, replay trước verify), `unity-sdk.md`; SampleHost không cần đổi (UseFake mặc định bật ở Development)
 - [X] T018 Toàn bộ test (kể cả Couchbase); tech-lead-reviewer; sửa; commit
+
+## Review (tech-lead-reviewer, 2026-10-27): 0 Blocker, 4 Major, 9 Minor
+
+- M1 SSRF/redirect: Game Center key URL chỉ `https://static.gc.apple.com/public-key/…` (host allowlist cấu hình được, chỉ
+  apple.com), không query/fragment/`..`, HttpClient `AllowAutoRedirect = false` — sửa.
+- M2 phân loại lỗi: chỉ `invalid_grant` / 401–403 `players/me` / chữ ký–timestamp–bundle sai / chứng chỉ hết hạn là
+  `IDENTITY_PROOF_INVALID`; lỗi OAuth client, chain/org không khớp pin, 5xx → log Error + `PROVIDER_UNAVAILABLE`, không tính
+  vào giới hạn IP — sửa.
+- M3 provider chậm: deadline min(`TimeoutSeconds`, 0.8 × `PlayerTimeoutSeconds`), bulkhead `MaxConcurrentVerifications`,
+  `LinkPerPlayerPerMinute`, proof sai của link tính vào giới hạn IP — sửa.
+- M4 `gamePlayerID` không được ký → attribute `unverifiedGamePlayerId`, PCR cấm dùng để cấp quyền/thưởng — sửa.
+- Minor: đứt stream khi đọc response (IOException), fake chỉ mặc định ở Development, SDK không xoá phiên khi
+  `ACCOUNT_DELETED`/`ACCOUNT_SUSPENDED` của tài khoản đích, giữ tương thích nguồn `TryClaimAsync`/`TryReplayAsync`, thêm
+  test — sửa. Ghi nhận trong PCR: mã PGS dùng một lần có thể hỏng khi link tự retry; replay credential Game Center
+  ≤ 10 phút. Chấp nhận: m8 (đọc receipt hai lần khi replay-trước-verify).
