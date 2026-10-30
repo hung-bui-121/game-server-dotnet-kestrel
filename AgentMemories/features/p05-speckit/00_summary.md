@@ -110,18 +110,18 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
 - `IGmTargetValidator.ValidateAsync(playerId, operation, ct)` — breaking change for game validators.
 - Tests: 623/623 including Couchbase (`CouchbaseLeaseAndPurgeTests` ~4 min).
 
-## Current state (2026-10-28, session restart)
+## Current state (2026-10-30)
 
-- Branch chain (local only, **not merged into main, not pushed**): `main` (fda9f00) → `007-gm-security` (89bb3b3) →
-  `008-gate-ban` (7fd9f19) → `009-identity-providers` (HEAD). Working tree clean after this resume commit.
-- `.specify/feature.json` (gitignored) still points to `specs/009-identity-providers`; slice 010 must repoint it.
-- Review summary of 009 is recorded at the end of `specs/009-identity-providers/tasks.md`.
-- No host is running.
+- 007–009 fast-forwarded into `main` and pushed (9c93705) on 2026-10-30 at owner request.
+- `010-jobs-account-deletion` (from main): docs `003cebf`, feat `5c88392`, pushed to origin; **not merged into main yet**.
+- `.specify/feature.json` (gitignored) points to `specs/010-jobs-account-deletion`; next slice must repoint it.
+- Review summary of 010 is at the end of `specs/010-jobs-account-deletion/tasks.md`.
+- Next work: owner batch `tasks/task_30102026.txt` (see `AgentMemories/features/task-30102026/00_plan.md`).
 
 ## How to resume
 
-1. Read this file, then `specs/009-identity-providers/{spec,plan,tasks}.md` as the latest template for slice docs.
-2. `git checkout -b 010-jobs-account-deletion` from `009-identity-providers`.
+1. Read this file, then `specs/010-jobs-account-deletion/{spec,plan,tasks}.md` as the latest template for slice docs.
+2. Branch the next slice from `010-jobs-account-deletion` (or main once 010 is merged).
 3. Per slice: spec + plan + tasks (commit `docs: add spec, plan and tasks for 0NN …`) → implement → full tests incl.
    Couchbase → tech-lead-reviewer → fix → `feat:` commit → update this file (`docs: update P0.5 resume after 0NN`).
    No stop for owner review (the single gate was after 007 spec+plan). Owner runs slices autonomously.
@@ -146,7 +146,11 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
 - TBD-21 (GM frontend) open; another developer owns it.
 - Possible flaky `TelemetryTests.A_command_is_one_trace...` under full-suite load.
 - Game Center pins: gc-prod-12 expires 2027-05-27; Apple chain change → `PROVIDER_UNAVAILABLE` + LogError, update pins.
-- Decide when to merge 007–009 (and later slices) into main and push; owner has not asked yet.
+- Merge 010 into main: owner has not asked yet (007–009 merged 2026-10-30).
+- 010 open (PCR platform §16): OpenAPI body/response schema for `deletion/cancel` and the `deletion` view field
+  (generator limitation); no supported way to scrub a purged id from *other* players' `pa_*` (needed for P1 MSG-01);
+  backup restore before a purge resurrects data (013 runbook must re-run purges); Couchbase tombstones keep keys ~3 days.
+- `AccountPurgeService.cs` ~300 lines, split later.
 
-**Next:** slice 010 jobs-account-deletion (minimal lease jobs, PRIV-01 deletion with 30-day grace, purge and
-anonymization; ACC-37), branched from `009-identity-providers`.
+**Next:** owner batch 2026-10-30 — local-env (tasks 1+2) → analytics Login/Payment (task 3, before 012) → HTML docs
+(task 5; 5c drafted, finished in 013). Then 011 giftcode → 012 → 013. Packaging (task 4) is a separate later effort.
