@@ -44,7 +44,7 @@ public static class TestModules
         ],
         Permissions = [GmAddHandler.Permission],
         ErrorCodes = ProbeErrors.All,
-        Collections = [new CollectionSpec("probe_claims")],
+        Collections = [new CollectionSpec("probe_claims", Deletion: DeletionTreatment.Anonymize)],
     });
 }
 

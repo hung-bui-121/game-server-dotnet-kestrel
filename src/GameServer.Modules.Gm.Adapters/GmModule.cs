@@ -65,16 +65,22 @@ public sealed class GmModule : IGameModule, IGmApiModule
         ErrorCodes = GmErrorCodes.All,
         Collections =
         [
-            new CollectionSpec(StaffDirectory.Collection, [new IndexSpec("ix_gm_staff_type", "type, staffId, META().id")], TransactionOnly: true),
-            new CollectionSpec(StaffAdminService.IdentityCollection, TransactionOnly: true),
-            new CollectionSpec(GmSessionService.Collection),
+            // Staff data only: no player data, nothing to purge (PRIV-01, FR-019).
+            new CollectionSpec(
+                StaffDirectory.Collection,
+                [new IndexSpec("ix_gm_staff_type", "type, staffId, META().id")],
+                TransactionOnly: true,
+                Deletion: DeletionTreatment.NoPlayerData),
+            new CollectionSpec(StaffAdminService.IdentityCollection, TransactionOnly: true, Deletion: DeletionTreatment.NoPlayerData),
+            new CollectionSpec(GmSessionService.Collection, Deletion: DeletionTreatment.NoPlayerData),
+            // Index-only re-declarations of platform collections (treatments are the platform's); ix_receipts_player is
+            // provisioned by the platform because the purge needs it without this module (research R5).
             new CollectionSpec(
                 AuditCollection,
                 [
                     new IndexSpec("ix_gm_audit_player", "playerId, committedAtUtc DESC, META().id DESC"),
                     new IndexSpec("ix_gm_audit_staff", "targetStaffId, committedAtUtc DESC, META().id DESC"),
                 ]),
-            new CollectionSpec(ReceiptDocument.Collection, [new IndexSpec("ix_receipts_player", "playerId, committedAtUtc DESC, META().id DESC")]),
             new CollectionSpec(
                 IdentityAggregates.ProfileDescriptor.Collection,
                 [new IndexSpec("ix_profile_display_name", "`state`.`displayName`, playerId, META().id")]),

@@ -28,7 +28,15 @@ public sealed class PlatformMetrics : IDisposable
     private readonly Histogram<double> _outboxPendingAge;
     private readonly Counter<long> _commandResults;
     private readonly Counter<long> _httpErrors;
+    private readonly Counter<long> _jobRuns;
+    private readonly Histogram<double> _jobRunDuration;
+    private readonly Counter<long> _jobLeaseAcquisitions;
+    private readonly Counter<long> _jobLeaseLosses;
+    private readonly Counter<long> _accountPurges;
+    private readonly Counter<long> _accountPurgeStepFailures;
+    private readonly Counter<long> _accountPurgeDocuments;
     private string _configVersion = string.Empty;
+    private OverdueSample? _purgeOverdue;
 
     public PlatformMetrics()
     {
@@ -47,6 +55,19 @@ public sealed class PlatformMetrics : IDisposable
         _outboxPendingAge = _meter.CreateHistogram<double>("outbox_pending_age_seconds", "s");
         _commandResults = _meter.CreateCounter<long>("command_results_total", description: "Command outcomes by operation and result code");
         _httpErrors = _meter.CreateCounter<long>("http_errors_total", description: "Error responses by catalog code");
+        _jobRuns = _meter.CreateCounter<long>("job_runs_total", description: "Lease job runs by job and result");
+        _jobRunDuration = _meter.CreateHistogram<double>("job_run_duration_seconds", "s", "Duration of lease job runs");
+        _jobLeaseAcquisitions = _meter.CreateCounter<long>("job_lease_acquisitions_total", description: "Job leases acquired by this instance");
+        _jobLeaseLosses = _meter.CreateCounter<long>("job_lease_losses_total", description: "Job leases lost while a run was in progress");
+        _accountPurges = _meter.CreateCounter<long>("account_purges_total", description: "Per-player purge attempts by result");
+        _accountPurgeStepFailures = _meter.CreateCounter<long>("account_purge_step_failures_total", description: "Failed purge steps by step id");
+        _accountPurgeDocuments = _meter.CreateCounter<long>("account_purge_documents_total", description: "Documents anonymized or removed by account purges");
+        _meter.CreateObservableGauge(
+            "account_purge_overdue_seconds",
+            ObserveAccountPurgeOverdue,
+            "s",
+            "Age past purgeAfter of the oldest due player seen by the latest purge run on this instance; reported only until the " +
+            "next run is due (aggregate with max; alert > 86400, SC-006; absent = the job stopped running)");
         _meter.CreateObservableGauge(
             "config_version_info",
             () => new Measurement<int>(1, new KeyValuePair<string, object?>("version", _configVersion)));
@@ -100,5 +121,47 @@ public sealed class PlatformMetrics : IDisposable
 
     public void HttpError(string code) => _httpErrors.Add(1, new KeyValuePair<string, object?>("code", code));
 
+    /// <summary>One lease job run (JOB-01, research R12). <paramref name="result"/> is a <c>JobRunResult</c> name.</summary>
+    public void JobRun(string job, string result, TimeSpan duration)
+    {
+        _jobRuns.Add(1, new KeyValuePair<string, object?>("job", job), new KeyValuePair<string, object?>("result", result));
+        _jobRunDuration.Record(duration.TotalSeconds, new KeyValuePair<string, object?>("job", job));
+    }
+
+    public void JobLeaseAcquired(string job) => _jobLeaseAcquisitions.Add(1, new KeyValuePair<string, object?>("job", job));
+
+    public void JobLeaseLost(string job) => _jobLeaseLosses.Add(1, new KeyValuePair<string, object?>("job", job));
+
+    /// <summary>One per-player purge attempt (research R12): <c>completed</c>, <c>incomplete</c>, <c>failed</c> or <c>fenced_out</c>.</summary>
+    public void AccountPurge(string result) => _accountPurges.Add(1, new KeyValuePair<string, object?>("result", result));
+
+    /// <summary>A purge step failed; <paramref name="step"/> is a step id of research R7 (bounded by the registered collections and steps).</summary>
+    public void AccountPurgeStepFailed(string step) => _accountPurgeStepFailures.Add(1, new KeyValuePair<string, object?>("step", step));
+
+    /// <summary>Committed purge writes; <paramref name="action"/> is <c>anonymize</c> or <c>remove</c>.</summary>
+    public void AccountPurgeDocuments(string action, int count)
+    {
+        if (count > 0)
+        {
+            _accountPurgeDocuments.Add(count, new KeyValuePair<string, object?>("action", action));
+        }
+    }
+
+    /// <summary>
+    /// Sets <c>account_purge_overdue_seconds</c>: how long the oldest due player waits past its purge date (0 when none). Called
+    /// by the lease holder's run; the value is reported for <paramref name="validFor"/> (real time) only, so an instance that
+    /// stopped holding the lease drops out instead of reporting a stale value forever (review minor 5).
+    /// </summary>
+    public void SetAccountPurgeOverdue(TimeSpan overdue, TimeSpan validFor) =>
+        Volatile.Write(ref _purgeOverdue, new OverdueSample(Math.Max(0, overdue.TotalSeconds), Environment.TickCount64 + (long)validFor.TotalMilliseconds));
+
     public void Dispose() => _meter.Dispose();
+
+    private IEnumerable<Measurement<double>> ObserveAccountPurgeOverdue()
+    {
+        var sample = Volatile.Read(ref _purgeOverdue);
+        return sample is not null && Environment.TickCount64 < sample.ExpiresAtTicks ? [new Measurement<double>(sample.Seconds)] : [];
+    }
+
+    private sealed record OverdueSample(double Seconds, long ExpiresAtTicks);
 }

@@ -55,3 +55,11 @@ chung của command GM (reason, `X-Request-Id`, replay) ở PCR gm.
 ## Cheat (module `economy.cheat`, chỉ Development/Test)
 
 `POST /api/v1/cheat/grant` profile `Dev`; command `cheat.grant` Touches `wallet`, `inventory`; ledger `sourceType = cheat`.
+
+## Xoá tài khoản (slice 010 — PRIV-01, FR-019)
+
+Deletion treatment: `ledger` = `Anonymize` (index `ix_ledger_player` phục vụ truy vấn của purge, sort theo player — PCR platform
+mục 16), `extref_claims` = `Anonymize` (index `ix_extref_claims_player_ref` do platform tạo). Purge ghi đè mọi giá trị bằng player
+id (`playerId`, `actorId` khi là player…) bằng anonymous id; số bản ghi, `delta`, `balanceAfter`, `externalReference`, `orderId`,
+`receiptId`, thời gian giữ nguyên — tổng theo resource không đổi (SC-003). Ledger không bao giờ bị xoá (ngoại lệ ghi đè CMD-08,
+PCR platform mục 16). `economy.adjust` trên player đang chờ xoá/đang purge → 404 (`IGmTargetValidator`).

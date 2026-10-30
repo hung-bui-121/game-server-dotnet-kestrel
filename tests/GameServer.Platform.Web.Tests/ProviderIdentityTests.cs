@@ -52,7 +52,7 @@ public sealed class ProviderIdentityTests : IAsyncLifetime
         client.PostProtobufAsync(IdentityModule.LinkRoute, new LinkIdentityRequest { Credential = credential }, requestId ?? ProtobufHttp.NewRequestId());
 
     private ProfileState Profile(string playerId) =>
-        _a.Services.GetRequiredService<ProfileCache>().ReadFreshAsync(playerId, CancellationToken.None).GetAwaiter().GetResult();
+        _a.Services.GetRequiredService<ProfileCache>().ReadFreshAsync(playerId, CancellationToken.None).GetAwaiter().GetResult()!;
 
     private string? MappedPlayer(string mappingKey) =>
         _a.Store.All(IdentityCollections.Identities).Where(d => d.Key.Key == mappingKey).Select(d => d.Content["playerId"]?.GetValue<string>()).SingleOrDefault();

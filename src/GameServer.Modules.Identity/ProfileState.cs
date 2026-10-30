@@ -44,12 +44,18 @@ public sealed record BanInfo
         IsActive(now) && (Scope.Contains(LoginScope, StringComparer.Ordinal) || Scope.Contains(group, StringComparer.Ordinal));
 }
 
-/// <summary>Account deletion request (PRIV-01, written in P0.5; checked from P0).</summary>
+/// <summary>
+/// Account deletion request (PRIV-01, written in P0.5; checked from P0). Additive fields, missing = null: the
+/// <c>profile</c> schema version stays 1.
+/// </summary>
 public sealed record DeletionInfo
 {
     public DateTimeOffset RequestedAtUtc { get; init; }
 
     public DateTimeOffset PurgeAfterUtc { get; init; }
+
+    /// <summary>Set by the purge job when it marks the player purging; from then on cancel is refused.</summary>
+    public DateTimeOffset? PurgeStartedAtUtc { get; init; }
 }
 
 /// <summary>Collections owned by the Identity module outside the player aggregates.</summary>

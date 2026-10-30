@@ -265,6 +265,154 @@ public abstract class StoreConformanceTests
         await Store.MarkOutboxRelayedAsync(new DocumentKey("receipts", "rcpt::missing-" + Guid.NewGuid().ToString("N")), CancellationToken.None);
     }
 
+    [Fact]
+    public async Task Transactional_remove_reads_missing_in_the_attempt_and_after_commit()
+    {
+        var store = Store;
+        var a = NewKey();
+        await store.InsertIfAbsentAsync(a, Doc(1), CancellationToken.None);
+
+        var seenAfterRemove = await store.RunTransactionAsync(async tx =>
+        {
+            var current = (await tx.GetManyAsync([a]))[0]!;
+            await tx.RemoveAsync(current);
+            return (await tx.GetManyAsync([a]))[0];
+        }, Options);
+
+        seenAfterRemove.ShouldBeNull();
+        (await store.GetAsync(a, CancellationToken.None)).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Rolled_back_remove_keeps_the_document()
+    {
+        var store = Store;
+        var a = NewKey();
+        await store.InsertIfAbsentAsync(a, Doc(1), CancellationToken.None);
+
+        await Should.ThrowAsync<ApplicationException>(() => store.RunTransactionAsync<bool>(async tx =>
+        {
+            await tx.RemoveAsync((await tx.GetManyAsync([a]))[0]!);
+            throw new ApplicationException("boom");
+        }, Options));
+
+        (await store.GetAsync(a, CancellationToken.None))!.Content["value"]!.GetValue<int>().ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Remove_conflicts_with_a_concurrent_replace_and_retries()
+    {
+        var store = Store;
+        var a = NewKey();
+        await store.InsertIfAbsentAsync(a, Doc(1), CancellationToken.None);
+        var attempts = 0;
+        var removedValues = new List<int>();
+
+        await store.RunTransactionAsync(async tx =>
+        {
+            attempts++;
+            var current = (await tx.GetManyAsync([a]))[0]!;
+            if (attempts == 1)
+            {
+                // Another transaction replaces the document after this attempt read it.
+                await store.RunTransactionAsync(async other =>
+                {
+                    await other.ReplaceAsync((await other.GetManyAsync([a]))[0]!, Doc(2));
+                    return true;
+                }, Options);
+            }
+
+            removedValues.Add(current.Content["value"]!.GetValue<int>());
+            await tx.RemoveAsync(current);
+            return true;
+        }, Options);
+
+        attempts.ShouldBeGreaterThanOrEqualTo(2);
+        removedValues[^1].ShouldBe(2);
+        (await store.GetAsync(a, CancellationToken.None)).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Due_query_returns_due_unset_documents_oldest_first_up_to_the_limit()
+    {
+        var maintenance = (IMaintenanceQueryStore)Store;
+        var group = "due-" + Guid.NewGuid().ToString("N");
+        await Store.RunTransactionAsync(async tx =>
+        {
+            await tx.InsertAsync(new(Docs, group + "-a"), new JsonObject { ["dueAt"] = "2026-01-01T00:00:01.000Z" });
+            await tx.InsertAsync(new(Docs, group + "-b"), new JsonObject { ["dueAt"] = "2026-01-01T00:00:03.000Z" });
+            await tx.InsertAsync(new(Docs, group + "-c"), new JsonObject { ["dueAt"] = "2026-01-01T00:00:02.000Z" });
+            await tx.InsertAsync(new(Docs, group + "-d"), new JsonObject { ["dueAt"] = "2026-01-01T00:00:09.000Z" });
+            await tx.InsertAsync(new(Docs, group + "-e"), new JsonObject { ["dueAt"] = "2026-01-01T00:00:01.000Z", ["doneAt"] = "x" });
+            await tx.InsertAsync(new(Docs, group + "-f"), new JsonObject { ["dueAt"] = "2026-01-01T00:00:05.000Z", ["doneAt"] = null });
+            await tx.InsertAsync(new(Docs, group + "-g"), new JsonObject { ["other"] = 1 });
+            return true;
+        }, Options);
+        var now = new DateTimeOffset(2026, 1, 1, 0, 0, 5, TimeSpan.Zero);
+
+        var all = await maintenance.QueryDueAsync(new DueQuery(Docs, "dueAt", now, 100, "doneAt"), CancellationToken.None);
+        all.Select(d => d.Key.Key).ShouldBe([group + "-a", group + "-c", group + "-b", group + "-f"]);
+        all[0].Content["dueAt"]!.GetValue<string>().ShouldBe("2026-01-01T00:00:01.000Z");
+
+        var limited = await maintenance.QueryDueAsync(new DueQuery(Docs, "dueAt", now, 2, "doneAt"), CancellationToken.None);
+        limited.Select(d => d.Key.Key).ShouldBe([group + "-a", group + "-c"]);
+    }
+
+    [Fact]
+    public async Task Due_query_compares_json_written_times_in_their_own_format()
+    {
+        var maintenance = (IMaintenanceQueryStore)Store;
+        var group = "jdue-" + Guid.NewGuid().ToString("N");
+        await Store.RunTransactionAsync(async tx =>
+        {
+            await tx.InsertAsync(new(Docs, group + "-a"), new JsonObject { ["jsonDueAt"] = "2026-01-01T00:00:05+00:00" });
+            await tx.InsertAsync(new(Docs, group + "-b"), new JsonObject { ["jsonDueAt"] = "2026-01-01T00:00:05.5+00:00" });
+            await tx.InsertAsync(new(Docs, group + "-c"), new JsonObject { ["jsonDueAt"] = "2026-01-01T00:00:05.75+00:00" });
+            return true;
+        }, Options);
+        var now = new DateTimeOffset(2026, 1, 1, 0, 0, 5, 500, TimeSpan.Zero);
+
+        var due = await maintenance.QueryDueAsync(new DueQuery(Docs, "jsonDueAt", now, 100, Format: DueTimeFormat.Json), CancellationToken.None);
+
+        due.Select(d => d.Key.Key).ShouldBe([group + "-a", group + "-b"]);
+    }
+
+    [Fact]
+    public async Task Reference_query_returns_matching_keys_in_key_order_up_to_the_limit()
+    {
+        var maintenance = (IMaintenanceQueryStore)Store;
+        var value = "p_" + Guid.NewGuid().ToString("N");
+        await Store.RunTransactionAsync(async tx =>
+        {
+            await tx.InsertAsync(new(Docs, value + "-b"), new JsonObject { ["ref"] = value });
+            await tx.InsertAsync(new(Docs, value + "-c"), new JsonObject { ["ref"] = value });
+            await tx.InsertAsync(new(Docs, value + "-a"), new JsonObject { ["ref"] = value });
+            await tx.InsertAsync(new(Docs, value + "-x"), new JsonObject { ["ref"] = value + "x" });
+            await tx.InsertAsync(new(Docs, value + "-y"), new JsonObject { ["other"] = value });
+            return true;
+        }, Options);
+
+        var all = await maintenance.QueryReferencesAsync(new ReferenceQuery(Docs, "ref", value, 100), CancellationToken.None);
+        all.ShouldBe([new DocumentKey(Docs, value + "-a"), new DocumentKey(Docs, value + "-b"), new DocumentKey(Docs, value + "-c")]);
+
+        var limited = await maintenance.QueryReferencesAsync(new ReferenceQuery(Docs, "ref", value, 2), CancellationToken.None);
+        limited.Select(k => k.Key).ShouldBe([value + "-a", value + "-b"]);
+
+        var next = await maintenance.QueryReferencesAsync(new ReferenceQuery(Docs, "ref", value, 2, AfterKey: value + "-b"), CancellationToken.None);
+        next.Select(k => k.Key).ShouldBe([value + "-c"]);
+    }
+
+    [Fact]
+    public async Task Maintenance_queries_refuse_injected_field_paths()
+    {
+        var maintenance = (IMaintenanceQueryStore)Store;
+
+        await Should.ThrowAsync<ArgumentException>(() => maintenance.QueryReferencesAsync(new ReferenceQuery(Docs, "ref` OR 1=1", "x", 10), CancellationToken.None));
+        await Should.ThrowAsync<ArgumentException>(
+            () => maintenance.QueryDueAsync(new DueQuery(Docs, "dueAt", DateTimeOffset.UnixEpoch, 10, "x;DROP"), CancellationToken.None));
+        await Should.ThrowAsync<ArgumentOutOfRangeException>(() => maintenance.QueryReferencesAsync(new ReferenceQuery(Docs, "ref", "x", 0), CancellationToken.None));
+    }
+
     private async Task<string> SeedGroupAsync(params string[] orderValues)
     {
         var group = "g-" + Guid.NewGuid().ToString("N");

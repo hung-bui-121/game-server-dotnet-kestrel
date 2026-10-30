@@ -9,7 +9,9 @@ using Microsoft.Extensions.Logging;
 namespace GameServer.Modules.Identity;
 
 /// <summary>
-/// Login with a provider identity (IDN-03, IDN-11): verify → mapping → (switch check) → common login end. The mapped
+/// Login with a provider identity (IDN-03, IDN-11): verify → mapping → account checks of the mapped player → (switch
+/// check) → common login end. A deleted or suspended mapped account answers its own code before SWITCH_ACCOUNT: switching
+/// into an account that can only be refused is never offered (PRIV-01, D5). The mapped
 /// player is returned whatever the device's guest credential (reinstall). An unmapped identity creates a player: the
 /// mapping is inserted through <see cref="ClaimStore"/> (a transaction, like the claim of <c>identity.link</c>, so the two
 /// cannot race through mixed KV/transaction writes); a lost race returns the winner's player. When the device presents a valid
@@ -51,6 +53,10 @@ public sealed class ProviderLoginService(
 
         var key = new DocumentKey(IdentityCollections.Identities, identity.MappingKey);
         var mapped = PlayerOf(await store.GetAsync(key, cancellationToken));
+        if (mapped is not null)
+        {
+            await EnsureAccessibleAsync(mapped, cancellationToken);
+        }
 
         if (!switchAccount && await CurrentPlayerAsync(currentToken, cancellationToken) is { } current && current != mapped)
         {
@@ -71,6 +77,19 @@ public sealed class ProviderLoginService(
 
     private static string? PlayerOf(StoredDocument? mapping) => mapping?.Content["playerId"]?.GetValue<string>();
 
+    /// <summary>
+    /// Account checks of the mapped player (fresh read). A missing profile is not refused here: a first login whose
+    /// earlier attempt crashed after the mapping insert continues; <see cref="LoginCompletion"/> decides with the anchor.
+    /// </summary>
+    private async Task EnsureAccessibleAsync(string playerId, CancellationToken cancellationToken)
+    {
+        if (await profiles.ReadFreshAsync(playerId, cancellationToken) is { } profile && AccountChecks.CheckAccess(profile, clock.UtcNow) is { } denial)
+        {
+            metrics.Login(denial.Code.Name);
+            throw new GameServerException(denial.Code, $"Login refused for {playerId}.") { Details = denial.Details };
+        }
+    }
+
     /// <summary>Player of a valid, current session sent with the login; anything else counts as no session.</summary>
     private async Task<string?> CurrentPlayerAsync(string? token, CancellationToken cancellationToken)
     {
@@ -79,8 +98,9 @@ public sealed class ProviderLoginService(
             return null;
         }
 
+        // No profile document: the session's account is purged, so there is no current player (research R9).
         var profile = await profiles.GetAsync(session.PlayerId, cancellationToken);
-        return session.Epoch >= profile.SessionEpoch ? session.PlayerId : null;
+        return profile is not null && session.Epoch >= profile.SessionEpoch ? session.PlayerId : null;
     }
 
     private async Task<string> CreateMappingAsync(DocumentKey key, VerifiedIdentity identity, CancellationToken cancellationToken)

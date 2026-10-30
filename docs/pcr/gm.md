@@ -1,6 +1,6 @@
 # PCR — gm
 
-Module framework `gm` (slice 004 + 007, version 0.7.0). Nguồn: GM-01/02/03/06, SEC-02/03/04/05/06/07/08/10/14/15,
+Module framework `gm` (slice 004 + 007, version 0.8.0 sau slice 010). Nguồn: GM-01/02/03/06, SEC-02/03/04/05/06/07/08/10/14/15,
 OPS-04, ACC-09/10/11/24/27/45/49. Ban (GM-07), maintenance toggle: slice 008. GM frontend đầy đủ (GM-01, TBD-21): dev
 khác làm dựa trên OpenAPI `docs/api/gm-openapi.json` (owner 2026-10-27); trang tĩnh `/gm/v1/ui` chỉ còn mức P0.
 
@@ -43,7 +43,11 @@ Template không cấp permission mà deployment không có (module chưa đăng 
 | `gm_sessions` | SHA-256 hex của session id | `{staffId, gameId, environmentId, epoch, createdAtUtc, lastActiveAtUtc, expiresAtUtc}`, expiry = hết hạn tuyệt đối |
 | `gm_audit` | `gm_audit::{entryId}` | projection outbox `gm_audit` (xem dưới); index `(playerId, committedAtUtc)` |
 
-Module cũng khai index `receipts(playerId, committedAtUtc DESC, META().id DESC)`,
+Deletion treatment (slice 010): `gm_staff`, `gm_staff_identities`, `gm_sessions` = `NoPlayerData`; `gm_audit` (platform) bị
+purge ghi đè player id bằng anonymous id (PCR platform mục 16). Index `receipts(playerId, committedAtUtc DESC, META().id DESC)`
+từ slice 010 do **platform** tạo (module gm không còn khai).
+
+Module cũng khai index
 `pa_profile(state.displayName, playerId, META().id)`, `gm_staff(type, staffId, META().id)` và
 `gm_audit(targetStaffId, committedAtUtc DESC, META().id DESC)` cho list/search. `gm_audit` chỉ được ghi bởi projection
 (`IKeyValueStore` từ chối collection này).
@@ -90,7 +94,7 @@ Module cũng khai index `receipts(playerId, committedAtUtc DESC, META().id DESC)
 | `GET /gm/v1/me` | `gm.access` | như response login |
 | `GET /gm/v1/health` | `ops.read` | chi tiết từng health check (OBS-03); 404 nếu host không bật observability |
 | `GET /gm/v1/ui` | Public | trang HTML tĩnh same-origin, CSP chặt (`frame-ancestors 'none'`, `connect-src 'self'`) |
-| `GET /gm/v1/players/{playerId}` | `player.read` | mọi aggregate (kể cả hidden): `{id, exists, clientVisible, rev, schemaVersion, storedSchemaVersion, sizeBytes, updatedAtUtc, state}`; không có aggregate nào → 404 |
+| `GET /gm/v1/players/{playerId}` | `player.read` | `{playerId, aggregates[], deletion}`: mọi aggregate (kể cả hidden): `{id, exists, clientVisible, rev, schemaVersion, storedSchemaVersion, sizeBytes, updatedAtUtc, state}`; `deletion` (slice 010, null khi không có yêu cầu xoá) = `{state: pending\|purging\|purged, requestedAtUtc, purgeAfterUtc, purgeStartedAtUtc, purgedAtUtc}`. Player đã purge → **200** `aggregates: []`, `deletion.state = purged`, không dữ liệu cá nhân, không bao giờ trả anonymous id (D7). Không aggregate **và** không purge record → 404 |
 | `GET /gm/v1/players/by-mapping/{mappingKey}` | `player.read` | `identities/{mappingKey}` → như trên; không có → 404 |
 | `GET /gm/v1/players/search?displayName=&pageSize=&cursor=` | `player.read` | khớp chính xác `displayName`, sắp theo `playerId` |
 | `GET /gm/v1/players/{playerId}/receipts?pageSize=&cursor=` | `player.read` | tóm tắt receipt, mới nhất trước |
@@ -110,6 +114,7 @@ Module cũng khai index `receipts(playerId, committedAtUtc DESC, META().id DESC)
 | `PUT /gm/v1/ops/gate/min-client-version` `{platform, minVersion? (null = bỏ), updateUrl? (https), reason}` | `ops.maintenance` | audit `ops.gate.min_client_version` |
 | `POST /gm/v1/players/{playerId}/ban` `{reason, untilUtc?, scope[]?}` | `player.ban` | (module identity) command `identity.ban`; không `untilUtc` = vĩnh viễn, không scope = `login` |
 | `POST /gm/v1/players/{playerId}/unban` `{reason}` | `player.ban` | (module identity) command `identity.unban` |
+| `POST /gm/v1/players/{playerId}/deletion/cancel` `{reason}` | `player.ban`, CSRF | (module identity, slice 010) command `identity.cancel_deletion`; `result = {before: DeletionInfo}`; 409 `DELETION_NOT_PENDING` / `DELETION_GRACE_OVER` (grace hết, purge đã bắt đầu, hoặc đã purge); xem PCR identity |
 | `GET /gm/v1/openapi/gm.json` | Public (chỉ Development/Test) | OpenAPI GM: mỗi operation có `x-gm-permission`, `x-gm-csrf` |
 
 `StaffView` = `{staffId, displayName, email, status, disabled, oidcBound, permissions[] (game/env này), updatedAtUtc, replayed}`
@@ -132,7 +137,9 @@ cuối. Cursor keyset opaque = base64url(`{v: giá trị orderBy, k: key}`); cur
 `MapGmCommand`: body JSON (`application/json`, ≤ 1 MiB) phải có `reason` 1–500 ký tự (thiếu → 400); header `X-Request-Id`
 UUID bắt buộc; actor = staff, player đích = `{playerId}` của route; `receiptId = hash(staffId|playerId|operation|requestId)`.
 Player đích phải tồn tại (có `profile`) và không chờ xoá, nếu không → 404 `NOT_FOUND`, không ghi gì (`IGmTargetValidator`
-do module gm đăng ký).
+do module gm đăng ký). Ngoại lệ (slice 010): `identity.cancel_deletion` được nhắm player đang chờ xoá; player đã purge (chỉ còn
+purge record) → 409 `DELETION_GRACE_OVER`. Lookup `by-mapping` và `search` của player đã purge → 404 / rỗng (mapping và profile
+đã xoá).
 Retry cùng `X-Request-Id` → replay (`replayed: true`); cùng id khác body → 409 `IDEMPOTENCY_PAYLOAD_MISMATCH`.
 Response `{code, codeNumber, receiptId, replayed, configVersion, serverTimeUtcMs, result, updates[{id, baseRev, newRev, state}]}`;
 lỗi nghiệp vụ = HTTP 200 + `code`, không receipt, không audit.

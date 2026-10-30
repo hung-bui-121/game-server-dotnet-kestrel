@@ -35,8 +35,24 @@ public static class IdentityErrors
     public static readonly ErrorCode ProviderUnavailable = new(14004, "PROVIDER_UNAVAILABLE", 503, true,
         "The sign-in provider is unavailable. Retry later.");
 
+    /// <summary>GM cancel of an account deletion for a player without a pending deletion (PRIV-01).</summary>
+    public static readonly ErrorCode DeletionNotPending = new(14005, "DELETION_NOT_PENDING", 409, false,
+        "The player has no pending account deletion.");
+
+    /// <summary>GM cancel after the grace period ended or the purge started (PRIV-01, FR-011).</summary>
+    public static readonly ErrorCode DeletionGraceOver = new(14006, "DELETION_GRACE_OVER", 409, false,
+        "The grace period is over; the account deletion can no longer be cancelled.");
+
     public static ErrorCodeSet All { get; } = new(
-        14000, 14099, DisplayNameInvalid, DisplayNameRejected, ProviderAlreadyLinked, IdentityProofInvalid, ProviderUnavailable);
+        14000,
+        14099,
+        DisplayNameInvalid,
+        DisplayNameRejected,
+        ProviderAlreadyLinked,
+        IdentityProofInvalid,
+        ProviderUnavailable,
+        DeletionNotPending,
+        DeletionGraceOver);
 }
 
 public sealed record BanPlayerCommand(string Reason, DateTimeOffset? UntilUtc, IReadOnlyList<string> Scope);

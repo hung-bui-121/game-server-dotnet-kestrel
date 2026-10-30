@@ -5,4 +5,8 @@
   <ItemGroup>
     <PackageReference Include="CouchbaseNetClient" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- CouchbaseDocumentStore.DueStatement / ReferenceStatement: EXPLAIN checks of the maintenance queries (PERF-07). -->
+    <InternalsVisibleTo Include="GameServer.Platform.Couchbase.IntegrationTests" />
+  </ItemGroup>
 </Project>

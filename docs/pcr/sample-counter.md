@@ -31,3 +31,10 @@ Query: `POST /api/v1/counter/get` (snapshot `counter`). GM: `GET /gm/v1/counter/
 | --- | --- | --- |
 | `ICounterLimitPolicy` | tối đa 10 / lần | `ReplacePolicy<ICounterLimitPolicy, T>()` |
 | `ICounterService` (dùng như service, ARC-04) | đọc snapshot | `ReplacePolicy<ICounterService, T>()` |
+
+## Xoá tài khoản (slice 010 — FR-019)
+
+`counter_log` = `DeletionTreatment.Anonymize` (player field `playerId`; index `ix_counter_log_player_ref` do platform tạo):
+purge ghi đè player id bằng anonymous id, giữ bản ghi. `pa_counter` bị xoá theo key cùng mọi `pa_*`. Module mẫu không cần
+`DeletionSteps`; module có dữ liệu không mô tả được bằng treatment khai `ModuleStep` + `IAccountDeletionStep` (PCR platform
+mục 16, ví dụ test `tests/Sample.Counter.Tests/DeletionExtensionTests.cs`).

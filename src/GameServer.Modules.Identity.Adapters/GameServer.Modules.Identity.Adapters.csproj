@@ -13,4 +13,9 @@
   <ItemGroup>
     <Protobuf Include="Protos\identity.proto" GrpcServices="None" AdditionalImportDirs="..\..\proto" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- LoginCompletion.AfterMappingRead: test seam for the login-versus-purge race (research R9). -->
+    <InternalsVisibleTo Include="GameServer.Platform.Web.Tests" />
+    <InternalsVisibleTo Include="GameServer.Platform.Couchbase.IntegrationTests" />
+  </ItemGroup>
 </Project>

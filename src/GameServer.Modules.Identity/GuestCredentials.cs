@@ -90,11 +90,13 @@ public static class AccountChecks
 {
     public sealed record Denial(ErrorCode Code, IReadOnlyDictionary<string, string>? Details);
 
+    private const string DetailTimeFormat = "yyyy-MM-ddTHH:mm:ssZ";
+
     public static Denial? CheckAccess(ProfileState profile, DateTimeOffset now)
     {
-        if (profile.Deleted is not null)
+        if (profile.Deleted is { } deleted)
         {
-            return new Denial(CoreErrorCodes.AccountDeleted, null);
+            return new Denial(CoreErrorCodes.AccountDeleted, DeletionDetails(deleted));
         }
 
         if (profile.Ban is { } ban && ban.BlocksLogin(now))
@@ -108,6 +110,13 @@ public static class AccountChecks
     public static IReadOnlyDictionary<string, string> SuspensionDetails(BanInfo ban) =>
         new Dictionary<string, string>
         {
-            ["until"] = ban.UntilUtc?.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture) ?? "permanent",
+            ["until"] = ban.UntilUtc?.UtcDateTime.ToString(DetailTimeFormat, CultureInfo.InvariantCulture) ?? "permanent",
+        };
+
+    /// <summary>Details of ACCOUNT_DELETED while the deletion is pending or purging: the erase date (PRIV-01).</summary>
+    public static IReadOnlyDictionary<string, string> DeletionDetails(DeletionInfo deleted) =>
+        new Dictionary<string, string>
+        {
+            ["purgeAfter"] = deleted.PurgeAfterUtc.UtcDateTime.ToString(DetailTimeFormat, CultureInfo.InvariantCulture),
         };
 }

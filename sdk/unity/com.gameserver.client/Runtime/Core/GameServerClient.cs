@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -58,6 +59,7 @@ namespace GameServer.Client
         public const string ProviderLoginRoute = "api/v1/identity/login/provider";
         public const string LinkRoute = "api/v1/identity/link";
         public const string LogoutRoute = "api/v1/identity/logout";
+        public const string DeleteAccountRoute = "api/v1/identity/delete-account";
         public const string SnapshotRoute = "api/v1/player/snapshot";
         public const string ConfigRoute = "api/v1/config/get";
         public const string TimeRoute = "v1/time";
@@ -66,6 +68,9 @@ namespace GameServer.Client
         public const string ClientVersionHeader = "X-Client-Version";
         public const string PlatformHeader = "X-Platform";
         public const string BuildIdHeader = "X-Build-Id";
+
+        /// <summary>Detail key of ACCOUNT_DELETED: the date the account is erased (UTC, <c>yyyy-MM-ddTHH:mm:ssZ</c>).</summary>
+        public const string PurgeAfterDetail = "purgeAfter";
 
         private readonly GameServerClientOptions _options;
         private readonly IHttpTransport _transport;
@@ -190,6 +195,44 @@ namespace GameServer.Client
         /// </summary>
         public Task<CommandResult<LinkIdentityResult>> LinkProviderAsync(ProviderCredential credential, CancellationToken cancellationToken = default) =>
             SendCommandAsync(LinkRoute, new LinkIdentityRequest { Credential = credential }, LinkIdentityResult.Parser, cancellationToken);
+
+        /// <summary>
+        /// Requests deletion of the logged-in player's account (PRIV-01). The account is locked at once and erased after the
+        /// grace period unless support cancels it. On OK the session and sections are cleared and <see cref="AccountBlocked"/>
+        /// is raised with code ACCOUNT_DELETED and details <c>purgeAfter</c> (the erase date, <c>yyyy-MM-ddTHH:mm:ssZ</c>).
+        /// A <see cref="GameServerException"/> ACCOUNT_DELETED from this call also means the deletion is committed (e.g. a
+        /// retry after a lost response): the session and sections are cleared and the error details carry <c>purgeAfter</c>.
+        /// </summary>
+        public async Task<CommandResult<RequestAccountDeletionResult>> RequestAccountDeletionAsync(CancellationToken cancellationToken = default)
+        {
+            CommandResult<RequestAccountDeletionResult> result;
+            try
+            {
+                result = await SendCommandAsync(DeleteAccountRoute, new RequestAccountDeletionRequest(), RequestAccountDeletionResult.Parser, cancellationToken);
+            }
+            catch (GameServerException ex) when (ex.Error.Code == ErrorCodes.AccountDeleted)
+            {
+                // The error path already cleared the session and raised AccountBlocked.
+                Sections.Clear();
+                throw;
+            }
+
+            if (result.IsOk)
+            {
+                _session.Clear();
+                Sections.Clear();
+                var details = new Dictionary<string, string>(StringComparer.Ordinal);
+                if (result.Result != null)
+                {
+                    details[PurgeAfterDetail] = DateTimeOffset.FromUnixTimeMilliseconds(result.Result.PurgeAfterUtcMs).UtcDateTime
+                        .ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
+                }
+
+                Raise(AccountBlocked, new GameServerError(ErrorCodes.AccountDeleted, -1, 0, "Account deletion requested.", false, 0, null, details));
+            }
+
+            return result;
+        }
 
         private LoginResponse ApplyLogin(LoginResponse response)
         {

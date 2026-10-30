@@ -1,6 +1,6 @@
 # PCR — identity
 
-Module framework `identity` (slice 002; version 0.9.0 sau slice 009). Nguồn: IDN-01..12, BAN-01, SEC-02, SEC-13.
+Module framework `identity` (slice 002; version 0.10.0 sau slice 010). Nguồn: IDN-01..12, BAN-01, SEC-02, SEC-13, PRIV-01.
 
 ## Aggregate
 
@@ -8,7 +8,11 @@ Module framework `identity` (slice 002; version 0.9.0 sau slice 009). Nguồn: I
 | --- | --- | --- | --- | --- |
 | `profile` | `pa_profile` | 1 | có | `ProfileState{display_name, session_epoch}` — `ban`, `deleted`, `identities` không gửi |
 
-State: `displayName`, `sessionEpoch`, `ban{reason, untilUtc, scope[], actor}`, `deleted{requestedAtUtc, purgeAfterUtc}`, `identities[]`.
+State: `displayName`, `sessionEpoch`, `ban{reason, untilUtc, scope[], actor}`, `deleted{requestedAtUtc, purgeAfterUtc,
+purgeStartedAtUtc?}` (`purgeStartedAtUtc` thêm ở slice 010, additive, `schemaVersion` vẫn 1), `identities[]`.
+
+Index `ix_profile_deletion_due` trên `pa_profile(state.deleted.purgeAfterUtc, META().id) WHERE state.deleted.purgeStartedAtUtc
+IS NOT VALUED` (chỉ chứa player đang chờ xoá; job purge, PERF-07).
 
 ## Collections ngoài transaction (CMD-05)
 
@@ -30,6 +34,8 @@ Tên collection `identities` công bố ở `IdentityCollections.Identities` (mo
 | `POST /api/v1/identity/logout` | Player | xoá session hiện tại |
 | `POST /api/v1/identity/login/provider` | Public, Protobuf, gated | `ProviderLoginRequest{credential, switch_account}` → `LoginResponse`; gửi kèm `Authorization` của phiên đang có (nếu có) |
 | `POST /api/v1/identity/link` | Player command `identity.link` | `LinkIdentityRequest{credential}` → `LinkIdentityResult{provider, already_linked}` |
+| `POST /api/v1/identity/delete-account` | Player command `identity.request_deletion` (slice 010) | `RequestAccountDeletionRequest{}` → `RequestAccountDeletionResult{requested_at_utc_ms, purge_after_utc_ms}` + update section `profile` |
+| `POST /gm/v1/players/{playerId}/deletion/cancel` | GM command `identity.cancel_deletion`, `player.ban`, CSRF (slice 010) | `{reason}` → `GmCommandResponse` (`result = {before: DeletionInfo}`); xem PCR gm |
 
 ## Provider identity (slice 009 — IDN-03..06, IDN-11)
 
@@ -66,7 +72,8 @@ của profile thiếu key cho tới lần login provider kế tiếp (login thê
 | `playerId` | `p_` + 26 ký tự base32 (128-bit ngẫu nhiên) |
 | Token | 256-bit, base64url, chỉ ở `Authorization: Bearer`; không log, không lưu dạng gốc |
 | Session | một session/player (takeover qua epoch); touch lười khi > 24 h |
-| Thứ tự kiểm tra | `ACCOUNT_DELETED` (401) → `ACCOUNT_SUSPENDED` (403, `details.until`) → `SESSION_REPLACED` (401) → `UNAUTHENTICATED` (401) |
+| Thứ tự kiểm tra | `ACCOUNT_DELETED` (401, `details.purgeAfter` khi đang chờ/đang purge) → `ACCOUNT_SUSPENDED` (403, `details.until`) → `SESSION_REPLACED` (401) → `UNAUTHENTICATED` (401) |
+| Login provider (slice 010, đổi thứ tự) | kiểm tra tài khoản của player **được map** (`ACCOUNT_DELETED`, `ACCOUNT_SUSPENDED`) chạy **trước** kiểm tra `SWITCH_ACCOUNT` (trước đây `SWITCH_ACCOUNT` được trả trước) |
 | Ban theo nhóm | `scope` chứa nhóm command (phần trước dấu chấm của operation) → command nhóm đó bị `ACCOUNT_SUSPENDED`; session giữ nguyên; retry của command đã commit vẫn replay |
 | Recovery bằng `localId` | không có (IDN-12) |
 
@@ -78,7 +85,8 @@ của profile thiếu key cho tới lần login provider kế tiếp (login thê
 | Login / `localId` / phút | 10 (chặn) |
 | Login thất bại / IP / phút | 60 (chặn) |
 | Login / IP / phút | 600 (chỉ metric `login_ip_burst_warnings_total`) |
-| Metrics | `login_total{result}`, `login_ip_burst_warnings_total`, `session_replaced_total` |
+| Metrics | `login_total{result}`, `login_ip_burst_warnings_total`, `session_replaced_total`, `account_deletion_requests_total`, `account_deletion_cancellations_total` (slice 010; chỉ lần thực thi mới, replay không đếm) |
+| `Identity:Deletion:GraceDays` | 30 (1..90; ngoài khoảng → startup fail) — FR-010, TBD-04c |
 | `Identity:Providers:UseFake` | mặc định true chỉ ở Development (`pgs` mã `fake:{id}`, `gamecenter` URL `fake:`); Test phải đặt rõ; true ngoài Development/Test → startup fail |
 | `Identity:Providers:TimeoutSeconds` | 5 (1–30; bị chặn ở 80 % `PlayerTimeoutSeconds`) |
 | `Identity:Providers:MaxConcurrentVerifications` / `LinkPerPlayerPerMinute` | 32 / 10 (1–1000) |
@@ -101,5 +109,21 @@ vd. `ｂａｄ` → `bad`); thuần, đồng bộ (chạy trong command, CMD-03)
 mặc định chấp nhận; game đăng ký implementation riêng (vd. danh sách từ cấm).
 
 Mã lỗi module identity (14000–14099): `DISPLAY_NAME_INVALID` (14000, business), `DISPLAY_NAME_REJECTED` (14001, business),
-`PROVIDER_ALREADY_LINKED` (14002, business), `IDENTITY_PROOF_INVALID` (14003, 401), `PROVIDER_UNAVAILABLE` (14004, 503, retryable).
+`PROVIDER_ALREADY_LINKED` (14002, business), `IDENTITY_PROOF_INVALID` (14003, 401), `PROVIDER_UNAVAILABLE` (14004, 503, retryable),
+`DELETION_NOT_PENDING` (14005, 409), `DELETION_GRACE_OVER` (14006, 409, không retry) — slice 010.
 Permission: `player.ban`. `Identity:CacheSeconds` 0–60 (PERF-08).
+
+## Xoá tài khoản (slice 010 — PRIV-01, ACC-37)
+
+| Mục | Giá trị (semantic) |
+| --- | --- |
+| Yêu cầu (`identity.request_deletion`) | Player, Touches `profile`; một transaction {`deleted = {now, now + GraceDays, null}`, `sessionEpoch + 1`, receipt}. Đã xoá → 401 `ACCOUNT_DELETED {purgeAfter}`, không receipt (cũng là câu trả lời cho retry sau khi mất response — xoá đã commit). Không bị chặn bởi ban theo nhóm command (kể cả nhóm `identity`); ban `login` → 403 `ACCOUNT_SUSPENDED` (xác thực thất bại trước). Instance phục vụ làm mới cache profile ngay (`afterExecute`); instance khác ≤ `Identity:CacheSeconds` |
+| Sau yêu cầu | mọi token → 401 `ACCOUNT_DELETED` `{purgeAfter}` (`yyyy-MM-ddTHH:mm:ssZ`); login guest và provider → 401 `ACCOUNT_DELETED` (không session, không player mới, mapping không đổi); link identity của player này từ tài khoản khác → 409 `IDENTITY_CONFLICT` (giữ nguyên) |
+| Huỷ (`identity.cancel_deletion`) | GM, `player.ban`, Touches `profile`; chỉ khi `deleted != null` (nếu không 409 `DELETION_NOT_PENDING`), `now < purgeAfter` và purge chưa bắt đầu (nếu không 409 `DELETION_GRACE_OVER`). Xoá `deleted`, epoch giữ nguyên (token cũ vẫn bị thu hồi), audit `player.ban` / `identity.cancel_deletion` before = `DeletionInfo`, after = null. Yêu cầu lại sau khi huỷ → grace mới |
+| Đua huỷ ↔ bắt đầu purge | cả hai ghi `pa_profile`: đúng một transaction commit (kiểm trên Couchbase thật, cả hai thứ tự) |
+| Purge (job `identity.account-purge`, mặc định 600 s) | job lấy tối đa `MaxPlayersPerRun`: record đến hạn tiếp tục/thử lại trước, rồi profile có `purgeAfter <= now` chưa bắt đầu; quyết định bắt đầu (`AccountPurgeStart.Decide`): đặt `purgeStartedAtUtc = now` cùng transaction insert purge record. Xoá: mọi `pa_*` khác, rồi `sessions`, `identities` (Remove), cuối cùng `pa_profile`; receipts/ledger/audit/claim/projection giữ dưới anonymous id. Chi tiết, cấu hình, metrics: PCR platform mục 16 |
+| Bất biến "session ⇒ profile tồn tại" (R9, D9) | profile thiếu (đã purge) → bearer 401 `ACCOUNT_DELETED` **không** details khi session còn (hoặc còn cache); khi session đã bị purge xoá → token lạ, `UNAUTHENTICATED` (D2). Purge record không dùng để trả lời token |
+| Login lần đầu (creation anchor) | profile mới chỉ được tạo khi mapping `identities/{mappingKey}` vẫn tồn tại và cùng `playerId`, mapping được ghi lại trong cùng transaction: login đua với purge (đã xoá mapping) → 401 `ACCOUNT_DELETED`, không tạo profile. Chi phí: thêm một ghi KV/transaction ở login **đầu tiên** của player |
+| Sau purge | credential guest/provider cũ tạo **player mới** (mapping đã xoá) |
+| Cửa sổ còn lại trong purge (review T054, minor 2) | các step Remove (`sessions`, `identities`, …) chạy **cuối**, ngay trước transaction cuối (xoá `pa_profile` + record `purged`): trong suốt purge, credential cũ vẫn bị từ chối `ACCOUNT_DELETED` cho tới khi `remove:identities` commit. Từ đó tới transaction cuối, login guest/provider bằng credential cũ không còn mapping nên **tạo player mới** — cùng kết quả như sau purge; purge tiếp tục không chạm player mới (Remove chỉ xoá document có player field = id cũ). Cửa sổ bình thường vài ms; kéo dài tới run sau nếu transaction cuối lỗi (backoff) — kiểm bằng test |
+| Cache profile (review T054, M1) | profile thiếu **không** được cache (đọc lại mỗi lần): login đầu tiên đọc profile trước khi tạo, nếu login đó lỗi và retry thành công ở instance khác, instance đầu không được trả `ACCOUNT_DELETED` cho player mới. Chi phí: player đã purge còn session trong cache session (≤ 60 s) đọc store mỗi request |

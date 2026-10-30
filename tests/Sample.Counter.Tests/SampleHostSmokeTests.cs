@@ -15,7 +15,9 @@ public sealed class SampleHostSmokeTests : IClassFixture<WebApplicationFactory<P
     private readonly WebApplicationFactory<Program> _factory;
 
     public SampleHostSmokeTests(WebApplicationFactory<Program> factory) =>
-        _factory = factory.WithWebHostBuilder(b => b.UseSetting("GameServer:Outbox:SweeperEnabled", "false"));
+        _factory = factory.WithWebHostBuilder(b => b
+            .UseSetting("GameServer:Outbox:SweeperEnabled", "false")
+            .UseSetting("GameServer:Jobs:Enabled", "false"));
 
     [Fact]
     public async Task Sample_host_serves_time_command_and_snapshot()

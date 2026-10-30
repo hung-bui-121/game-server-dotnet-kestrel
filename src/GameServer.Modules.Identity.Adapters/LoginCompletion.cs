@@ -1,6 +1,7 @@
 using GameServer.Errors;
 using GameServer.Platform.Aggregates;
 using GameServer.Platform.Limits;
+using GameServer.Platform.Persistence;
 using GameServer.Time;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -53,7 +54,9 @@ public sealed class LoginRateLimits
 
 /// <summary>
 /// Common end of every login (IDN-07, IDN-08, IDN-10): account checks → session epoch +1 (single session + takeover)
-/// and the mapping key recorded in <c>profile.identities</c> → new session → snapshot.
+/// and the mapping key recorded in <c>profile.identities</c> → new session → snapshot. A first login creates the profile
+/// anchored on the identity mapping (<c>identities/{mappingKey}</c>, research R9): when the account purge removed the
+/// mapping meanwhile, nothing is created and the login answers ACCOUNT_DELETED.
 /// </summary>
 public sealed class LoginCompletion(
     IPlayerAggregateWriter writer,
@@ -64,34 +67,29 @@ public sealed class LoginCompletion(
     IdentityMetrics metrics,
     ILogger<LoginCompletion> logger)
 {
+    /// <summary>
+    /// Test seam: awaited after the caller read the identity mapping and before the profile is read and written, so a test
+    /// can complete an account purge in between (US2-5). Null in production.
+    /// </summary>
+    internal Func<string, Task>? AfterMappingRead { get; set; }
+
     public async Task<LoginResult> CompleteAsync(string playerId, string mappingKey, CancellationToken cancellationToken)
     {
+        if (AfterMappingRead is { } pause)
+        {
+            await pause(playerId);
+        }
+
+        // Null = no profile yet (first login) or purged; the creation anchor below tells them apart.
         var profile = await profiles.ReadFreshAsync(playerId, cancellationToken);
-        if (AccountChecks.CheckAccess(profile, clock.UtcNow) is { } denial)
+        if (profile is not null && AccountChecks.CheckAccess(profile, clock.UtcNow) is { } denial)
         {
             metrics.Login(denial.Code.Name);
             throw new GameServerException(denial.Code, $"Login refused for {playerId}.") { Details = denial.Details };
         }
 
         // Single session + takeover: the new epoch invalidates every older session (IDN-08, IDN-10).
-        var (updated, _) = await writer.UpdateAsync<ProfileState>(
-            playerId,
-            IdentityAggregates.Profile,
-            p =>
-            {
-                // A ban or deletion committed after the read above wins: no token is issued (review m8).
-                if (AccountChecks.CheckAccess(p, clock.UtcNow) is { } late)
-                {
-                    throw new GameServerException(late.Code, $"Login refused for {playerId}.") { Details = late.Details };
-                }
-
-                return p with
-                {
-                    SessionEpoch = p.SessionEpoch + 1,
-                    Identities = p.Identities.Contains(mappingKey, StringComparer.Ordinal) ? p.Identities : [.. p.Identities, mappingKey],
-                };
-            },
-            cancellationToken);
+        var updated = await WriteEpochAsync(playerId, mappingKey, cancellationToken);
         profiles.Set(playerId, updated);
 
         var (token, expiresAt) = await sessions.CreateAsync(playerId, updated.SessionEpoch, cancellationToken);
@@ -99,5 +97,38 @@ public sealed class LoginCompletion(
         metrics.Login("ok");
         logger.LogInformation("Login of player {PlayerId} with {Provider} (epoch {Epoch}).", playerId, ProviderIdentities.ProviderOf(mappingKey), updated.SessionEpoch);
         return new LoginResult(token, playerId, expiresAt, sections);
+    }
+
+    private async Task<ProfileState> WriteEpochAsync(string playerId, string mappingKey, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var (updated, _) = await writer.UpdateAsync<ProfileState>(
+                playerId,
+                IdentityAggregates.Profile,
+                p =>
+                {
+                    // A ban or deletion committed after the read above wins: no token is issued (review m8).
+                    if (AccountChecks.CheckAccess(p, clock.UtcNow) is { } late)
+                    {
+                        throw new GameServerException(late.Code, $"Login refused for {playerId}.") { Details = late.Details };
+                    }
+
+                    return p with
+                    {
+                        SessionEpoch = p.SessionEpoch + 1,
+                        Identities = p.Identities.Contains(mappingKey, StringComparer.Ordinal) ? p.Identities : [.. p.Identities, mappingKey],
+                    };
+                },
+                new DocumentKey(IdentityCollections.Identities, mappingKey),
+                cancellationToken);
+            return updated;
+        }
+        catch (AggregateAnchorMissingException)
+        {
+            // The mapping was removed (account purged) between the mapping read and this transaction (research R9).
+            metrics.Login(CoreErrorCodes.AccountDeleted.Name);
+            throw new GameServerException(CoreErrorCodes.AccountDeleted, $"Login refused for {playerId}: the account is purged.");
+        }
     }
 }

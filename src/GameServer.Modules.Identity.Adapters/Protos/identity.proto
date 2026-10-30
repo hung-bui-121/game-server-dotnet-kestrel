@@ -89,6 +89,17 @@ message SetDisplayNameResult {
   string display_name = 1;
 }
 
+// POST /api/v1/identity/delete-account  (Player command identity.request_deletion, PRIV-01)
+// Locks the account at once (every session ends) and erases it after the grace period unless support cancels.
+// 401 ACCOUNT_DELETED (details purgeAfter) when already requested: also the answer to a retry after a lost response,
+// so it means the deletion is committed. Command-group bans do not block it; a login ban (ACCOUNT_SUSPENDED) does.
+message RequestAccountDeletionRequest {}
+
+message RequestAccountDeletionResult {
+  int64 requested_at_utc_ms = 1;
+  int64 purge_after_utc_ms = 2;
+}
+
 // POST /api/v1/identity/logout  (Player)
 message LogoutRequest {}
 

@@ -1,5 +1,8 @@
+using System.Net;
+using Couchbase;
 using Couchbase.Core.Exceptions;
 using Couchbase.Management.Collections;
+using GameServer.Modules;
 using GameServer.Platform.Commands;
 using GameServer.Platform.Persistence;
 using GameServer.Platform.Registry;
@@ -25,6 +28,13 @@ public sealed class CouchbaseProvisioner(
 
     public const string PendingOutboxIndex = "ix_receipts_outbox_pending";
 
+    /// <summary>Receipts of a player, newest first: GM history and the account purge (research R5).</summary>
+    public const string ReceiptsPlayerIndex = "ix_receipts_player";
+
+    /// <summary>Unfinished purges due for an attempt (research R4).</summary>
+    public const string AccountDeletionsDueIndex = "ix_account_deletions_due";
+
+    /// <summary>Attempts of a management statement (scope, collection, index) on transient errors.</summary>
     private const int IndexAttempts = 6;
 
     public IReadOnlyList<string> RequiredCollections() =>
@@ -37,42 +47,38 @@ public sealed class CouchbaseProvisioner(
         var manager = bucket.Collections;
 
         // Create only what is missing: the SDK logs every "already exists" at Error level (false alarms on each restart).
-        // The catches remain for instances provisioning at the same time.
+        // "Already exists" is still expected from instances provisioning at the same time.
         var scope = (await manager.GetAllScopesAsync(new GetAllScopesOptions().CancellationToken(cancellationToken)))
             .FirstOrDefault(s => s.Name == connection.ScopeName);
         var existing = scope?.Collections.Select(c => c.Name).ToHashSet(StringComparer.Ordinal) ?? [];
-        try
+        if (scope is null)
         {
-            if (scope is null)
-            {
-                await manager.CreateScopeAsync(connection.ScopeName, new CreateScopeOptions().CancellationToken(cancellationToken));
-                logger.LogInformation("Created scope {Scope}.", connection.ScopeName);
-            }
-        }
-        catch (ScopeExistsException)
-        {
+            await CreateMissingAsync(
+                () => manager.CreateScopeAsync(connection.ScopeName, new CreateScopeOptions().CancellationToken(cancellationToken)),
+                $"scope {connection.ScopeName}",
+                cancellationToken);
         }
 
         foreach (var collection in RequiredCollections().Where(c => !existing.Contains(c)))
         {
-            try
-            {
-                await manager.CreateCollectionAsync(
+            await CreateMissingAsync(
+                () => manager.CreateCollectionAsync(
                     connection.ScopeName,
                     collection,
                     CreateCollectionSettings.Default,
-                    new CreateCollectionOptions().CancellationToken(cancellationToken));
-                logger.LogInformation("Created collection {Scope}.{Collection}.", connection.ScopeName, collection);
-            }
-            catch (CollectionExistsException)
-            {
-            }
+                    new CreateCollectionOptions().CancellationToken(cancellationToken)),
+                $"collection {connection.ScopeName}.{collection}",
+                cancellationToken);
         }
 
         var keyspace = $"`{connection.BucketName}`.`{connection.ScopeName}`";
         var statements = new List<string>
         {
             $"CREATE INDEX `{PendingOutboxIndex}` IF NOT EXISTS ON {keyspace}.`receipts`(committedAtUtc) WHERE outboxPending = true",
+            $"CREATE INDEX `{ReceiptsPlayerIndex}` IF NOT EXISTS ON {keyspace}.`receipts`(playerId, committedAtUtc DESC, META().id DESC)",
+            // (due, id): the due query's ORDER BY reads index order and stops at its LIMIT (no sort of the whole backlog, PERF-07).
+            $"CREATE INDEX `{AccountDeletionsDueIndex}` IF NOT EXISTS ON {keyspace}.`{PlatformCollections.AccountDeletions}`(nextAttemptAtUtc, META().id) " +
+            "WHERE purgedAtUtc IS NOT VALUED",
         };
         foreach (var module in registry.Modules)
         {
@@ -86,12 +92,73 @@ public sealed class CouchbaseProvisioner(
             }
         }
 
+        statements.AddRange(ReferenceIndexes().Select(r => $"CREATE INDEX `{r.Name}` IF NOT EXISTS ON {keyspace}.`{r.Collection}`({r.Keys})"));
+
         foreach (var statement in statements)
         {
             await CreateIndexAsync(cluster, statement, cancellationToken);
         }
 
         logger.LogInformation("Provisioned {Count} collections for game {GameId}.", RequiredCollections().Count, gameServer.GameId);
+    }
+
+    /// <summary>
+    /// Reference indexes of the account purge (research R5): <c>ix_{collection}_player_ref</c> on (player field, document id)
+    /// for every Anonymize/Remove collection of the deletion plan, so the key-ordered reference query reads index order and
+    /// stops at its LIMIT (review minor 4: a history index (player, time, id) made each batch sort the player's whole
+    /// history). Skipped only when a declared index has exactly these keys and no WHERE clause (review minor 3: a partial
+    /// index cannot serve every reference). <c>pa_*</c> are removed by key and need none.
+    /// </summary>
+    public IReadOnlyList<ReferenceIndex> ReferenceIndexes()
+    {
+        var declared = registry.Modules
+            .SelectMany(m => m.Descriptor.Collections)
+            .SelectMany(c => (c.Indexes ?? []).Where(i => i.Where is null).Select(i => (Collection: c.Name, i.Keys)))
+            .ToArray();
+        return registry.DeletionPlan()
+            .Where(d => d.Treatment is DeletionTreatment.Anonymize or DeletionTreatment.Remove && !d.IsPlayerAggregate)
+            .Where(d => !declared.Any(i => i.Collection == d.Collection && IsReferenceShaped(i.Keys, d.PlayerField)))
+            .Select(d => new ReferenceIndex(
+                $"ix_{d.Collection}_player_ref",
+                d.Collection,
+                string.Join('.', d.PlayerField.Split('.').Select(s => $"`{s}`")) + ", META().id"))
+            .ToArray();
+    }
+
+    /// <summary>Whether index keys are exactly <c>(playerField ASC, META().id ASC)</c>, ignoring backticks, case of META and blanks.</summary>
+    private static bool IsReferenceShaped(string keys, string playerField)
+    {
+        var parts = keys.Split(',').Select(k => k.Replace("`", string.Empty, StringComparison.Ordinal).Replace(" ", string.Empty, StringComparison.Ordinal)).ToArray();
+        return parts.Length == 2
+            && (parts[0] == playerField || parts[0] == playerField + "ASC")
+            && parts[1].ToUpperInvariant() is "META().ID" or "META().IDASC";
+    }
+
+    /// <summary>
+    /// Creates a scope or collection. "Already exists" means another instance created it. The cluster manager answers
+    /// 503 "Service is temporarily unavailable" while it is busy with other manifest changes (seen with several scopes
+    /// provisioned at once, 2026-10-30): retried with backoff like index statements.
+    /// </summary>
+    private async Task CreateMissingAsync(Func<Task> create, string what, CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await create();
+                logger.LogInformation("Created {What}.", what);
+                return;
+            }
+            catch (Exception ex) when (ex is ScopeExistsException or CollectionExistsException)
+            {
+                return;
+            }
+            catch (CouchbaseException ex) when (attempt < IndexAttempts && ex.Context is ManagementErrorContext { HttpStatus: HttpStatusCode.ServiceUnavailable })
+            {
+                logger.LogWarning("Creating {What} failed: cluster manager temporarily unavailable (attempt {Attempt}); retrying.", what, attempt);
+                await Task.Delay(TimeSpan.FromMilliseconds(500 * attempt), cancellationToken);
+            }
+        }
     }
 
     /// <summary>
@@ -146,3 +213,6 @@ public sealed class CouchbaseProvisioner(
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
+
+/// <summary>An index created by the provisioner for the account purge's reference queries.</summary>
+public sealed record ReferenceIndex(string Name, string Collection, string Keys);

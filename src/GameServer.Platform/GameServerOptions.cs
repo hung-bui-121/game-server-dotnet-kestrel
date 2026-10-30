@@ -1,3 +1,6 @@
+using GameServer.Platform.Jobs;
+using GameServer.Platform.Privacy;
+
 namespace GameServer.Platform;
 
 public enum StoreKind
@@ -56,6 +59,12 @@ public sealed class GameServerOptions
 
     public GateSettings Gate { get; set; } = new();
 
+    /// <summary>Lease job runner (JOB-01, OPS-05).</summary>
+    public JobSettings Jobs { get; set; } = new();
+
+    /// <summary>Account purge limits (PRIV-01).</summary>
+    public PurgeSettings Purge { get; set; } = new();
+
     public bool IsProduction => string.Equals(DeploymentEnvironment, "Production", StringComparison.OrdinalIgnoreCase);
 
     public bool IsDevelopment => string.Equals(DeploymentEnvironment, "Development", StringComparison.OrdinalIgnoreCase);
@@ -64,6 +73,9 @@ public sealed class GameServerOptions
     public bool IsTest => string.Equals(DeploymentEnvironment, "Test", StringComparison.OrdinalIgnoreCase);
 
     public bool AllowsDevelopmentTools => IsDevelopment || IsTest;
+
+    /// <summary>Bounds of the background work settings (data-model.md); checked at startup with the module registry.</summary>
+    public IEnumerable<string> ValidateBackgroundWork() => Jobs.Validate(Transactions).Concat(Purge.Validate());
 }
 
 /// <summary>Which APIs this host maps; lets the GM API run in a separate host later (OPS-10).</summary>

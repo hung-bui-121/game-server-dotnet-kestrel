@@ -34,11 +34,27 @@ public sealed class IdentityOptions
     /// <summary>Login requests per minute per IP above which a warning metric is raised (not blocked).</summary>
     public int LoginPerIpWarnPerMinute { get; set; } = 600;
 
+    /// <summary>Account deletion (PRIV-01, section <c>Identity:Deletion</c>).</summary>
+    public DeletionSettings Deletion { get; set; } = new();
+
     internal byte[] PepperBytes(GameServerOptions gameServer) =>
         Encoding.UTF8.GetBytes(string.IsNullOrEmpty(GuestPepper) && gameServer.AllowsDevelopmentTools ? DevelopmentPepper : GuestPepper);
 }
 
-/// <summary>Fails startup when no pepper is configured outside Development/Test, or the cache TTL exceeds 60 s (PERF-08).</summary>
+/// <summary>Account deletion settings (FR-010, TBD-04c).</summary>
+public sealed class DeletionSettings
+{
+    public const int MinGraceDays = 1;
+    public const int MaxGraceDays = 90;
+
+    /// <summary>Days between the request and the purge; GM can cancel during this time.</summary>
+    public int GraceDays { get; set; } = 30;
+}
+
+/// <summary>
+/// Fails startup when no pepper is configured outside Development/Test, the cache TTL exceeds 60 s (PERF-08), or the
+/// deletion grace period is outside 1..90 days.
+/// </summary>
 internal sealed class IdentityOptionsValidator(GameServerOptions gameServer) : IValidateOptions<IdentityOptions>
 {
     public ValidateOptionsResult Validate(string? name, IdentityOptions options)
@@ -54,6 +70,11 @@ internal sealed class IdentityOptionsValidator(GameServerOptions gameServer) : I
             errors.Add("[module identity] Identity:CacheSeconds must be 0..60: revocation, takeover and bans apply within it (IDN-08, PERF-08).");
         }
 
+        if (options.Deletion.GraceDays is < DeletionSettings.MinGraceDays or > DeletionSettings.MaxGraceDays)
+        {
+            errors.Add($"[module identity] Identity:Deletion:GraceDays must be {DeletionSettings.MinGraceDays}..{DeletionSettings.MaxGraceDays} (PRIV-01, FR-010).");
+        }
+
         return errors.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(errors);
     }
 }
@@ -67,12 +88,16 @@ public sealed class IdentityMetrics : IDisposable
     private readonly Counter<long> _logins;
     private readonly Counter<long> _burstWarnings;
     private readonly Counter<long> _sessionReplaced;
+    private readonly Counter<long> _deletionRequests;
+    private readonly Counter<long> _deletionCancellations;
 
     public IdentityMetrics()
     {
         _logins = _meter.CreateCounter<long>("login_total");
         _burstWarnings = _meter.CreateCounter<long>("login_ip_burst_warnings_total");
         _sessionReplaced = _meter.CreateCounter<long>("session_replaced_total");
+        _deletionRequests = _meter.CreateCounter<long>("account_deletion_requests_total");
+        _deletionCancellations = _meter.CreateCounter<long>("account_deletion_cancellations_total");
     }
 
     public void Login(string result) => _logins.Add(1, new KeyValuePair<string, object?>("result", result));
@@ -80,6 +105,10 @@ public sealed class IdentityMetrics : IDisposable
     public void IpBurstWarning() => _burstWarnings.Add(1);
 
     public void SessionReplaced() => _sessionReplaced.Add(1);
+
+    public void DeletionRequested() => _deletionRequests.Add(1);
+
+    public void DeletionCancelled() => _deletionCancellations.Add(1);
 
     public void Dispose() => _meter.Dispose();
 }

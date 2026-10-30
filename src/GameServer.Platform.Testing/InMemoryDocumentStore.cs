@@ -12,7 +12,8 @@ namespace GameServer.Platform.Testing;
 /// invisible outside the transaction, and injectable ambiguous/failed commits.
 /// </summary>
 public sealed class InMemoryDocumentStore(IClock? clock = null)
-    : ITransactionalDocumentStore, IKeyValueStore, IPagedQueryStore, ICollectionAwareStore, IDevelopmentOnlyStore, ITransactionOnlyAwareStore
+    : ITransactionalDocumentStore, IKeyValueStore, IPagedQueryStore, IMaintenanceQueryStore, ICollectionAwareStore, IDevelopmentOnlyStore,
+        ITransactionOnlyAwareStore
 {
     private IReadOnlySet<string> _transactionOnly = new HashSet<string>(StringComparer.Ordinal);
 
@@ -52,6 +53,48 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
             var items = page.Take(query.PageSize).Select(r => new StoredDocument(r.Key, Clone(r.Content), null)).ToArray();
             var next = page.Length > query.PageSize ? new PageCursor(page[query.PageSize - 1].Order, page[query.PageSize - 1].Key.Key).Encode() : null;
             return Task.FromResult(new Page(items, next));
+        }
+    }
+
+    /// <summary>String comparison like N1QL: the due field is compared with the query value as written, oldest first.</summary>
+    public Task<IReadOnlyList<StoredDocument>> QueryDueAsync(DueQuery query, CancellationToken cancellationToken)
+    {
+        query.Validate();
+        var now = query.NowValue;
+        lock (_lock)
+        {
+            EnsureCollection(new DocumentKey(query.Collection, string.Empty));
+            IReadOnlyList<StoredDocument> result = _documents
+                .Where(d => d.Key.Collection == query.Collection && IsLive(d.Value))
+                .Select(d => (d.Key, d.Value.Content, Due: PageCursor.StringAt(d.Value.Content, query.DueField)))
+                .Where(r => r.Due is not null
+                            && string.CompareOrdinal(r.Due, now) <= 0
+                            && (query.UnsetField is null || NodeAt(r.Content, query.UnsetField) is null))
+                .OrderBy(r => r.Due, StringComparer.Ordinal)
+                .ThenBy(r => r.Key.Key, StringComparer.Ordinal)
+                .Take(query.Limit)
+                .Select(r => new StoredDocument(r.Key, Clone(r.Content), null))
+                .ToArray();
+            return Task.FromResult(result);
+        }
+    }
+
+    public Task<IReadOnlyList<DocumentKey>> QueryReferencesAsync(ReferenceQuery query, CancellationToken cancellationToken)
+    {
+        query.Validate();
+        lock (_lock)
+        {
+            EnsureCollection(new DocumentKey(query.Collection, string.Empty));
+            IReadOnlyList<DocumentKey> result = _documents
+                .Where(d => d.Key.Collection == query.Collection
+                            && IsLive(d.Value)
+                            && PageCursor.StringAt(d.Value.Content, query.Field) == query.Value
+                            && (query.AfterKey is null || string.CompareOrdinal(d.Key.Key, query.AfterKey) > 0))
+                .Select(d => d.Key)
+                .OrderBy(k => k.Key, StringComparer.Ordinal)
+                .Take(query.Limit)
+                .ToArray();
+            return Task.FromResult(result);
         }
     }
 
@@ -305,6 +348,25 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
         return entry;
     }
 
+    /// <summary>Expiry check without removal (safe while enumerating the documents).</summary>
+    private bool IsLive(Entry entry) => entry.ExpiresAt is not { } expiresAt || expiresAt > _clock.UtcNow;
+
+    /// <summary>Node at a dotted path; null when missing or JSON null (N1QL "not valued").</summary>
+    private static JsonNode? NodeAt(JsonObject document, string path)
+    {
+        JsonNode? node = document;
+        foreach (var segment in path.Split('.'))
+        {
+            node = (node as JsonObject)?[segment];
+            if (node is null)
+            {
+                return null;
+            }
+        }
+
+        return node;
+    }
+
     private DateTimeOffset? ExpiresAt(TimeSpan? expiry) => expiry is { } e ? _clock.UtcNow + e : null;
 
     private bool TryCommit(Attempt attempt)
@@ -322,7 +384,14 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
 
             foreach (var (key, write) in attempt.Writes)
             {
-                _documents[key] = new Entry(write.Content, ++_versionSequence, null);
+                if (write.Content is null)
+                {
+                    _documents.Remove(key);
+                }
+                else
+                {
+                    _documents[key] = new Entry(write.Content, ++_versionSequence, null);
+                }
             }
 
             return true;
@@ -333,7 +402,8 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
 
     private sealed record Entry(JsonObject Content, long Version, DateTimeOffset? ExpiresAt);
 
-    private sealed record PendingWrite(JsonObject Content, long ExpectedVersion);
+    /// <summary>A staged write; <see cref="Content"/> null = staged removal.</summary>
+    private sealed record PendingWrite(JsonObject? Content, long ExpectedVersion);
 
     private sealed class Attempt(InMemoryDocumentStore store) : ITransactionContext
     {
@@ -349,7 +419,7 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
                     var key = keys[i];
                     if (Writes.TryGetValue(key, out var pending))
                     {
-                        result[i] = new StoredDocument(key, Clone(pending.Content), pending.ExpectedVersion);
+                        result[i] = pending.Content is null ? null : new StoredDocument(key, Clone(pending.Content), pending.ExpectedVersion);
                         continue;
                     }
 
@@ -364,7 +434,19 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
         {
             lock (store._lock)
             {
-                if (Writes.ContainsKey(key) || store.Live(key) is not null)
+                if (Writes.TryGetValue(key, out var pending))
+                {
+                    // Insert after a staged removal of the same attempt replaces it; anything else already exists.
+                    if (pending.Content is not null)
+                    {
+                        throw new DocumentExistsException(key);
+                    }
+
+                    Writes[key] = new PendingWrite(Clone(content), pending.ExpectedVersion);
+                    return Task.CompletedTask;
+                }
+
+                if (store.Live(key) is not null)
                 {
                     throw new DocumentExistsException(key);
                 }
@@ -377,9 +459,18 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
 
         public Task ReplaceAsync(StoredDocument existing, JsonObject content)
         {
-            var expected = Writes.TryGetValue(existing.Key, out var pending) ? pending.ExpectedVersion : (long)existing.Handle!;
-            Writes[existing.Key] = new PendingWrite(Clone(content), expected);
+            Writes[existing.Key] = new PendingWrite(Clone(content), ExpectedVersion(existing));
             return Task.CompletedTask;
         }
+
+        public Task RemoveAsync(StoredDocument existing)
+        {
+            // Committed only if the document is still at the version read (or staged) here: a concurrent replace conflicts.
+            Writes[existing.Key] = new PendingWrite(null, ExpectedVersion(existing));
+            return Task.CompletedTask;
+        }
+
+        private long ExpectedVersion(StoredDocument existing) =>
+            Writes.TryGetValue(existing.Key, out var pending) ? pending.ExpectedVersion : (long)existing.Handle!;
     }
 }

@@ -290,8 +290,12 @@ NoPlayerData (and `receipts`/`gm_audit`/`pa_profile` stay index-only); sample co
 module).
 
 **Reference indexes.** For every Anonymize/Remove collection the provisioner creates `ix_{collection}_player_ref` ON
-(`PlayerField`) unless a declared index of that collection already has `PlayerField` as its leading key (ledger,
-gm_audit, receipts already do). `ModuleRegistry.DeletionPlan()` exposes the resolved list.
+(`PlayerField`, `META().id`) unless a declared index of that collection has exactly these keys and no WHERE clause.
+*Revised in review T054 (minors 3, 4):* the first version skipped collections whose declared index merely *led* with
+`PlayerField` (ledger, gm_audit, receipts: `(playerId, committedAtUtc DESC, META().id DESC)`) and ignored a partial
+index's WHERE; the key-ordered reference query then sorted the player's whole history in every batch. EXPLAIN on
+Couchbase 7.6.12 confirms the planner picks `_player_ref` (index order, no sort) for all seven collections.
+`ModuleRegistry.DeletionPlan()` exposes the resolved list.
 
 ```csharp
 namespace GameServer.Platform.Registry;
@@ -430,10 +434,17 @@ current one from the start (every step is a query-until-empty loop, so repeating
 | 1 | `receipts` | Anonymize (receipt rules, R8) | `ReferenceQuery(receipts, playerId, old)` until empty; rewritten receipts still `outboxPending` (not dead-lettered) are relayed at once after the commit, so new projections carry the anonymous id |
 | 2 | `anonymize:{collection}` | Anonymize | each Anonymize collection of the deletion plan (gm_audit, ledger, extref_claims, counter_log, …), registration order |
 | 3 | `step:{name}` | module step | each `IAccountDeletionStep`, module registration order (FR-020: before identities and profile) |
-| 4 | `remove:{collection}` | Remove | each Remove collection (sessions, identities, module collections) — mappings released here (FR-016) |
-| 5 | `verify` | re-query 1, 2, 4 | catches projections inserted late by an in-flight relay; processes what it finds; up to 3 rounds, then failure |
-| 6 | `aggregates` | Remove by key | every registered `pa_*` except `pa_profile`, one transaction (≤ 15 removes) |
+| 4 | `verify` | re-query 1, 2 | catches projections inserted late by an in-flight relay; processes what it finds; up to 3 rounds, then failure |
+| 5 | `aggregates` | Remove by key | every registered `pa_*` except `pa_profile`, one transaction (≤ 15 removes) |
+| 6 | `remove:{collection}` | Remove | each Remove collection (sessions, identities, module collections) — mappings released here (FR-016) |
 | 7 | (complete) | remove `pa_profile`, record → purged | one transaction; anonymous id dropped (FR-018) |
+
+*Order revised in review T054 (minor 2):* the Remove steps used to run before `verify` and `aggregates`. Once
+`remove:identities` commits, a login with the old credentials finds no mapping and creates a new player instead of
+answering `ACCOUNT_DELETED` (US2-5 says "while purging → refused"); every step between it and the final transaction —
+and a failure or budget stop there, waiting for the next run or the backoff — widened that window. Now only the
+Remove steps themselves precede the final transaction. They drain whatever reached their collections until they run,
+so `verify` only re-queries receipts and the anonymized collections. The residual window is documented in PCR identity.
 
 - **Budget** (edge case "large history"): every transaction subtracts its document count from
   `MaxDocumentsPerRun` (5000). At 0 the service returns `Incomplete`; the record keeps `nextAttemptAtUtc <= now`, so the
@@ -471,17 +482,25 @@ interface for no gain.
 2. **CMD-08 / SEC-14 immutability ("ledger and audit never deleted"; `AuditedStore` refuses audit replacement) vs
    PRIV-01 ("anonymize playerId in receipt/ledger/audit by overwriting the field")** — PRIV-01 is the later, more
    specific rule and CMD-09 states it explicitly ("ẩn danh PRIV-01 = ghi đè trường"). Records are never deleted; only
-   values equal to the player id change. Amounts, balances, timestamps, receipt references, correlation ids, external
+   values equal to the player id change (plus the request/correlation ids of #3, review B1). Amounts, balances, timestamps, receipt references, external
    references are untouched. The exception is confined to `AccountPurgeWriter` (one class, transaction-only, fenced).
-3. **Receipt-specific rules** (beyond the generic anonymize): `resultCompact` and `bodyHash` are cleared (empty
+3. **Receipt-specific rules** (beyond the generic anonymize; `requestId`/`correlationId` added in review T054, B1, see
+   #5): `requestId`, `correlationId`, `resultCompact` and `bodyHash` are cleared (empty
    string) and `claimKeys` entries pointing into a Remove-treated collection become `"{collection}/redacted"`.
    Reason: `resultCompact` can carry personal data (e.g. the display name in `identity.set_display_name`), `bodyHash`
    of a low-entropy body (a name) is dictionary-attackable, claim keys of `identities` carry provider/local ids; all
    three exist only for the 24 h replay window (CMD-07), long past at purge time (≥ 30 days after the last command).
    This goes beyond FR-015 "other fields unchanged" — see plan.md, Spec deviations.
 4. **Delete vs hide identity (PRIV-01 "xoá/ẩn", ACC-37 "identity ẩn")** — hide during grace (mapping kept, login
-   refused with `ACCOUNT_DELETED`), delete at purge (step 4). As in the spec's assumptions.
-5. **Receipt keys** (`rcpt::{hash(actor|player|op|requestId)}`) are kept: not reversible without the random request id.
+   refused with `ACCOUNT_DELETED`), delete at purge (step 6). As in the spec's assumptions.
+5. **Receipt keys** (`rcpt::{hash(actor|player|op|requestId)}`) are kept, but only because the request id is removed
+   with them. *Corrected in review T054 (B1):* the first version kept `requestId` (and `correlationId`, the same UUID)
+   in the receipt — with `operation` and `actorId` stored too, anyone could test a candidate player id X with
+   `Compute(X or actorId, X, operation, requestId) == receiptId` and undo the anonymization, then re-link ledger,
+   `gm_audit`, claims and projections through their `receiptId`/`entryId`. The key has no secret, so the purge clears
+   `requestId`/`correlationId` in the player's receipts and the audit entry's `correlationId` (the GM request id) in
+   `gm_audit` projections and in the receipts' `gm_audit` outbox payloads. Remaining link outside the store: logs carry
+   the `RequestId` scope next to the player id until log retention removes them (PCR platform §16).
 
 ---
 
@@ -490,7 +509,8 @@ interface for no gain.
 Two holes exist in today's code once `pa_profile` can disappear (see code facts):
 
 1. **Stale session**: a cached session + a missing profile (default state, epoch 0) would pass.
-   **Fix — invariant "a session's player has a profile document"**: `ProfileCache` caches `ProfileState?` (null =
+   **Fix — invariant "a session's player has a profile document"** (review T054, M1: a missing document is read as null
+   but never cached — a first login reads the profile before creating it): `ProfileCache` returns `ProfileState?` (null =
    no document); `PlayerBearerAuthenticationHandler` answers `ACCOUNT_DELETED` (no details) when it is null. Every
    session is created by `LoginCompletion` *after* the profile write, so the invariant holds for every live player.
    `ProviderLoginService.CurrentPlayerAsync` treats null as "no current player"; `BanCommandGuard` treats null as

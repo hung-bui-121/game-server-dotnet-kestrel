@@ -20,7 +20,8 @@ namespace GameServer.Platform.Couchbase;
 /// <see cref="ITransactionalDocumentStore"/> and <see cref="IKeyValueStore"/> on Couchbase (DAT-04, DAT-09, DAT-11,
 /// CMD-05). The only component of the framework that calls the Couchbase SDK.
 /// </summary>
-public sealed class CouchbaseDocumentStore(CouchbaseConnection connection) : ITransactionalDocumentStore, IKeyValueStore, IPagedQueryStore, ITransactionOnlyAwareStore
+public sealed class CouchbaseDocumentStore(CouchbaseConnection connection)
+    : ITransactionalDocumentStore, IKeyValueStore, IPagedQueryStore, IMaintenanceQueryStore, ITransactionOnlyAwareStore
 {
     private IReadOnlySet<string> _transactionOnly = new HashSet<string>(StringComparer.Ordinal);
 
@@ -184,6 +185,75 @@ public sealed class CouchbaseDocumentStore(CouchbaseConnection connection) : ITr
         return new Page(items, next);
     }
 
+    public async Task<IReadOnlyList<StoredDocument>> QueryDueAsync(DueQuery query, CancellationToken cancellationToken)
+    {
+        query.Validate();
+        var scope = await connection.GetScopeAsync();
+        var result = await scope.QueryAsync<PendingRow>(
+            DueStatement(query),
+            new QueryOptions()
+                .Parameter("now", query.NowValue)
+                .Parameter("limit", query.Limit)
+                .ScanConsistency(QueryScanConsistency.RequestPlus)
+                .CancellationToken(cancellationToken));
+
+        var rows = new List<StoredDocument>();
+        await foreach (var row in result.Rows.WithCancellation(cancellationToken))
+        {
+            rows.Add(new StoredDocument(new DocumentKey(query.Collection, row.Id), row.Doc, null));
+        }
+
+        return rows;
+    }
+
+    public async Task<IReadOnlyList<DocumentKey>> QueryReferencesAsync(ReferenceQuery query, CancellationToken cancellationToken)
+    {
+        query.Validate();
+        var options = new QueryOptions()
+            .Parameter("value", query.Value)
+            .Parameter("limit", query.Limit)
+            .ScanConsistency(QueryScanConsistency.RequestPlus)
+            .CancellationToken(cancellationToken);
+        if (query.AfterKey is not null)
+        {
+            options.Parameter("after", query.AfterKey);
+        }
+
+        var scope = await connection.GetScopeAsync();
+        var result = await scope.QueryAsync<string>(ReferenceStatement(query), options);
+
+        var keys = new List<DocumentKey>();
+        await foreach (var id in result.Rows.WithCancellation(cancellationToken))
+        {
+            keys.Add(new DocumentKey(query.Collection, id));
+        }
+
+        return keys;
+    }
+
+    /// <summary>
+    /// N1QL of <see cref="QueryDueAsync"/> (internal for the EXPLAIN checks of the integration tests, PERF-07). The predicate
+    /// repeats the partial index's WHERE (unset field IS NOT VALUED) so the index serves the query.
+    /// </summary>
+    internal static string DueStatement(DueQuery query)
+    {
+        var due = Path(query.DueField);
+        return
+            $"SELECT META(d).id AS id, d AS doc FROM `{query.Collection}` AS d " +
+            $"WHERE {due} <= $now AND IS_STRING({due}) " +
+            (query.UnsetField is null ? string.Empty : $"AND {Path(query.UnsetField)} IS NOT VALUED ") +
+            $"ORDER BY {due}, META(d).id LIMIT $limit";
+    }
+
+    /// <summary>
+    /// N1QL of <see cref="QueryReferencesAsync"/> (internal for the EXPLAIN checks). (field, META().id) reference indexes serve
+    /// the key range and the key order (PERF-07).
+    /// </summary>
+    internal static string ReferenceStatement(ReferenceQuery query) =>
+        $"SELECT RAW META(d).id FROM `{query.Collection}` AS d WHERE {Path(query.Field)} = $value " +
+        (query.AfterKey is null ? string.Empty : "AND META(d).id > $after ") +
+        "ORDER BY META(d).id LIMIT $limit";
+
     private static string Path(string field) => "d." + string.Join('.', field.Split('.').Select(s => $"`{s}`"));
 
     async Task<bool> IKeyValueStore.InsertAsync(DocumentKey key, JsonObject content, TimeSpan? expiry, CancellationToken cancellationToken)
@@ -322,22 +392,29 @@ internal sealed class CouchbaseTransactionContext(AttemptContext attempt, Couchb
         }
     }
 
-    public async Task ReplaceAsync(StoredDocument existing, JsonObject content)
+    public async Task ReplaceAsync(StoredDocument existing, JsonObject content) =>
+        await attempt.ReplaceAsync(await WriteHandleAsync(existing), content);
+
+    public async Task RemoveAsync(StoredDocument existing) =>
+        await attempt.RemoveAsync(await WriteHandleAsync(existing));
+
+    private async Task<TransactionGetResult> WriteHandleAsync(StoredDocument existing)
     {
-        var current = existing.Handle as TransactionGetResult;
-        if (current is null)
+        if (existing.Handle is TransactionGetResult current)
         {
-            // GetMulti does not return a TransactionGetResult (SDK 3.10): fetch it, and refuse to overwrite a
-            // document that changed since the bundle read, so no update is lost.
-            var collection = await connection.GetCollectionAsync(existing.Key.Collection);
-            current = await attempt.GetAsync(collection, existing.Key.Key);
-            if (!JsonNode.DeepEquals(current.ContentAs<JsonObject>(), existing.Content))
-            {
-                throw new StaleReadException(existing.Key);
-            }
+            return current;
         }
 
-        await attempt.ReplaceAsync(current, content);
+        // GetMulti does not return a TransactionGetResult (SDK 3.10): fetch it, and refuse to overwrite a
+        // document that changed since the bundle read, so no update is lost.
+        var collection = await connection.GetCollectionAsync(existing.Key.Collection);
+        var fetched = await attempt.GetAsync(collection, existing.Key.Key);
+        if (!JsonNode.DeepEquals(fetched.ContentAs<JsonObject>(), existing.Content))
+        {
+            throw new StaleReadException(existing.Key);
+        }
+
+        return fetched;
     }
 }
 

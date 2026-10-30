@@ -51,10 +51,12 @@ namespace GameServer.Modules.Identity.Protocol.V1 {
             "YWwiPgoSTGlua0lkZW50aXR5UmVzdWx0EhAKCHByb3ZpZGVyGAEgASgJEhYK",
             "DmFscmVhZHlfbGlua2VkGAIgASgIIi0KFVNldERpc3BsYXlOYW1lUmVxdWVz",
             "dBIUCgxkaXNwbGF5X25hbWUYASABKAkiLAoUU2V0RGlzcGxheU5hbWVSZXN1",
-            "bHQSFAoMZGlzcGxheV9uYW1lGAEgASgJIg8KDUxvZ291dFJlcXVlc3QiLAoO",
-            "TG9nb3V0UmVzcG9uc2USGgoSc2VydmVyX3RpbWVfdXRjX21zGAEgASgDQiqq",
-            "AidHYW1lU2VydmVyLk1vZHVsZXMuSWRlbnRpdHkuUHJvdG9jb2wuVjFiBnBy",
-            "b3RvMw=="));
+            "bHQSFAoMZGlzcGxheV9uYW1lGAEgASgJIh8KHVJlcXVlc3RBY2NvdW50RGVs",
+            "ZXRpb25SZXF1ZXN0IlcKHFJlcXVlc3RBY2NvdW50RGVsZXRpb25SZXN1bHQS",
+            "GwoTcmVxdWVzdGVkX2F0X3V0Y19tcxgBIAEoAxIaChJwdXJnZV9hZnRlcl91",
+            "dGNfbXMYAiABKAMiDwoNTG9nb3V0UmVxdWVzdCIsCg5Mb2dvdXRSZXNwb25z",
+            "ZRIaChJzZXJ2ZXJfdGltZV91dGNfbXMYASABKANCKqoCJ0dhbWVTZXJ2ZXIu",
+            "TW9kdWxlcy5JZGVudGl0eS5Qcm90b2NvbC5WMWIGcHJvdG8z"));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
           new pbr::FileDescriptor[] { global::GameServer.Protocol.Core.V1.CoreReflection.Descriptor, },
           new pbr::GeneratedClrTypeInfo(null, null, new pbr::GeneratedClrTypeInfo[] {
@@ -70,6 +72,8 @@ namespace GameServer.Modules.Identity.Protocol.V1 {
             new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult), global::GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult.Parser, new[]{ "Provider", "AlreadyLinked" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Modules.Identity.Protocol.V1.SetDisplayNameRequest), global::GameServer.Modules.Identity.Protocol.V1.SetDisplayNameRequest.Parser, new[]{ "DisplayName" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Modules.Identity.Protocol.V1.SetDisplayNameResult), global::GameServer.Modules.Identity.Protocol.V1.SetDisplayNameResult.Parser, new[]{ "DisplayName" }, null, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionRequest), global::GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionRequest.Parser, null, null, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult), global::GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult.Parser, new[]{ "RequestedAtUtcMs", "PurgeAfterUtcMs" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Modules.Identity.Protocol.V1.LogoutRequest), global::GameServer.Modules.Identity.Protocol.V1.LogoutRequest.Parser, null, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Modules.Identity.Protocol.V1.LogoutResponse), global::GameServer.Modules.Identity.Protocol.V1.LogoutResponse.Parser, new[]{ "ServerTimeUtcMs" }, null, null, null, null)
           }));
@@ -3250,6 +3254,408 @@ namespace GameServer.Modules.Identity.Protocol.V1 {
   }
 
   /// <summary>
+  /// POST /api/v1/identity/delete-account  (Player command identity.request_deletion, PRIV-01)
+  /// Locks the account at once (every session ends) and erases it after the grace period unless support cancels.
+  /// 401 ACCOUNT_DELETED (details purgeAfter) when already requested: also the answer to a retry after a lost response,
+  /// so it means the deletion is committed. Command-group bans do not block it; a login ban (ACCOUNT_SUSPENDED) does.
+  /// </summary>
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
+  public sealed partial class RequestAccountDeletionRequest : pb::IMessage<RequestAccountDeletionRequest>
+  #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      , pb::IBufferMessage
+  #endif
+  {
+    private static readonly pb::MessageParser<RequestAccountDeletionRequest> _parser = new pb::MessageParser<RequestAccountDeletionRequest>(() => new RequestAccountDeletionRequest());
+    private pb::UnknownFieldSet _unknownFields;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pb::MessageParser<RequestAccountDeletionRequest> Parser { get { return _parser; } }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pbr::MessageDescriptor Descriptor {
+      get { return global::GameServer.Modules.Identity.Protocol.V1.IdentityReflection.Descriptor.MessageTypes[12]; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    pbr::MessageDescriptor pb::IMessage.Descriptor {
+      get { return Descriptor; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public RequestAccountDeletionRequest() {
+      OnConstruction();
+    }
+
+    partial void OnConstruction();
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public RequestAccountDeletionRequest(RequestAccountDeletionRequest other) : this() {
+      _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public RequestAccountDeletionRequest Clone() {
+      return new RequestAccountDeletionRequest(this);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override bool Equals(object other) {
+      return Equals(other as RequestAccountDeletionRequest);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public bool Equals(RequestAccountDeletionRequest other) {
+      if (ReferenceEquals(other, null)) {
+        return false;
+      }
+      if (ReferenceEquals(other, this)) {
+        return true;
+      }
+      return Equals(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override int GetHashCode() {
+      int hash = 1;
+      if (_unknownFields != null) {
+        hash ^= _unknownFields.GetHashCode();
+      }
+      return hash;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override string ToString() {
+      return pb::JsonFormatter.ToDiagnosticString(this);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void WriteTo(pb::CodedOutputStream output) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      output.WriteRawMessage(this);
+    #else
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(output);
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalWriteTo(ref pb::WriteContext output) {
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(ref output);
+      }
+    }
+    #endif
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public int CalculateSize() {
+      int size = 0;
+      if (_unknownFields != null) {
+        size += _unknownFields.CalculateSize();
+      }
+      return size;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(RequestAccountDeletionRequest other) {
+      if (other == null) {
+        return;
+      }
+      _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(pb::CodedInputStream input) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      input.ReadRawMessage(this);
+    #else
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
+            break;
+        }
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
+            break;
+        }
+      }
+    }
+    #endif
+
+  }
+
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
+  public sealed partial class RequestAccountDeletionResult : pb::IMessage<RequestAccountDeletionResult>
+  #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      , pb::IBufferMessage
+  #endif
+  {
+    private static readonly pb::MessageParser<RequestAccountDeletionResult> _parser = new pb::MessageParser<RequestAccountDeletionResult>(() => new RequestAccountDeletionResult());
+    private pb::UnknownFieldSet _unknownFields;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pb::MessageParser<RequestAccountDeletionResult> Parser { get { return _parser; } }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pbr::MessageDescriptor Descriptor {
+      get { return global::GameServer.Modules.Identity.Protocol.V1.IdentityReflection.Descriptor.MessageTypes[13]; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    pbr::MessageDescriptor pb::IMessage.Descriptor {
+      get { return Descriptor; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public RequestAccountDeletionResult() {
+      OnConstruction();
+    }
+
+    partial void OnConstruction();
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public RequestAccountDeletionResult(RequestAccountDeletionResult other) : this() {
+      requestedAtUtcMs_ = other.requestedAtUtcMs_;
+      purgeAfterUtcMs_ = other.purgeAfterUtcMs_;
+      _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public RequestAccountDeletionResult Clone() {
+      return new RequestAccountDeletionResult(this);
+    }
+
+    /// <summary>Field number for the "requested_at_utc_ms" field.</summary>
+    public const int RequestedAtUtcMsFieldNumber = 1;
+    private long requestedAtUtcMs_;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public long RequestedAtUtcMs {
+      get { return requestedAtUtcMs_; }
+      set {
+        requestedAtUtcMs_ = value;
+      }
+    }
+
+    /// <summary>Field number for the "purge_after_utc_ms" field.</summary>
+    public const int PurgeAfterUtcMsFieldNumber = 2;
+    private long purgeAfterUtcMs_;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public long PurgeAfterUtcMs {
+      get { return purgeAfterUtcMs_; }
+      set {
+        purgeAfterUtcMs_ = value;
+      }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override bool Equals(object other) {
+      return Equals(other as RequestAccountDeletionResult);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public bool Equals(RequestAccountDeletionResult other) {
+      if (ReferenceEquals(other, null)) {
+        return false;
+      }
+      if (ReferenceEquals(other, this)) {
+        return true;
+      }
+      if (RequestedAtUtcMs != other.RequestedAtUtcMs) return false;
+      if (PurgeAfterUtcMs != other.PurgeAfterUtcMs) return false;
+      return Equals(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override int GetHashCode() {
+      int hash = 1;
+      if (RequestedAtUtcMs != 0L) hash ^= RequestedAtUtcMs.GetHashCode();
+      if (PurgeAfterUtcMs != 0L) hash ^= PurgeAfterUtcMs.GetHashCode();
+      if (_unknownFields != null) {
+        hash ^= _unknownFields.GetHashCode();
+      }
+      return hash;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override string ToString() {
+      return pb::JsonFormatter.ToDiagnosticString(this);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void WriteTo(pb::CodedOutputStream output) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      output.WriteRawMessage(this);
+    #else
+      if (RequestedAtUtcMs != 0L) {
+        output.WriteRawTag(8);
+        output.WriteInt64(RequestedAtUtcMs);
+      }
+      if (PurgeAfterUtcMs != 0L) {
+        output.WriteRawTag(16);
+        output.WriteInt64(PurgeAfterUtcMs);
+      }
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(output);
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalWriteTo(ref pb::WriteContext output) {
+      if (RequestedAtUtcMs != 0L) {
+        output.WriteRawTag(8);
+        output.WriteInt64(RequestedAtUtcMs);
+      }
+      if (PurgeAfterUtcMs != 0L) {
+        output.WriteRawTag(16);
+        output.WriteInt64(PurgeAfterUtcMs);
+      }
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(ref output);
+      }
+    }
+    #endif
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public int CalculateSize() {
+      int size = 0;
+      if (RequestedAtUtcMs != 0L) {
+        size += 1 + pb::CodedOutputStream.ComputeInt64Size(RequestedAtUtcMs);
+      }
+      if (PurgeAfterUtcMs != 0L) {
+        size += 1 + pb::CodedOutputStream.ComputeInt64Size(PurgeAfterUtcMs);
+      }
+      if (_unknownFields != null) {
+        size += _unknownFields.CalculateSize();
+      }
+      return size;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(RequestAccountDeletionResult other) {
+      if (other == null) {
+        return;
+      }
+      if (other.RequestedAtUtcMs != 0L) {
+        RequestedAtUtcMs = other.RequestedAtUtcMs;
+      }
+      if (other.PurgeAfterUtcMs != 0L) {
+        PurgeAfterUtcMs = other.PurgeAfterUtcMs;
+      }
+      _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(pb::CodedInputStream input) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      input.ReadRawMessage(this);
+    #else
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
+            break;
+          case 8: {
+            RequestedAtUtcMs = input.ReadInt64();
+            break;
+          }
+          case 16: {
+            PurgeAfterUtcMs = input.ReadInt64();
+            break;
+          }
+        }
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
+            break;
+          case 8: {
+            RequestedAtUtcMs = input.ReadInt64();
+            break;
+          }
+          case 16: {
+            PurgeAfterUtcMs = input.ReadInt64();
+            break;
+          }
+        }
+      }
+    }
+    #endif
+
+  }
+
+  /// <summary>
   /// POST /api/v1/identity/logout  (Player)
   /// </summary>
   [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
@@ -3267,7 +3673,7 @@ namespace GameServer.Modules.Identity.Protocol.V1 {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public static pbr::MessageDescriptor Descriptor {
-      get { return global::GameServer.Modules.Identity.Protocol.V1.IdentityReflection.Descriptor.MessageTypes[12]; }
+      get { return global::GameServer.Modules.Identity.Protocol.V1.IdentityReflection.Descriptor.MessageTypes[14]; }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
@@ -3428,7 +3834,7 @@ namespace GameServer.Modules.Identity.Protocol.V1 {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public static pbr::MessageDescriptor Descriptor {
-      get { return global::GameServer.Modules.Identity.Protocol.V1.IdentityReflection.Descriptor.MessageTypes[13]; }
+      get { return global::GameServer.Modules.Identity.Protocol.V1.IdentityReflection.Descriptor.MessageTypes[15]; }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]

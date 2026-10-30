@@ -32,5 +32,8 @@ public sealed class MetricCollector : IDisposable
 
     public IReadOnlyList<double> Values(string name) => _measurements.Where(m => m.Name == name).Select(m => m.Value).ToArray();
 
+    /// <summary>Takes one reading of every observable instrument (gauges report only when observed).</summary>
+    public void Observe() => _listener.RecordObservableInstruments();
+
     public void Dispose() => _listener.Dispose();
 }

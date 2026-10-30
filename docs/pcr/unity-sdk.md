@@ -43,6 +43,12 @@ Yêu cầu: Unity 2021.3+ (C# 9, .NET Standard 2.1). Code SDK giữ C# 9, không
   `PROVIDER_UNAVAILABLE` → thử lại sau (link tự retry cùng bytes: với mã Play Games dùng một lần, retry có thể kết thúc bằng
   `IDENTITY_PROOF_INVALID` → lấy mã mới). Lỗi `ACCOUNT_DELETED`/`ACCOUNT_SUSPENDED` từ `LoginWithProviderAsync` nói về tài khoản
   đích: SDK vẫn phát `AccountBlocked` nhưng **không xoá** phiên hiện tại.
+- **Xoá tài khoản** (slice 010, PRIV-01): `RequestAccountDeletionAsync()` là command (retry cùng bytes). `OK` → SDK xoá phiên và
+  section, phát `AccountBlocked` với mã `ACCOUNT_DELETED` (`CodeNumber = -1`, `HttpStatus = 0` — quy ước lỗi do client dựng) và
+  `Details["purgeAfter"]` (`GameServerClient.PurgeAfterDetail`, `yyyy-MM-ddTHH:mm:ssZ`). `GameServerException(ACCOUNT_DELETED)` từ
+  lời gọi này **cũng** nghĩa là xoá đã commit (retry sau khi mất response): phiên và section đã xoá, `Details["purgeAfter"]` có
+  ngày xoá. Mọi `ACCOUNT_DELETED` khác (login, request) mang `purgeAfter` khi tài khoản đang chờ/đang purge; game hiển thị ngày và
+  hướng dẫn liên hệ hỗ trợ (huỷ chỉ do GM). Sau purge, credential cũ đăng nhập thành player mới.
 - **Sự kiện**: `SessionReplaced` (xoá token; **không** tự đăng nhập lại), `AccountBlocked` (`ACCOUNT_SUSPENDED`, `ACCOUNT_DELETED` —
   xoá token, `SWITCH_ACCOUNT` — giữ token), `Maintenance`, `UpdateRequired`, `ConfigVersionChanged(version)`, `Sections.SectionChanged(id)`.
   Handler của game ném lỗi → SDK bắt, báo qua `HandlerFailed`, xử lý request không bị ảnh hưởng.

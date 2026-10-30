@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using GameServer.Errors;
 using GameServer.Platform.Diagnostics;
 using GameServer.Platform.Persistence;
@@ -15,6 +16,29 @@ public interface IPlayerAggregateWriter
     /// <summary>Reads, mutates and writes the aggregate (rev + 1 when changed). Returns the committed state and rev.</summary>
     Task<(TState State, long Rev)> UpdateAsync<TState>(string playerId, string aggregateId, Func<TState, TState> mutate, CancellationToken cancellationToken)
         where TState : class;
+
+    /// <summary>
+    /// Like <see cref="UpdateAsync{TState}(string, string, Func{TState, TState}, CancellationToken)"/>, but an aggregate
+    /// that does not exist yet is only created while <paramref name="creationAnchor"/> exists and names the same
+    /// <c>playerId</c>; the anchor is then rewritten unchanged in the same transaction, so the creation write-conflicts with
+    /// a concurrent removal of the anchor (research R9: a login racing the account purge cannot recreate the profile).
+    /// When the aggregate exists the anchor is not read. Throws <see cref="AggregateAnchorMissingException"/> (nothing
+    /// written) when the anchor is missing or belongs to another player.
+    /// </summary>
+    Task<(TState State, long Rev)> UpdateAsync<TState>(
+        string playerId,
+        string aggregateId,
+        Func<TState, TState> mutate,
+        DocumentKey? creationAnchor,
+        CancellationToken cancellationToken)
+        where TState : class;
+}
+
+/// <summary>The creation anchor of a missing aggregate is gone or names another player; nothing was written.</summary>
+public sealed class AggregateAnchorMissingException(DocumentKey anchor)
+    : Exception($"Creation anchor {anchor} is missing or belongs to another player.")
+{
+    public DocumentKey Anchor { get; } = anchor;
 }
 
 public sealed class PlayerAggregateWriter(
@@ -25,10 +49,21 @@ public sealed class PlayerAggregateWriter(
     GameServerOptions options,
     PlatformMetrics metrics) : IPlayerAggregateWriter
 {
+    private const string AnchorPlayerField = "playerId";
+
+    public Task<(TState State, long Rev)> UpdateAsync<TState>(
+        string playerId,
+        string aggregateId,
+        Func<TState, TState> mutate,
+        CancellationToken cancellationToken)
+        where TState : class =>
+        UpdateAsync(playerId, aggregateId, mutate, null, cancellationToken);
+
     public async Task<(TState State, long Rev)> UpdateAsync<TState>(
         string playerId,
         string aggregateId,
         Func<TState, TState> mutate,
+        DocumentKey? creationAnchor,
         CancellationToken cancellationToken)
         where TState : class
     {
@@ -40,7 +75,7 @@ public sealed class PlayerAggregateWriter(
         {
             try
             {
-                return await UpdateOnceAsync(descriptor, key, playerId, aggregateId, mutate);
+                return await UpdateOnceAsync(descriptor, key, playerId, aggregateId, mutate, creationAnchor);
             }
             catch (Exception ex) when (round < MaxRaceRounds && ex is DocumentExistsException or StaleReadException)
             {
@@ -56,7 +91,8 @@ public sealed class PlayerAggregateWriter(
         DocumentKey key,
         string playerId,
         string aggregateId,
-        Func<TState, TState> mutate)
+        Func<TState, TState> mutate,
+        DocumentKey? creationAnchor)
         where TState : class
     {
         // The request token is not passed to the commit (PERF-02).
@@ -78,6 +114,11 @@ public sealed class PlayerAggregateWriter(
 
             if (loaded.Document is null)
             {
+                if (creationAnchor is { } anchorKey)
+                {
+                    await RewriteAnchorAsync(tx, anchorKey, playerId);
+                }
+
                 await tx.InsertAsync(key, document);
             }
             else
@@ -88,5 +129,18 @@ public sealed class PlayerAggregateWriter(
             metrics.AggregateWritten(aggregateId, size, size >= descriptor.WarnBytes);
             return (next, loaded.Rev + 1);
         }, new TransactionRunOptions(TimeSpan.FromSeconds(options.Transactions.ExpirationSeconds)));
+    }
+
+    /// <summary>A read alone is not conflict-detected by Couchbase transactions; the unchanged rewrite is (write lock).</summary>
+    private static async Task RewriteAnchorAsync(ITransactionContext tx, DocumentKey anchorKey, string playerId)
+    {
+        var anchor = (await tx.GetManyAsync([anchorKey]))[0];
+        var owner = anchor?.Content[AnchorPlayerField] is JsonValue value && value.TryGetValue<string>(out var id) ? id : null;
+        if (anchor is null || !string.Equals(owner, playerId, StringComparison.Ordinal))
+        {
+            throw new AggregateAnchorMissingException(anchorKey);
+        }
+
+        await tx.ReplaceAsync(anchor, (JsonObject)anchor.Content.DeepClone());
     }
 }

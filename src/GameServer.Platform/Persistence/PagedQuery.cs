@@ -26,6 +26,9 @@ public sealed partial record PagedQuery(
     /// <summary>Field paths are dotted identifiers only (no query injection).</summary>
     public static bool IsValidField(string field) => FieldPattern().IsMatch(field);
 
+    /// <summary>Collection names valid in the game scope.</summary>
+    public static bool IsValidCollection(string collection) => CollectionPattern().IsMatch(collection);
+
     public void Validate()
     {
         if (PageSize is < 1 or > MaxPageSize)

@@ -23,7 +23,7 @@ pending --purge start (now >= purgeAfter)--> purging {purgeStartedAtUtc set} + r
 purging --purge complete--> profile removed; record.state = purged                              [same transaction]
 ```
 
-New index (identity descriptor, PERF-07): `ix_profile_deletion_due` ON `pa_profile(state.deleted.purgeAfterUtc)` WHERE
+New index (identity descriptor, PERF-07): `ix_profile_deletion_due` ON `pa_profile(state.deleted.purgeAfterUtc, META().id)` WHERE
 `state.deleted.purgeStartedAtUtc IS NOT VALUED` — holds only pending players.
 
 ## `account_deletions/deletion::{playerId}` (TX — new, platform)
@@ -47,7 +47,8 @@ Progress document and fencing anchor while purging; purge record afterwards (FR-
 | `nextAttemptAtUtc` | string? | `now` at start; `now + backoff` after a failure | null |
 
 Writes: only `AccountPurgeWriter`, each in a transaction that first checks `fencingToken <= ticket.FencingToken`.
-Index: `ix_account_deletions_due` ON `account_deletions(nextAttemptAtUtc)` WHERE `purgedAtUtc IS NOT VALUED`.
+Index: `ix_account_deletions_due` ON `account_deletions(nextAttemptAtUtc, META().id)` WHERE `purgedAtUtc IS NOT VALUED`
+(`META().id` key: the oldest-first due query reads index order and stops at its limit; EXPLAIN-checked in T052).
 Retention: kept (no expiry, DAT-03); holds no personal data beyond the pseudonymous old player id and times.
 
 ## `leases/leases::{jobName}` (KV, CAS — new, platform)
@@ -74,24 +75,28 @@ Acquire when missing (insert, token 1), or `owner == null && nextRunAtUtc <= now
 | `actorId` | anonymous id when it was the player (Player commands); GM staff id unchanged |
 | `outbox[].payload.*` | every string equal to the player id → anonymous id |
 | `resultCompact`, `bodyHash` | `""` (personal data in results; replay window long expired) |
+| `requestId`, `correlationId` | `""` (review T054, B1: with them the unsalted key `SHA-256(actor\|player\|op\|requestId)` re-identifies the player) |
+| `outbox[kind = gm_audit].payload.correlationId` | `""` (the GM request id, same reason) |
 | `claimKeys[]` | entries into a Remove-treated collection → `"{collection}/redacted"` |
-| everything else | unchanged (operation, codes, aggregates/revs, committedAtUtc, correlationId, outbox flags, key) |
+| everything else | unchanged (operation, codes, aggregates/revs, committedAtUtc, outbox flags, key) |
+
+`gm_audit` projections of the player: generic anonymize plus `payload.correlationId = ""` (`receiptId` kept).
 
 Index `ix_receipts_player (playerId, committedAtUtc DESC, META().id DESC)` moves from the gm descriptor to platform
-provisioning.
+provisioning (GM history). The purge reads `ix_receipts_player_ref (playerId, META().id)` (review T054, minor 4).
 
 ## Collection deletion treatments (FR-019)
 
 | Collection | Owner | Treatment | Player field | Reference index |
 | --- | --- | --- | --- | --- |
 | `pa_*` | platform | Remove by key | key | — |
-| `receipts` | platform | Anonymize (receipt rules) | `playerId` | `ix_receipts_player` |
-| `gm_audit` | platform | Anonymize | `playerId` | `ix_gm_audit_player` |
+| `receipts` | platform | Anonymize (receipt rules) | `playerId` | `ix_receipts_player_ref` |
+| `gm_audit` | platform | Anonymize (audit rule) | `playerId` | `ix_gm_audit_player_ref` |
 | `account_deletions` | platform | purge record (excluded) | — | — |
 | `leases`, `dataprotection`, `gate` | platform | NoPlayerData | — | — |
 | `identities` | identity | Remove | `playerId` | `ix_identities_player_ref` (new) |
 | `sessions` | identity | Remove | `playerId` | `ix_sessions_player_ref` (new) |
-| `ledger` | economy | Anonymize | `playerId` | `ix_ledger_player` |
+| `ledger` | economy | Anonymize | `playerId` | `ix_ledger_player_ref` |
 | `extref_claims` | economy | Anonymize | `playerId` | `ix_extref_claims_player_ref` (new) |
 | `gm_staff`, `gm_staff_identities`, `gm_sessions` | gm | NoPlayerData | — | — |
 | `counter_log` | sample.counter | Anonymize | `playerId` | `ix_counter_log_player_ref` (new) |

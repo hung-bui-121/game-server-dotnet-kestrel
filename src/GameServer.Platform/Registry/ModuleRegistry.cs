@@ -37,16 +37,25 @@ public sealed partial class ModuleRegistry
 
     public IEnumerable<OutboxProjection> OutboxProjections => _modules.SelectMany(m => m.Descriptor.OutboxProjections);
 
-    /// <summary>Collections to provision: <c>receipts</c>, every <c>pa_*</c>, module collections and projection targets (DAT-07).</summary>
-    /// <summary>Collections refusing plain key-value writes: declared by modules, plus the platform key ring.</summary>
+    /// <summary>Collections refusing plain key-value writes: declared by modules, plus the platform key ring, gate and purge records.</summary>
     public IReadOnlySet<string> TransactionOnlyCollections() =>
         _modules.SelectMany(m => m.Descriptor.Collections).Where(c => c.TransactionOnly).Select(c => c.Name)
             .Append(PlatformCollections.DataProtection)
             .Append(PlatformCollections.Gate)
+            .Append(PlatformCollections.AccountDeletions)
             .ToHashSet(StringComparer.Ordinal);
 
+    /// <summary>Collections to provision: platform collections, every <c>pa_*</c>, module collections and projection targets (DAT-07).</summary>
     public IReadOnlyList<string> RequiredCollections() =>
-        new[] { GameServer.Platform.Commands.ReceiptDocument.Collection, PlatformCollections.DataProtection, PlatformCollections.Audit, PlatformCollections.Gate }
+        new[]
+            {
+                GameServer.Platform.Commands.ReceiptDocument.Collection,
+                PlatformCollections.DataProtection,
+                PlatformCollections.Audit,
+                PlatformCollections.Gate,
+                PlatformCollections.Leases,
+                PlatformCollections.AccountDeletions,
+            }
             .Concat(Aggregates.Values.Select(a => a.Collection))
             .Concat(_modules.SelectMany(m => m.Descriptor.Collections).Select(c => c.Name))
             .Concat(OutboxProjections.Select(p => p.Collection))
@@ -105,6 +114,8 @@ public sealed partial class ModuleRegistry
         ValidateCommands(errors);
         ValidateErrorCodes(errors);
         ValidateOutbox(errors);
+        ValidateDeletion(errors);
+        ValidateJobs(options, errors);
         if (config is not null)
         {
             ValidateConfig(config, errors);
@@ -128,6 +139,8 @@ public sealed partial class ModuleRegistry
                 $"[deployment] GameServer:EnvironmentId '{options.EnvironmentId}' is missing or invalid. " +
                 "Fix: set GameServer:EnvironmentId in deployment config (ARC-10).");
         }
+
+        errors.AddRange(options.ValidateBackgroundWork());
     }
 
     private void ValidateModules(List<string> errors)
@@ -352,6 +365,7 @@ public sealed partial class ModuleRegistry
         _aggregates = null;
         _commands = null;
         _errors = null;
+        _deletionPlan = null;
     }
 
     private Dictionary<string, PlayerAggregateDescriptor> BuildAggregates()
@@ -405,4 +419,10 @@ public static class PlatformCollections
 
     /// <summary>Maintenance flag and minimum client versions, document <c>gate</c> (GATE-01, GATE-02).</summary>
     public const string Gate = "gate";
+
+    /// <summary>Job leases <c>leases::{jobName}</c>, key-value with CAS (JOB-01).</summary>
+    public const string Leases = "leases";
+
+    /// <summary>Purge progress and purge records <c>deletion::{playerId}</c>, transaction-only (PRIV-01, FR-017, FR-018).</summary>
+    public const string AccountDeletions = "account_deletions";
 }

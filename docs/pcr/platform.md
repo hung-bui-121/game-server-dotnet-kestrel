@@ -3,7 +3,8 @@
 Published Contract Register của nền tảng (PCR-01). Thay đổi mục **semantic** là breaking change (ARC-08);
 thay đổi mục **vận hành** chỉ cần ghi changelog. Nguồn yêu cầu: `Requirements/Game_Server_System_Requirements_v1.2.md` rev 4.
 
-Phiên bản: 0.5.0 (slice 001 + sửa sau review + slice 002 identity + slice 004 GM + slice 005 observability, 2026-10-26).
+Phiên bản: 0.6.0 (slice 001 + sửa sau review + slice 002 identity + slice 004 GM + slice 005 observability, 2026-10-26;
+slice 010 lease job và xoá tài khoản, 2026-10-30 — mục 16).
 
 ## 1. Limits và timeout theo nhóm endpoint (vận hành — API-06, PERF-04)
 
@@ -33,7 +34,9 @@ Budget tổng = giá trị × số instance.
   ≈ 1 RTT mà không cần get lại trước khi ghi.
 - Conflict: Couchbase chỉ phát hiện **write-write**; document chỉ đọc (`Reads`) có thể đổi trong lúc transaction
   chạy (read skew). Store in-memory mô phỏng đúng như vậy.
-- Mọi ghi `pa_*` và `rcpt::*` chỉ qua `ICommandRunner` / `IPlayerAggregateWriter` (arch test). Ngoại lệ: các cờ
+- Mọi ghi `pa_*` và `rcpt::*` chỉ qua `ICommandRunner` / `IPlayerAggregateWriter` / `IAccountPurgeWriter` (purge, mục 16;
+  arch test: trong `GameServer.Platform` chỉ namespace `Commands`, `Aggregates`, `Persistence`, `Privacy` dùng
+  `ITransactionContext`). Ngoại lệ: các cờ
   outbox của receipt **đã commit** (`outboxPending`, `outboxAttempts`, `outboxNextAttemptAtUtc`,
   `outboxDeadLetter`) được cập nhật bằng `MutateIn` ngoài transaction, có CAS lấy từ một get mới; receipt chưa nhìn
   thấy (đang unstaging) được bỏ qua cho sweeper. Rủi ro còn lại: receipt hết replay window bị transaction mới thay
@@ -156,6 +159,10 @@ Health endpoints (`/health/live`, `/health/ready`) do module `platform.observabi
 | Truy vấn phân trang | `IPagedQueryStore` (in-memory; Couchbase N1QL `RequestPlus`) |
 | Health của store | `IStoreHealthProbe` (mặc định: một KV get key không tồn tại) |
 | Endpoint cấp host | `IHostEndpointsModule` (map ở mọi host, bất kể `MapPlayerApi`/`MapGmApi`) |
+| Lease job (slice 010) | `ModuleDescriptor.Jobs = [new JobDescriptor(name, typeof(TJob), intervalSeconds)]`, `TJob : ILeaseJob` (Core) — mục 16 |
+| Xoá dữ liệu player (slice 010) | `CollectionSpec(..., Deletion: DeletionTreatment, PlayerField = "playerId")` bắt buộc; `ModuleDescriptor.DeletionSteps = [new DeletionStepRegistration(name, typeof(TStep))]`, `TStep : IAccountDeletionStep` — mục 16 |
+| Truy vấn bảo trì (slice 010) | `IMaintenanceQueryStore` (`QueryDueAsync`, `QueryReferencesAsync`; in-memory và Couchbase) — chỉ cho job |
+| Hook sau command (slice 010) | `MapPlayerCommand(..., afterExecute)` / `MapGmCommand(..., afterExecute)`: `Func<CommandExecution, HttpContext, Task>` chạy sau commit **hoặc** replay (execution có receipt), không chạy khi bị từ chối bằng mã nghiệp vụ; dùng để làm mới cache của instance phục vụ (vd. `ProfileCache`) |
 
 ## 12. GM API dùng chung (semantic — slice 004)
 
@@ -171,8 +178,11 @@ Health endpoints (`/health/live`, `/health/ready`) do module `platform.observabi
 - `PlayerSnapshotReader.ReadAllAsync(playerId)`: mọi aggregate kể cả hidden (cho GM).
 - Runner: command profile `Player` chỉ cho actor player, `Gm` chỉ cho actor GM có permission của command, `Dev` cho cả hai
   → sai → 403 `FORBIDDEN`. Command `Gm` phải commit với đúng một audit; command khác không được có audit (SEC-14).
-- `IGmTargetValidator`: kiểm player đích trước khi chạy command GM (module gm: tồn tại + không chờ xoá → 404).
-- `IKeyValueStore` từ chối ghi `receipts`, `pa_*` và `gm_audit`.
+- `IGmTargetValidator.ValidateAsync(playerId, operation, ct)`: kiểm player đích trước khi chạy command GM (module gm: tồn
+  tại + không chờ xoá → 404; riêng `identity.cancel_deletion` được nhắm player đang chờ xoá, player đã purge → 409
+  `DELETION_GRACE_OVER`). **Breaking (slice 010):** thêm tham số `operation` — implementation của game phải thêm tham số
+  (migration: bỏ qua nó để giữ hành vi cũ).
+- `IKeyValueStore` từ chối ghi `receipts`, `pa_*`, `gm_audit` và (slice 010) `account_deletions`.
 - Response GM: `Cache-Control: no-store`.
 - Middleware profile: mutation GM có `Sec-Fetch-Site: cross-site` → 403.
 - `GateHeaders` (slice 006): `X-Client-Version`, `X-Platform`, `X-Build-Id` — SDK gửi trên mọi request (GATE-02); server so
@@ -302,4 +312,157 @@ khi không đăng ký module gm).
 `x-gm-csrf`, response `4XX`/`5XX` = Problem Details.
 
 **Khởi tạo store dùng chung (`IStoreInitializer`):** Couchbase provisioner chạy một lần mỗi process; key ring và
-bootstrap staff chờ nó trước khi đọc store, bất kể thứ tự hosted service.
+bootstrap staff chờ nó trước khi đọc store, bất kể thứ tự hosted service. Tạo scope/collection: "đã tồn tại" = instance khác
+đã tạo; cluster manager trả 503 "Service is temporarily unavailable" khi đang bận đổi manifest (gặp khi nhiều scope được
+provision cùng lúc, 2026-10-30) → thử lại tối đa 6 lần, backoff 0,5 s × lần (như câu lệnh index; sửa ở slice 010).
+
+## 16. Lease job và xoá tài khoản (slice 010 — JOB-01, PRIV-01, DAT-03, DAT-04, PERF-07, ACC-37)
+
+### Lease job (semantic với vận hành)
+
+Mỗi job khai trong `ModuleDescriptor.Jobs` chạy trên **một** instance tại một thời điểm, điều phối bằng document KV
+`leases/leases::{jobName}` (CAS, **không expiry** — DAT-03): `{jobName, owner ({machine}:{pid}:{8 hex}) | null, fencingToken,
+leaseUntilUtc, nextRunAtUtc, acquiredAtUtc, renewedAtUtc, lastRun{startedAtUtc, completedAtUtc, result}, gameId, environmentId}`.
+
+| Mục | Giá trị |
+| --- | --- |
+| Lấy lease | document chưa có (insert, token 1), hoặc đã nhả và `nextRunAtUtc <= now`, hoặc đang giữ nhưng `leaseUntilUtc <= now` (takeover, log Warning). Mỗi lần lấy `fencingToken + 1`. Đua → một instance thắng, không retry |
+| Gia hạn | mỗi `RenewSeconds`; CAS thua, hoặc không gia hạn được trước `leaseUntilUtc − 5 s` → mất lease, token của run bị huỷ (`LeaseLost`, không nhả) |
+| Nhả | sau run: xong/lỗi → `nextRunAtUtc = now + interval`; bị dừng do shutdown (OPS-03, budget 2 s, không dùng token dừng) → `nextRunAtUtc = now` để instance khác chạy ngay |
+| Fencing | lease chỉ giới hạn ai **bắt đầu**; tiến độ được rào ở nơi lưu (purge record, mục dưới): instance tạm dừng (GC/VM) quá lease bị từ chối khi ghi — đã kiểm trên Couchbase thật (`CouchbaseLeaseAndPurgeTests`). Gặp token lớn hơn ở record, job đọc lại document lease (`LeaseStore.IsHeldAsync`): lease đã sang token khác → `LeaseLost` (dừng, không nhả); lease vẫn mang token của run → document lease đã bị xoá/tạo lại (token bắt đầu lại từ 1): bỏ qua player đó + LogError, run tiếp tục (review T054) |
+| **Runbook: không bao giờ xoá `leases::*`** | token tạo lại bắt đầu từ 1 trong khi purge record giữ token lớn hơn → các player đó bị bỏ qua mãi (LogError "Purge of player … skipped … never delete leases::*", metric `account_purges_total{result=fenced_out}`). Khắc phục: đặt `fencingToken` của `leases::identity.account-purge` (KV, CAS) lớn hơn token lớn nhất trong `account_deletions` |
+| Thời gian | từ `IClock`; chỉ chờ poll/renew dùng giờ thật. `LeaseJobRunner.RunOnceAsync(job, ct)` cho test/vận hành |
+| Khai báo | tên `^[a-z][a-z0-9._-]{1,63}$`, trùng giữa module, type không phải `ILeaseJob`, interval ngoài 10..86400 → startup fail; `GameServer:Jobs:Settings:{job}` với tên không có job nào đăng ký → startup fail (review T054) |
+| Metrics | `job_runs_total{job,result}` (chỉ run đã giữ lease), `job_run_duration_seconds{job}`, `job_lease_acquisitions_total{job}`, `job_lease_losses_total{job}`; activity `job {name}` |
+
+| Cấu hình (vận hành) | Mặc định | Giới hạn |
+| --- | --- | --- |
+| `GameServer:Jobs:Enabled` | true (TestHost: false) | — |
+| `GameServer:Jobs:LeaseSeconds` | 60 | 30..600, ≥ 3 × `Transactions:ExpirationSeconds` |
+| `GameServer:Jobs:RenewSeconds` | 20 | 1..LeaseSeconds/3 |
+| `GameServer:Jobs:PollSeconds` | 30 (± 20 %) | 5..LeaseSeconds — mỗi instance không giữ lease tốn 1 KV get/job/poll |
+| `GameServer:Jobs:Settings:{job}:Enabled` / `:IntervalSeconds` | true / mặc định của descriptor | interval 10..86400 |
+
+### Deletion treatment (semantic với module — FR-019)
+
+Mọi collection module khai và mọi collection đích projection phải có **đúng một** `DeletionTreatment` (`NoPlayerData`,
+`Anonymize`, `Remove`, `ModuleStep`), nếu không startup fail (thông báo nêu module + collection). Platform cố định: `pa_*` =
+Remove theo key; `receipts`, `gm_audit` = Anonymize (`playerId`); `leases`, `dataprotection`, `gate` = NoPlayerData;
+`account_deletions` = purge record (ngoài kế hoạch). `ModuleStep` cần một `DeletionSteps` cùng module; tên step trùng, type
+không phải `IAccountDeletionStep` → startup fail. `PlayerField` = đường dẫn trường chứa player id (mặc định `playerId`).
+
+Provisioner tạo index tham chiếu `ix_{collection}_player_ref (playerField, META().id)` cho **mọi** collection Anonymize/Remove
+(kể cả `receipts`, `ledger`, `gm_audit`), trừ khi đã có index khai báo đúng hai key đó và không có WHERE (review T054: index
+partial không phục vụ mọi tham chiếu; index lịch sử `(player, time, id)` làm mỗi batch sort toàn bộ lịch sử của player);
+`ix_receipts_player (playerId, committedAtUtc DESC, META().id DESC)` chuyển từ module gm sang platform (lịch sử GM).
+
+### Purge (semantic)
+
+- **Writer duy nhất**: `IAccountPurgeWriter` (Platform). Mỗi lời gọi = một transaction ≤ `BatchSize` document, đọc purge record
+  và từ chối nếu `record.fencingToken > ticket.FencingToken` (`PurgeFencedOutException`) hoặc record đã `purged`
+  (`PurgeAlreadyCompletedException`: chính claim này đã hoàn tất, ví dụ transaction cuối báo ambiguous nhưng đã commit →
+  purge tính là `completed`, job đi tiếp — review T054), rồi ghi token
+  của ticket vào record. Commit không nhận token của job (PERF-02). Phương thức: `BeginAsync` (đánh dấu profile purging + insert
+  record trong một transaction, hoặc claim record đang purging), `ApplyAsync` (Anonymize/Remove theo kế hoạch, từ chối
+  `pa_profile` và treatment sai), `RewriteAsync` / `ScrubOutboxAsync` (đường đi của module step), `CompleteStepAsync`,
+  `CompleteAsync` (xoá `pa_profile` + record `purged` trong một transaction), `RecordFailureAsync` (backoff).
+  Insert record thua đua (Couchbase báo "exists") hoặc stale read → đọc lại tối đa 3 vòng; hai instance cùng begin một player
+  trên Couchbase → một record, token lớn hơn giữ (đã kiểm).
+- **Thứ tự** (`AccountPurgeService`): `receipts` → `anonymize:{c}` (thứ tự đăng ký) → `step:{name}` (thứ tự module) →
+  `verify` (≤ 3 vòng truy vấn lại receipts và các collection Anonymize) → `aggregates` (mọi `pa_*` trừ profile, theo key) →
+  `remove:{c}` (sessions, identities…) → hoàn tất (profile + record). Các step Remove chạy **cuối** (review T054): khi mapping
+  còn, credential cũ vẫn bị từ chối `ACCOUNT_DELETED`; sau `remove:identities` chỉ còn transaction cuối (cửa sổ còn lại: PCR
+  identity). Step Remove tự drain mọi thứ đã vào collection của nó nên `verify` không cần truy vấn lại chúng. Step xong được ghi vào `completedSteps`; purge tiếp tục từ step dở, chạy lại
+  step dở là vô hại. Mỗi step là vòng `QueryReferencesAsync` (RequestPlus, ≤ `BatchSize`) + ghi cho tới khi rỗng; một batch không
+  ghi được gì mà lần sau trả lại đúng các key đó → lỗi (không lặp vô hạn).
+- **Quy tắc ghi đè (R8, D1)**: mọi chuỗi bằng đúng player id (lồng ở bất kỳ đâu) → anonymous id; trường khác giữ nguyên. Receipt
+  của player thêm: `resultCompact = ""`, `bodyHash = ""`, **`requestId = ""`, `correlationId = ""`**, `claimKeys` trỏ vào
+  collection Remove → `"{collection}/redacted"`, outbox `gm_audit` → `payload.correlationId = ""`; `gm_audit` của player:
+  `payload.correlationId = ""` (`receiptId` giữ). Lý do (review T054, B1): khoá receipt `SHA-256(actorId|playerId|operation|requestId)`
+  không có secret — còn `requestId` (hoặc correlation id, cùng UUID) cạnh khoá thì ai cũng thử được `Compute(X, X, op, requestId)
+  == receiptId` với id ứng viên X và nối lại mọi bản ghi qua `receiptId`/`entryId`. Test quét mọi chuỗi trong store sau purge.
+  Remove ở collection không phải `pa_*` chỉ xoá document mà trường player **vẫn** bằng player id.
+- **Anonymous id**: `anon_` + 26 base32 (128 bit, `RandomNumberGenerator`), một id cho mọi bản ghi giữ lại của player; chỉ nằm
+  trong record khi đang purging, bị xoá khi `purged`; **không bao giờ log** (log purge chỉ có player id, step, kiểu exception).
+- **Receipt outbox đang chờ**: sau khi viết lại receipt, purge tự relay outbox còn pending (`IOutboxRelay`) để projection mang
+  anonymous id.
+- **Module step**: nhận `IPlayerDataEraser` (`PlayerId`, `AnonymousId`, `BatchSize`, `FindAsync`, `RewriteAsync` — trả null =
+  xoá, `ScrubOutboxAsync` cho projection kind của chính module), chỉ trên collection của chính module; `pa_*`, `receipts`,
+  `gm_audit`, collection module khác → từ chối. `FindAsync` trả tối đa `min(limit, BatchSize)` key; `RewriteAsync` > `BatchSize`
+  key → `ArgumentException`; hết budget của run giữa step → `PurgeBudgetExhaustedException` (step **không được nuốt**), purge
+  `incomplete`, step chạy lại từ đầu ở run sau (review T054). Step phải idempotent. Module không bao giờ mở transaction và chỉ
+  job purge + `Platform.Privacy` được phụ thuộc `IAccountPurgeWriter` (arch test).
+- **Thất bại**: record giữ `purging`, `attempts + 1`, `lastFailure{step, errorType, atUtc}` (không message),
+  `nextAttemptAtUtc = now + RetryDelayMinutes × 2^(attempts−1)` (tối đa `MaxRetryDelayMinutes`); step xong reset `attempts`.
+  Metric `account_purge_step_failures_total{step}` + LogError. Step id `begin`: purge chưa claim được record (lỗi store, profile
+  không đọc được) — player bị bỏ qua tới run sau, không chặn hàng đợi.
+
+**Document `account_deletions/deletion::{playerId}`** (chỉ ghi trong transaction, không expiry): `{playerId, gameId,
+environmentId, state (purging|purged), requestedAtUtc, purgeAfterUtc, purgeStartedAtUtc, purgedAtUtc, anonymousId?,
+fencingToken, completedSteps[]?, documentsProcessed, attempts?, lastFailure?, nextAttemptAtUtc}` (chi tiết data-model 010).
+Sau purge là purge record (GM view, cancel → 409) — nơi duy nhất còn player id cũ (SC-002, kiểm bằng scan mọi collection
+trên Couchbase).
+
+**Truy vấn bảo trì (`IMaintenanceQueryStore`, PERF-07)** — chỉ dùng trong job, `RequestPlus`, limit 1..1000, tên collection/
+trường chỉ gồm định danh:
+
+| Truy vấn | Dùng cho | Index (EXPLAIN trên Couchbase 7.6.12, 2026-10-30) |
+| --- | --- | --- |
+| `QueryDueAsync(DueQuery)`: trường thời gian `<= now`, trường unset `IS NOT VALUED`, cũ nhất trước rồi theo key | record đến hạn (`nextAttemptAtUtc`), profile hết grace (`state.deleted.purgeAfterUtc`, định dạng STJ — `DueTimeFormat.Json`) | `ix_account_deletions_due (nextAttemptAtUtc, META().id) WHERE purgedAtUtc IS NOT VALUED`, `ix_profile_deletion_due (state.deleted.purgeAfterUtc, META().id) WHERE state.deleted.purgeStartedAtUtc IS NOT VALUED`: đọc theo thứ tự index, không sort. (Bản đầu không có `META().id` trong key → planner sort **toàn bộ backlog đến hạn** mỗi run — sửa khi chạy EXPLAIN ở T052) |
+| `QueryReferencesAsync(ReferenceQuery)`: trường = giá trị, theo key, `AfterKey` (thêm ở slice 010, additive) để phân trang qua document job không đổi | các step purge, `ScrubOutboxAsync` | index `_player_ref (field, META().id)` của **cả bảy** collection (receipts, gm_audit, ledger, identities, sessions, extref_claims, counter_log): thứ tự index, LIMIT đẩy xuống, không sort (assert trên EXPLAIN). Bản trước review T054 dùng `ix_receipts_player`/`ix_ledger_player`/`ix_gm_audit_player` (khoá thứ hai `committedAtUtc`) → sort toàn bộ lịch sử của player mỗi batch (~n²/BatchSize) — đã sửa. Không truy vấn nào primary/sequential scan |
+
+**Store primitive mới:** `ITransactionContext.RemoveAsync(StoredDocument existing)` (Couchbase `AttemptContext.RemoveAsync`;
+in-memory: staged remove, có version check, rollback giữ document; conformance chạy cả hai store).
+
+**Creation anchor (R9):** `IPlayerAggregateWriter.UpdateAsync(..., DocumentKey? creationAnchor, ct)` — aggregate chưa tồn tại
+chỉ được tạo khi anchor tồn tại và cùng `playerId`; anchor được ghi lại nguyên trạng trong cùng transaction (write lock), nên
+login lần đầu đua với purge xoá mapping: một bên commit; anchor mất → `AggregateAnchorMissingException`, không ghi gì (kiểm trên
+Couchbase thật, cả mapping do login guest ghi bằng KV).
+
+| Cấu hình (vận hành) | Mặc định | Giới hạn |
+| --- | --- | --- |
+| `GameServer:Purge:MaxPlayersPerRun` | 50 | 1..500 |
+| `GameServer:Purge:BatchSize` | 25 | 1..100 document / transaction (DAT-04) |
+| `GameServer:Purge:MaxDocumentsPerRun` | 5000 | 100..100 000 |
+| `GameServer:Purge:RetryDelayMinutes` | 10 | 1..1440, nhân đôi mỗi lần lỗi liên tiếp |
+| `GameServer:Purge:MaxRetryDelayMinutes` | 1440 | ≥ RetryDelayMinutes |
+
+**Throughput:** mặc định 50 player / 10 phút ≈ 7 200 player/ngày; player có 100 k document lịch sử cần ~20 run. Đo trên
+Couchbase 7.6.12 một node localhost (2026-10-30): purge trọn một player (9 receipt, 2 ledger, 1 audit, claim, counter log,
+2 identity, session, các `pa_*`) trong một run ≈ 0,9 s — chỉ số tương đối, không phải capacity.
+
+**Metrics và cảnh báo:** `account_purges_total{result}` (`completed`, `incomplete`, `failed`, `fenced_out`),
+`account_purge_step_failures_total{step}` (step id ở trên, `begin`, `complete`), `account_purge_documents_total{action}`
+(`anonymize`, `remove`), gauge `account_purge_overdue_seconds` (tuổi quá `purgeAfter` của player đến hạn cũ nhất — record tiếp
+tục **và** profile chờ, kể cả khi record tiếp tục lấp đầy run — mà run gần nhất trên instance giữ lease thấy). Giá trị chỉ được
+báo trong 2 × interval của job (giờ thật) rồi biến mất: instance không còn chạy job không báo giá trị cũ (review T054).
+**Cảnh báo: `max(account_purge_overdue_seconds) > 86400`** (SC-006) và **gauge vắng mặt > 3 × interval** (job không chạy). Giới
+hạn đã biết: player đang chờ backoff sau lỗi (`nextAttemptAtUtc` ở tương lai) không nằm trong danh sách, nên lỗi lặp lại không
+làm gauge tăng; theo dõi thêm `account_purge_step_failures_total`.
+
+**Ngoại lệ CMD-08/SEC-14 (Complexity Tracking của plan 010):** `ledger` và `gm_audit` không bao giờ bị xoá, nhưng purge **ghi đè**
+các giá trị bằng player id (anonymous id) trong chúng, và xoá `payload.correlationId` của audit (trường correlation của SEC-14 trở
+thành rỗng cho player đã purge; tham chiếu receipt giữ nguyên — review T054, B1) — chỉ qua `AccountPurgeWriter`, trong
+transaction có fencing. `AuditedStore` vẫn từ chối sửa audit ở mọi đường khác.
+
+**Hook `afterExecute`:** chạy sau commit (hoặc replay); lỗi của hook được LogError và **không** biến command đã commit thành
+5xx (review T054). Hook của identity ghi metric/log trước khi làm mới cache.
+
+**Hạng mục mở (không làm ở slice 010):**
+
+| Hạng mục | Ghi chú |
+| --- | --- |
+| Schema OpenAPI cho body/response của `POST /gm/v1/players/{playerId}/deletion/cancel` | route đã có trong `gm-openapi.json` (permission, CSRF) nhưng body `{reason}` và `GmCommandResponse` chưa có schema chi tiết (review T054, 12b) |
+| Id đã purge trong `pa_*` của **player khác** | purge chỉ ghi dữ liệu của chính player; giá trị bằng id cũ nằm trong aggregate của người khác (bạn bè, tin nhắn, đối thủ…) không được xoá/ẩn — cần cơ chế khi có module xã hội; liên quan P1 MSG-01 (review T054, 12c) |
+
+**Rủi ro còn lại (vận hành):**
+
+| Rủi ro | Hệ quả | Xử lý |
+| --- | --- | --- |
+| Tombstone: Couchbase giữ tombstone của document đã xoá (key `pa_*` = player id) và entry ATR tới metadata purge (mặc định 3 ngày) | id cũ còn thấy ở tầng storage vài ngày với quản trị viên | không qua API/query nào; runbook (slice 013) |
+| Relay đang chạy đã đọc receipt **trước** khi viết lại → insert projection với id cũ sau step anonymize | một projection còn id cũ | purge tự relay receipt pending sau khi viết lại; step `verify` truy vấn lại mọi collection (≤ 3 vòng); thông thường receipt đã relay ≥ 30 ngày trước purge. Cửa sổ còn lại = một batch sweeper đang bay |
+| `MutateIn` của sweeper vào receipt cùng lúc transaction purge | mất ghi cờ `outboxPending` | một lần relay thừa, idempotent; sweeper không ghi `playerId` |
+| Restore backup trước purge | dữ liệu quay lại | ngoài phạm vi; runbook restore (slice 013) phải chạy lại purge cho record `purged` |
+| Log giữ scope `RequestId` cạnh player id (LOG-01) | trong thời gian giữ log, `RequestId` + player id trong log nối lại được receipt (khoá tính lại được) dù store đã ẩn danh | ngoài store; retention log là giới hạn thời gian của liên kết này — runbook (slice 013) đặt retention log ≤ grace + thời gian purge, hoặc xoá log theo player id khi purge |
+| Document `leases::*` bị xoá | player có record token lớn hơn bị bỏ qua (LogError) | runbook ở mục Lease job |
+| Backlog > ≈ 7 200/ngày | SC-006 trễ | cảnh báo overdue; tăng `MaxPlayersPerRun` / giảm interval |

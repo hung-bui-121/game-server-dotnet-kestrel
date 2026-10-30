@@ -6,6 +6,7 @@ using GameServer.Platform;
 using GameServer.Platform.Aggregates;
 using GameServer.Platform.Commands;
 using GameServer.Platform.Persistence;
+using GameServer.Platform.Privacy;
 using GameServer.Platform.Web.Auth;
 using GameServer.Platform.Web.Endpoints;
 using GameServer.Platform.Web.Routing;
@@ -28,7 +29,41 @@ public sealed record GmAggregateView(
     string? UpdatedAtUtc,
     JsonNode? State);
 
-public sealed record GmPlayerView(string PlayerId, IReadOnlyList<GmAggregateView> Aggregates);
+/// <summary>
+/// Account deletion of a player as GM sees it (PRIV-01, FR-012): <c>pending</c> and <c>purging</c> come from
+/// <c>profile.deleted</c>, <c>purged</c> from the purge record. Times are UTC strings; the anonymous id is never shown.
+/// </summary>
+public sealed record GmDeletionView(
+    string State,
+    string RequestedAtUtc,
+    string PurgeAfterUtc,
+    string? PurgeStartedAtUtc,
+    string? PurgedAtUtc)
+{
+    public const string Pending = "pending";
+    public const string Purging = "purging";
+    public const string Purged = "purged";
+
+    public static GmDeletionView? Of(ProfileState profile) => profile.Deleted is not { } deleted
+        ? null
+        : new GmDeletionView(
+            deleted.PurgeStartedAtUtc is null ? Pending : Purging,
+            AggregateDocumentSerializer.FormatTime(deleted.RequestedAtUtc),
+            AggregateDocumentSerializer.FormatTime(deleted.PurgeAfterUtc),
+            deleted.PurgeStartedAtUtc is { } started ? AggregateDocumentSerializer.FormatTime(started) : null,
+            null);
+
+    public static GmDeletionView Of(AccountDeletionRecord record) =>
+        new(
+            record.State == AccountDeletionState.Purged ? Purged : Purging,
+            AggregateDocumentSerializer.FormatTime(record.RequestedAtUtc),
+            AggregateDocumentSerializer.FormatTime(record.PurgeAfterUtc),
+            AggregateDocumentSerializer.FormatTime(record.PurgeStartedAtUtc),
+            record.PurgedAtUtc is { } purged ? AggregateDocumentSerializer.FormatTime(purged) : null);
+}
+
+/// <summary>A player as GM sees it; <see cref="Deletion"/> is null when the player never requested deletion.</summary>
+public sealed record GmPlayerView(string PlayerId, IReadOnlyList<GmAggregateView> Aggregates, GmDeletionView? Deletion);
 
 public sealed record GmPlayerSearchItem(string PlayerId, string DisplayName);
 
@@ -139,11 +174,16 @@ public static class GmPlayerEndpoints
         var aggregates = await services.GetRequiredService<PlayerSnapshotReader>().ReadAllAsync(playerId, http.RequestAborted);
         if (!aggregates.Any(a => a.Exists))
         {
-            throw new GameServerException(CoreErrorCodes.NotFound, "Player not found.");
+            // A purged player has no aggregate left but a purge record: 200 without data (PRIV-01, D7).
+            var record = await services.GetRequiredService<AccountDeletionRecords>().GetAsync(playerId, http.RequestAborted)
+                ?? throw new GameServerException(CoreErrorCodes.NotFound, "Player not found.");
+            return new GmPlayerView(playerId, [], GmDeletionView.Of(record));
         }
 
         var showPii = services.GetRequiredService<ActorContextAccessor>().GetActor(http).HasPermission(GmPermissions.PlayerReadPii);
-        return new GmPlayerView(playerId, aggregates.Select(a => View(a, showPii)).ToArray());
+        var profile = aggregates.Single(a => a.Descriptor.AggregateId == IdentityAggregates.Profile);
+        var deletion = profile.Exists ? GmDeletionView.Of((ProfileState)profile.State) : null;
+        return new GmPlayerView(playerId, aggregates.Select(a => View(a, showPii)).ToArray(), deletion);
     }
 
     private static GmAggregateView View(LoadedAggregate aggregate, bool showPii)

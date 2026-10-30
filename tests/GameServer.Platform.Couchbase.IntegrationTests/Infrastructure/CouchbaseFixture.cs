@@ -5,6 +5,7 @@ using GameServer.Platform.Persistence;
 using GameServer.Platform.Registry;
 using GameServer.Platform.Tests.Infrastructure;
 using Microsoft.Extensions.Logging.Abstractions;
+using ScopeNotFoundException = Couchbase.Core.Exceptions.ScopeNotFoundException;
 
 namespace GameServer.Platform.Couchbase.IntegrationTests.Infrastructure;
 
@@ -12,7 +13,7 @@ namespace GameServer.Platform.Couchbase.IntegrationTests.Infrastructure;
 /// Connects to a real Couchbase (transactions enabled) when <c>COUCHBASE_CONNSTR</c> is set; otherwise every test
 /// is reported Skipped with the reason (constitution VI — never a fake pass). Each run uses its own scope.
 /// </summary>
-public sealed class CouchbaseFixture : IAsyncLifetime
+public class CouchbaseFixture : IAsyncLifetime
 {
     public const string ConnectionStringVariable = "COUCHBASE_CONNSTR";
 
@@ -29,6 +30,12 @@ public sealed class CouchbaseFixture : IAsyncLifetime
     public GameServerOptions GameServer { get; private set; } = null!;
 
     public CouchbaseOptions Options { get; private set; } = null!;
+
+    /// <summary>
+    /// Whether the fixture provisions the test modules into its scope. Off for tests whose hosts provision the scope
+    /// themselves, so the scope holds exactly the production collections and indexes (EXPLAIN checks, PERF-07).
+    /// </summary>
+    protected virtual bool ProvisionsTestModules => true;
 
     public async ValueTask InitializeAsync()
     {
@@ -61,16 +68,28 @@ public sealed class CouchbaseFixture : IAsyncLifetime
             Name = "conformance",
             Collections =
             [
-                new CollectionSpec("conf_docs", [new IndexSpec("ix_conf_docs_group_at", "`group`, `at`")]),
-                new CollectionSpec("tst04"),
-                new CollectionSpec("gm_staff"),
+                new CollectionSpec(
+                    "conf_docs",
+                    [
+                        new IndexSpec("ix_conf_docs_group_at", "`group`, `at`"),
+                        new IndexSpec("ix_conf_docs_due", "`dueAt`", "`doneAt` IS NOT VALUED"),
+                        new IndexSpec("ix_conf_docs_json_due", "`jsonDueAt`"),
+                        new IndexSpec("ix_conf_docs_ref", "`ref`, META().id"),
+                    ],
+                    Deletion: DeletionTreatment.NoPlayerData),
+                new CollectionSpec("tst04", Deletion: DeletionTreatment.NoPlayerData),
+                new CollectionSpec("gm_staff", Deletion: DeletionTreatment.NoPlayerData),
                 new CollectionSpec("gm_audit"),
             ],
         }), serviceOnly: false);
 
         Connection = new CouchbaseConnection(Options, GameServer, NullLoggerFactory.Instance);
-        await new CouchbaseProvisioner(Connection, Registry, GameServer, NullLogger<CouchbaseProvisioner>.Instance)
-            .ProvisionAsync(CancellationToken.None);
+        if (ProvisionsTestModules)
+        {
+            await new CouchbaseProvisioner(Connection, Registry, GameServer, NullLogger<CouchbaseProvisioner>.Instance)
+                .ProvisionAsync(CancellationToken.None);
+        }
+
         Store = new CouchbaseDocumentStore(Connection);
         Available = true;
     }
@@ -100,6 +119,10 @@ public sealed class CouchbaseFixture : IAsyncLifetime
             var cluster = await Connection.GetClusterAsync();
             var bucket = await cluster.BucketAsync(Options.BucketName);
             await bucket.Collections.DropScopeAsync(Connection.ScopeName);
+        }
+        catch (ScopeNotFoundException) when (!ProvisionsTestModules)
+        {
+            // No test of the class started a host, so the scope was never created.
         }
         finally
         {

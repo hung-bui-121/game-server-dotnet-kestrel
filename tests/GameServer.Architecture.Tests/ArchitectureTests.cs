@@ -115,6 +115,41 @@ public sealed class ArchitectureTests
     }
 
     [Fact]
+    public void Inside_platform_only_the_transactional_write_paths_use_transaction_contexts()
+    {
+        // Runner (Commands), aggregate writer (Aggregates), stores (Persistence) and the purge writer (Privacy) only: keeps
+        // jobs and future platform code off the transactional write path (DAT-09, slice 010).
+        ShouldPass(
+            Types.InAssembly(Platform)
+                .That().DoNotResideInNamespaceMatching(@"^GameServer\.Platform\.(Commands|Aggregates|Persistence|Privacy)(\..*)?$")
+                .ShouldNot().HaveDependencyOn(typeof(ITransactionContext).FullName!),
+            "GameServer.Platform types outside Commands, Aggregates, Persistence and Privacy must not depend on ITransactionContext");
+    }
+
+    [Fact]
+    public void Only_the_purge_job_and_platform_privacy_code_use_the_purge_writer()
+    {
+        // The writer bypasses the runner and rewrites ledger/audit (CMD-08/SEC-14 exception): keep its callers to the purge
+        // pipeline (Platform.Privacy), the identity purge job and the composition root that registers it (review minor 9).
+        static bool Allowed(Type type)
+        {
+            var outer = type;
+            while (outer.DeclaringType is { } declaring)
+            {
+                outer = declaring; // async state machines and closures are nested types
+            }
+
+            return outer.Namespace == "GameServer.Platform.Privacy" || outer == typeof(AccountPurgeJob) || outer == typeof(GameServerBuilderExtensions);
+        }
+
+        var writer = typeof(GameServer.Platform.Privacy.IAccountPurgeWriter).FullName!;
+        var users = AllFrameworkAndModules.SelectMany(a => Types.InAssembly(a).That().HaveDependencyOn(writer).GetTypes()).ToArray();
+
+        users.ShouldContain(t => t == typeof(AccountPurgeJob), "rule must see the purge job's dependency");
+        users.Where(t => !Allowed(t)).Select(t => t.FullName).ShouldBeEmpty("only Platform.Privacy, AccountPurgeJob and the DI registration may depend on IAccountPurgeWriter");
+    }
+
+    [Fact]
     public void Modules_do_not_touch_the_document_store_directly()
     {
         foreach (var assembly in ModuleAssemblies)

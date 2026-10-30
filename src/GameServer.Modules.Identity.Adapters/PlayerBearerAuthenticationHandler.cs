@@ -11,7 +11,8 @@ namespace GameServer.Modules.Identity;
 
 /// <summary>
 /// Player scheme <c>PlayerBearer</c> (SEC-02, IDN-09, IDN-10): <c>Authorization: Bearer</c> → session → profile checks in
-/// the order deleted → suspended → replaced; unknown or expired token → UNAUTHENTICATED.
+/// the order deleted → suspended → replaced; unknown or expired token → UNAUTHENTICATED. A session whose profile document
+/// is missing belongs to a purged account: ACCOUNT_DELETED without details (research R9, D9).
 /// </summary>
 public sealed class PlayerBearerAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
@@ -47,6 +48,11 @@ public sealed class PlayerBearerAuthenticationHandler(
         }
 
         var profile = await profiles.GetAsync(session.PlayerId, Context.RequestAborted);
+        if (profile is null)
+        {
+            return Fail(CoreErrorCodes.AccountDeleted);
+        }
+
         if (AccountChecks.CheckAccess(profile, clock.UtcNow) is { } denial)
         {
             return Fail(denial.Code, denial.Details);

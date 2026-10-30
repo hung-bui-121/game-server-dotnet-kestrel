@@ -47,6 +47,31 @@ public static class CommandEndpointFactory
         where TRequest : notnull =>
         routes.MapCommand(pattern, operation, toDomainAsync, toWire, replayFirst: true).AsPlayerEndpoint();
 
+    /// <summary>
+    /// Player command with a hook run after the command committed or was replayed (never after a rejection), before the
+    /// response is written: e.g. refreshing a per-instance cache the command made stale (PRIV-01 revocation, FR-007). A
+    /// failing hook is logged and never turns the committed command into an error response.
+    /// </summary>
+    public static IEndpointConventionBuilder MapPlayerCommand<TWireRequest, TRequest, TResult>(
+        this IEndpointRouteBuilder routes,
+        string pattern,
+        string operation,
+        Func<TWireRequest, TRequest> toDomain,
+        Func<TResult, IMessage> toWire,
+        Func<CommandExecution, HttpContext, Task> afterExecute)
+        where TWireRequest : IMessage<TWireRequest>, new()
+        where TRequest : notnull
+    {
+        ArgumentNullException.ThrowIfNull(afterExecute);
+        return routes.MapCommand<TWireRequest, TRequest, TResult>(
+                pattern,
+                operation,
+                (wire, _) => Task.FromResult(toDomain(wire)),
+                toWire,
+                afterExecute: afterExecute)
+            .AsPlayerEndpoint();
+    }
+
     /// <summary>Development-only command (OPS-09): profile Dev, Protobuf, forbidden in Production by the validator.</summary>
     public static IEndpointConventionBuilder MapDevCommand<TWireRequest, TRequest, TResult>(
         this IEndpointRouteBuilder routes,
@@ -66,7 +91,8 @@ public static class CommandEndpointFactory
         string operation,
         Func<TWireRequest, HttpContext, Task<TRequest>> toDomainAsync,
         Func<TResult, IMessage> toWire,
-        bool replayFirst = false)
+        bool replayFirst = false,
+        Func<CommandExecution, HttpContext, Task>? afterExecute = null)
         where TWireRequest : IMessage<TWireRequest>, new()
         where TRequest : notnull =>
         routes.MapPost(pattern, async (HttpContext http) =>
@@ -92,6 +118,11 @@ public static class CommandEndpointFactory
                         await toDomainAsync(wire, http),
                         result => toWire((TResult)result).ToByteArray());
                     execution = await runner.ExecuteAsync(invocation, http.RequestAborted);
+                }
+
+                if (afterExecute is not null && execution.ReceiptId is not null)
+                {
+                    await AfterExecuteHook.RunAsync(afterExecute, execution, http, operation);
                 }
 
                 var response = BuildResponse(execution, services.GetRequiredService<AggregateWireMapperRegistry>(), services.GetRequiredService<IClock>());

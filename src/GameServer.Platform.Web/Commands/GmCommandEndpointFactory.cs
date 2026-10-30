@@ -27,8 +27,11 @@ public interface IGmCommandBody
 /// </summary>
 public interface IGmTargetValidator
 {
-    /// <summary>Throws <see cref="GameServerException"/> when the player must not be changed by GM.</summary>
-    Task ValidateAsync(string playerId, CancellationToken cancellationToken);
+    /// <summary>
+    /// Throws <see cref="GameServerException"/> when the player must not be changed by GM with <paramref name="operation"/>
+    /// (the command's operation name, e.g. only <c>identity.cancel_deletion</c> may target a player pending deletion).
+    /// </summary>
+    Task ValidateAsync(string playerId, string operation, CancellationToken cancellationToken);
 }
 
 /// <summary>JSON response of a GM command (same fields as the Player <c>CommandResponse</c>).</summary>
@@ -64,6 +67,36 @@ public static class GmCommandEndpointFactory
         string permission,
         Func<TBody, TRequest> toDomain)
         where TBody : IGmCommandBody
+        where TRequest : notnull =>
+        routes.MapGmCommandCore<TBody, TRequest, TResult>(pattern, operation, permission, toDomain, afterExecute: null);
+
+    /// <summary>
+    /// GM command with a hook run after the command committed or was replayed (never after a rejection), before the
+    /// response is written: e.g. refreshing a per-instance cache of the target player (PRIV-01, FR-007). A failing hook is
+    /// logged and never turns the committed command into an error response.
+    /// </summary>
+    public static IEndpointConventionBuilder MapGmCommand<TBody, TRequest, TResult>(
+        this IEndpointRouteBuilder routes,
+        string pattern,
+        string operation,
+        string permission,
+        Func<TBody, TRequest> toDomain,
+        Func<CommandExecution, HttpContext, Task> afterExecute)
+        where TBody : IGmCommandBody
+        where TRequest : notnull
+    {
+        ArgumentNullException.ThrowIfNull(afterExecute);
+        return routes.MapGmCommandCore<TBody, TRequest, TResult>(pattern, operation, permission, toDomain, afterExecute);
+    }
+
+    private static RouteHandlerBuilder MapGmCommandCore<TBody, TRequest, TResult>(
+        this IEndpointRouteBuilder routes,
+        string pattern,
+        string operation,
+        string permission,
+        Func<TBody, TRequest> toDomain,
+        Func<CommandExecution, HttpContext, Task>? afterExecute)
+        where TBody : IGmCommandBody
         where TRequest : notnull
     {
         if (!pattern.Contains("{" + PlayerIdRouteValue + "}", StringComparison.Ordinal))
@@ -89,7 +122,7 @@ public static class GmCommandEndpointFactory
                 var request = toDomain(wire);
                 foreach (var validator in services.GetServices<IGmTargetValidator>())
                 {
-                    await validator.ValidateAsync(playerId, http.RequestAborted);
+                    await validator.ValidateAsync(playerId, operation, http.RequestAborted);
                 }
 
                 var actor = services.GetRequiredService<ActorContextAccessor>().GetActor(http) with { PlayerId = playerId };
@@ -101,6 +134,10 @@ public static class GmCommandEndpointFactory
                     request,
                     result => JsonSerializer.SerializeToUtf8Bytes((TResult)result, GameServerJson.Options));
                 var execution = await services.GetRequiredService<ICommandRunner>().ExecuteAsync(invocation, http.RequestAborted);
+                if (afterExecute is not null && execution.ReceiptId is not null)
+                {
+                    await AfterExecuteHook.RunAsync(afterExecute, execution, http, operation);
+                }
 
                 return Results.Json(BuildResponse(execution, services.GetRequiredService<IClock>()), GameServerJson.Options);
             })

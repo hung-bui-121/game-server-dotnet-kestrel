@@ -24,7 +24,8 @@ public static class CounterModuleDefinition
         Version = "0.1.0",
         DependsOn = ["identity"],
         Permissions = [ReadPermission],
-        Collections = [new CollectionSpec(LogCollection)],
+        // Log entries keep their history with the player id anonymized (PRIV-01, FR-019).
+        Collections = [new CollectionSpec(LogCollection, Deletion: DeletionTreatment.Anonymize)],
         Aggregates = [CounterAggregates.CounterDescriptor],
         Commands = [Command.Define<IncrementCommand, IncrementResult>(IncrementHandler.Descriptor).HandledBy<IncrementHandler>()],
         ErrorCodes = CounterErrors.All,

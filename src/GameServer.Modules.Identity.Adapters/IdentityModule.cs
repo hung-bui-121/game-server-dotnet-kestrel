@@ -16,6 +16,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Wire = GameServer.Modules.Identity.Protocol.V1;
 
@@ -35,6 +36,9 @@ public sealed partial class IdentityModule : IGameModule, IPlayerApiModule, IGmA
     public const string LinkRoute = "/api/v1/identity/link";
     public const string BanRoute = "/gm/v1/players/{playerId}/ban";
     public const string UnbanRoute = "/gm/v1/players/{playerId}/unban";
+    public const string DeleteAccountRoute = "/api/v1/identity/delete-account";
+    public const string CancelDeletionRoute = "/gm/v1/players/{playerId}/deletion/cancel";
+    public const string ProfileDeletionDueIndex = "ix_profile_deletion_due";
 
     public ModuleDescriptor Describe() => new()
     {
@@ -49,9 +53,23 @@ public sealed partial class IdentityModule : IGameModule, IPlayerApiModule, IGmA
             Command.Define<UnbanPlayerCommand, BanResult>(UnbanPlayerHandler.Descriptor).HandledBy<UnbanPlayerHandler>(),
             Command.Define<SetDisplayNameCommand, SetDisplayNameResult>(SetDisplayNameHandler.Descriptor).HandledBy<SetDisplayNameHandler>(),
             Command.Define<LinkIdentityCommand, LinkIdentityResult>(LinkIdentityHandler.Descriptor).HandledBy<LinkIdentityHandler>(),
+            Command.Define<RequestDeletionCommand, RequestDeletionResult>(RequestDeletionHandler.Descriptor).HandledBy<RequestDeletionHandler>(),
+            Command.Define<CancelDeletionCommand, CancelDeletionResult>(CancelDeletionHandler.Descriptor).HandledBy<CancelDeletionHandler>(),
         ],
-        Collections = [new CollectionSpec(GuestLoginService.IdentitiesCollection), new CollectionSpec(SessionService.Collection)],
+        Collections =
+        [
+            new CollectionSpec(GuestLoginService.IdentitiesCollection, Deletion: DeletionTreatment.Remove),
+            new CollectionSpec(SessionService.Collection, Deletion: DeletionTreatment.Remove),
+            // Index only (pa_* treatment is the platform's): pending deletions due for purge (PERF-07, research R4). META().id is a
+            // key so the due query's ORDER BY (due, id) reads index order and stops at its LIMIT instead of sorting the backlog.
+            new CollectionSpec(
+                IdentityAggregates.ProfileDescriptor.Collection,
+                [new IndexSpec(ProfileDeletionDueIndex, "`state`.`deleted`.`purgeAfterUtc`, META().id", "`state`.`deleted`.`purgeStartedAtUtc` IS NOT VALUED")]),
+        ],
         PublicEndpoints = [LoginRoute, ProviderLoginRoute],
+
+        // PRIV-01: purges accounts whose deletion grace period is over (research R7).
+        Jobs = [new JobDescriptor(AccountPurgeJob.JobName, typeof(AccountPurgeJob), AccountPurgeJob.DefaultIntervalSeconds)],
     };
 
     public void ConfigureServices(IServiceCollection services, ModuleContext context)
@@ -74,6 +92,7 @@ public sealed partial class IdentityModule : IGameModule, IPlayerApiModule, IGmA
         services.AddSingleton<ProviderLoginService>();
         services.AddSingleton<ICommandGuard, BanCommandGuard>();
         services.TryAddSingleton<IDisplayNamePolicy, AcceptAllDisplayNamePolicy>();
+        services.AddSingleton(sp => new AccountDeletionPolicy(sp.GetRequiredService<IOptions<IdentityOptions>>().Value.Deletion.GraceDays));
 
         services.AddAuthentication()
             .AddScheme<AuthenticationSchemeOptions, PlayerBearerAuthenticationHandler>(PlayerBearerAuthenticationHandler.SchemeName, null);
@@ -141,6 +160,17 @@ public sealed partial class IdentityModule : IGameModule, IPlayerApiModule, IGmA
             SetDisplayNameHandler.Operation,
             wire => new SetDisplayNameCommand(wire.DisplayName),
             result => new Wire.SetDisplayNameResult { DisplayName = result.DisplayName });
+
+        routes.MapPlayerCommand<Wire.RequestAccountDeletionRequest, RequestDeletionCommand, RequestDeletionResult>(
+            DeleteAccountRoute,
+            RequestDeletionHandler.Operation,
+            _ => new RequestDeletionCommand(),
+            result => new Wire.RequestAccountDeletionResult
+            {
+                RequestedAtUtcMs = result.RequestedAtUtc.ToUnixTimeMilliseconds(),
+                PurgeAfterUtcMs = result.PurgeAfterUtc.ToUnixTimeMilliseconds(),
+            },
+            AfterDeletionRequestAsync);
     }
 
     /// <summary>GM-07: ban / unban with reason, end time and scope; audited command on the player's profile.</summary>
@@ -179,12 +209,61 @@ public sealed partial class IdentityModule : IGameModule, IPlayerApiModule, IGmA
             UnbanPlayerHandler.Operation,
             IdentityPermissions.PlayerBan,
             body => new UnbanPlayerCommand(body.Reason!));
+
+        // PRIV-01, FR-011: GM cancels a pending account deletion while the grace period runs.
+        routes.MapGmCommand<CancelDeletionBody, CancelDeletionCommand, CancelDeletionResult>(
+            CancelDeletionRoute,
+            CancelDeletionHandler.Operation,
+            IdentityPermissions.PlayerBan,
+            body => new CancelDeletionCommand(body.Reason!),
+            AfterDeletionCancelAsync);
     }
 }
 
 public sealed partial class IdentityModule
 {
+    private const string DeletionLogCategory = "GameServer.Modules.Identity.AccountDeletion";
+
     private static string ClientIp(HttpContext http) => http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+    /// <summary>
+    /// Ends the player's sessions on this instance at once (FR-007): the cached profile still has the old epoch and no
+    /// deletion. Other instances follow within <c>Identity:CacheSeconds</c>. Runs for a replay too (the cache may be older).
+    /// Metric and log first: the commit happened, a failing cache refresh must not lose them (review minor 6).
+    /// </summary>
+    private static async Task AfterDeletionRequestAsync(CommandExecution execution, HttpContext http)
+    {
+        var services = http.RequestServices;
+        var playerId = services.GetRequiredService<ActorContextAccessor>().GetActor(http).PlayerId!;
+        if (!execution.Replayed)
+        {
+            services.GetRequiredService<IdentityMetrics>().DeletionRequested();
+            services.GetRequiredService<ILoggerFactory>().CreateLogger(DeletionLogCategory)
+                .LogInformation("Account deletion requested by player {PlayerId}.", playerId);
+        }
+
+        await services.GetRequiredService<ProfileCache>().ReadFreshAsync(playerId, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// The cancelled player can log in at once on any instance (login reads fresh); this keeps the cache true. Metric and
+    /// log before the refresh, like <see cref="AfterDeletionRequestAsync"/>.
+    /// </summary>
+    private static async Task AfterDeletionCancelAsync(CommandExecution execution, HttpContext http)
+    {
+        var services = http.RequestServices;
+        var playerId = (string)http.Request.RouteValues[GmCommandEndpointFactory.PlayerIdRouteValue]!;
+        if (!execution.Replayed)
+        {
+            services.GetRequiredService<IdentityMetrics>().DeletionCancelled();
+            services.GetRequiredService<ILoggerFactory>().CreateLogger(DeletionLogCategory).LogInformation(
+                "Account deletion of player {PlayerId} cancelled by GM {StaffId}.",
+                playerId,
+                services.GetRequiredService<ActorContextAccessor>().GetActor(http).ActorId);
+        }
+
+        await services.GetRequiredService<ProfileCache>().ReadFreshAsync(playerId, CancellationToken.None);
+    }
 
     /// <summary>
     /// Outbound verification of <c>identity.link</c>, after the replay check and before the runner: limited per player
@@ -259,3 +338,6 @@ public sealed partial class IdentityModule
 public sealed record BanBody(string? Reason, DateTimeOffset? UntilUtc, List<string>? Scope) : IGmCommandBody;
 
 public sealed record UnbanBody(string? Reason) : IGmCommandBody;
+
+/// <summary>Body of <c>POST /gm/v1/players/{playerId}/deletion/cancel</c>.</summary>
+public sealed record CancelDeletionBody(string? Reason) : IGmCommandBody;

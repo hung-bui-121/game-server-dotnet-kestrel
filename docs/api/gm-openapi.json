@@ -863,6 +863,26 @@
         "x-gm-csrf": true
       }
     },
+    "/gm/v1/players/{playerId}/deletion/cancel": {
+      "post": {
+        "tags": [
+          "GameServer.Gm.Tests"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "player.ban",
+        "x-gm-csrf": true
+      }
+    },
     "/gm/v1/players/{playerId}/resources/adjust": {
       "post": {
         "tags": [

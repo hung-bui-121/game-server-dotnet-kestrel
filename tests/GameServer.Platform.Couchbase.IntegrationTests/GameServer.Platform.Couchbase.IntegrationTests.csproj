@@ -10,9 +10,16 @@
     <PackageReference Include="Shouldly" />
     <PackageReference Include="CouchbaseNetClient" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <ProjectReference Include="../../src/GameServer.Platform.Couchbase/GameServer.Platform.Couchbase.csproj" />
     <ProjectReference Include="../../src/GameServer.Platform.Testing/GameServer.Platform.Testing.csproj" />
     <ProjectReference Include="../../src/GameServer.Platform.Web/GameServer.Platform.Web.csproj" />
     <ProjectReference Include="../GameServer.Platform.Tests/GameServer.Platform.Tests.csproj" />
+    <!-- Full sample game hosts on Couchbase (slice 010: lease and purge integration). -->
+    <ProjectReference Include="../../samples/SampleHost/SampleHost.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/*.cs" LinkBase="Shared" />
+    <None Include="../Shared/config/**/*" LinkBase="config" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

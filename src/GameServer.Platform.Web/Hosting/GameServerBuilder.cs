@@ -5,7 +5,9 @@ using GameServer.Platform.Aggregates;
 using GameServer.Platform.Commands;
 using GameServer.Platform.Config;
 using GameServer.Platform.Diagnostics;
+using GameServer.Platform.Jobs;
 using GameServer.Platform.Outbox;
+using GameServer.Platform.Privacy;
 using GameServer.Platform.Registry;
 using GameServer.Platform.Web.Aggregates;
 using GameServer.Platform.Web.Auth;
@@ -68,6 +70,18 @@ public sealed class GameServerBuilder
         configure?.Invoke(registration);
         Registry.Add(module, registration.IsServiceOnly);
         module.ConfigureServices(Services, new ModuleContext(Options.GameId, Options.EnvironmentId, Options.DeploymentEnvironment));
+
+        // Lease jobs and deletion steps are resolved per run in their own scope (JOB-01, FR-020); a module may register them itself first.
+        foreach (var job in Registry.Modules[^1].Descriptor.Jobs)
+        {
+            Services.TryAddTransient(job.JobType);
+        }
+
+        foreach (var step in Registry.Modules[^1].Descriptor.DeletionSteps)
+        {
+            Services.TryAddTransient(step.StepType);
+        }
+
         return this;
     }
 
@@ -119,6 +133,17 @@ public static class GameServerBuilderExtensions
         services.AddSingleton<IOutboxRelay, OutboxRelay>();
         services.AddSingleton<OutboxSweeper>();
         services.AddHostedService(sp => sp.GetRequiredService<OutboxSweeper>());
+        services.AddSingleton<LeaseStore>();
+        services.AddSingleton<LeaseJobRunner>();
+        services.AddHostedService(sp => sp.GetRequiredService<LeaseJobRunner>());
+
+        // PRIV-01 account purge (research R6/R7): the only purge writer and the step pipeline; module steps get erasers from it.
+        services.AddSingleton<PurgeTargets>();
+        services.AddSingleton<IAccountPurgeWriter, AccountPurgeWriter>();
+        services.AddSingleton<AccountPurgeService>();
+
+        // Read side of the purge records: GM view, GM target validator, purge job (core service, review minor 12a).
+        services.TryAddSingleton<AccountDeletionRecords>();
         services.AddSingleton<PlayerSnapshotReader>();
         services.AddSingleton<IPlayerAggregateWriter, PlayerAggregateWriter>();
         services.AddSingleton<GameServer.Platform.Persistence.IAuditedStore, GameServer.Platform.Persistence.AuditedStore>();

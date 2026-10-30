@@ -20,8 +20,12 @@ public static class EconomyModuleDefinition
         Aggregates = [EconomyAggregates.WalletDescriptor, EconomyAggregates.InventoryDescriptor],
         Collections =
         [
-            new CollectionSpec(EconomyOperations.LedgerCollection, [new IndexSpec("ix_ledger_player", "playerId, committedAtUtc DESC, META().id DESC")]),
-            new CollectionSpec(EconomyOperations.ClaimCollection),
+            // Financial records are kept with the player id anonymized (PRIV-01, CMD-09).
+            new CollectionSpec(
+                EconomyOperations.LedgerCollection,
+                [new IndexSpec("ix_ledger_player", "playerId, committedAtUtc DESC, META().id DESC")],
+                Deletion: DeletionTreatment.Anonymize),
+            new CollectionSpec(EconomyOperations.ClaimCollection, Deletion: DeletionTreatment.Anonymize),
         ],
         ErrorCodes = EconomyErrors.All,
         OutboxProjections = [new OutboxProjection(EconomyOperations.LedgerKind, EconomyOperations.LedgerCollection)],

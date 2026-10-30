@@ -13,8 +13,8 @@ receipt); every credential and token then answers `ACCOUNT_DELETED {purgeAfter}`
 `identity.cancel_deletion` (`player.ban`, audited) while `now < purgeAfter` and the purge has not started. After grace
 the job marks the player purging and a platform `AccountPurgeService` erases the player's data in fenced, bounded
 transactions through `IAccountPurgeWriter`: anonymize receipts → anonymize every Anonymize-treated collection → module
-steps → remove identities/sessions/Remove-treated collections → verify → remove `pa_*` → remove `pa_profile` and keep
-a purge record without the anonymous id. Every declared collection must state a deletion treatment or the host fails
+steps → verify → remove `pa_*` → remove sessions/identities/Remove-treated collections (order revised in review T054) →
+remove `pa_profile` and keep a purge record without the anonymous id. Every declared collection must state a deletion treatment or the host fails
 to start. Detailed decisions: [research.md](research.md); documents and config: [data-model.md](data-model.md); API:
 [contracts/account-deletion-api.md](contracts/account-deletion-api.md).
 
@@ -102,8 +102,8 @@ Re-check after design: unchanged.
 7. **R5** `CollectionSpec.Deletion` + `PlayerField`; registry validation; platform-owned treatments; auto reference indexes; `ix_receipts_player` becomes platform-provisioned.
 8. **R6** `account_deletions/deletion::{playerId}` = progress + fence + purge record; anonymous id `anon_…` stored only while purging.
 9. **R6** `IAccountPurgeWriter` is the only purge writer; `ITransactionContext.RemoveAsync` added; batches ≤ 25 documents.
-10. **R7** Step order receipts → anonymize collections → module steps → remove collections → verify → `pa_*` → profile + record; resumable, budgeted, exponential retry per player.
-11. **R8** Receipt/ledger/audit overwrite only values equal to the player id; receipts also lose `resultCompact`/`bodyHash` and redact claim keys into removed collections.
+10. **R7** Step order receipts → anonymize collections → module steps → verify → `pa_*` → remove collections → profile + record (Remove steps last since review T054, minor 2); resumable, budgeted, exponential retry per player.
+11. **R8** Receipt/ledger/audit overwrite only values equal to the player id; receipts also lose `resultCompact`/`bodyHash`/`requestId`/`correlationId` and redact claim keys into removed collections; audit entries lose their `correlationId` (review T054, B1).
 12. **R9** "Session ⇒ profile exists" invariant at the bearer; profile creation at login anchored on the mapping document (write conflict with the purge's removal).
 13. **R10** Module steps get a fenced `IPlayerDataEraser` limited to their own collections; never a transaction.
 14. **R11** Cancel = `identity.cancel_deletion` (409 `DELETION_NOT_PENDING` / `DELETION_GRACE_OVER`); race with purge start resolved by the `pa_profile` write conflict; `IGmTargetValidator` gets the operation; GM view gains `deletion`, purged players return 200.
@@ -137,7 +137,7 @@ Where the code or a requirement contradicts the spec, the plan decides as follow
 
 | # | Spec says | Plan does | Why |
 | --- | --- | --- | --- |
-| D1 | FR-015: retained records keep "their other fields unchanged" | Receipts additionally get `resultCompact = ""`, `bodyHash = ""`, and `claimKeys` into Remove-treated collections → `"{collection}/redacted"` | `resultCompact` can hold personal data (display name result), a hash of a low-entropy body is attackable, identity claim keys hold provider ids; all only serve the 24 h replay window, expired ≥ 30 days earlier. Amounts, timestamps, receipt references and correlation ids — the fields the edge case lists — stay unchanged |
+| D1 | FR-015: retained records keep "their other fields unchanged"; edge case "correlation ids are unchanged"; assumption "receipt keys cannot be reversed without the request id" | Receipts additionally get `resultCompact = ""`, `bodyHash = ""`, `requestId = ""`, `correlationId = ""`, and `claimKeys` into Remove-treated collections → `"{collection}/redacted"`; `gm_audit` entries of the player (projection and receipt outbox payload) get `payload.correlationId = ""` | `resultCompact` can hold personal data (display name result), a hash of a low-entropy body is attackable, identity claim keys hold provider ids. **Review T054 (B1):** the receipt key is `SHA-256(actor\|player\|operation\|requestId)` without a secret; with `requestId` (or the same UUID as correlation id, also in GM audit entries) stored next to it, `Compute(X, X, operation, requestId) == receiptId` tests any candidate id X — the anonymization was reversible. All these fields only serve the 24 h replay window and request tracing, expired ≥ 30 days earlier. Amounts, timestamps and receipt references stay unchanged; correlation ids do **not** (the spec's edge case is superseded). Logs still carry `RequestId` next to the player id until log retention (PCR platform §16) |
 | D2 | FR-018: purge record kept "for answering stale tokens" | Stale tokens are answered from the **missing profile** (`ACCOUNT_DELETED`, no details) while the session record exists or is cached; after the purge removes sessions they are unknown tokens (`UNAUTHENTICATED`). The record serves GM and the cancel-after-purge 409 | No extra KV read on every authenticated request; keeping a token index after purge would retain device-linked data. Access is refused in both cases |
 | D3 | FR-005/DAT-09 name `IPlayerAggregateWriter` as the purge path | Purge writes go through `IAccountPurgeWriter` (Platform, same guarantees); `IPlayerAggregateWriter` only gains the creation-anchor overload | Keeps the single-aggregate writer small (interface segregation); the requirement's substance (transactional, platform-only) is unchanged |
 | D4 | FR-021: "raises the account-deleted event" | Raises the existing `AccountBlocked` event with code `ACCOUNT_DELETED` and `purgeAfter` | The SDK already routes `ACCOUNT_DELETED` there (Scope note); a second event would duplicate it |
@@ -276,7 +276,7 @@ waits for phase 5.
 
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
-| A relay that read a receipt **before** its rewrite inserts a projection with the old id after the anonymize step | Old id survives in one projection document | Purge relays pending receipts itself after rewriting; `verify` step re-queries every treated collection; receipts are normally relayed ≥ 30 days before purge (no commands during grace). Residual window = one in-flight sweeper batch; documented in PCR |
+| A relay that read a receipt **before** its rewrite inserts a projection with the old id after the anonymize step | Old id survives in one projection document | Purge relays pending receipts itself after rewriting; `verify` step re-queries receipts and the anonymized collections, the Remove steps run after it; receipts are normally relayed ≥ 30 days before purge (no commands during grace). Residual window = one in-flight sweeper batch; documented in PCR |
 | Couchbase keeps tombstones of removed documents (keys = player id for `pa_*`) and ATR entries until metadata purge (default 3 days) | Old id visible to administrators at the storage layer for a few days | Not reachable through any API or query; documented in PCR platform/runbook (slice 013) |
 | Sweeper KV `MutateIn` on a receipt concurrent with its purge transaction | `outboxPending` flag write lost | One extra idempotent relay; the sweeper never writes `playerId`, so anonymization cannot be undone |
 | Deletion backlog above ≈ 7 200/day | SC-006 missed | `account_purge_overdue_seconds` alert; `MaxPlayersPerRun`/interval configurable |

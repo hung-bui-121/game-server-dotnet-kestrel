@@ -84,6 +84,12 @@ public interface ITransactionContext
     Task InsertAsync(DocumentKey key, JsonObject content);
 
     Task ReplaceAsync(StoredDocument existing, JsonObject content);
+
+    /// <summary>
+    /// Removes a document read in this attempt. Later reads of the attempt see it missing; a concurrent write of the same
+    /// document is a write-write conflict; a rollback keeps it (used by the account purge only, PRIV-01).
+    /// </summary>
+    Task RemoveAsync(StoredDocument existing);
 }
 
 /// <summary>The commit may or may not have happened (CMD-04).</summary>

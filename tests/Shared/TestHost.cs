@@ -48,6 +48,8 @@ public sealed class TestHost : IAsyncDisposable
         ["GameServer:DeploymentEnvironment"] = "Development",
         ["GameServer:ConfigPath"] = Path.Combine(AppContext.BaseDirectory, "config"),
         ["GameServer:Outbox:SweeperEnabled"] = "false",
+        // Lease jobs run only through LeaseJobRunner.RunOnceAsync unless a test enables the loop.
+        ["GameServer:Jobs:Enabled"] = "false",
         ["Identity:CacheSeconds"] = "0",
         ["GameServer:Hosting:DrainDelaySeconds"] = "0",
     };
