@@ -1,0 +1,1098 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Hướng dẫn deploy game server framework .NET/Kestrel cho DevOps, DBA, security: flavor, secret, Couchbase, provisioning, mạng, health, log/analytics, rollback và checklist 63 mục.">
+<title>Deploy cho DevOps — Game Server Framework</title>
+<style>
+/* Shared stylesheet — identical block in every page of docs/html. */
+:root {
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", Menlo, "Liberation Mono", monospace;
+  --content-w: 60rem;
+  --toc-w: 16rem;
+  --radius: 0.625rem;
+
+  --bg: #ffffff;
+  --surface: #f6f8fa;
+  --surface-2: #eef2f6;
+  --fg: #1b1f24;
+  --muted: #57606a;
+  --border: #d0d7de;
+  --border-strong: #afb8c1;
+  --accent: #0b5cad;
+  --accent-weak: #e8f1fb;
+  --ok: #1a7f37;
+  --ok-bg: #dcf5e3;
+  --warn: #9a4600;
+  --warn-bg: #fff0de;
+  --danger: #b42318;
+  --danger-bg: #fde8e8;
+  --violet: #6f42c1;
+  --violet-bg: #f1eafd;
+  --neutral: #4b5563;
+  --neutral-bg: #eceff3;
+  --code-bg: #f3f5f7;
+
+  --hl-kw: #8250df;
+  --hl-str: #0a3069;
+  --hl-com: #59636e;
+  --hl-num: #0550ae;
+  --hl-tag: #116329;
+  --hl-attr: #953800;
+
+  --dg-bg: var(--surface);
+  --dg-fill: #ffffff;
+  --dg-fill-2: #e8f1fb;
+  --dg-band: #eef2f6;
+  --dg-core: #e3e8ee;
+  --dg-line: #3d4652;
+  --dg-text: #1b1f24;
+  --dg-muted: #57606a;
+  --dg-accent: #0b5cad;
+  --dg-danger: #b42318;
+  --dg-violet: #6f42c1;
+  --dg-violet-bg: #f1eafd;
+  --dg-warn: #9a4600;
+  --dg-warn-bg: #fff0de;
+  --dg-ok: #1a7f37;
+  --dg-ok-bg: #dcf5e3;
+  --dg-frame: #7a8591;
+  --dg-frame-bg: #e4e9ef;
+
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1419;
+    --surface: #151b23;
+    --surface-2: #1c2430;
+    --fg: #e6edf3;
+    --muted: #9ba7b4;
+    --border: #2f3843;
+    --border-strong: #45505c;
+    --accent: #6cb6ff;
+    --accent-weak: #11263d;
+    --ok: #56d364;
+    --ok-bg: #12301c;
+    --warn: #ffa657;
+    --warn-bg: #3b2410;
+    --danger: #ff7b72;
+    --danger-bg: #3d1717;
+    --violet: #d2a8ff;
+    --violet-bg: #2a1d40;
+    --neutral: #c1cad4;
+    --neutral-bg: #26303b;
+    --code-bg: #151b23;
+
+    --hl-kw: #d2a8ff;
+    --hl-str: #a5d6ff;
+    --hl-com: #8b949e;
+    --hl-num: #79c0ff;
+    --hl-tag: #7ee787;
+    --hl-attr: #ffa657;
+
+    --dg-fill: #1c2430;
+    --dg-fill-2: #11263d;
+    --dg-band: #18202a;
+    --dg-core: #26303b;
+    --dg-line: #b3bdc8;
+    --dg-text: #e6edf3;
+    --dg-muted: #9ba7b4;
+    --dg-accent: #6cb6ff;
+    --dg-danger: #ff7b72;
+    --dg-violet: #d2a8ff;
+    --dg-violet-bg: #2a1d40;
+    --dg-warn: #ffa657;
+    --dg-warn-bg: #3b2410;
+    --dg-ok: #56d364;
+    --dg-ok-bg: #12301c;
+    --dg-frame: #7d8996;
+    --dg-frame-bg: #26303b;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; scroll-padding-top: 1rem; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.65;
+  overflow-wrap: break-word;
+}
+a { color: var(--accent); text-underline-offset: 0.18em; }
+a:hover { text-decoration-thickness: 2px; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+.visually-hidden {
+  position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+.skip-link {
+  position: absolute; left: 1rem; top: -3rem; z-index: 200;
+  background: var(--accent); color: var(--bg); padding: 0.5rem 0.875rem; border-radius: 0.375rem; font-weight: 600;
+}
+.skip-link:focus { top: 0.75rem; }
+
+/* ---------------------------------------------------------------- header */
+.site-header { border-bottom: 1px solid var(--border); background: var(--surface); }
+.site-header__inner {
+  max-width: calc(var(--content-w) + var(--toc-w) + 4.5rem);
+  margin: 0 auto; padding: 0.625rem 1rem;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.5rem;
+}
+.brand { font-weight: 700; color: var(--fg); text-decoration: none; letter-spacing: -0.01em; }
+.brand span { font-weight: 400; color: var(--muted); }
+.site-nav { display: flex; flex-wrap: wrap; gap: 0.25rem; list-style: none; margin: 0; padding: 0; }
+.site-nav a {
+  display: inline-block; padding: 0.3rem 0.65rem; border-radius: 999px;
+  color: var(--fg); text-decoration: none; font-size: 0.9rem;
+}
+.site-nav a:hover { background: var(--surface-2); }
+.site-nav a[aria-current="page"] { background: var(--accent); color: var(--bg); font-weight: 600; }
+
+/* ---------------------------------------------------------------- layout */
+.layout {
+  max-width: calc(var(--content-w) + var(--toc-w) + 4.5rem);
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+.content { min-width: 0; max-width: var(--content-w); padding-bottom: 3rem; }
+.content:focus { outline: none; }
+@media (min-width: 75rem) {
+  .layout {
+    display: grid;
+    grid-template-columns: var(--toc-w) minmax(0, var(--content-w));
+    gap: 2.5rem;
+    justify-content: center;
+  }
+  .layout.layout--single { display: block; }
+}
+.layout--single .content { margin: 0 auto; }
+
+/* ---------------------------------------------------------------- toc */
+.toc { margin: 1.25rem 0 0.5rem; font-size: 0.9rem; }
+.toc details { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.toc summary {
+  cursor: pointer; padding: 0.6rem 0.875rem; font-weight: 700; list-style-position: inside;
+}
+.toc ul { list-style: none; margin: 0; padding: 0 0.875rem 0.75rem; }
+.toc ul ul { padding: 0 0 0 0.875rem; }
+.toc li { margin: 0.1rem 0; }
+.toc a {
+  display: block; padding: 0.15rem 0.5rem; border-left: 2px solid transparent;
+  color: var(--fg); text-decoration: none; line-height: 1.4;
+}
+.toc a:hover { color: var(--accent); }
+.toc a[aria-current="true"] { border-left-color: var(--accent); color: var(--accent); font-weight: 600; }
+.toc .toc-h3 a { color: var(--muted); font-size: 0.85rem; }
+.toc .toc-h3 a[aria-current="true"] { color: var(--accent); }
+.toc code { font-size: 0.85em; background: none; border: 0; padding: 0; }
+@media (min-width: 75rem) {
+  .toc { margin: 0; padding-top: 1.5rem; }
+  .toc details {
+    position: sticky; top: 1rem;
+    max-height: calc(100vh - 2rem); overflow: auto;
+  }
+}
+
+/* ---------------------------------------------------------------- page head */
+.page-head { padding: 1.75rem 0 0.75rem; border-bottom: 1px solid var(--border); margin-bottom: 1rem; }
+.eyebrow { margin: 0; color: var(--muted); font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+h1 { font-size: clamp(1.6rem, 1.2rem + 2vw, 2.25rem); line-height: 1.2; margin: 0.35rem 0 0.5rem; letter-spacing: -0.02em; }
+.lead { font-size: 1.1rem; color: var(--muted); margin: 0 0 0.75rem; }
+.meta {
+  display: inline-block; margin: 0.25rem 0 0.75rem; padding: 0.35rem 0.75rem;
+  border-radius: 0.5rem; background: var(--surface-2); font-size: 0.9rem;
+}
+
+/* ---------------------------------------------------------------- headings & text */
+h2, h3, h4 { line-height: 1.3; letter-spacing: -0.01em; scroll-margin-top: 1rem; }
+h2 { font-size: 1.5rem; margin: 2.75rem 0 0.75rem; padding-top: 0.5rem; border-top: 1px solid var(--border); }
+.doc-section:first-of-type h2 { border-top: 0; margin-top: 1.5rem; }
+h3 { font-size: 1.2rem; margin: 2rem 0 0.6rem; }
+h4 { font-size: 1.05rem; margin: 1.5rem 0 0.5rem; }
+.anchor {
+  margin-left: 0.35rem; color: var(--muted); text-decoration: none; font-weight: 400;
+  opacity: 0; transition: opacity 0.15s;
+}
+h2:hover .anchor, h3:hover .anchor, .anchor:focus-visible { opacity: 1; }
+@media (hover: none) { .anchor { opacity: 0.55; } }
+p { margin: 0.75rem 0; }
+p.indent { margin-left: 1.5rem; }
+ul, ol { padding-left: 1.5rem; margin: 0.6rem 0; }
+li { margin: 0.25rem 0; }
+li > ul, li > ol { margin: 0.25rem 0; }
+strong { font-weight: 650; }
+blockquote { margin: 1rem 0; padding: 0.25rem 1rem; border-left: 4px solid var(--border-strong); color: var(--muted); }
+
+code {
+  font-family: var(--font-mono); font-size: 0.875em;
+  background: var(--code-bg); border: 1px solid var(--border); border-radius: 0.3rem;
+  padding: 0.05em 0.3em; overflow-wrap: break-word;
+  font-variant-ligatures: none;
+}
+a.path { text-decoration: none; }
+a.path code { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
+a.path:hover code { text-decoration: underline; }
+
+/* ---------------------------------------------------------------- code blocks */
+.code-block { margin: 1rem 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--code-bg); overflow: hidden; }
+.code-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+  padding: 0.3rem 0.5rem 0.3rem 0.875rem; border-bottom: 1px solid var(--border);
+  font-size: 0.78rem; color: var(--muted);
+}
+.code-lang { font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+.copy-btn {
+  font: inherit; font-size: 0.78rem; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--border); border-radius: 0.375rem; padding: 0.15rem 0.6rem; cursor: pointer;
+}
+.copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+pre.code { font-variant-ligatures: none; margin: 0; padding: 0.875rem 1rem; overflow-x: auto; line-height: 1.5; tab-size: 4; }
+pre.code code { background: none; border: 0; padding: 0; font-size: 0.84rem; overflow-wrap: normal; white-space: pre; }
+.hl-kw { color: var(--hl-kw); }
+.hl-str { color: var(--hl-str); }
+.hl-com { color: var(--hl-com); font-style: italic; }
+.hl-num { color: var(--hl-num); }
+.hl-tag { color: var(--hl-tag); }
+.hl-attr { color: var(--hl-attr); }
+
+/* ---------------------------------------------------------------- tables */
+.table-wrap { margin: 1rem 0; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+.tbl { width: 100%; border-collapse: collapse; font-size: 0.9rem; line-height: 1.5; }
+.tbl.wide { min-width: 44rem; }
+.tbl th, .tbl td { padding: 0.5rem 0.7rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+.tbl thead th { background: var(--surface-2); font-weight: 650; white-space: nowrap; }
+.tbl tbody tr:nth-child(even) { background: color-mix(in srgb, var(--surface) 70%, transparent); }
+.tbl tbody tr:last-child > * { border-bottom: 0; }
+.tbl code { font-size: 0.84em; }
+
+/* ---------------------------------------------------------------- callout */
+.callout {
+  margin: 1.5rem 0; padding: 0.25rem 1.1rem 0.75rem; border: 1px solid var(--accent);
+  border-left-width: 6px; border-radius: var(--radius); background: var(--accent-weak);
+}
+.callout-label {
+  display: inline-block; margin-top: 0.75rem; padding: 0.1rem 0.6rem; border-radius: 999px;
+  background: var(--accent); color: var(--bg); font-size: 0.78rem; font-weight: 700; letter-spacing: 0.03em;
+}
+.callout h3 { margin-top: 0.5rem; }
+.callout .table-wrap { background: var(--bg); }
+
+/* ---------------------------------------------------------------- badges */
+.badge {
+  display: inline-block; padding: 0.02rem 0.5rem; border-radius: 999px; border: 1px solid transparent;
+  font-size: 0.78em; font-weight: 700; line-height: 1.5; white-space: nowrap; vertical-align: 0.06em;
+}
+.badge--todo { color: var(--warn); background: var(--warn-bg); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.badge--ok { color: var(--ok); background: var(--ok-bg); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+.badge--neutral { color: var(--neutral); background: var(--neutral-bg); border-color: var(--border); }
+.badge--verify { color: var(--violet); background: var(--violet-bg); border-color: color-mix(in srgb, var(--violet) 45%, transparent); }
+.badge--auto { color: var(--accent); background: var(--accent-weak); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.badge--manual { color: var(--neutral); background: var(--neutral-bg); border-color: var(--border); }
+.badge--open { color: var(--danger); background: var(--danger-bg); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+
+/* ---------------------------------------------------------------- diagrams */
+.fig-ref { display: block; }
+.diagram { margin: 1.25rem 0 0.75rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--dg-bg); }
+.diagram-bar {
+  display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+  padding: 0.45rem 0.875rem; border-bottom: 1px solid var(--border); font-size: 0.85rem;
+}
+.diagram-title { font-weight: 650; margin-right: auto; }
+.zoom-link {
+  font-size: 0.8rem; padding: 0.1rem 0.6rem; border: 1px solid var(--border); border-radius: 999px;
+  text-decoration: none; background: var(--bg);
+}
+.zoom-close { display: none; }
+.diagram-scroll { overflow-x: auto; padding: 0.75rem; }
+.dg { display: block; width: 100%; height: auto; min-width: var(--min-w, 0); font-family: var(--font-sans); font-variant-ligatures: none; }
+.diagram:target {
+  position: fixed; inset: 0; z-index: 100; margin: 0; border-radius: 0; border: 0;
+  display: flex; flex-direction: column; background: var(--bg);
+}
+.diagram:target .diagram-scroll { flex: 1; overflow: auto; }
+.diagram:target .dg { width: var(--nat-w); min-width: 0; max-width: none; }
+.diagram:target .zoom-open { display: none; }
+.diagram:target .zoom-close { display: inline-block; }
+details.dg-text { margin: 0 0 1.25rem; border: 1px dashed var(--border-strong); border-radius: var(--radius); padding: 0 0.875rem; }
+details.dg-text > summary { cursor: pointer; padding: 0.5rem 0; color: var(--muted); font-size: 0.9rem; font-weight: 600; }
+details.dg-text[open] > summary { border-bottom: 1px solid var(--border); margin-bottom: 0.5rem; }
+
+.dg text { fill: var(--dg-text); font-size: 12px; }
+.dg .t-b { font-weight: 700; }
+.dg .t-lg { font-size: 14px; }
+.dg .t-sm, .dg .t-sm2 { font-size: 11px; fill: var(--dg-muted); }
+.dg .t-sm2 { fill: var(--dg-text); }
+.dg .t-cell { font-size: 11px; }
+.dg .t-mono { font-family: var(--font-mono); font-size: 10.5px; fill: var(--dg-muted); }
+.dg .t-head { font-size: 12px; font-weight: 700; fill: var(--dg-muted); letter-spacing: 0.06em; text-transform: uppercase; }
+.dg .t-band { font-size: 11.5px; font-weight: 700; fill: var(--dg-muted); }
+.dg .t-lbl { font-size: 11px; }
+.dg .t-note { font-size: 11px; font-style: italic; fill: var(--dg-muted); }
+.dg .t-accent { fill: var(--dg-accent); }
+.dg .t-danger { fill: var(--dg-danger); }
+.dg .t-violet { fill: var(--dg-violet); }
+.dg .t-muted { fill: var(--dg-muted); }
+.dg .t-num { font-weight: 800; fill: var(--dg-accent); }
+.dg .t-frame { font-size: 11px; font-weight: 700; }
+.dg .t-guard { font-size: 11px; font-style: italic; fill: var(--dg-muted); }
+.dg .halo { paint-order: stroke; stroke: var(--dg-bg); stroke-width: 4px; stroke-linejoin: round; }
+.dg .box { fill: var(--dg-fill); stroke: var(--dg-line); stroke-width: 1.25; }
+.dg .box--accent { fill: var(--dg-fill-2); stroke: var(--dg-accent); }
+.dg .box--core { fill: var(--dg-core); }
+.dg .box--violet { fill: var(--dg-violet-bg); stroke: var(--dg-violet); }
+.dg .box--warn { fill: var(--dg-warn-bg); stroke: var(--dg-warn); }
+.dg .box--ok { fill: var(--dg-ok-bg); stroke: var(--dg-ok); }
+.dg .box--ghost { fill: var(--dg-fill); stroke: var(--dg-muted); opacity: 0.7; }
+.dg .cyl-rim { fill: none; }
+.dg .band { fill: var(--dg-band); stroke: var(--dg-muted); stroke-width: 1; }
+.dg .group { fill: none; stroke: var(--dg-line); stroke-width: 1.5; }
+.dg .dashed { stroke-dasharray: 6 4; }
+.dg .edge { fill: none; stroke: var(--dg-line); stroke-width: 1.5; }
+.dg .edge--accent { stroke: var(--dg-accent); stroke-width: 1.75; }
+.dg .edge--danger { stroke: var(--dg-danger); stroke-dasharray: 6 4; }
+.dg .edge--violet { stroke: var(--dg-violet); stroke-width: 1.75; }
+.dg .edge--muted { stroke: var(--dg-muted); }
+.dg .ah { fill: var(--dg-line); }
+.dg .ah--accent { fill: var(--dg-accent); }
+.dg .ah--danger { fill: var(--dg-danger); }
+.dg .ah--violet { fill: var(--dg-violet); }
+.dg .ah--muted { fill: var(--dg-muted); }
+.dg .dot { fill: var(--dg-line); }
+.dg .no-entry circle { fill: var(--dg-bg); stroke: var(--dg-danger); stroke-width: 2; }
+.dg .no-entry line { stroke: var(--dg-danger); stroke-width: 2; }
+.dg .lifeline { stroke: var(--dg-muted); stroke-width: 1; stroke-dasharray: 4 4; }
+.dg .frame-box { fill: none; stroke: var(--dg-frame); stroke-width: 1.25; }
+.dg .frame-tag { fill: var(--dg-frame-bg); stroke: var(--dg-frame); stroke-width: 1.25; }
+.dg .pill rect { stroke-width: 1.25; }
+.dg .pill text { font-size: 11px; font-weight: 700; }
+.dg .pill--accent rect { fill: var(--dg-fill-2); stroke: var(--dg-accent); }
+.dg .pill--accent text { fill: var(--dg-accent); }
+.dg .pill--violet rect { fill: var(--dg-violet-bg); stroke: var(--dg-violet); }
+.dg .pill--violet text { fill: var(--dg-violet); }
+
+/* ---------------------------------------------------------------- checklist */
+.checklist-tools {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem;
+  margin: 1rem 0; padding: 0.6rem 0.875rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+}
+.checklist-tools[hidden] { display: none; }
+.checklist-progress { font-weight: 650; margin-right: auto; }
+.checklist-note { flex-basis: 100%; margin: 0; font-size: 0.85rem; color: var(--muted); }
+.btn {
+  font: inherit; font-size: 0.875rem; padding: 0.3rem 0.8rem; border-radius: 0.4rem; cursor: pointer;
+  border: 1px solid var(--border-strong); background: var(--bg); color: var(--fg);
+}
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.tbl.checklist { min-width: 52rem; }
+.checklist .col-check { width: 2.5rem; text-align: center; }
+.checklist .col-id { white-space: nowrap; font-family: var(--font-mono); font-size: 0.85rem; }
+.checklist .col-id label { cursor: pointer; }
+.checklist .col-role { min-width: 7rem; }
+.checklist .col-status { min-width: 8rem; }
+.checklist .col-status .badge { white-space: normal; }
+.checklist .col-sign { display: none; width: 8rem; }
+.checklist input[type="checkbox"] { width: 1.15rem; height: 1.15rem; accent-color: var(--accent); cursor: pointer; margin: 0.15rem 0 0; }
+.checklist tr.is-todo > * { background: color-mix(in srgb, var(--warn-bg) 55%, transparent); }
+.checklist tr.is-done > :not(.col-check) { color: var(--muted); }
+.checklist-total { font-weight: 650; }
+
+/* ---------------------------------------------------------------- index cards */
+.cards { display: grid; gap: 1rem; margin: 1.5rem 0; }
+@media (min-width: 48rem) { .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.card {
+  display: flex; flex-direction: column; gap: 0.25rem;
+  padding: 1rem 1.1rem 1.1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+}
+.card h2 { border: 0; margin: 0.15rem 0 0.25rem; padding: 0; font-size: 1.2rem; }
+.card h2 a { text-decoration: none; }
+.card h2 a:hover { text-decoration: underline; }
+.card .audience { margin: 0; font-size: 0.85rem; color: var(--muted); font-weight: 600; }
+.card p { margin: 0.4rem 0; font-size: 0.95rem; }
+.card .card-cta { margin-top: auto; padding-top: 0.5rem; font-weight: 650; }
+
+/* ---------------------------------------------------------------- pager & footer */
+.pager { display: grid; gap: 0.75rem; margin: 3rem 0 0; }
+@media (min-width: 40rem) { .pager { grid-template-columns: 1fr 1fr; } }
+.pager a {
+  display: block; padding: 0.75rem 1rem; border: 1px solid var(--border); border-radius: var(--radius);
+  text-decoration: none; background: var(--surface);
+}
+.pager a:hover { border-color: var(--accent); }
+.pager .dir { display: block; font-size: 0.8rem; color: var(--muted); }
+.pager .ttl { font-weight: 650; }
+.pager .next { text-align: right; grid-column: 2; }
+@media (max-width: 39.99rem) { .pager .next { grid-column: auto; } }
+.site-footer {
+  border-top: 1px solid var(--border); background: var(--surface); color: var(--muted);
+  font-size: 0.9rem; padding: 1rem;
+}
+.site-footer p { max-width: calc(var(--content-w) + var(--toc-w) + 2.5rem); margin: 0 auto; }
+
+/* ---------------------------------------------------------------- print */
+@media print {
+  :root {
+    --bg: #fff; --surface: #fff; --surface-2: #f0f0f0; --fg: #000; --muted: #333; --border: #999; --border-strong: #666;
+    --accent: #000; --accent-weak: #fff; --code-bg: #fff;
+    --ok: #000; --ok-bg: #fff; --warn: #000; --warn-bg: #fff; --danger: #000; --danger-bg: #fff;
+    --violet: #000; --violet-bg: #fff; --neutral: #000; --neutral-bg: #fff;
+    --hl-kw: #000; --hl-str: #000; --hl-com: #444; --hl-num: #000; --hl-tag: #000; --hl-attr: #000;
+    --dg-bg: #fff; --dg-fill: #fff; --dg-fill-2: #fff; --dg-band: #f4f4f4; --dg-core: #eee; --dg-line: #000; --dg-text: #000;
+    --dg-muted: #333; --dg-accent: #000; --dg-danger: #000; --dg-violet: #000; --dg-violet-bg: #fff; --dg-warn: #000;
+    --dg-warn-bg: #fff; --dg-ok: #000; --dg-ok-bg: #fff; --dg-frame: #333; --dg-frame-bg: #eee;
+    color-scheme: light;
+  }
+  @page { margin: 14mm 12mm; }
+  body { font-size: 10pt; line-height: 1.45; background: #fff; color: #000; }
+  .site-header, .toc, .pager, .skip-link, .anchor, .copy-btn, .zoom-link, .checklist-tools, .fig-ref { display: none !important; }
+  .layout { display: block; max-width: none; padding: 0; }
+  .content { max-width: none; padding: 0; }
+  a { color: #000; text-decoration: none; }
+  a.path code { color: #000; }
+  h2, h3, h4 { break-after: avoid; page-break-after: avoid; }
+  .table-wrap, .diagram-scroll { overflow: visible; border-color: #999; }
+  .tbl, .tbl.wide, .tbl.checklist { min-width: 0 !important; font-size: 8.5pt; }
+  .tbl tbody tr:nth-child(even), .checklist tr.is-todo > * { background: none; }
+  thead { display: table-header-group; }
+  tr, .code-block, .diagram, .callout { break-inside: avoid; page-break-inside: avoid; }
+  pre.code code { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .dg { min-width: 0 !important; width: 100% !important; }
+  .diagram:target { position: static; }
+  details.dg-text { border: 0; padding: 0; }
+  .badge { border-color: #000; background: none; color: #000; }
+  .checklist .col-sign { display: table-cell; }
+  .checklist input[type="checkbox"] { accent-color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .checklist tr.is-done > :not(.col-check) { color: #000; }
+  .checklist-group { break-before: page; page-break-before: always; }
+  .site-footer { background: none; border-top: 1px solid #999; color: #000; padding: 0.5rem 0 0; }
+  html.print-checklist-only .page-head,
+  html.print-checklist-only .doc-intro,
+  html.print-checklist-only .doc-section:not(.is-checklist) { display: none !important; }
+  html.print-checklist-only .checklist-group:first-of-type { break-before: auto; page-break-before: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#noi-dung">Bỏ qua tới nội dung</a>
+<header class="site-header">
+<div class="site-header__inner">
+<a class="brand" href="index.html">Game Server Framework <span>· tài liệu</span></a>
+<nav aria-label="Các trang tài liệu"><ul class="site-nav"><li><a href="index.html">Trang chủ</a></li><li><a href="01-gioi-thieu.html">1. Giới thiệu</a></li><li><a href="02-them-command.html">2. Thêm command</a></li><li><a href="03-deploy.html" aria-current="page">3. Deploy</a></li></ul></nav>
+</div>
+</header>
+<div class="layout">
+<nav class="toc" aria-label="Mục lục trang"><details open><summary>Mục lục</summary><ul><li><a href="#muc-1">1. Tổng quan triển khai</a></li><li><a href="#muc-2">2. Artifact</a><ul><li class="toc-h3"><a href="#muc-2-1">2.1 Build và publish</a></li><li class="toc-h3"><a href="#muc-2-2">2.2 Thư mục làm việc = content root (quan trọng)</a></li><li class="toc-h3"><a href="#muc-2-3">2.3 Container image → 015</a></li></ul></li><li><a href="#muc-3">3. Flavor và biến môi trường</a><ul><li class="toc-h3"><a href="#muc-3-1">3.1 Bảng flavor (nguồn: <code>StandardFlavors</code> trong <code>src/GameServer.Platform/DeploymentEnvironments.cs</code>)</a></li><li class="toc-h3"><a href="#muc-3-2">3.2 Thứ tự nạp cấu hình</a></li><li class="toc-h3"><a href="#muc-3-3">3.3 Fail-closed khi khởi động</a></li><li class="toc-h3"><a href="#muc-3-4">3.4 Biến bắt buộc theo flavor</a></li></ul></li><li><a href="#muc-4">4. Secret</a></li><li><a href="#muc-5">5. Couchbase</a><ul><li class="toc-h3"><a href="#muc-5-1">5.1 Cluster và bucket</a></li><li class="toc-h3"><a href="#muc-5-2">5.2 Key cấu hình (<code>CouchbaseOptions</code>, section <code>Couchbase</code>)</a></li><li class="toc-h3"><a href="#muc-5-3">5.3 TLS</a></li><li class="toc-h3"><a href="#muc-5-4">5.4 Hai identity RBAC</a></li><li class="toc-h3"><a href="#muc-5-5">5.5 Provisioning (<code>--provision</code>)</a></li><li class="toc-h3"><a href="#muc-5-6">5.6 Nén Snappy</a></li></ul></li><li><a href="#muc-6">6. Mạng: reverse proxy, TLS, ForwardedHeaders</a></li><li><a href="#muc-7">7. Health, readiness, shutdown</a><ul><li class="toc-h3"><a href="#muc-7-1">7.1 Probe (<code>src/GameServer.Platform.Observability/ObservabilityModule.cs</code>)</a></li><li class="toc-h3"><a href="#muc-7-2">7.2 Graceful shutdown (OPS-03)</a></li></ul></li><li><a href="#muc-8">8. Log và analytics trên đĩa</a><ul><li class="toc-h3"><a href="#muc-8-1">8.1 Log (<code>ObservabilityOptions.Logging</code>)</a></li><li class="toc-h3"><a href="#muc-8-2">8.2 Analytics (slice 012, <code>AnalyticsOptions</code>, section <code>GameServer:Analytics</code>)</a></li><li class="toc-h3"><a href="#muc-8-3">8.3 Hazard rollback và dead letter của analytics</a></li></ul></li><li><a href="#muc-9">9. Observability: OTLP, metric, cảnh báo</a></li><li><a href="#muc-10">10. Data Protection key ring (<code>DataProtectionSettings</code>, section <code>DataProtection</code>)</a></li><li><a href="#muc-11">11. GM: SSO và CORS (<code>GmOptions</code>, section <code>Gm</code>)</a></li><li><a href="#muc-12">12. IAP (<code>IapOptions</code>, section <code>Iap</code>)</a></li><li><a href="#muc-13">13. Job, lease, xoá tài khoản</a></li><li><a href="#muc-14">14. Đồng hồ (NTP)</a></li><li><a href="#muc-15">15. Luồng deploy</a><ul><li class="toc-h3"><a href="#muc-15-1">15.1 Các bước</a></li><li class="toc-h3"><a href="#muc-15-2">15.2 Rollback</a></li><li class="toc-h3"><a href="#muc-15-3">15.3 Sơ đồ 2 — deploy flow và rollback</a></li></ul></li><li><a href="#muc-16">16. Hạng mục còn mở (tổng hợp)</a></li><li><a href="#muc-17">17. Checklist deploy</a><ul><li class="toc-h3"><a href="#muc-17-1">17.1 Database (11 mục)</a></li><li class="toc-h3"><a href="#muc-17-2">17.2 Security (14 mục)</a></li><li class="toc-h3"><a href="#muc-17-3">17.3 Config (9 mục)</a></li><li class="toc-h3"><a href="#muc-17-4">17.4 Observability (9 mục)</a></li><li class="toc-h3"><a href="#muc-17-5">17.5 Capacity (6 mục)</a></li><li class="toc-h3"><a href="#muc-17-6">17.6 Release / rollback (8 mục)</a></li><li class="toc-h3"><a href="#muc-17-7">17.7 Backup / restore (6 mục)</a></li></ul></li></ul></details></nav>
+<main id="noi-dung" class="content" tabindex="-1">
+<header class="page-head">
+<p class="eyebrow">Trang 3 / 3 · DevOps / SRE, DBA Couchbase, security</p>
+<h1>Deploy cho DevOps (kèm checklist)</h1>
+<p class="lead">Đưa host lên dev, beta, uat, live theo flavor; checklist 63 mục ở <a href="#muc-17">mục 17</a> là tiêu chí ký duyệt của ops-readiness (015).</p>
+<p class="meta">Đúng với commit <code>175df65</code> (branch <code>docs-html-guides</code>, 2026-10-31). Mọi key, class, switch, exit code, metric và file nêu dưới đây đã được grep/đọc trong code ở commit này.</p>
+</header>
+<div class="doc-intro">
+<ul><li><strong>Người đọc:</strong> DevOps / SRE, DBA Couchbase, security reviewer.</li><li><strong>Phạm vi:</strong> trạng thái hiện tại sau slice 010, 011, 012. Phần chưa có công cụ, manifest hay drill được đánh dấu <span class="badge badge--todo">→ ops-readiness (015)</span>. Slice 015 bổ sung runbook, drill, Dockerfile/manifest rồi cập nhật cùng trang này; checklist ở mục 17 là tiêu chí ký duyệt của 015 (plan §5.4).</li><li><strong>Nguồn chính:</strong> <a class="path" href="../../docs/guides/environments-and-local-run.md"><code>docs/<wbr>guides/<wbr>environments-and-local-run.<wbr>md</code></a>, <a class="path" href="../../docs/guides/analytics.md"><code>docs/<wbr>guides/<wbr>analytics.<wbr>md</code></a>, <a class="path" href="../../docs/guides/local-real-env-testing.md"><code>docs/<wbr>guides/<wbr>local-real-env-testing.<wbr>md</code></a>, <a class="path" href="../../docs/pcr/platform.md"><code>docs/<wbr>pcr/<wbr>platform.<wbr>md</code></a> (§1, §13–§18), <a class="path" href="../../docs/pcr/gm.md"><code>docs/<wbr>pcr/<wbr>gm.<wbr>md</code></a>, <a class="path" href="../../docs/pcr/iap.md"><code>docs/<wbr>pcr/<wbr>iap.<wbr>md</code></a>, <a class="path" href="../../docs/pcr/identity.md"><code>docs/<wbr>pcr/<wbr>identity.<wbr>md</code></a>, <a class="path" href="../../specs/011-local-env/contracts/operations-cli.md"><code>specs/<wbr>011-local-env/<wbr>contracts/<wbr>operations-cli.<wbr>md</code></a>, <a class="path" href="../../Requirements/Game_Server_System_Requirements_v1.2.md"><code>Requirements/<wbr>Game_<wbr>Server_<wbr>System_<wbr>Requirements_<wbr>v1.<wbr>2.<wbr>md</code></a>.</li></ul>
+<p>Quy ước ký hiệu trong trang:</p>
+<div class="table-wrap" role="region" aria-label="Bảng — nội dung" tabindex="0"><table class="tbl"><thead><tr><th scope="col">Ký hiệu</th><th scope="col">Nghĩa</th></tr></thead><tbody>
+<tr><td><span class="badge badge--todo">→ 015</span></td><td>chưa có công cụ, manifest, runbook hay drill; slice ops-readiness (015) làm</td></tr>
+<tr><td><span class="badge badge--ok">ĐÃ CHẠY</span></td><td>người viết đã chạy thử trên artifact publish ở commit 175df65 (2026-10-31, Windows, không Couchbase)</td></tr>
+<tr><td><span class="badge badge--neutral">SUY LUẬN</span></td><td>suy ra từ code, chưa kiểm end-to-end</td></tr>
+<tr><td><span class="badge badge--verify">VERIFY</span></td><td>phụ thuộc hành vi bên ngoài repo (image .NET, Couchbase, IdP), cần kiểm khi làm 015</td></tr>
+</tbody></table></div>
+</div>
+<section class="doc-section" aria-labelledby="muc-1">
+<h2 id="muc-1">1. Tổng quan triển khai <a class="anchor" href="#muc-1" aria-label="Liên kết tới mục này">#</a></h2>
+<p>Một bản build (host, ví dụ <code>SampleHost</code>) chạy ở mọi môi trường. Môi trường được chọn bằng <strong>flavor</strong> = tên môi trường của host. Mỗi instance là một process ASP.NET Core/Kestrel stateless phía sau reverse proxy/load balancer. Toàn bộ trạng thái nằm trong Couchbase. Mỗi instance ghi file log và file analytics xuống đĩa của nó.</p>
+<span id="so-do-1-ref" class="fig-ref"></span><figure class="diagram" id="so-do-1"><div class="diagram-bar"><span class="diagram-title">Sơ đồ 1 — topology</span><a class="zoom-link zoom-open" href="#so-do-1">Phóng to</a><a class="zoom-link zoom-close" href="#so-do-1-ref">Đóng</a></div><div class="diagram-scroll" role="region" aria-label="Sơ đồ 1 — topology (cuộn ngang nếu màn hình hẹp)" tabindex="0"><svg class="dg " viewBox="0 0 1170 560" role="img" aria-labelledby="sd1-title sd1-desc" style="--nat-w:1170px;--min-w:860px" focusable="false"><title id="sd1-title">Sơ đồ 1 — topology triển khai</title><desc id="sd1-desc">Client Unity gửi HTTPS Protobuf và trình duyệt GM gửi HTTPS JSON /gm/** tới reverse proxy/LB (TLS termination). Proxy chuyển HTTP kèm X-Forwarded-For/-Proto tới instance 1..N (host .NET 10/Kestrel, mỗi instance có volume logs/ và analytics/). Instance nối Couchbase cluster ≥ 7.6 qua couchbases:// KV 11207 và HTTPS mgmt/query bằng identity runtime (data-only); gửi OTLP tới collector tuỳ chọn; gọi HTTPS egress tới dịch vụ ngoài (Google OAuth/Play API, static.gc.apple.com, IdP OIDC). File trên volume được shipper đưa tới data lake/log store. Pipeline chạy --provision một lần mỗi deploy với identity provisioner (quản trị).</desc><defs><marker id="sd1-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker><marker id="sd1-ah-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah ah--accent"/></marker><marker id="sd1-ah-danger" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah ah--danger"/></marker><marker id="sd1-ah-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah ah--violet"/></marker><marker id="sd1-ah-muted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah ah--muted"/></marker></defs><text x="86" y="150" text-anchor="middle" class="t-head"><tspan x="86" dy="0">Ngoài</tspan></text><text x="306" y="150" text-anchor="middle" class="t-head"><tspan x="306" dy="0">Biên</tspan></text><g><rect x="16" y="166" width="140" height="44" rx="6" class="box"/><text x="86" y="192" text-anchor="middle" class=""><tspan x="86" dy="0" class="t-b">Client Unity</tspan></text></g><g><rect x="16" y="256" width="140" height="44" rx="6" class="box"/><text x="86" y="282" text-anchor="middle" class=""><tspan x="86" dy="0" class="t-b">Trình duyệt GM</tspan></text></g><g><rect x="236" y="166" width="140" height="134" rx="6" class="box box--accent"/><text x="306" y="230" text-anchor="middle" class=""><tspan x="306" dy="0" class="t-b">Reverse proxy / LB</tspan><tspan x="306" dy="14" class="t-sm">TLS termination</tspan></text></g><g><rect x="236" y="20" width="140" height="48" rx="6" class="box box--violet"/><text x="306" y="41" text-anchor="middle" class=""><tspan x="306" dy="0" class="t-b">Pipeline</tspan><tspan x="306" dy="14" class="t-sm">(một lần mỗi deploy)</tspan></text></g><rect x="500" y="96" width="270" height="330" rx="12" class="group dashed"/><text x="514" y="116" text-anchor="start" class="t-band"><tspan x="514" dy="0">Cụm app</tspan></text><rect x="536" y="134" width="220" height="96" rx="8" class="box box--ghost"/><rect x="528" y="142" width="220" height="96" rx="8" class="box box--ghost"/><g><rect x="520" y="150" width="220" height="96" rx="6" class="box"/><text x="630" y="188" text-anchor="middle" class=""><tspan x="630" dy="0" class="t-b">Instance 1..N</tspan><tspan x="630" dy="14" class="t-sm">host .NET 10 / Kestrel</tspan><tspan x="630" dy="14" class="t-sm">mỗi instance có 2 volume</tspan></text></g><g><path d="M530,327 L530,385 A47.5,11 0 0 0 625,385 L625,327 A47.5,11 0 0 0 530,327 Z" class="box"/><path d="M530,327 A47.5,11 0 0 0 625,327" class="box cyl-rim"/><text x="577.5" y="365.5" text-anchor="middle" class=""><tspan x="577.5" dy="0">logs/</tspan></text></g><g><path d="M645,327 L645,385 A47.5,11 0 0 0 740,385 L740,327 A47.5,11 0 0 0 645,327 Z" class="box"/><path d="M645,327 A47.5,11 0 0 0 740,327" class="box cyl-rim"/><text x="692.5" y="365.5" text-anchor="middle" class=""><tspan x="692.5" dy="0">analytics/</tspan></text></g><path d="M578,246 V316" class="edge" marker-end="url(#sd1-ah)"/><path d="M692,246 V316" class="edge" marker-end="url(#sd1-ah)"/><text x="635" y="284" text-anchor="middle" class="t-lbl halo"><tspan x="635" dy="0">ghi file</tspan></text><g><path d="M900,87 L900,185 A125,11 0 0 0 1150,185 L1150,87 A125,11 0 0 0 900,87 Z" class="box"/><path d="M900,87 A125,11 0 0 0 1150,87" class="box cyl-rim"/><text x="1025" y="124" text-anchor="middle" class=""><tspan x="1025" dy="0" class="t-b">Couchbase cluster ≥ 7.6</tspan><tspan x="1025" dy="14" class="t-sm">bucket theo môi trường,</tspan><tspan x="1025" dy="14" class="t-sm">scope g_&lt;gameId&gt;</tspan></text></g><g><rect x="900" y="226" width="250" height="44" rx="6" class="box dashed"/><text x="1025" y="252" text-anchor="middle" class=""><tspan x="1025" dy="0" class="t-b">OTLP collector (tuỳ chọn)</tspan></text></g><g><rect x="900" y="300" width="250" height="84" rx="6" class="box"/><text x="1025" y="323.5" text-anchor="middle" class=""><tspan x="1025" dy="0" class="t-b">Dịch vụ ngoài</tspan><tspan x="1025" dy="15" class="t-sm">Google OAuth / Play API,</tspan><tspan x="1025" dy="15" class="t-sm">static.gc.apple.com,</tspan><tspan x="1025" dy="15" class="t-sm">IdP OIDC của công ty</tspan></text></g><g><rect x="520" y="462" width="230" height="50" rx="6" class="box"/><text x="635" y="484" text-anchor="middle" class=""><tspan x="635" dy="0" class="t-b">Log/analytics shipper</tspan><tspan x="635" dy="14" class="t-sm">(sidecar hoặc agent node)</tspan></text></g><g><rect x="900" y="462" width="250" height="50" rx="6" class="box"/><text x="1025" y="491" text-anchor="middle" class=""><tspan x="1025" dy="0" class="t-b">data lake / log store</tspan></text></g><path d="M156,188 L236,200" class="edge edge--accent" marker-end="url(#sd1-ah-accent)"/><text x="196" y="168" text-anchor="middle" class="t-lbl halo"><tspan x="196" dy="0">HTTPS</tspan><tspan x="196" dy="12">Protobuf</tspan></text><path d="M156,278 L236,266" class="edge" marker-end="url(#sd1-ah)"/><text x="196" y="298" text-anchor="middle" class="t-lbl halo"><tspan x="196" dy="0">HTTPS JSON</tspan><tspan x="196" dy="12">/gm/**</tspan></text><path d="M376,198 H520" class="edge edge--accent" marker-end="url(#sd1-ah-accent)"/><text x="442" y="178" text-anchor="middle" class="t-lbl halo"><tspan x="442" dy="0">HTTP +</tspan><tspan x="442" dy="12">X-Forwarded-For/-Proto</tspan></text><path d="M740,166 L900,126" class="edge edge--accent" marker-end="url(#sd1-ah-accent)"/><text x="808" y="104" text-anchor="middle" class="t-lbl halo"><tspan x="808" dy="0">couchbases:// KV 11207</tspan><tspan x="808" dy="12">+ HTTPS mgmt/query</tspan></text><g class="pill pill--accent"><rect x="766.05" y="156" width="131.89999999999998" height="20" rx="10"/><text x="832" y="170" text-anchor="middle">runtime (data-only)</text></g><path d="M740,212 L900,248" class="edge edge--muted dashed" marker-end="url(#sd1-ah-muted)"/><text x="836" y="212" text-anchor="middle" class="t-lbl halo"><tspan x="836" dy="0">OTLP grpc|http/protobuf</tspan></text><path d="M740,232 L900,342" class="edge" marker-end="url(#sd1-ah)"/><text x="800" y="300" text-anchor="middle" class="t-lbl halo"><tspan x="800" dy="0">HTTPS egress</tspan></text><path d="M578,396 V462" class="edge" marker-end="url(#sd1-ah)"/><path d="M692,396 V462" class="edge" marker-end="url(#sd1-ah)"/><path d="M750,487 H900" class="edge" marker-end="url(#sd1-ah)"/><path d="M376,44 H882 V100 H900" class="edge edge--violet" marker-end="url(#sd1-ah-violet)"/><text x="560" y="36" text-anchor="middle" class="t-lbl t-mono t-violet halo"><tspan x="560" dy="0">--provision</tspan></text><g class="pill pill--violet"><rect x="644.9" y="20" width="150.2" height="20" rx="10"/><text x="720" y="34" text-anchor="middle">provisioner (quản trị)</text></g></svg></div></figure>
+<details class="dg-text"><summary>Mô tả dạng chữ của sơ đồ 1 (nodes và edges)</summary>
+<div class="code-block"><div class="code-head"><span class="code-lang">text</span></div><pre class="code" data-lang="text"><code>Nodes:
+  [Client Unity]  [Trình duyệt GM]          (ngoài)
+  [Reverse proxy / LB — TLS termination]    (biên)
+  [Instance 1..N: host .NET 10 / Kestrel]   (cụm app; mỗi instance có 2 volume: logs/, analytics/)
+  [Couchbase cluster ≥ 7.6]                 (bucket theo môi trường, scope g_&lt;gameId&gt;)
+  [OTLP collector]                          (tuỳ chọn)
+  [Log/analytics shipper]                   (sidecar hoặc agent node)
+  [Dịch vụ ngoài: Google OAuth/Play API, static.gc.apple.com, IdP OIDC của công ty]
+Edges:
+  Client Unity  --HTTPS Protobuf--&gt;  Proxy
+  Trình duyệt GM --HTTPS JSON /gm/**--&gt; Proxy
+  Proxy --HTTP + X-Forwarded-For/-Proto--&gt; Instance
+  Instance --couchbases:// KV 11207 + HTTPS mgmt/query--&gt; Couchbase
+  Instance --OTLP grpc|http/protobuf--&gt; Collector
+  Instance --ghi file--&gt; volume logs/, analytics/ --&gt; Shipper --&gt; data lake / log store
+  Instance --HTTPS egress--&gt; Dịch vụ ngoài
+  Pipeline (một lần mỗi deploy) --&quot;--provision&quot; với identity quản trị--&gt; Couchbase</code></pre></div>
+</details>
+</section>
+<section class="doc-section" aria-labelledby="muc-2">
+<h2 id="muc-2">2. Artifact <a class="anchor" href="#muc-2" aria-label="Liên kết tới mục này">#</a></h2>
+<h3 id="muc-2-1">2.1 Build và publish <a class="anchor" href="#muc-2-1" aria-label="Liên kết tới mục này">#</a></h3>
+<div class="code-block"><div class="code-head"><span class="code-lang">bash</span></div><pre class="code" data-lang="bash"><code>dotnet publish samples/SampleHost/SampleHost.csproj <span class="hl-kw">-c</span> Release <span class="hl-kw">-o</span> out/SampleHost</code></pre></div>
+<ul><li>SDK: .NET <strong>10.0.403</strong> (<a class="path" href="../../global.json"><code>global.<wbr>json</code></a>, <code>rollForward:<wbr> latestPatch</code>). Target <code>net10.<wbr>0</code> (<a class="path" href="../../Directory.Build.props"><code>Directory.<wbr>Build.<wbr>props</code></a>).</li><li>Output là bản framework-dependent: chạy bằng <code>dotnet SampleHost.<wbr>dll</code> trên ASP.NET Core runtime 10. <span class="badge badge--ok">ĐÃ CHẠY</span> Output gồm <code>SampleHost.<wbr>dll</code>, các assembly <code>GameServer.<wbr>*</code>, <code>appsettings.<wbr>json</code>, <code>appsettings.<wbr>{Local,Dev,Beta,Uat,Live}.<wbr>json</code> và thư mục <code>config/<wbr>base/<wbr>*.<wbr>json</code> (config game, copy nhờ <code>CopyToOutputDirectory</code> trong <a class="path" href="../../samples/SampleHost/SampleHost.csproj"><code>samples/<wbr>SampleHost/<wbr>SampleHost.<wbr>csproj</code></a>).</li><li>Game thật thay <a class="path" href="../../samples/SampleHost"><code>samples/<wbr>SampleHost</code></a> bằng host của mình. Mọi điều trong trang này áp dụng cho host nào gọi <code>GameServerCommandLine.<wbr>Parse(args)</code> và <code>app.<wbr>RunGameServerAsync(mode)</code> như <a class="path" href="../../samples/SampleHost/Program.cs"><code>samples/<wbr>SampleHost/<wbr>Program.<wbr>cs</code></a>. Thiếu <code>RunGameServerAsync</code> thì không có <code>--provision</code>.</li><li>Artifact chứa cả <code>appsettings.<wbr>Local.<wbr>json</code> và <code>appsettings.<wbr>Dev.<wbr>json</code> (có staff seed <code>dev-only-change-me</code>). Hai file này chỉ được nạp khi flavor là <code>Local</code> hoặc <code>Dev</code>. Ở Staging/Production, <code>Gm:<wbr>Bootstrap:<wbr>Staff</code> bị từ chối khi khởi động (<code>GmOptionsValidator</code>).</li></ul>
+<h3 id="muc-2-2">2.2 Thư mục làm việc = content root (quan trọng) <a class="anchor" href="#muc-2-2" aria-label="Liên kết tới mục này">#</a></h3>
+<p>ASP.NET Core lấy <strong>thư mục hiện tại</strong> làm content root. <code>appsettings*.<wbr>json</code>, <code>config/</code> (<code>GameServer:<wbr>ConfigPath</code>), <code>logs</code> (<code>Observability:<wbr>Logging:<wbr>Directory</code>) và <code>analytics</code> (<code>GameServer:<wbr>Analytics:<wbr>Directory</code>) đều tính từ đó.</p>
+<p><span class="badge badge--ok">ĐÃ CHẠY</span> Chạy <code>dotnet &lt;đường dẫn&gt;/<wbr>SampleHost.<wbr>dll --provision</code> từ thư mục khác (<code>C:\</code>) với <code>ASPNETCORE_<wbr>ENVIRONMENT=Live</code> cho exit 1:</p>
+<div class="code-block"><div class="code-head"><span class="code-lang">text</span></div><pre class="code" data-lang="text"><code> - [deployment] GameServer:DeploymentEnvironment is not set and the host environment name 'Live' is not a deployment
+   environment (...). Fix: set GameServer:DeploymentEnvironment in appsettings.Live.json (found: no, content root C:\) ...</code></pre></div>
+<p>Vì vậy container/service phải đặt working directory = thư mục publish (Docker <code>WORKDIR</code>), hoặc truyền <code>--contentRoot &lt;dir&gt;</code>.</p>
+<h3 id="muc-2-3">2.3 Container image <span class="badge badge--todo">→ 015</span> <a class="anchor" href="#muc-2-3" aria-label="Liên kết tới mục này">#</a></h3>
+<ul><li>Repo <strong>chưa có</strong> Dockerfile, manifest K8s hay CI (<code>.<wbr>github/</code> không tồn tại). Dockerfile, container guide và manifest thuộc 015 (plan §5.4).</li><li>Ràng buộc đã biết cho image (PCR platform §18, kiểm 2026-10-31 bằng Docker):<ul><li><code>mcr.<wbr>microsoft.<wbr>com/<wbr>dotnet/<wbr>aspnet:<wbr>10.<wbr>0</code> (Ubuntu 24.04) có <code>tzdata</code>: <strong>dùng được</strong>.</li><li><code>aspnet:<wbr>10.<wbr>0-alpine</code> và <code>aspnet:<wbr>10.<wbr>0-noble-chiseled</code> <strong>không có</strong> dữ liệu múi giờ. Mọi tên múi giờ trừ <code>UTC</code> báo không tìm thấy, nên host exit 1 khi analytics bật ở Staging/Production.</li><li><code>aspnet:<wbr>10.<wbr>0-noble-chiseled-extra</code> <strong>dùng được</strong>. Cách khác: cài <code>tzdata</code> vào image.</li></ul></li><li><span class="badge badge--verify">VERIFY</span> Image .NET 8 trở lên đặt sẵn cổng mặc định qua <code>ASPNETCORE_<wbr>HTTP_<wbr>PORTS</code> (8080) và chạy bằng user không phải root (<code>app</code>). Volume <code>logs/</code>, <code>analytics/</code> phải ghi được bởi user đó. Thư mục analytics không ghi được thì host exit 1 nêu key và đường dẫn.</li></ul>
+</section>
+<section class="doc-section" aria-labelledby="muc-3">
+<h2 id="muc-3">3. Flavor và biến môi trường <a class="anchor" href="#muc-3" aria-label="Liên kết tới mục này">#</a></h2>
+<h3 id="muc-3-1">3.1 Bảng flavor (nguồn: <code>StandardFlavors</code> trong <a class="path" href="../../src/GameServer.Platform/DeploymentEnvironments.cs"><code>src/<wbr>GameServer.<wbr>Platform/<wbr>DeploymentEnvironments.<wbr>cs</code></a>) <a class="anchor" href="#muc-3-1" aria-label="Liên kết tới mục này">#</a></h3>
+<div class="table-wrap" role="region" aria-label="Bảng — 3.1 Bảng flavor (nguồn: StandardFlavors trong src/GameServer.Platform/DeploymentEnvironments.cs)" tabindex="0"><table class="tbl wide"><thead><tr><th scope="col">Flavor (<code>ASPNETCORE_<wbr>ENVIRONMENT</code>)</th><th scope="col"><code>GameServer:<wbr>DeploymentEnvironment</code></th><th scope="col"><code>GameServer:<wbr>EnvironmentId</code></th><th scope="col"><code>GameServer:<wbr>Store</code></th><th scope="col">Bucket mẫu (<code>Couchbase:<wbr>BucketName</code>)</th><th scope="col">Công cụ dev</th></tr></thead><tbody>
+<tr><td><code>Local</code></td><td>Development</td><td><code>local</code></td><td><code>File</code></td><td>— (thư mục <code>FileStore:<wbr>Folder</code>)</td><td>bật</td></tr>
+<tr><td><code>Dev</code></td><td>Development</td><td><code>dev</code></td><td><code>Couchbase</code></td><td><code>gameserver-dev</code></td><td>bật</td></tr>
+<tr><td><code>Beta</code></td><td>Staging</td><td><code>beta</code></td><td><code>Couchbase</code></td><td><code>sample-beta</code></td><td>tắt</td></tr>
+<tr><td><code>Uat</code></td><td>Staging</td><td><code>uat</code></td><td><code>Couchbase</code></td><td><code>sample-uat</code></td><td>tắt</td></tr>
+<tr><td><code>Live</code></td><td>Production</td><td><code>live</code></td><td><code>Couchbase</code> (bắt buộc TLS)</td><td><code>sample-live</code>, cluster riêng (DAT-01)</td><td>tắt</td></tr>
+</tbody></table></div>
+<ul><li>Chọn flavor bằng <code>ASPNETCORE_<wbr>ENVIRONMENT</code> (hoặc <code>DOTNET_<wbr>ENVIRONMENT</code>). Phải viết đúng hoa thường vì tên file phân biệt hoa thường trên Linux. Giá trị <code>GameServer:<wbr>*</code> của mỗi flavor nằm trong <code>samples/<wbr>SampleHost/<wbr>appsettings.<wbr>{Flavor}.<wbr>json</code>.</li><li>&quot;Công cụ dev&quot; gồm: xác thực thử bằng header <code>X-Test-Player</code>, module cheat, seed staff GM, GM OpenAPI (<code>/<wbr>gm/<wbr>v1/<wbr>openapi/<wbr>gm.<wbr>json</code>), verifier IAP giả và identity provider giả. Chúng chỉ có ở Development/Test (<code>GameServerOptions.<wbr>AllowsDevelopmentTools</code>). Beta và uat <strong>không</strong> có công cụ dev.</li><li>Flavor <code>Dev</code> phải nằm trong mạng nội bộ/VPN: header <code>X-Test-Player</code> mạo danh được mọi player, và staff seed có mật khẩu commit trong repo.</li><li>Giá trị <code>StoreKind</code> (<a class="path" href="../../src/GameServer.Platform/GameServerOptions.cs"><code>src/<wbr>GameServer.<wbr>Platform/<wbr>GameServerOptions.<wbr>cs</code></a>): <code>InMemory</code>, <code>Couchbase</code>, <code>File</code>. <code>InMemory</code> và <code>File</code> bị từ chối ngoài Development/Test.</li><li>Overlay config game: <code>config/<wbr>env/<wbr>&lt;DeploymentEnvironment&gt;</code> (<a class="path" href="../../src/GameServer.Platform/Config/FileGameConfigLoader.cs"><code>src/<wbr>GameServer.<wbr>Platform/<wbr>Config/<wbr>FileGameConfigLoader.<wbr>cs</code></a>). Beta và uat <strong>dùng chung</strong> <code>config/<wbr>env/<wbr>Staging</code>. Host mẫu hiện chỉ có <code>config/<wbr>base</code>.</li></ul>
+<h3 id="muc-3-2">3.2 Thứ tự nạp cấu hình <a class="anchor" href="#muc-3-2" aria-label="Liên kết tới mục này">#</a></h3>
+<div class="code-block"><div class="code-head"><span class="code-lang">text</span></div><pre class="code" data-lang="text"><code>appsettings.json  &lt;  appsettings.{Flavor}.json  &lt;  biến môi trường  &lt;  dòng lệnh (--urls, --Section:Key=value)</code></pre></div>
+<p>Tên biến môi trường = key cấu hình, thay <code>:</code> bằng <code>__</code>. Ví dụ <code>Couchbase:<wbr>Password</code> thành <code>Couchbase__<wbr>Password</code>, phần tử mảng <code>GameServer:<wbr>Hosting:<wbr>ForwardedHeaders:<wbr>KnownNetworks[0]</code> thành <code>GameServer__<wbr>Hosting__<wbr>ForwardedHeaders__<wbr>KnownNetworks__<wbr>0</code>.</p>
+<h3 id="muc-3-3">3.3 Fail-closed khi khởi động <a class="anchor" href="#muc-3-3" aria-label="Liên kết tới mục này">#</a></h3>
+<p>Mọi lỗi của một lần khởi động được in <strong>cùng lúc</strong> ra stderr, sau dòng <code>Game server startup validation failed:</code>. Mỗi lỗi một dòng <code> - …</code>, rồi host thoát với code 1 (<code>HostExitCodes.<wbr>InvalidConfiguration</code>). Flavor sai hoặc thiếu <strong>không bao giờ</strong> thành Development.</p>
+<p><span class="badge badge--ok">ĐÃ CHẠY</span> Artifact publish, <code>ASPNETCORE_<wbr>ENVIRONMENT=Live</code>, không đặt biến nào, chạy server. Exit 1 với đúng 11 lỗi: <code>DataProtection:<wbr>MasterKey</code>, <code>Couchbase:<wbr>ConnectionString</code>, <code>Couchbase:<wbr>Username</code>, <code>Couchbase:<wbr>Password</code>, <code>Identity:<wbr>GuestPepper</code>, năm khoá <code>Iap:<wbr>*</code> và <code>Gm:<wbr>Oidc:<wbr>Authority/<wbr>ClientId/<wbr>ClientSecret</code>. Đây là cách nhanh để DevOps xem còn thiếu gì: chạy một lần với flavor đích rồi đọc danh sách lỗi. Không lỗi nào in giá trị.</p>
+<h3 id="muc-3-4">3.4 Biến bắt buộc theo flavor <a class="anchor" href="#muc-3-4" aria-label="Liên kết tới mục này">#</a></h3>
+<div class="table-wrap" role="region" aria-label="Bảng — 3.4 Biến bắt buộc theo flavor" tabindex="0"><table class="tbl"><thead><tr><th scope="col">Flavor</th><th scope="col">Bắt buộc từ môi trường hoặc secret provider</th></tr></thead><tbody>
+<tr><td>local</td><td>không có</td></tr>
+<tr><td>dev</td><td><code>Couchbase__<wbr>Password</code></td></tr>
+<tr><td>beta, uat</td><td><code>Couchbase__<wbr>ConnectionString</code>, <code>Couchbase__<wbr>Username</code>, <code>Couchbase__<wbr>Password</code>, <code>DataProtection__<wbr>MasterKey</code>, <code>Gm__<wbr>Oidc__<wbr>Authority</code>, <code>Gm__<wbr>Oidc__<wbr>ClientId</code>, <code>Gm__<wbr>Oidc__<wbr>ClientSecret</code>, <code>Identity__<wbr>GuestPepper</code>, <code>Iap__<wbr>Google__<wbr>PackageName</code>, <code>Iap__<wbr>Google__<wbr>ServiceAccountEmail</code>, <code>Iap__<wbr>Google__<wbr>ServiceAccountPrivateKeyPem</code>, <code>Iap__<wbr>Apple__<wbr>BundleId</code>, <code>Iap__<wbr>Apple__<wbr>RootCertificateBase64</code>; khi bật Play Games thêm <code>Identity__<wbr>Providers__<wbr>PlayGames__<wbr>ClientId</code>, <code>Identity__<wbr>Providers__<wbr>PlayGames__<wbr>ClientSecret</code></td></tr>
+<tr><td>live</td><td>như beta/uat. <code>Couchbase__<wbr>ConnectionString</code> phải là <code>couchbases://<wbr>…</code>. Dùng CA riêng thì thêm <code>Couchbase__<wbr>TrustCertificatePath</code></td></tr>
+<tr><td>lần chạy <code>--provision</code> (mọi flavor Couchbase)</td><td>chỉ <code>Couchbase__<wbr>ConnectionString</code>, <code>Couchbase__<wbr>Username</code>, <code>Couchbase__<wbr>Password</code> của <strong>identity quản trị</strong></td></tr>
+</tbody></table></div>
+<p>Biến nên đặt theo deploy (không phải secret, không có trong file flavor mẫu): <code>GameServer__<wbr>Analytics__<wbr>Directory</code> (đường dẫn tuyệt đối trên volume), <code>Observability__<wbr>Logging__<wbr>Directory</code>, <code>Observability__<wbr>InstanceId</code> (khi không dùng StatefulSet), <code>Observability__<wbr>Otlp__<wbr>Endpoint</code>, <code>GameServer__<wbr>Hosting__<wbr>ForwardedHeaders__<wbr>*</code>, <code>Gm__<wbr>Oidc__<wbr>BootstrapManagers__<wbr>0__<wbr>*</code>, <code>Gm__<wbr>Cors__<wbr>AllowedOrigins__<wbr>0</code>, cổng nghe (<code>ASPNETCORE_<wbr>URLS</code> hoặc <code>--urls</code>). File <code>appsettings.<wbr>{Beta,Uat,Live}.<wbr>json</code> không đặt <code>Urls</code>.</p>
+<p>Ví dụ khung (chỉ có tên, <strong>không</strong> có giá trị thật):</p>
+<div class="code-block"><div class="code-head"><span class="code-lang">bash</span></div><pre class="code" data-lang="bash"><code>ASPNETCORE_ENVIRONMENT=Live
+Couchbase__ConnectionString=couchbases://&lt;cb-node-1&gt;,&lt;cb-node-2&gt;
+Couchbase__Username=&lt;runtime-data-only-user&gt;
+Couchbase__Password=&lt;từ secret manager&gt;
+Couchbase__TrustCertificatePath=/etc/gameserver/couchbase-root-ca.pem
+DataProtection__MasterKey=&lt;từ secret manager&gt;
+Identity__GuestPepper=&lt;từ secret manager&gt;
+Gm__Oidc__Authority=https://&lt;idp&gt;
+Gm__Oidc__ClientId=&lt;client id&gt;
+Gm__Oidc__ClientSecret=&lt;từ secret manager&gt;
+Iap__Google__PackageName=&lt;package&gt;
+Iap__Google__ServiceAccountEmail=&lt;sa email&gt;
+Iap__Google__ServiceAccountPrivateKeyPem=&lt;từ secret manager&gt;
+Iap__Apple__BundleId=&lt;bundle id&gt;
+Iap__Apple__RootCertificateBase64=&lt;Apple Root CA G3, DER base64&gt;
+GameServer__Analytics__Directory=/var/lib/gameserver/analytics
+Observability__Logging__Directory=/var/lib/gameserver/logs
+GameServer__Hosting__ForwardedHeaders__Enabled=true
+GameServer__Hosting__ForwardedHeaders__KnownNetworks__0=&lt;CIDR của proxy&gt;</code></pre></div>
+</section>
+<section class="doc-section" aria-labelledby="muc-4">
+<h2 id="muc-4">4. Secret <a class="anchor" href="#muc-4" aria-label="Liên kết tới mục này">#</a></h2>
+<p>Danh sách mặc định <code>GameServer:<wbr>SecretKeys</code> (<a class="path" href="../../src/GameServer.Platform/GameServerOptions.cs"><code>src/<wbr>GameServer.<wbr>Platform/<wbr>GameServerOptions.<wbr>cs</code></a>):</p>
+<div class="table-wrap" role="region" aria-label="Bảng — 4. Secret" tabindex="0"><table class="tbl"><thead><tr><th scope="col">Key cấu hình</th><th scope="col">Biến môi trường</th><th scope="col">Ghi chú</th></tr></thead><tbody>
+<tr><td><code>Identity:<wbr>GuestPepper</code></td><td><code>Identity__<wbr>GuestPepper</code></td><td><strong>Không đổi sau khi đã có player.</strong> Hash guest = HMAC-SHA256(pepper, secret) và code không có pepper cũ, nên đổi pepper làm mọi guest không login được <span class="badge badge--neutral">SUY LUẬN</span></td></tr>
+<tr><td><code>Couchbase:<wbr>Password</code></td><td><code>Couchbase__<wbr>Password</code></td><td>bắt buộc ở mọi môi trường, kể cả Development</td></tr>
+<tr><td><code>Iap:<wbr>Google:<wbr>ServiceAccountPrivateKeyPem</code></td><td><code>Iap__<wbr>Google__<wbr>ServiceAccountPrivateKeyPem</code></td><td>PKCS#8 PEM, phải ký được (kiểm khi khởi động)</td></tr>
+<tr><td><code>DataProtection:<wbr>MasterKey</code></td><td><code>DataProtection__<wbr>MasterKey</code></td><td>base64 của đúng 32 byte ngẫu nhiên</td></tr>
+<tr><td><code>Gm:<wbr>Oidc:<wbr>ClientSecret</code></td><td><code>Gm__<wbr>Oidc__<wbr>ClientSecret</code></td><td></td></tr>
+<tr><td><code>Identity:<wbr>Providers:<wbr>PlayGames:<wbr>ClientSecret</code></td><td><code>Identity__<wbr>Providers__<wbr>PlayGames__<wbr>ClientSecret</code></td><td></td></tr>
+</tbody></table></div>
+<ul><li>Ngoài Development/Test, key trong danh sách này mà có giá trị trong <strong>bất kỳ</strong> file cấu hình nào thì host exit 1, kể cả khi biến môi trường ghi đè (<code>DeploymentChecks.<wbr>ValidateSecretSources</code>). Chế độ <code>--provision</code> cũng kiểm.</li><li>Check so khớp <strong>đúng tên key</strong>. <code>DataProtection:<wbr>PreviousMasterKeys:<wbr>&lt;id&gt;</code> (master key cũ khi rotate) cũng là secret nhưng <strong>không</strong> có trong danh sách mặc định. Cấp nó qua secret provider. Nếu game override <code>GameServer:<wbr>SecretKeys</code> thì liệt kê lại đủ 6 key mặc định rồi mới thêm key mới (comment trong code nói mảng bị thay thế khi bind, không gộp).</li><li>Test repository kiểm mọi <code>samples/<wbr>SampleHost/<wbr>appsettings*.<wbr>json</code> không chứa secret. Secret scan trong CI (ACC-48) chưa có <span class="badge badge--todo">→ 015</span>.</li><li>Tài liệu, ticket và manifest commit <strong>không bao giờ</strong> chứa giá trị secret. Chỉ ghi tên biến và nơi lưu (secret manager).</li><li>Mỗi môi trường dùng credential riêng (OPS-01): user Couchbase, pepper, master key, OIDC client.</li></ul>
+</section>
+<section class="doc-section" aria-labelledby="muc-5">
+<h2 id="muc-5">5. Couchbase <a class="anchor" href="#muc-5" aria-label="Liên kết tới mục này">#</a></h2>
+<h3 id="muc-5-1">5.1 Cluster và bucket <a class="anchor" href="#muc-5-1" aria-label="Liên kết tới mục này">#</a></h3>
+<div class="table-wrap" role="region" aria-label="Bảng — 5.1 Cluster và bucket" tabindex="0"><table class="tbl"><thead><tr><th scope="col">Mục</th><th scope="col">Yêu cầu</th><th scope="col">Nguồn</th></tr></thead><tbody>
+<tr><td>Phiên bản</td><td>Couchbase Server <strong>≥ 7.6</strong> (đã kiểm EE 7.6.12). Bật service Data, Query, Index. SDK <code>CouchbaseNetClient</code> 3.10.0</td><td>README, <a class="path" href="../../Directory.Packages.props"><code>Directory.<wbr>Packages.<wbr>props</code></a></td></tr>
+<tr><td>Bucket</td><td>một bucket loại <strong>Couchbase</strong> cho mỗi môi trường. Live dùng <strong>cluster riêng</strong> (DAT-01). Không dùng memcached (deprecated, không có transaction). App không bao giờ tạo bucket: DBA tạo</td><td>DAT-01, PCR platform §17</td></tr>
+<tr><td>Scope</td><td>luôn là <code>g_<wbr>&lt;gameId&gt;</code>, không cấu hình được (<code>CouchbaseOptions.<wbr>ScopeName</code>). <code>GameServer:<wbr>GameId</code>: chữ thường, số, <code>_</code>, tối đa 24 ký tự. Đổi <code>GameId</code> = scope mới, tức dữ liệu mới</td><td><code>CouchbaseOptions.<wbr>cs</code>, thông báo khởi động</td></tr>
+<tr><td>Replica</td><td>một node: <strong>replicas = 0</strong>. Replicas = 1 trên một node thì mọi transaction lỗi <code>DurabilityImpossible</code>. Production: <strong>≥ 2 node + ≥ 1 replica</strong> (G4). Durability luôn là <code>Majority</code>, không bao giờ <code>None</code></td><td>Requirements G4, DAT-05, V4</td></tr>
+<tr><td>NTP</td><td>đồng bộ trên <strong>mọi</strong> node Couchbase (transaction cần)</td><td>OPS-01</td></tr>
+<tr><td>Transaction metadata</td><td>collection <code>g_<wbr>&lt;gameId&gt;.<wbr>txn_<wbr>meta</code>, <code>--provision</code> tạo <strong>trước tiên</strong>. Không bao giờ xoá. Mọi instance dùng cùng <code>MetadataCollection</code> (framework cố định)</td><td>DAT-07, <code>CouchbaseClusterOptionsFactory.<wbr>cs</code></td></tr>
+<tr><td>Lost-transaction cleanup</td><td>chạy trong mỗi instance (<code>CleanupWindow</code> 60 s). <strong>Không instance nào chạy thì không có cleanup</strong>, nên bảo trì không được tắt mọi instance khi còn transaction dở</td><td>OPS-05</td></tr>
+</tbody></table></div>
+<h3 id="muc-5-2">5.2 Key cấu hình (<code>CouchbaseOptions</code>, section <code>Couchbase</code>) <a class="anchor" href="#muc-5-2" aria-label="Liên kết tới mục này">#</a></h3>
+<div class="table-wrap" role="region" aria-label="Bảng — 5.2 Key cấu hình (CouchbaseOptions, section Couchbase)" tabindex="0"><table class="tbl"><thead><tr><th scope="col">Key</th><th scope="col">Mặc định</th><th scope="col">Giới hạn (kiểm khi khởi động bởi <code>CouchbaseSettingsCheck</code>)</th></tr></thead><tbody>
+<tr><td><code>Couchbase:<wbr>ConnectionString</code></td><td>— (bắt buộc)</td><td><code>couchbase://<wbr>h1[,h2…]</code> hoặc <code>couchbases://<wbr>…</code></td></tr>
+<tr><td><code>Couchbase:<wbr>Username</code></td><td>— (bắt buộc)</td><td>identity của deployment</td></tr>
+<tr><td><code>Couchbase:<wbr>Password</code></td><td>—</td><td>bắt buộc ở mọi môi trường, chỉ từ môi trường</td></tr>
+<tr><td><code>Couchbase:<wbr>BucketName</code></td><td>— (bắt buộc)</td><td></td></tr>
+<tr><td><code>Couchbase:<wbr>KvTimeoutMs</code></td><td>2500</td><td>100 .. 1000 × min(<code>GameServer:<wbr>Limits:<wbr>PlayerTimeoutSeconds</code>, <code>GmTimeoutSeconds</code>)</td></tr>
+<tr><td><code>Couchbase:<wbr>QueryTimeoutMs</code></td><td>20000</td><td>100 .. 1000 × <code>GameServer:<wbr>Limits:<wbr>GmTimeoutSeconds</code></td></tr>
+<tr><td><code>Couchbase:<wbr>TrustCertificatePath</code></td><td>null</td><td>file PEM/DER của <strong>root CA</strong>, tương đối tính từ content root</td></tr>
+<tr><td><code>Couchbase:<wbr>Compression</code></td><td>true</td><td>Snappy</td></tr>
+<tr><td><code>Couchbase:<wbr>CompressionMinSizeBytes</code></td><td>32</td><td>0 .. 20 971 520</td></tr>
+<tr><td><code>Couchbase:<wbr>NumKvConnections</code> / <code>MaxKvConnections</code></td><td>2 / 5</td><td>1..32 / Num..64</td></tr>
+<tr><td><code>Couchbase:<wbr>UseGetMulti</code></td><td>false</td><td>giữ false (PCR platform §2)</td></tr>
+<tr><td><code>Couchbase:<wbr>ProvisionOnStartup</code></td><td>Development: true, còn lại: false</td><td><strong>giữ false ở beta/uat/live</strong></td></tr>
+<tr><td><code>Couchbase:<wbr>ProvisioningTimeoutSeconds</code></td><td>600</td><td>30 .. 7200</td></tr>
+</tbody></table></div>
+<p>Key cũ từ <code>database_<wbr>settings.<wbr>json</code> (<code>Couchbase:<wbr>ServerIp</code>, <code>OperationTimeOut</code>, <code>CompressThreshold</code>, <code>MoxiPort</code>, <code>BucketType</code>, <code>DbCache</code>, <code>dbbase:<wbr>*</code>, <code>dbcache</code>) chỉ sinh <strong>warning</strong> nêu key thay thế, không bao giờ gây lỗi.</p>
+<h3 id="muc-5-3">5.3 TLS <a class="anchor" href="#muc-5-3" aria-label="Liên kết tới mục này">#</a></h3>
+<ul><li>Live (Production) với <code>couchbase://</code> thì exit 1. <span class="badge badge--ok">ĐÃ CHẠY</span>: <code>[couchbase] Couchbase:<wbr>ConnectionString uses couchbase://<wbr> (no TLS) in 'Production'.<wbr> Fix:<wbr> use couchbases://<wbr>, with Couchbase:<wbr>TrustCertificatePath for a private CA …</code>. Staging chỉ có warning, Development không có gì. Không có công tắc bỏ qua.</li><li><code>Couchbase:<wbr>TrustCertificatePath</code> là root <strong>duy nhất</strong> được tin cho cả KV lẫn HTTP. Trust store của OS không được dùng, tên host vẫn được kiểm (<code>CouchbaseTrustedRoots.<wbr>cs</code>).</li><li>File phải là <strong>root CA</strong> tự ký. Trỏ vào intermediate thì chuỗi <code>PartialChain</code> và mọi kết nối bị từ chối.</li><li><code>DisableCertificateDownloads = true</code>: host không tải certificate thiếu qua AIA, nên <strong>node Couchbase phải gửi kèm intermediate</strong> trong handshake.</li><li><strong>Cổng phát hành TLS (bắt buộc trước mọi cutover Live; chưa từng chạy vì cluster local không có TLS) <span class="badge badge--todo">→ 015</span>.</strong> Hai test opt-in phải ra <strong>Passed</strong>, không phải Skipped (thiếu biến thì test tự skip qua <code>Assert.<wbr>SkipWhen</code>):<ul><li><code>CouchbaseSettingsIntegrationTests.<wbr>Tls_<wbr>trusts_<wbr>the_<wbr>configured_<wbr>ca_<wbr>and_<wbr>refuses_<wbr>another</code> (class nằm trong <a class="path" href="../../tests/GameServer.Platform.Couchbase.IntegrationTests/CouchbaseSettingsTests.cs"><code>tests/<wbr>GameServer.<wbr>Platform.<wbr>Couchbase.<wbr>IntegrationTests/<wbr>CouchbaseSettingsTests.<wbr>cs</code></a>)</li><li><code>CouchbaseProvisioningTests.<wbr>Production_<wbr>provisions_<wbr>without_<wbr>runtime_<wbr>secrets_<wbr>and_<wbr>serves_<wbr>on_<wbr>the_<wbr>data_<wbr>only_<wbr>identity_<wbr>over_<wbr>tls</code> (<a class="path" href="../../tests/GameServer.Platform.Couchbase.IntegrationTests/CouchbaseProvisioningTests.cs"><code>tests/<wbr>GameServer.<wbr>Platform.<wbr>Couchbase.<wbr>IntegrationTests/<wbr>CouchbaseProvisioningTests.<wbr>cs</code></a>)</li></ul></li></ul>
+<p class="indent">Biến: <code>COUCHBASE_<wbr>TLS_<wbr>CONNSTR</code>, <code>COUCHBASE_<wbr>CA_<wbr>PATH</code>, cùng các biến của fixture integration (<code>COUCHBASE_<wbr>CONNSTR</code>, <code>COUCHBASE_<wbr>USERNAME</code>, <code>COUCHBASE_<wbr>PASSWORD</code>, <code>COUCHBASE_<wbr>BUCKET</code>, xem README). Lệnh gợi ý (chưa chạy): <code>dotnet test --project tests/<wbr>GameServer.<wbr>Platform.<wbr>Couchbase.<wbr>IntegrationTests -c Release --filter-method &quot;*Tls_<wbr>*&quot; --filter-method &quot;*_<wbr>over_<wbr>tls&quot;</code>.</p>
+<h3 id="muc-5-4">5.4 Hai identity RBAC <a class="anchor" href="#muc-5-4" aria-label="Liên kết tới mục này">#</a></h3>
+<div class="table-wrap" role="region" aria-label="Bảng — 5.4 Hai identity RBAC" tabindex="0"><table class="tbl"><thead><tr><th scope="col">Identity</th><th scope="col">Dùng ở</th><th scope="col">Role (cú pháp 7.6)</th></tr></thead><tbody>
+<tr><td><strong>Runtime (data-only)</strong></td><td>mọi instance API beta/uat/live</td><td>trên scope <code>[&lt;bucket&gt;:<wbr>g_<wbr>&lt;gameId&gt;]</code>: <code>data_<wbr>reader</code>, <code>data_<wbr>writer</code>, <code>query_<wbr>select</code>, <code>query_<wbr>insert</code>, <code>query_<wbr>update</code>, <code>query_<wbr>delete</code> (UI: Data Reader, Data Writer, Query Select/Insert/Update/Delete)</td></tr>
+<tr><td><strong>Provisioner (quản trị)</strong></td><td>chỉ bước <code>--provision</code> của pipeline</td><td>trên <strong>bucket</strong> (vì scope chưa có ở lần đầu): <code>bucket_<wbr>admin[&lt;bucket&gt;]</code>, <code>query_<wbr>manage_<wbr>index[&lt;bucket&gt;]</code>, <code>data_<wbr>reader[&lt;bucket&gt;]</code>, cộng role cấp cluster <code>query_<wbr>system_<wbr>catalog</code></td></tr>
+</tbody></table></div>
+<ul><li>Role theo scope viết <code>[bucket:<wbr>scope]</code>. Couchbase 7.6 từ chối dạng <code>[bucket:<wbr>scope:<wbr>*]</code>.</li><li>Bộ role của provisioner đã kiểm bằng user hạn chế (<code>CouchbaseProvisionerRolesTests</code>). Thiếu bất kỳ role nào trong bốn role thì exit 2. Ví dụ thiếu <code>query_<wbr>system_<wbr>catalog</code>: <code>FAILED index …:<wbr> not in system:<wbr>indexes after CREATE INDEX (… needs the Query System Catalog role …)</code>.</li><li>User data-only chạy <code>--provision</code> thì exit 2 ngay mục đầu (<code>FAILED scope g_<wbr>x:<wbr> CouchbaseException (HTTP 403)</code>). Đây là cách kiểm nhanh rằng identity runtime <strong>không</strong> có quyền quản trị.</li></ul>
+<h3 id="muc-5-5">5.5 Provisioning (<code>--provision</code>) <a class="anchor" href="#muc-5-5" aria-label="Liên kết tới mục này">#</a></h3>
+<div class="code-block"><div class="code-head"><span class="code-lang">bash</span></div><pre class="code" data-lang="bash"><code>cd /app   <span class="hl-com"># thư mục publish = content root</span>
+ASPNETCORE_ENVIRONMENT=Live \
+Couchbase__ConnectionString=couchbases://&lt;cb-node-1&gt;,&lt;cb-node-2&gt; \
+Couchbase__Username=&lt;provisioner-user&gt; \
+Couchbase__Password=<span class="hl-str">&quot;$PROVISIONER_PASSWORD&quot;</span> \
+dotnet SampleHost.dll <span class="hl-kw">--provision</span></code></pre></div>
+<ul><li>Cần: flavor hợp lệ, <code>GameServer:<wbr>Store=Couchbase</code>, connection string, user, password, bucket. <strong>Không</strong> cần SSO GM, IAP, pepper, master key hay setting analytics (<span class="badge badge--ok">ĐÃ CHẠY</span>: Live <code>--provision</code> không có biến nào chỉ báo 3 lỗi Couchbase). Không chạy web server, job hay sweeper. Không tạo bucket, không xoá hay sửa gì.</li><li>Thứ tự: scope → <code>txn_<wbr>meta</code> → các collection khác → chờ collection trả lời KV → index (framework, module, index tham chiếu purge) → chờ mọi index <code>online</code> → kiểm lại.</li><li>Output stdout có tiền tố ổn định <code>provision:</code> (là hợp đồng, đổi là breaking change): <code>provision:<wbr> game &lt;id&gt;, environment &lt;env&gt; (&lt;DeploymentEnvironment&gt;), bucket &lt;b&gt;, scope g_<wbr>&lt;id&gt;</code>, mỗi mục <code>created</code> / <code>present</code> / <code>created (online after N s)</code>, cuối cùng <code>provision:<wbr> done:<wbr> X created, Y present</code>. Khi lỗi: <code>provision:<wbr> FAILED &lt;kind&gt; &lt;name&gt;:<wbr> &lt;cause&gt;</code> rồi <code>provision:<wbr> stopped after N items; fix the cause and run again (idempotent)</code>. Output không chứa credential.</li><li>Switch: đúng <code>--provision</code>, không phân biệt hoa thường. <code>--provision=…</code>, <code>-provision</code>, <code>/<wbr>provision</code> cho exit 1 (<span class="badge badge--ok">ĐÃ CHẠY</span>: <code>[provision] '--provision=.<wbr>' is not the provisioning switch …</code>).</li></ul>
+<div class="table-wrap" role="region" aria-label="Bảng — 5.5 Provisioning (--provision)" tabindex="0"><table class="tbl"><thead><tr><th scope="col">Exit code (<code>HostExitCodes</code>)</th><th scope="col">Ý nghĩa</th><th scope="col">Pipeline làm gì</th></tr></thead><tbody>
+<tr><td>0 (<code>Ok</code>)</td><td>mọi thứ đã có (tạo lần này hoặc trước đó)</td><td>tiếp tục deploy</td></tr>
+<tr><td>1 (<code>InvalidConfiguration</code>)</td><td>cấu hình sai: flavor, setting Couchbase, secret nằm trong file JSON, switch viết sai, store không phải Couchbase</td><td>dừng, sửa cấu hình</td></tr>
+<tr><td>2 (<code>ProvisioningFailed</code>)</td><td>provisioning lỗi, quá <code>Couchbase:<wbr>ProvisioningTimeoutSeconds</code>, hoặc Ctrl+C</td><td>dừng. Timeout thì <strong>chạy lại</strong> (idempotent, tiếp tục từ chỗ thiếu) hoặc tăng timeout (≤ 7200). Index ở trạng thái <code>error</code> thì <code>DROP INDEX</code> rồi chạy lại</td></tr>
+</tbody></table></div>
+<ul><li>Idempotent: mục có sẵn báo <code>present</code> và không bị sửa. Index trùng tên nhưng khác định nghĩa vẫn báo <code>present</code> (không phát hiện lệch). Index có sẵn ở trạng thái <code>deferred</code> thì lỗi, kèm gợi ý <code>BUILD INDEX</code>.</li><li>Cluster manager bận (HTTP 503) được tự thử lại tối đa 8 lần (~22 s).</li><li>Thời gian: build index của scope mới khi cluster đang tải mất 23–88 s mỗi index (đo dưới tải của bộ test), nên có thể vượt 600 s.</li></ul>
+<p><strong>Kiểm schema khi khởi động</strong> (<code>Couchbase:<wbr>ProvisionOnStartup=false</code>): trước khi nghe cổng, instance đọc thử mọi collection bắt buộc bằng identity runtime. Thiếu collection thì exit 1: <code>[couchbase] scope g_<wbr>&lt;id&gt; in bucket &lt;b&gt; is missing collections ….<wbr> Fix:<wbr> run the provisioning command (&lt;host&gt; --provision) …</code>. Index <strong>không</strong> được kiểm khi khởi động; báo cáo của <code>--provision</code> là nguồn đúng.</p>
+<h3 id="muc-5-6">5.6 Nén Snappy <a class="anchor" href="#muc-5-6" aria-label="Liên kết tới mục này">#</a></h3>
+<ul><li>Từ slice 011, body KV ≥ 32 byte <strong>thực sự</strong> được nén Snappy (<code>CouchbaseClusterOptionsFactory</code>, <code>WithSnappyCompression()</code>).</li><li>Theo dõi CPU của data service và latency KV (p95/p99 của command) trên beta trước khi lên live.</li><li>Rollback không cần deploy code: đặt <code>Couchbase__<wbr>Compression=false</code> rồi restart instance.</li></ul>
+</section>
+<section class="doc-section" aria-labelledby="muc-6">
+<h2 id="muc-6">6. Mạng: reverse proxy, TLS, ForwardedHeaders <a class="anchor" href="#muc-6" aria-label="Liên kết tới mục này">#</a></h2>
+<ul><li>TLS kết thúc ở LB/proxy (SEC-01). Kestrel nghe HTTP nội bộ và không được mở thẳng ra Internet. Code không có <code>UseHttpsRedirection</code>/HSTS, nên proxy chịu trách nhiệm redirect HTTPS.</li><li><code>GameServer:<wbr>Hosting:<wbr>ForwardedHeaders</code> (<code>ForwardedHeadersSettings</code>): <code>Enabled</code>, <code>KnownProxies[]</code> (IP), <code>KnownNetworks[]</code> (CIDR), <code>ForwardLimit</code> (mặc định 1). Chỉ xử lý <code>X-Forwarded-For</code> và <code>X-Forwarded-Proto</code>, chỉ tin proxy trong danh sách. Bật mà danh sách rỗng, network <code>/<wbr>0</code>, IP hoặc CIDR sai, hay <code>ForwardLimit &lt; 1</code> thì exit 1 (<code>DeploymentChecks.<wbr>cs</code>).</li><li>Chuỗi CDN + LB: đặt <code>ForwardLimit</code> = số hop tin cậy. Để 1 thì IP client chính là IP edge của CDN, khiến rate limit theo IP (login) và audit sai.</li><li><span class="badge badge--neutral">SUY LUẬN</span> <code>X-Forwarded-Host</code> <strong>không</strong> được xử lý, nên proxy phải giữ nguyên header <code>Host</code>. OIDC tạo <code>redirect_<wbr>uri</code> từ scheme và host của request. Sau proxy TLS mà thiếu <code>X-Forwarded-Proto</code> tin cậy thì redirect URI thành <code>http://<wbr>…</code> và IdP từ chối. Cookie GM vẫn <code>Secure</code> ngoài Development bất kể scheme (<code>GmCookies.<wbr>cs</code>).</li><li>Route public (không cần xác thực): <code>/<wbr>health/<wbr>live</code>, <code>/<wbr>health/<wbr>ready</code>, <code>/<wbr>v1/<wbr>time</code>, cùng các route login và SSO. Khuyến nghị (không bắt buộc trong code): proxy chỉ cho <code>/<wbr>gm/<wbr>**</code> từ mạng nội bộ/VPN.</li><li>Egress cần mở: <code>oauth2.<wbr>googleapis.<wbr>com</code>, <code>androidpublisher.<wbr>googleapis.<wbr>com</code> (IAP Google), <code>games.<wbr>googleapis.<wbr>com</code> (Play Games), <code>static.<wbr>gc.<wbr>apple.<wbr>com</code> (Game Center), authority của IdP OIDC, OTLP collector. Xác minh Apple JWS chạy offline (root CA lấy từ cấu hình).</li><li><code>AllowedHosts</code> trong <code>appsettings.<wbr>json</code> mẫu là <code>*</code>.</li></ul>
+</section>
+<section class="doc-section" aria-labelledby="muc-7">
+<h2 id="muc-7">7. Health, readiness, shutdown <a class="anchor" href="#muc-7" aria-label="Liên kết tới mục này">#</a></h2>
+<h3 id="muc-7-1">7.1 Probe (<a class="path" href="../../src/GameServer.Platform.Observability/ObservabilityModule.cs"><code>src/<wbr>GameServer.<wbr>Platform.<wbr>Observability/<wbr>ObservabilityModule.<wbr>cs</code></a>) <a class="anchor" href="#muc-7-1" aria-label="Liên kết tới mục này">#</a></h3>
+<div class="table-wrap" role="region" aria-label="Bảng — 7.1 Probe (src/GameServer.Platform.Observability/ObservabilityModule.cs)" tabindex="0"><table class="tbl wide"><thead><tr><th scope="col">Route</th><th scope="col">Check</th><th scope="col">HTTP</th><th scope="col">Dùng cho</th></tr></thead><tbody>
+<tr><td><code>GET /<wbr>health/<wbr>live</code></td><td>không check nào</td><td>200 <code>Healthy</code></td><td>liveness (không restart khi DB chết)</td></tr>
+<tr><td><code>GET /<wbr>health/<wbr>ready</code></td><td><code>store</code> (≤ 2 s), <code>config</code>, <code>log</code>, <code>shutdown</code>, <code>analytics</code> (khi gọi <code>AddAnalyticsFiles()</code>)</td><td><strong>200</strong> khi <code>Healthy</code> <strong>hoặc</strong> <code>Degraded</code>; <strong>503</strong> khi <code>Unhealthy</code></td><td>readiness / LB health check</td></tr>
+<tr><td><code>GET /<wbr>gm/<wbr>v1/<wbr>health</code></td><td>như ready, kèm chi tiết JSON</td><td>cần permission GM <code>ops.<wbr>read</code></td><td>người vận hành</td></tr>
+</tbody></table></div>
+<ul><li>Body của <code>/<wbr>health/<wbr>ready</code> chỉ là một chữ (<code>Healthy</code>, <code>Degraded</code>, <code>Unhealthy</code>). Kết quả được cache <code>Observability:<wbr>ReadyCacheMilliseconds</code> (1000 ms).</li><li><strong><code>Degraded</code> vẫn trả 200</strong>, nên probe không rút instance. Degraded xảy ra ở:<ul><li><code>log</code>: có lỗi sink log trong <code>Observability:<wbr>Logging:<wbr>SinkErrorWindowSeconds</code> (300 s), hoặc đĩa log còn ít hơn <code>Observability:<wbr>Logging:<wbr>LowDiskBytes</code> (1 GiB);</li><li><code>analytics</code>: có lỗi sink analytics trong <code>GameServer:<wbr>Analytics:<wbr>ErrorWindowSeconds</code> (300 s), hoặc thư mục còn ít hơn <code>GameServer:<wbr>Analytics:<wbr>LowDiskBytes</code> (1 GiB). Check này không bao giờ Unhealthy.</li></ul></li></ul>
+<p class="indent">Phát hiện Degraded bằng metric (mục 9) hoặc bằng cách so body của probe, <strong>không</strong> dựa vào status code.</p>
+<ul><li><code>Unhealthy</code> (503): store không trả lời, đang shutdown, file store bị faulted.</li><li>Instance chỉ nghe cổng sau khi qua validation, kiểm schema Couchbase, lock file analytics và nạp key ring Data Protection. Vì vậy <code>/<wbr>health/<wbr>live</code> trả 200 thì host đã qua bước khởi động <span class="badge badge--neutral">SUY LUẬN</span>.</li></ul>
+<h3 id="muc-7-2">7.2 Graceful shutdown (OPS-03) <a class="anchor" href="#muc-7-2" aria-label="Liên kết tới mục này">#</a></h3>
+<div class="code-block"><div class="code-head"><span class="code-lang">text</span></div><pre class="code" data-lang="text"><code>SIGTERM → /health/ready = 503 ngay
+        → vẫn nhận request thêm GameServer:Hosting:DrainDelaySeconds (5 s) để LB rút instance
+        → ngừng nhận; request đang chạy có tới GameServer:Hosting:ShutdownTimeoutSeconds (25 s, tính cả drain)
+        → commit đang chạy hoàn tất, job nhả lease, analytics drain hàng đợi, logger flush</code></pre></div>
+<ul><li><strong>Grace period của orchestrator ≥ 35 s</strong> (= <code>ShutdownTimeoutSeconds</code> + 10 s). Tăng <code>ShutdownTimeoutSeconds</code> thì tăng grace theo. <code>ShutdownTimeoutSeconds</code> phải lớn hơn <code>DrainDelaySeconds</code>, nếu không thì exit 1.</li><li>Đĩa analytics bị treo (I/O stall) <strong>không</strong> bị ngân sách drain giới hạn. Process đứng tới khi orchestrator kill. Payment vẫn an toàn (receipt chờ sweeper), login trong hàng đợi thì mất.</li><li>Đã drill trên Couchbase local (<a class="path" href="../../docs/guides/local-real-env-testing.md"><code>docs/<wbr>guides/<wbr>local-real-env-testing.<wbr>md</code></a> §5): dừng êm khi đang commit (ACC-28) và crash giữa commit.</li></ul>
+</section>
+<section class="doc-section" aria-labelledby="muc-8">
+<h2 id="muc-8">8. Log và analytics trên đĩa <a class="anchor" href="#muc-8" aria-label="Liên kết tới mục này">#</a></h2>
+<h3 id="muc-8-1">8.1 Log (<code>ObservabilityOptions.<wbr>Logging</code>) <a class="anchor" href="#muc-8-1" aria-label="Liên kết tới mục này">#</a></h3>
+<ul><li>File <code>{Logging:<wbr>Directory}/<wbr>{gameId}-{instanceId}-{yyyyMMdd}[_<wbr>NNN].<wbr>log</code>, compact JSON (<code>@t</code> UTC).</li><li>Rolling 100 MiB mỗi file (<code>FileSizeLimitBytes</code>), giữ 30 file (<code>RetainedFileCountLimit</code>), <code>RetainedFileTimeLimitDays</code> tuỳ chọn. Theo mặc định là khoảng 3 GiB mỗi instance id <span class="badge badge--neutral">SUY LUẬN</span>.</li><li>Hàng đợi async 10 000 (<code>BufferSize</code>). Hàng đợi đầy thì bỏ dòng và đếm <code>log_<wbr>dropped_<wbr>total</code>, không chặn request.</li><li>Thư mục <code>logs</code> mặc định là tương đối, tức nằm trong filesystem của container. Đặt <code>Observability__<wbr>Logging__<wbr>Directory</code> vào volume bền, hoặc dùng sidecar shipper (LOG-03).</li><li>Che secret theo tên thuộc tính (token, password, secret, pepper, …). Exception và object log bằng <code>{x}</code> <strong>không</strong> được che.</li></ul>
+<h3 id="muc-8-2">8.2 Analytics (slice 012, <code>AnalyticsOptions</code>, section <code>GameServer:<wbr>Analytics</code>) <a class="anchor" href="#muc-8-2" aria-label="Liên kết tới mục này">#</a></h3>
+<ul><li>File <code>{gameId}-{instanceId}-{event}-{yyyyMMdd}.<wbr>jsonl</code> (event <code>login</code>, <code>payment</code>), mỗi ngày UTC một file. File của ngày UTC trước là hoàn chỉnh.</li><li><strong>Volume:</strong> volume local/block bền <strong>riêng cho mỗi pod</strong>. Không dùng NFS/SMB vì lock một-writer không đáng tin trên đó. Đặt đường dẫn tuyệt đối, ví dụ <code>GameServer__<wbr>Analytics__<wbr>Directory=/<wbr>var/<wbr>lib/<wbr>gameserver/<wbr>analytics</code> kèm <code>volumeMounts.<wbr>mountPath:<wbr> /<wbr>var/<wbr>lib/<wbr>gameserver/<wbr>analytics</code>. Thư mục mặc định <code>analytics</code> (tương đối) mất khi container bị thay.</li><li><strong>Instance id:</strong> <code>Observability:<wbr>InstanceId</code> → <code>HOSTNAME</code> → tên máy. Hai process dùng chung một thư mục mà trùng id thì process thứ hai exit 1. K8s <strong>Deployment</strong> đổi tên pod mỗi lần restart, sinh bộ file mới mỗi lần, và <code>RetainLocalDays</code> không dọn file của pod cũ. Dùng <strong>StatefulSet</strong>, hoặc đặt <code>Observability:<wbr>InstanceId</code> cố định cho mỗi volume.</li><li><strong>Múi giờ:</strong> <code>GameServer:<wbr>Analytics:<wbr>TimeZone</code> (tên IANA) bắt buộc ở Staging/Production. Flavor mẫu dùng <code>Asia/<wbr>Ho_<wbr>Chi_<wbr>Minh</code>. Id Windows (<code>SE Asia Standard Time</code>) bị từ chối. Image phải có tzdata (mục 2.3).</li><li><strong><code>GameServer:<wbr>Analytics:<wbr>Enabled</code> phải giống nhau trên mọi instance</strong> của một deployment. Instance tắt sẽ ack entry payment của instance bật mà không ghi record.</li><li><code>Enabled=true</code> mà host không đăng ký sink (không gọi <code>AddAnalyticsFiles()</code>) thì Staging/Production exit 1.</li><li><strong>Độ bền:</strong> batch có payment được flush <strong>xuống đĩa</strong> (fsync) trước khi ack. Tốn khoảng +58 ms p95 cho một lần mua trên máy dev. Batch chỉ có login chỉ flush xuống OS.</li><li><strong>Shipper</strong> (Vector, Fluent Bit, Filebeat): trễ ≤ 60 s (LOG-03). Coi file của ngày UTC trước là hoàn chỉnh. Tail file hôm nay được. <strong>Bỏ qua dòng không parse được</strong> (dòng bị cắt do crash có thể nằm giữa file).</li><li>Dung lượng khoảng 0,4 GB mỗi triệu login mỗi ngày (chưa nén). Payment không đáng kể.</li><li>Retention: server không xoá file, trừ khi đặt <code>GameServer:<wbr>Analytics:<wbr>RetainLocalDays</code>. Data lake giữ 25 tháng (chính sách của kho dữ liệu, server không cưỡng chế).</li><li>Key còn lại và mặc định: <code>QueueCapacity</code> 10 000, <code>DeliveryTimeoutMs</code> 500, <code>ResumeTrackerCapacity</code> 200 000, <code>LowDiskBytes</code> 1 GiB, <code>ErrorWindowSeconds</code> 300. Không key nào là secret.</li></ul>
+<h3 id="muc-8-3">8.3 Hazard rollback và dead letter của analytics <a class="anchor" href="#muc-8-3" aria-label="Liên kết tới mục này">#</a></h3>
+<ul><li><strong>Rolling deploy từ build trước 012:</strong> an toàn. Instance cũ gặp receipt có entry kind <code>analytics</code> thì ghi một attempt rồi backoff; instance mới giao.</li><li><strong>Rollback toàn bộ về build trước 012:</strong> receipt còn chờ lúc đó bị build cũ thử lại, rồi <strong>dead-letter</strong> sau <code>GameServer:<wbr>Outbox:<wbr>MaxRelayAttempts</code> (10 lần, khoảng 3 h). Record payment thiếu cho tới khi re-drive.</li><li>Theo dõi <code>outbox_<wbr>dead_<wbr>letter_<wbr>total</code> &gt; 0. Re-drive tool (endpoint GM/ops) chưa có <span class="badge badge--todo">→ 015</span>. Re-drive thủ công trên Couchbase (đã chạy thử trong integration test):</li></ul>
+<div class="code-block"><div class="code-head"><span class="code-lang">N1QL / SQL++</span></div><pre class="code" data-lang="sql"><code><span class="hl-kw">UPDATE</span> <span class="hl-attr">`&lt;bucket&gt;`</span>.<span class="hl-attr">`g_&lt;gameId&gt;`</span>.<span class="hl-attr">`receipts`</span> r
+<span class="hl-kw">SET</span> r.outboxDeadLetter = <span class="hl-num">false</span>, r.outboxAttempts = <span class="hl-num">0</span>
+<span class="hl-kw">UNSET</span> r.outboxNextAttemptAtUtc
+<span class="hl-kw">WHERE</span> r.outboxPending = <span class="hl-num">true</span> <span class="hl-kw">AND</span> r.outboxDeadLetter = <span class="hl-num">true</span>
+  <span class="hl-kw">AND</span> <span class="hl-kw">ANY</span> e <span class="hl-kw">IN</span> r.outbox <span class="hl-kw">SATISFIES</span> e.kind = <span class="hl-str">&quot;analytics&quot;</span> <span class="hl-kw">END</span>;</code></pre></div>
+<p class="indent">Sau đó sweeper relay lại. Bản sao analytics được dedupe ở downstream theo <code>transactionID</code>.</p>
+</section>
+<section class="doc-section" aria-labelledby="muc-9">
+<h2 id="muc-9">9. Observability: OTLP, metric, cảnh báo <a class="anchor" href="#muc-9" aria-label="Liên kết tới mục này">#</a></h2>
+<ul><li>OTLP bật khi <code>Observability:<wbr>Otlp:<wbr>Endpoint</code> có giá trị (URI tuyệt đối). <code>Observability:<wbr>Otlp:<wbr>Protocol</code> là <code>grpc</code> (mặc định) hoặc <code>http/<wbr>protobuf</code>. Với <code>http/<wbr>protobuf</code>, <code>/<wbr>v1/<wbr>traces</code> và <code>/<wbr>v1/<wbr>metrics</code> được nối vào endpoint. URI hay protocol sai thì exit 1. Prometheus đi qua collector. README ghi rõ <strong>chưa kiểm với collector OTLP thật</strong>.</li><li>Metric không bao giờ có tag player hoặc request (OBS-02).</li></ul>
+<div class="table-wrap" role="region" aria-label="Bảng — 9. Observability: OTLP, metric, cảnh báo" tabindex="0"><table class="tbl"><thead><tr><th scope="col">Metric (đã grep trong <code>src/</code>)</th><th scope="col">Cảnh báo đề xuất</th><th scope="col">Nguồn ngưỡng</th></tr></thead><tbody>
+<tr><td><code>outbox_<wbr>dead_<wbr>letter_<wbr>total</code></td><td>&gt; 0</td><td>PCR §18</td></tr>
+<tr><td><code>analytics_<wbr>sink_<wbr>errors_<wbr>total</code></td><td>&gt; 0</td><td>guide §7.2</td></tr>
+<tr><td><code>analytics_<wbr>events_<wbr>dropped_<wbr>total{event=&quot;login&quot;}</code></td><td>tăng liên tục &gt; 5 phút</td><td>guide §7.2</td></tr>
+<tr><td><code>analytics_<wbr>delivery_<wbr>failures_<wbr>total</code></td><td>tăng liên tục</td><td>guide §7.2</td></tr>
+<tr><td><code>analytics_<wbr>queue_<wbr>entries</code></td><td>&gt; 50 % <code>QueueCapacity</code></td><td>guide §7.2</td></tr>
+<tr><td><code>analytics_<wbr>dir_<wbr>free_<wbr>bytes</code>, <code>log_<wbr>dir_<wbr>free_<wbr>bytes</code></td><td>&lt; <code>LowDiskBytes</code> (1 GiB)</td><td>PCR §13, §18</td></tr>
+<tr><td><code>log_<wbr>sink_<wbr>errors_<wbr>total</code>, <code>log_<wbr>dropped_<wbr>total</code></td><td>&gt; 0</td><td>PCR §13</td></tr>
+<tr><td><code>account_<wbr>purge_<wbr>overdue_<wbr>seconds</code></td><td><code>max</code> &gt; 86400, <strong>hoặc</strong> gauge vắng mặt &gt; 3 × interval của job</td><td>PCR §16 (SC-006)</td></tr>
+<tr><td><code>account_<wbr>purge_<wbr>step_<wbr>failures_<wbr>total</code>, <code>account_<wbr>purges_<wbr>total{result=&quot;fenced_<wbr>out&quot;}</code></td><td>&gt; 0</td><td>PCR §16</td></tr>
+<tr><td><code>job_<wbr>runs_<wbr>total</code>, <code>job_<wbr>lease_<wbr>losses_<wbr>total</code></td><td>lease loss lặp lại</td><td>PCR §16</td></tr>
+<tr><td><code>command_<wbr>results_<wbr>total{code}</code>, <code>http_<wbr>errors_<wbr>total{code}</code></td><td>tỉ lệ lỗi 5xx / <code>INTERNAL</code></td><td>PCR §13</td></tr>
+</tbody></table></div>
+<ul><li><code>txn_<wbr>cleanup_<wbr>lost_<wbr>total</code> (OPS-05) <strong>chưa được implement</strong> (grep không thấy) <span class="badge badge--todo">→ 015</span>.</li></ul>
+</section>
+<section class="doc-section" aria-labelledby="muc-10">
+<h2 id="muc-10">10. Data Protection key ring (<code>DataProtectionSettings</code>, section <code>DataProtection</code>) <a class="anchor" href="#muc-10" aria-label="Liên kết tới mục này">#</a></h2>
+<ul><li>Key ring dùng chung cho mọi instance của một deployment, lưu ở document <code>dataprotection/<wbr>keyring</code> trong Couchbase. Không cần volume hay file share.</li><li><code>DataProtection:<wbr>MasterKey</code>: base64 của đúng 32 byte ngẫu nhiên, mã hoá key at rest (AES-256-GCM). Ngoài Dev/Test, thiếu hoặc sai thì exit 1.</li><li>Rotate master key: đặt <code>MasterKeyId</code> mới cùng <code>MasterKey</code> mới, chuyển khoá cũ vào <code>DataProtection:<wbr>PreviousMasterKeys:<wbr>&lt;id cũ&gt;</code> (secret, xem mục 4). Rotate key data-protection theo yêu cầu: <code>POST /<wbr>gm/<wbr>v1/<wbr>ops/<wbr>dataprotection/<wbr>rotate</code>. Key kích hoạt sau <code>RotationDelaySeconds</code> (900).</li><li>Lịch: <code>KeyLifetimeDays</code> 90, <code>ActivationLeadHours</code> 48, <code>RefreshMinutes</code> 5.</li><li>Mất master key thì key ring không giải mã được: cookie GM, token CSRF và cookie OIDC đều hỏng <span class="badge badge--neutral">SUY LUẬN</span>. Dữ liệu player không bị ảnh hưởng. Sao lưu master key trong secret manager.</li><li>Data Protection dùng đồng hồ hệ thống, không dùng <code>IClock</code>.</li></ul>
+</section>
+<section class="doc-section" aria-labelledby="muc-11">
+<h2 id="muc-11">11. GM: SSO và CORS (<code>GmOptions</code>, section <code>Gm</code>) <a class="anchor" href="#muc-11" aria-label="Liên kết tới mục này">#</a></h2>
+<ul><li>Ngoài Development/Test, đăng nhập GM <strong>chỉ qua OIDC</strong>. <code>Gm:<wbr>Oidc:<wbr>Authority</code> (https), <code>Gm:<wbr>Oidc:<wbr>ClientId</code>, <code>Gm:<wbr>Oidc:<wbr>ClientSecret</code> bắt buộc (<code>GmOptionsValidator</code>).</li><li>Đăng ký redirect URI ở IdP: <code>https://<wbr>&lt;host GM&gt;/<wbr>gm/<wbr>v1/<wbr>auth/<wbr>sso/<wbr>callback</code> (<code>GmSso.<wbr>CallbackRoute</code>). Luồng: code + PKCE, <code>response_<wbr>mode=query</code>.</li><li><code>Gm:<wbr>Oidc:<wbr>RequireMfa</code> mặc định bật ngoài Dev/Test (claim <code>amr</code>). Nếu IdP ép MFA bằng chính sách mà không phát <code>amr</code> thì đặt <code>false</code> và ghi nhận. <code>Gm:<wbr>Oidc:<wbr>EmailVerifiedClaim</code> mặc định là <code>email_<wbr>verified</code> (Entra ID cần optional claim).</li><li>Staff đầu tiên tạo qua <code>Gm:<wbr>Oidc:<wbr>BootstrapManagers[]</code> (<code>{staffId, email}</code> hoặc <code>{staffId, issuer, subject}</code>). Production không có login local. <code>Gm:<wbr>Bootstrap:<wbr>Staff</code> ngoài Dev/Test thì exit 1.</li><li><code>Gm:<wbr>Cors:<wbr>AllowedOrigins[]</code>: rỗng = same-origin (mặc định). Chỉ origin chính xác, không wildcard, <code>https</code> ngoài Development.</li><li>GM frontend do dev khác làm (TBD-21). API và OpenAPI commit ở <a class="path" href="../../docs/api/gm-openapi.json"><code>docs/<wbr>api/<wbr>gm-openapi.<wbr>json</code></a>. Route OpenAPI runtime chỉ có ở Dev/Test.</li><li>Thu hồi quyền staff có hiệu lực ≤ <code>Gm:<wbr>CacheSeconds</code> (60 s).</li></ul>
+</section>
+<section class="doc-section" aria-labelledby="muc-12">
+<h2 id="muc-12">12. IAP (<code>IapOptions</code>, section <code>Iap</code>) <a class="anchor" href="#muc-12" aria-label="Liên kết tới mục này">#</a></h2>
+<ul><li><code>IapOptionsValidator</code> chạy khi khởi động, không chạy ở <code>--provision</code>.<ul><li>Ngoài Dev/Test, <code>Iap:<wbr>UseFakeVerifier=true</code> thì exit 1.</li><li>Khi dùng verifier thật, thiếu bất kỳ key nào sau đây là một lỗi riêng: <code>Iap:<wbr>Google:<wbr>PackageName</code>, <code>Iap:<wbr>Google:<wbr>ServiceAccountEmail</code>, <code>Iap:<wbr>Google:<wbr>ServiceAccountPrivateKeyPem</code>, <code>Iap:<wbr>Apple:<wbr>BundleId</code>, <code>Iap:<wbr>Apple:<wbr>RootCertificateBase64</code>.</li><li>PEM phải là private key RSA ký được. Root Apple phải là certificate DER base64 (Apple Root CA G3).</li></ul></li><li>Beta/uat (Staging) dùng IAP sandbox, không có payment thật (quyết định owner 2026-10-30).</li><li><strong>Apple ở Production chỉ nhận receipt Production.</strong> App Store review mua bằng sandbox trên bản production nên bị từ chối <code>INVALID_<wbr>RECEIPT</code>, một lý do app review hay reject. <strong>Chính sách owner còn mở</strong>, phải chốt trước Live.</li><li>Google: test purchase bị từ chối ở Production. Timeout gọi store <code>Iap:<wbr>StoreTimeoutSeconds</code> (10 s).</li><li>Refund/revoke S2S (Google RTDN, Apple v2) chưa có, thuộc slice 014.</li></ul>
+</section>
+<section class="doc-section" aria-labelledby="muc-13">
+<h2 id="muc-13">13. Job, lease, xoá tài khoản <a class="anchor" href="#muc-13" aria-label="Liên kết tới mục này">#</a></h2>
+<ul><li>Job trong <code>ModuleDescriptor.<wbr>Jobs</code> chạy trên <strong>một</strong> instance tại một thời điểm, phối hợp bằng document <code>leases/<wbr>leases::<wbr>{jobName}</code> (CAS, không expiry). Bật/tắt bằng <code>GameServer:<wbr>Jobs:<wbr>Enabled</code> (mặc định true). Lease 60 s, renew 20 s, poll 30 s.</li><li><strong>Không bao giờ xoá <code>leases::<wbr>*</code></strong> (PCR platform §16). Token tạo lại bắt đầu từ 1, trong khi purge record giữ token lớn hơn, nên các player đó bị bỏ qua mãi (LogError &quot;never delete leases::*&quot;, <code>account_<wbr>purges_<wbr>total{result=fenced_<wbr>out}</code>). Cách sửa: đặt <code>fencingToken</code> của <code>leases::<wbr>identity.<wbr>account-purge</code> (KV, CAS) lớn hơn token lớn nhất trong <code>account_<wbr>deletions</code>.</li><li>Purge job <code>identity.<wbr>account-purge</code>: mặc định 50 player mỗi 10 phút (khoảng 7 200/ngày) (<code>GameServer:<wbr>Purge:<wbr>*</code>). Grace trước purge là <code>Identity:<wbr>Deletion:<wbr>GraceDays</code> (30, 1..90).</li><li>Rủi ro vận hành mở (<span class="badge badge--todo">→ 015</span> runbook):<ul><li>restore backup trước purge làm dữ liệu quay lại, nên phải chạy lại purge cho record <code>purged</code>;</li><li>tombstone Couchbase giữ key cũ khoảng 3 ngày;</li><li>retention log nên ≤ grace + thời gian purge, vì log giữ <code>RequestId</code> cạnh player id.</li></ul></li></ul>
+</section>
+<section class="doc-section" aria-labelledby="muc-14">
+<h2 id="muc-14">14. Đồng hồ (NTP) <a class="anchor" href="#muc-14" aria-label="Liên kết tới mục này">#</a></h2>
+<ul><li><strong>Node Couchbase:</strong> NTP bắt buộc (OPS-01, transaction).</li><li><strong>Node app:</strong> server dùng đồng hồ hệ thống qua <code>IClock</code>. Thời gian ảnh hưởng tới:<ul><li>hết hạn lease job (<code>leaseUntilUtc</code>);</li><li>kiểm <code>|now − timestamp| ≤ 10 phút</code> của Game Center;</li><li>thời hạn phiên GM và phiên player;</li><li>Data Protection;</li><li>ngày UTC của file analytics;</li><li><code>serverTimeUtc</code> trả cho client (TIME-01).</li></ul></li></ul>
+<p class="indent">Mọi node app phải chạy NTP. Lệch giờ giữa các instance làm lease bị takeover sớm <span class="badge badge--neutral">SUY LUẬN</span>.</p>
+</section>
+<section class="doc-section" aria-labelledby="muc-15">
+<h2 id="muc-15">15. Luồng deploy <a class="anchor" href="#muc-15" aria-label="Liên kết tới mục này">#</a></h2>
+<h3 id="muc-15-1">15.1 Các bước <a class="anchor" href="#muc-15-1" aria-label="Liên kết tới mục này">#</a></h3>
+<div class="table-wrap" role="region" aria-label="Bảng — 15.1 Các bước" tabindex="0"><table class="tbl wide"><thead><tr><th scope="col">#</th><th scope="col">Bước</th><th scope="col">Lệnh / hành động</th><th scope="col">Đạt khi</th><th scope="col">Thất bại thì</th></tr></thead><tbody>
+<tr><td>1</td><td>Build + test</td><td><code>dotnet build GameServer.<wbr>slnx -c Release</code>; <code>dotnet test --solution GameServer.<wbr>slnx -c Release --no-build</code> (kèm integration Couchbase trên 7.6 trước khi merge, chưa có CI <span class="badge badge--todo">→ 015</span>)</td><td>build sạch, test xanh</td><td>dừng</td></tr>
+<tr><td>2</td><td>Publish</td><td><code>dotnet publish &lt;host&gt;.<wbr>csproj -c Release -o out/<wbr>&lt;host&gt;</code>; đóng image <span class="badge badge--todo">→ 015</span></td><td>artifact có <code>appsettings.<wbr>{Flavor}.<wbr>json</code>, <code>config/</code></td><td>dừng</td></tr>
+<tr><td>3</td><td>Provision</td><td><code>ASPNETCORE_<wbr>ENVIRONMENT=&lt;Flavor&gt; … dotnet &lt;host&gt;.<wbr>dll --provision</code> với identity <strong>provisioner</strong>, từ thư mục publish</td><td>exit 0, dòng <code>provision:<wbr> done:</code></td><td>exit 1: sửa cấu hình. exit 2: sửa nguyên nhân rồi chạy lại</td></tr>
+<tr><td>4</td><td>Deploy (rolling)</td><td>thay từng instance; credential <strong>runtime</strong>; grace ≥ 35 s; volume logs/analytics</td><td>instance mới khởi động, không có <code>Game server startup validation failed:</code></td><td>exit 1: đọc danh sách lỗi; rollback</td></tr>
+<tr><td>5</td><td>Readiness</td><td><code>GET /<wbr>health/<wbr>ready</code> = 200 <code>Healthy</code> (không phải <code>Degraded</code>) trên từng instance trước khi chuyển instance kế tiếp</td><td>LB đưa instance vào</td><td>không lên: xem log, rollback</td></tr>
+<tr><td>6</td><td>Smoke</td><td><code>GET /<wbr>v1/<wbr>time</code>; login guest + một command qua Unity SDK hoặc load tool; GM SSO đăng nhập được; beta: một purchase sandbox → có dòng trong file <code>…-payment-…jsonl</code>; kiểm metric</td><td>tất cả đạt</td><td>rollback</td></tr>
+</tbody></table></div>
+<h3 id="muc-15-2">15.2 Rollback <a class="anchor" href="#muc-15-2" aria-label="Liên kết tới mục này">#</a></h3>
+<div class="table-wrap" role="region" aria-label="Bảng — 15.2 Rollback" tabindex="0"><table class="tbl"><thead><tr><th scope="col">Tình huống</th><th scope="col">Hành động</th><th scope="col">Lưu ý</th></tr></thead><tbody>
+<tr><td>Instance mới không khởi động (exit 1)</td><td>sửa biến môi trường hoặc deploy lại artifact cũ</td><td>cấu hình sai bị chặn trước khi nhận traffic, chưa hỏng dữ liệu</td></tr>
+<tr><td>Lỗi sau khi phục vụ</td><td>deploy lại artifact trước (rolling, cùng grace)</td><td>schema chỉ thêm (provision không bao giờ xoá hay sửa), nên <strong>không có rollback DB</strong>. Collection/index thừa của bản mới không hại</td></tr>
+<tr><td>Rollback qua mốc slice 012</td><td>như trên, rồi theo dõi <code>outbox_<wbr>dead_<wbr>letter_<wbr>total</code>; sau khi roll-forward chạy N1QL re-drive (mục 8.3)</td><td>hazard dead-letter</td></tr>
+<tr><td>Latency/CPU do nén</td><td><code>Couchbase__<wbr>Compression=false</code>, restart</td><td>không cần build</td></tr>
+<tr><td>Cần chặn client trong lúc xử lý</td><td>bật maintenance hoặc tăng phiên bản client tối thiểu qua GM API gate (<code>gate/<wbr>gate</code>, PCR platform §15): 503 <code>MAINTENANCE</code> / 426 <code>UPDATE_<wbr>REQUIRED</code>, áp dụng ≤ 10 s</td><td>GM, health, Dev không bị chặn</td></tr>
+<tr><td>Runbook deploy/rollback có drill</td><td><span class="badge badge--todo">→ 015</span></td><td>OPS-06, ACC-19</td></tr>
+</tbody></table></div>
+<h3 id="muc-15-3">15.3 Sơ đồ 2 — deploy flow và rollback <a class="anchor" href="#muc-15-3" aria-label="Liên kết tới mục này">#</a></h3>
+<span id="so-do-2-ref" class="fig-ref"></span><figure class="diagram" id="so-do-2"><div class="diagram-bar"><span class="diagram-title">Sơ đồ 2 — deploy flow và rollback</span><a class="zoom-link zoom-open" href="#so-do-2">Phóng to</a><a class="zoom-link zoom-close" href="#so-do-2-ref">Đóng</a></div><div class="diagram-scroll" role="region" aria-label="Sơ đồ 2 — deploy flow và rollback (cuộn ngang nếu màn hình hẹp)" tabindex="0"><svg class="dg " viewBox="0 0 1192 396" role="img" aria-labelledby="sd2-title sd2-desc" style="--nat-w:1192px;--min-w:900px" focusable="false"><title id="sd2-title">Sơ đồ 2 — luồng deploy và rollback</title><desc id="sd2-desc">Hàng chính: Build + test → Publish → Provision → (exit 0) Deploy rolling → Readiness → (200 Healthy) Smoke → (đạt) Done. Hàng rollback: Provision exit 1 → Sửa cấu hình → quay lại Provision; Provision exit 2 → Chạy lại provision → quay lại Provision; Deploy exit 1 (startup validation) → Sửa cấu hình; Readiness 503/không lên hoặc Smoke lỗi → Deploy lại artifact cũ → (nếu qua 012) Re-drive analytics.</desc><defs><marker id="sd2-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker><marker id="sd2-ah-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah ah--accent"/></marker><marker id="sd2-ah-danger" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah ah--danger"/></marker><marker id="sd2-ah-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah ah--violet"/></marker><marker id="sd2-ah-muted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah ah--muted"/></marker></defs><text x="20" y="30" text-anchor="start" class="t-head"><tspan x="20" dy="0">Luồng chính</tspan></text><text x="20" y="344" text-anchor="start" class="t-head"><tspan x="20" dy="0">Rollback</tspan></text><g><rect x="20" y="80" width="120" height="110" rx="6" class="box"/><text x="80" y="124" text-anchor="middle" class=""><tspan x="80" dy="0" class="t-b">Build + test</tspan><tspan x="80" dy="15" class="t-sm">dotnet build /</tspan><tspan x="80" dy="15" class="t-sm">dotnet test</tspan></text></g><g><rect x="192" y="80" width="120" height="110" rx="6" class="box"/><text x="252" y="116.5" text-anchor="middle" class=""><tspan x="252" dy="0" class="t-b">Publish</tspan><tspan x="252" dy="15" class="t-sm">dotnet publish →</tspan><tspan x="252" dy="15" class="t-sm">out/&lt;host&gt;;</tspan><tspan x="252" dy="15" class="t-sm">image → 015</tspan></text></g><g><rect x="364" y="80" width="120" height="110" rx="6" class="box box--violet"/><text x="424" y="116.5" text-anchor="middle" class=""><tspan x="424" dy="0" class="t-b">Provision</tspan><tspan x="424" dy="15" class="t-sm">&lt;host&gt;.dll</tspan><tspan x="424" dy="15" class="t-sm">--provision,</tspan><tspan x="424" dy="15" class="t-sm">identity provisioner</tspan></text></g><g><rect x="536" y="80" width="120" height="110" rx="6" class="box"/><text x="596" y="116.5" text-anchor="middle" class=""><tspan x="596" dy="0" class="t-b">Deploy rolling</tspan><tspan x="596" dy="15" class="t-sm">identity runtime,</tspan><tspan x="596" dy="15" class="t-sm">grace ≥ 35 s,</tspan><tspan x="596" dy="15" class="t-sm">volume logs/analytics</tspan></text></g><g><rect x="708" y="80" width="120" height="110" rx="6" class="box"/><text x="768" y="124" text-anchor="middle" class=""><tspan x="768" dy="0" class="t-b">Readiness</tspan><tspan x="768" dy="15" class="t-sm">/health/ready =</tspan><tspan x="768" dy="15" class="t-sm">200 Healthy</tspan></text></g><g><rect x="880" y="80" width="120" height="110" rx="6" class="box"/><text x="940" y="109" text-anchor="middle" class=""><tspan x="940" dy="0" class="t-b">Smoke</tspan><tspan x="940" dy="15" class="t-sm">/v1/time, login +</tspan><tspan x="940" dy="15" class="t-sm">command, GM SSO,</tspan><tspan x="940" dy="15" class="t-sm">purchase sandbox</tspan><tspan x="940" dy="15" class="t-sm">ở beta</tspan></text></g><g><rect x="1052" y="80" width="120" height="110" rx="6" class="box box--ok"/><text x="1112" y="139" text-anchor="middle" class=""><tspan x="1112" dy="0" class="t-b">Done</tspan></text></g><path d="M140,135 H192" class="edge" marker-end="url(#sd2-ah)"/><path d="M312,135 H364" class="edge" marker-end="url(#sd2-ah)"/><path d="M484,135 H536" class="edge" marker-end="url(#sd2-ah)"/><path d="M656,135 H708" class="edge" marker-end="url(#sd2-ah)"/><path d="M828,135 H880" class="edge" marker-end="url(#sd2-ah)"/><path d="M1000,135 H1052" class="edge" marker-end="url(#sd2-ah)"/><text x="510" y="127" text-anchor="middle" class="t-lbl halo"><tspan x="510" dy="0">exit 0</tspan></text><text x="854" y="114" text-anchor="middle" class="t-lbl halo"><tspan x="854" dy="0">200</tspan><tspan x="854" dy="12">Healthy</tspan></text><text x="1026" y="127" text-anchor="middle" class="t-lbl halo"><tspan x="1026" dy="0">đạt</tspan></text><text x="424" y="70" text-anchor="middle" class="t-note"><tspan x="424" dy="0">exit 0 / 1 / 2</tspan></text><text x="596" y="70" text-anchor="middle" class="t-note"><tspan x="596" dy="0">SIGTERM → 503 → drain 5 s → ≤ 25 s</tspan></text><g><rect x="440" y="300" width="150" height="64" rx="6" class="box box--warn"/><text x="515" y="328.5" text-anchor="middle" class=""><tspan x="515" dy="0" class="t-b">Sửa cấu hình</tspan><tspan x="515" dy="15" class="t-sm">(khi exit 1)</tspan></text></g><g><rect x="236" y="300" width="150" height="64" rx="6" class="box box--warn"/><text x="311" y="328.5" text-anchor="middle" class=""><tspan x="311" dy="0" class="t-b">Chạy lại provision</tspan><tspan x="311" dy="15" class="t-sm">(khi exit 2: idempotent)</tspan></text></g><g><rect x="760" y="300" width="170" height="64" rx="6" class="box box--warn"/><text x="845" y="328.5" text-anchor="middle" class=""><tspan x="845" dy="0" class="t-b">Deploy lại artifact cũ</tspan><tspan x="845" dy="15" class="t-sm">(rolling; DB không rollback)</tspan></text></g><g><rect x="1016" y="300" width="170" height="78" rx="6" class="box box--warn"/><text x="1101" y="328" text-anchor="middle" class=""><tspan x="1101" dy="0" class="t-b">Re-drive analytics</tspan><tspan x="1101" dy="15" class="t-sm">(nếu rollback qua mốc 012:</tspan><tspan x="1101" dy="15" class="t-sm">N1QL mục 8.3)</tspan></text></g><path d="M392,190 L320,300" class="edge edge--danger" marker-end="url(#sd2-ah-danger)"/><text x="346" y="252" text-anchor="end" class="t-lbl t-danger halo"><tspan x="346" dy="0">exit 2</tspan></text><path d="M352,300 L420,190" class="edge edge--muted dashed" marker-end="url(#sd2-ah-muted)"/><path d="M448,190 L500,300" class="edge edge--danger" marker-end="url(#sd2-ah-danger)"/><text x="466" y="264" text-anchor="end" class="t-lbl t-danger halo"><tspan x="466" dy="0">exit 1</tspan></text><path d="M530,300 L470,190" class="edge edge--muted dashed" marker-end="url(#sd2-ah-muted)"/><path d="M572,190 L566,300" class="edge edge--danger" marker-end="url(#sd2-ah-danger)"/><text x="580" y="262" text-anchor="start" class="t-lbl t-danger halo"><tspan x="580" dy="0">exit 1 (startup validation)</tspan></text><path d="M744,190 L820,300" class="edge edge--danger" marker-end="url(#sd2-ah-danger)"/><text x="790" y="228" text-anchor="start" class="t-lbl t-danger halo"><tspan x="790" dy="0">503/không lên</tspan></text><path d="M912,190 L880,300" class="edge edge--danger" marker-end="url(#sd2-ah-danger)"/><text x="906" y="262" text-anchor="start" class="t-lbl t-danger halo"><tspan x="906" dy="0">lỗi</tspan></text><path d="M930,334 H1016" class="edge edge--muted" marker-end="url(#sd2-ah-muted)"/><text x="973" y="326" text-anchor="middle" class="t-lbl halo"><tspan x="973" dy="0">(nếu qua 012)</tspan></text></svg></div></figure>
+<details class="dg-text"><summary>Mô tả dạng chữ của sơ đồ 2 (nodes và edges)</summary>
+<div class="code-block"><div class="code-head"><span class="code-lang">text</span></div><pre class="code" data-lang="text"><code>Nodes (theo thứ tự trái → phải, hàng chính):
+  N1 &quot;Build + test&quot;            (dotnet build / dotnet test)
+  N2 &quot;Publish&quot;                 (dotnet publish → out/&lt;host&gt;; image → 015)
+  N3 &quot;Provision&quot;               (&lt;host&gt;.dll --provision, identity provisioner)
+  N4 &quot;Deploy rolling&quot;          (identity runtime, grace ≥ 35 s, volume logs/analytics)
+  N5 &quot;Readiness&quot;               (/health/ready = 200 Healthy)
+  N6 &quot;Smoke&quot;                   (/v1/time, login + command, GM SSO, purchase sandbox ở beta)
+  N7 &quot;Done&quot;
+Hàng phụ (rollback, phía dưới):
+  R1 &quot;Sửa cấu hình&quot;            (khi exit 1)
+  R2 &quot;Chạy lại provision&quot;      (khi exit 2: idempotent)
+  R3 &quot;Deploy lại artifact cũ&quot;  (rolling; DB không rollback)
+  R4 &quot;Re-drive analytics&quot;      (nếu rollback qua mốc 012: N1QL mục 8.3)
+Edges:
+  N1→N2→N3 ; N3 --exit 0--&gt; N4 ; N3 --exit 1--&gt; R1 --&gt; N3 ; N3 --exit 2--&gt; R2 --&gt; N3
+  N4→N5 ; N5 --200 Healthy--&gt; N6 ; N5 --503/không lên--&gt; R3
+  N4 --exit 1 (startup validation)--&gt; R1
+  N6 --đạt--&gt; N7 ; N6 --lỗi--&gt; R3 ; R3 --(nếu qua 012)--&gt; R4
+Nhãn trên N3: &quot;exit 0 / 1 / 2&quot;. Nhãn trên N4: &quot;SIGTERM → 503 → drain 5 s → ≤ 25 s&quot;.</code></pre></div>
+</details>
+</section>
+<section class="doc-section" aria-labelledby="muc-16">
+<h2 id="muc-16">16. Hạng mục còn mở (tổng hợp) <a class="anchor" href="#muc-16" aria-label="Liên kết tới mục này">#</a></h2>
+<div class="table-wrap" role="region" aria-label="Bảng — 16. Hạng mục còn mở (tổng hợp)" tabindex="0"><table class="tbl"><thead><tr><th scope="col">Hạng mục</th><th scope="col">Trạng thái</th><th scope="col">Làm ở</th></tr></thead><tbody>
+<tr><td>Dockerfile, container guide, manifest K8s (StatefulSet, volume, probe, grace)</td><td>chưa có</td><td><span class="badge badge--todo">→ 015</span></td></tr>
+<tr><td>CI (build, test, integration Couchbase, secret scan ACC-48)</td><td>chưa có <code>.<wbr>github/</code></td><td><span class="badge badge--todo">→ 015</span></td></tr>
+<tr><td>Cổng phát hành TLS (2 test opt-in)</td><td>chưa từng chạy</td><td><span class="badge badge--todo">→ 015</span>, <strong>bắt buộc trước Live</strong></td></tr>
+<tr><td>Runbook deploy/rollback, restore drill, RPO/RTO (TBD-09 còn mở, ACC-19)</td><td>chưa có</td><td><span class="badge badge--todo">→ 015</span></td></tr>
+<tr><td>Load test report (TST-03), PERF-05 budget</td><td>chưa có</td><td><span class="badge badge--todo">→ 015</span></td></tr>
+<tr><td>Re-drive tool cho analytics dead-letter</td><td>N1QL thủ công</td><td><span class="badge badge--todo">→ 015</span></td></tr>
+<tr><td>Metric <code>txn_<wbr>cleanup_<wbr>lost_<wbr>total</code></td><td>chưa implement</td><td><span class="badge badge--todo">→ 015</span></td></tr>
+<tr><td>Couchbase outage drill (<a class="path" href="../../tools/local/couchbase-outage.ps1"><code>tools/<wbr>local/<wbr>couchbase-outage.<wbr>ps1</code></a>)</td><td>owner chưa chạy</td><td><span class="badge badge--todo">→ 015</span></td></tr>
+<tr><td>Kiểm cluster nhiều node, collector OTLP thật, sandbox Apple/Google, thiết bị thật (ACC-03/29)</td><td>chưa</td><td><span class="badge badge--todo">→ 015</span> / thủ công trước release</td></tr>
+<tr><td>Chính sách receipt sandbox của Apple ở Production</td><td>owner chưa chốt</td><td>owner, trước Live</td></tr>
+<tr><td>Game Center pin <code>gc-prod-12</code> hết hạn 2027-05-27</td><td>theo dõi</td><td>vận hành</td></tr>
+</tbody></table></div>
+</section>
+<section class="doc-section is-checklist" aria-labelledby="muc-17">
+<h2 id="muc-17">17. Checklist deploy <a class="anchor" href="#muc-17" aria-label="Liên kết tới mục này">#</a></h2>
+<p>Cột &quot;Ai ký&quot; là vai trò đề xuất: <strong>DevOps</strong>, <strong>DBA</strong> (quản trị Couchbase), <strong>Security</strong>, <strong>Backend lead</strong>, <strong>Data team</strong>, <strong>Owner</strong>. Cột &quot;Trạng thái&quot;: <span class="badge badge--auto">Tự động</span> = host tự chặn khi khởi động (vẫn kiểm bằng cách khởi động một lần); <span class="badge badge--manual">Thủ công</span> = người kiểm; <span class="badge badge--todo">→ 015</span> = chưa có công cụ hay drill.</p>
+<div class="checklist-tools" hidden></div>
+<section class="checklist-group">
+<h3 id="muc-17-1">17.1 Database (11 mục) <a class="anchor" href="#muc-17-1" aria-label="Liên kết tới mục này">#</a></h3>
+<div class="table-wrap" role="region" aria-label="Checklist — 17.1 Database (11 mục)" tabindex="0"><table class="tbl checklist"><thead><tr><th scope="col" class="col-check"><span class="visually-hidden">Đã kiểm</span><span aria-hidden="true">✓</span></th><th scope="col" class="col-id">ID</th><th scope="col">Mục</th><th scope="col">Cách kiểm</th><th scope="col" class="col-role">Ai ký</th><th scope="col" class="col-status">Trạng thái</th><th scope="col" class="col-sign">Ngày / chữ ký</th></tr></thead><tbody>
+<tr id="chk-db-01"><td class="col-check"><input type="checkbox" id="ck-DB-01" data-ck="DB-01" aria-label="Đã kiểm DB-01"></td><th scope="row" class="col-id"><label for="ck-DB-01">DB-01</label></th><td>Couchbase Server ≥ 7.6, bật service Data, Query, Index</td><td>UI → Servers, hoặc REST <code>GET /<wbr>pools/<wbr>default</code></td><td class="col-role">DBA</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-db-02"><td class="col-check"><input type="checkbox" id="ck-DB-02" data-ck="DB-02" aria-label="Đã kiểm DB-02"></td><th scope="row" class="col-id"><label for="ck-DB-02">DB-02</label></th><td>Một bucket loại Couchbase cho mỗi môi trường; Live trên cluster riêng</td><td>danh sách bucket; <code>Couchbase:<wbr>BucketName</code> của từng flavor khác nhau</td><td class="col-role">DBA</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-db-03"><td class="col-check"><input type="checkbox" id="ck-DB-03" data-ck="DB-03" aria-label="Đã kiểm DB-03"></td><th scope="row" class="col-id"><label for="ck-DB-03">DB-03</label></th><td>Replica: một node = 0; Live ≥ 2 node + ≥ 1 replica; không durability <code>None</code></td><td>bucket settings. Một node mà replicas ≥ 1 thì mọi command lỗi <code>DurabilityImpossible</code></td><td class="col-role">DBA</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-db-04"><td class="col-check"><input type="checkbox" id="ck-DB-04" data-ck="DB-04" aria-label="Đã kiểm DB-04"></td><th scope="row" class="col-id"><label for="ck-DB-04">DB-04</label></th><td>NTP đồng bộ trên mọi node Couchbase</td><td><code>timedatectl</code> / <code>chronyc tracking</code> trên từng node</td><td class="col-role">DBA</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-db-05"><td class="col-check"><input type="checkbox" id="ck-DB-05" data-ck="DB-05" aria-label="Đã kiểm DB-05"></td><th scope="row" class="col-id"><label for="ck-DB-05">DB-05</label></th><td>User provisioner có đúng <code>bucket_<wbr>admin[b]</code>, <code>query_<wbr>manage_<wbr>index[b]</code>, <code>data_<wbr>reader[b]</code>, <code>query_<wbr>system_<wbr>catalog</code></td><td><code>GET /<wbr>settings/<wbr>rbac/<wbr>users</code>; <code>--provision</code> exit 0</td><td class="col-role">DBA, Security</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-db-06"><td class="col-check"><input type="checkbox" id="ck-DB-06" data-ck="DB-06" aria-label="Đã kiểm DB-06"></td><th scope="row" class="col-id"><label for="ck-DB-06">DB-06</label></th><td>User runtime chỉ có 6 role data/query trên scope <code>[b:<wbr>g_<wbr>&lt;gameId&gt;]</code></td><td><code>--provision</code> bằng user runtime <strong>phải</strong> exit 2 với <code>HTTP 403</code>; instance chạy được với <code>ProvisionOnStartup=false</code></td><td class="col-role">DBA, Security</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-db-07"><td class="col-check"><input type="checkbox" id="ck-DB-07" data-ck="DB-07" aria-label="Đã kiểm DB-07"></td><th scope="row" class="col-id"><label for="ck-DB-07">DB-07</label></th><td><code>--provision</code> exit 0 trước mỗi deploy; chạy lại báo toàn <code>present</code></td><td>log pipeline có <code>provision:<wbr> done:<wbr> X created, Y present</code></td><td class="col-role">DevOps</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-db-08"><td class="col-check"><input type="checkbox" id="ck-DB-08" data-ck="DB-08" aria-label="Đã kiểm DB-08"></td><th scope="row" class="col-id"><label for="ck-DB-08">DB-08</label></th><td><code>txn_<wbr>meta</code> có trước instance đầu tiên và không bao giờ bị xoá</td><td>dòng <code>provision:<wbr> collection g_<wbr>&lt;id&gt;.<wbr>txn_<wbr>meta …</code>; thiếu thì instance exit 1 (kiểm schema)</td><td class="col-role">DBA</td><td class="col-status"><span class="badge badge--auto">Tự động</span> (thiếu) / <span class="badge badge--manual">Thủ công</span> (không xoá)</td><td class="col-sign"></td></tr>
+<tr id="chk-db-09"><td class="col-check"><input type="checkbox" id="ck-DB-09" data-ck="DB-09" aria-label="Đã kiểm DB-09"></td><th scope="row" class="col-id"><label for="ck-DB-09">DB-09</label></th><td><code>Couchbase:<wbr>ProvisionOnStartup</code> không bật ở beta/uat/live</td><td>grep cấu hình deploy; mặc định false ngoài Development</td><td class="col-role">DevOps</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-db-10"><td class="col-check"><input type="checkbox" id="ck-DB-10" data-ck="DB-10" aria-label="Đã kiểm DB-10"></td><th scope="row" class="col-id"><label for="ck-DB-10">DB-10</label></th><td>Nén Snappy: đo CPU data service + p95/p99 KV trên beta trước Live; biết cách rollback <code>Couchbase__<wbr>Compression=false</code></td><td>dashboard Couchbase + metric command, so với trước khi bật</td><td class="col-role">Backend lead</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-db-11" class="is-todo"><td class="col-check"><input type="checkbox" id="ck-DB-11" data-ck="DB-11" aria-label="Đã kiểm DB-11"></td><th scope="row" class="col-id"><label for="ck-DB-11">DB-11</label></th><td>Bộ integration test Couchbase pass trên đúng phiên bản Server/SDK của môi trường</td><td><code>dotnet test --project tests/<wbr>GameServer.<wbr>Platform.<wbr>Couchbase.<wbr>IntegrationTests -c Release</code> (~19–25 phút)</td><td class="col-role">Backend lead</td><td class="col-status"><span class="badge badge--manual">Thủ công</span> (CI <span class="badge badge--todo">→ 015</span>)</td><td class="col-sign"></td></tr>
+</tbody></table></div>
+</section>
+<section class="checklist-group">
+<h3 id="muc-17-2">17.2 Security (14 mục) <a class="anchor" href="#muc-17-2" aria-label="Liên kết tới mục này">#</a></h3>
+<div class="table-wrap" role="region" aria-label="Checklist — 17.2 Security (14 mục)" tabindex="0"><table class="tbl checklist"><thead><tr><th scope="col" class="col-check"><span class="visually-hidden">Đã kiểm</span><span aria-hidden="true">✓</span></th><th scope="col" class="col-id">ID</th><th scope="col">Mục</th><th scope="col">Cách kiểm</th><th scope="col" class="col-role">Ai ký</th><th scope="col" class="col-status">Trạng thái</th><th scope="col" class="col-sign">Ngày / chữ ký</th></tr></thead><tbody>
+<tr id="chk-sec-01"><td class="col-check"><input type="checkbox" id="ck-SEC-01" data-ck="SEC-01" aria-label="Đã kiểm SEC-01"></td><th scope="row" class="col-id"><label for="ck-SEC-01">SEC-01</label></th><td>Live dùng <code>couchbases://</code>; <code>Couchbase:<wbr>TrustCertificatePath</code> trỏ <strong>root CA</strong> (không phải intermediate); node gửi kèm intermediate</td><td>khởi động Live thành công; <code>couchbase://</code> thì exit 1</td><td class="col-role">Security, DBA</td><td class="col-status"><span class="badge badge--auto">Tự động</span> (scheme) / <span class="badge badge--manual">Thủ công</span> (CA)</td><td class="col-sign"></td></tr>
+<tr id="chk-sec-02" class="is-todo"><td class="col-check"><input type="checkbox" id="ck-SEC-02" data-ck="SEC-02" aria-label="Đã kiểm SEC-02"></td><th scope="row" class="col-id"><label for="ck-SEC-02">SEC-02</label></th><td><strong>Cổng TLS:</strong> <code>CouchbaseSettingsIntegrationTests.<wbr>Tls_<wbr>trusts_<wbr>the_<wbr>configured_<wbr>ca_<wbr>and_<wbr>refuses_<wbr>another</code> và <code>CouchbaseProvisioningTests.<wbr>Production_<wbr>provisions_<wbr>without_<wbr>runtime_<wbr>secrets_<wbr>and_<wbr>serves_<wbr>on_<wbr>the_<wbr>data_<wbr>only_<wbr>identity_<wbr>over_<wbr>tls</code> <strong>Passed</strong> (không Skipped) trên cluster TLS có CA riêng</td><td>kết quả test với <code>COUCHBASE_<wbr>TLS_<wbr>CONNSTR</code> + <code>COUCHBASE_<wbr>CA_<wbr>PATH</code></td><td class="col-role">Backend lead, Security</td><td class="col-status"><strong><span class="badge badge--todo">→ 015</span>, bắt buộc trước Live</strong></td><td class="col-sign"></td></tr>
+<tr id="chk-sec-03"><td class="col-check"><input type="checkbox" id="ck-SEC-03" data-ck="SEC-03" aria-label="Đã kiểm SEC-03"></td><th scope="row" class="col-id"><label for="ck-SEC-03">SEC-03</label></th><td>6 key <code>GameServer:<wbr>SecretKeys</code> chỉ đến từ secret provider hoặc biến môi trường; không file nào chứa giá trị</td><td>khởi động thành công ngoài Dev/Test (có giá trị trong file thì exit 1); review manifest</td><td class="col-role">Security</td><td class="col-status"><span class="badge badge--auto">Tự động</span></td><td class="col-sign"></td></tr>
+<tr id="chk-sec-04"><td class="col-check"><input type="checkbox" id="ck-SEC-04" data-ck="SEC-04" aria-label="Đã kiểm SEC-04"></td><th scope="row" class="col-id"><label for="ck-SEC-04">SEC-04</label></th><td><code>DataProtection:<wbr>PreviousMasterKeys:<wbr>*</code> (nếu có) cũng ở secret provider</td><td>review cấu hình; check <strong>không</strong> tự chặn key này</td><td class="col-role">Security</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-sec-05" class="is-todo"><td class="col-check"><input type="checkbox" id="ck-SEC-05" data-ck="SEC-05" aria-label="Đã kiểm SEC-05"></td><th scope="row" class="col-id"><label for="ck-SEC-05">SEC-05</label></th><td>Secret scan repo + log trong CI (ACC-48)</td><td>job CI</td><td class="col-role">Security</td><td class="col-status"><span class="badge badge--todo">→ 015</span></td><td class="col-sign"></td></tr>
+<tr id="chk-sec-06"><td class="col-check"><input type="checkbox" id="ck-SEC-06" data-ck="SEC-06" aria-label="Đã kiểm SEC-06"></td><th scope="row" class="col-id"><label for="ck-SEC-06">SEC-06</label></th><td>Credential riêng cho từng môi trường (user Couchbase, pepper, master key, OIDC client, service account)</td><td>đối chiếu secret manager</td><td class="col-role">Security</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-sec-07"><td class="col-check"><input type="checkbox" id="ck-SEC-07" data-ck="SEC-07" aria-label="Đã kiểm SEC-07"></td><th scope="row" class="col-id"><label for="ck-SEC-07">SEC-07</label></th><td><code>Identity:<wbr>GuestPepper</code> của Live được sao lưu và <strong>không đổi</strong> sau khi có player</td><td>quy trình secret manager</td><td class="col-role">Security, Owner</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-sec-08"><td class="col-check"><input type="checkbox" id="ck-SEC-08" data-ck="SEC-08" aria-label="Đã kiểm SEC-08"></td><th scope="row" class="col-id"><label for="ck-SEC-08">SEC-08</label></th><td>Không có công cụ dev ở beta/uat/live: <code>GET /<wbr>gm/<wbr>v1/<wbr>openapi/<wbr>gm.<wbr>json</code> → 404, header <code>X-Test-Player</code> không xác thực được, không có staff seed</td><td>gọi thử trên từng môi trường</td><td class="col-role">Security, QA</td><td class="col-status"><span class="badge badge--auto">Tự động</span> + kiểm tay</td><td class="col-sign"></td></tr>
+<tr id="chk-sec-09"><td class="col-check"><input type="checkbox" id="ck-SEC-09" data-ck="SEC-09" aria-label="Đã kiểm SEC-09"></td><th scope="row" class="col-id"><label for="ck-SEC-09">SEC-09</label></th><td>Flavor <code>Dev</code> chỉ truy cập được từ mạng nội bộ/VPN</td><td>firewall/proxy rule</td><td class="col-role">Security, DevOps</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-sec-10"><td class="col-check"><input type="checkbox" id="ck-SEC-10" data-ck="SEC-10" aria-label="Đã kiểm SEC-10"></td><th scope="row" class="col-id"><label for="ck-SEC-10">SEC-10</label></th><td>TLS kết thúc ở proxy; Kestrel không mở ra Internet; HTTP→HTTPS redirect ở proxy</td><td>quét cổng từ ngoài; <code>curl -I http://<wbr>…</code></td><td class="col-role">DevOps</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-sec-11"><td class="col-check"><input type="checkbox" id="ck-SEC-11" data-ck="SEC-11" aria-label="Đã kiểm SEC-11"></td><th scope="row" class="col-id"><label for="ck-SEC-11">SEC-11</label></th><td>ForwardedHeaders: <code>Enabled=true</code>, <code>KnownProxies</code>/<code>KnownNetworks</code> đúng subnet proxy, <code>ForwardLimit</code> = số hop tin cậy; proxy giữ header <code>Host</code></td><td>khởi động (cấu hình sai thì exit 1); request thử: IP client trong log/audit là IP thật</td><td class="col-role">DevOps, Security</td><td class="col-status"><span class="badge badge--auto">Tự động</span> (cú pháp) / <span class="badge badge--manual">Thủ công</span> (giá trị)</td><td class="col-sign"></td></tr>
+<tr id="chk-sec-12"><td class="col-check"><input type="checkbox" id="ck-SEC-12" data-ck="SEC-12" aria-label="Đã kiểm SEC-12"></td><th scope="row" class="col-id"><label for="ck-SEC-12">SEC-12</label></th><td>GM SSO: Authority https, client riêng cho môi trường, redirect <code>https://<wbr>&lt;host&gt;/<wbr>gm/<wbr>v1/<wbr>auth/<wbr>sso/<wbr>callback</code> đăng ký ở IdP, <code>RequireMfa</code> bật (hoặc ghi lý do tắt), <code>BootstrapManagers</code> đặt</td><td>đăng nhập GM thử qua SSO; thiếu Oidc thì exit 1</td><td class="col-role">Security</td><td class="col-status"><span class="badge badge--auto">Tự động</span> (thiếu) / <span class="badge badge--manual">Thủ công</span> (luồng)</td><td class="col-sign"></td></tr>
+<tr id="chk-sec-13"><td class="col-check"><input type="checkbox" id="ck-SEC-13" data-ck="SEC-13" aria-label="Đã kiểm SEC-13"></td><th scope="row" class="col-id"><label for="ck-SEC-13">SEC-13</label></th><td><code>Gm:<wbr>Cors:<wbr>AllowedOrigins</code> rỗng hoặc chỉ origin https chính xác; khuyến nghị <code>/<wbr>gm/<wbr>**</code> chỉ từ mạng nội bộ</td><td>review cấu hình; wildcard hoặc http thì exit 1</td><td class="col-role">Security</td><td class="col-status"><span class="badge badge--auto">Tự động</span> (cú pháp) / <span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-sec-14"><td class="col-check"><input type="checkbox" id="ck-SEC-14" data-ck="SEC-14" aria-label="Đã kiểm SEC-14"></td><th scope="row" class="col-id"><label for="ck-SEC-14">SEC-14</label></th><td>Pin Game Center (<code>gc-prod-12</code>, hết hạn 2027-05-27) có nhắc lịch; cập nhật qua <code>Identity:<wbr>Providers:<wbr>GameCenter:<wbr>TrustedRootsBase64</code> / <code>IntermediatesBase64</code></td><td>lịch vận hành; theo dõi LogError <code>PROVIDER_<wbr>UNAVAILABLE</code></td><td class="col-role">Backend lead</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+</tbody></table></div>
+</section>
+<section class="checklist-group">
+<h3 id="muc-17-3">17.3 Config (9 mục) <a class="anchor" href="#muc-17-3" aria-label="Liên kết tới mục này">#</a></h3>
+<div class="table-wrap" role="region" aria-label="Checklist — 17.3 Config (9 mục)" tabindex="0"><table class="tbl checklist"><thead><tr><th scope="col" class="col-check"><span class="visually-hidden">Đã kiểm</span><span aria-hidden="true">✓</span></th><th scope="col" class="col-id">ID</th><th scope="col">Mục</th><th scope="col">Cách kiểm</th><th scope="col" class="col-role">Ai ký</th><th scope="col" class="col-status">Trạng thái</th><th scope="col" class="col-sign">Ngày / chữ ký</th></tr></thead><tbody>
+<tr id="chk-cfg-01"><td class="col-check"><input type="checkbox" id="ck-CFG-01" data-ck="CFG-01" aria-label="Đã kiểm CFG-01"></td><th scope="row" class="col-id"><label for="ck-CFG-01">CFG-01</label></th><td><code>ASPNETCORE_<wbr>ENVIRONMENT</code> đúng <code>Beta</code>/<code>Uat</code>/<code>Live</code> (hoa thường)</td><td>dòng đầu của <code>--provision</code>: <code>environment live (Production)</code></td><td class="col-role">DevOps</td><td class="col-status"><span class="badge badge--auto">Tự động</span> (sai thì exit 1)</td><td class="col-sign"></td></tr>
+<tr id="chk-cfg-02"><td class="col-check"><input type="checkbox" id="ck-CFG-02" data-ck="CFG-02" aria-label="Đã kiểm CFG-02"></td><th scope="row" class="col-id"><label for="ck-CFG-02">CFG-02</label></th><td>Working directory = thư mục publish (content root)</td><td>khởi động OK; sai thì exit 1 kèm <code>found:<wbr> no, content root …</code></td><td class="col-role">DevOps</td><td class="col-status"><span class="badge badge--auto">Tự động</span></td><td class="col-sign"></td></tr>
+<tr id="chk-cfg-03"><td class="col-check"><input type="checkbox" id="ck-CFG-03" data-ck="CFG-03" aria-label="Đã kiểm CFG-03"></td><th scope="row" class="col-id"><label for="ck-CFG-03">CFG-03</label></th><td>Mọi biến bắt buộc của flavor (mục 3.4) đã đặt</td><td>khởi động một lần, không có <code>Game server startup validation failed:</code></td><td class="col-role">DevOps</td><td class="col-status"><span class="badge badge--auto">Tự động</span></td><td class="col-sign"></td></tr>
+<tr id="chk-cfg-04"><td class="col-check"><input type="checkbox" id="ck-CFG-04" data-ck="CFG-04" aria-label="Đã kiểm CFG-04"></td><th scope="row" class="col-id"><label for="ck-CFG-04">CFG-04</label></th><td><code>GameServer:<wbr>GameId</code> đúng game, không đổi sau Live (đổi = scope mới)</td><td><code>provision:<wbr> game &lt;id&gt;…</code></td><td class="col-role">Backend lead</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-cfg-05"><td class="col-check"><input type="checkbox" id="ck-CFG-05" data-ck="CFG-05" aria-label="Đã kiểm CFG-05"></td><th scope="row" class="col-id"><label for="ck-CFG-05">CFG-05</label></th><td>Overlay config <code>config/<wbr>env/<wbr>Staging</code> / <code>config/<wbr>env/<wbr>Production</code> đúng (beta và uat dùng chung Staging)</td><td>review thư mục <code>config/</code> trong artifact</td><td class="col-role">Backend lead</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-cfg-06"><td class="col-check"><input type="checkbox" id="ck-CFG-06" data-ck="CFG-06" aria-label="Đã kiểm CFG-06"></td><th scope="row" class="col-id"><label for="ck-CFG-06">CFG-06</label></th><td>Cổng nghe đặt qua <code>ASPNETCORE_<wbr>URLS</code> / <code>--urls</code> và khớp probe/LB</td><td>probe 200</td><td class="col-role">DevOps</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-cfg-07"><td class="col-check"><input type="checkbox" id="ck-CFG-07" data-ck="CFG-07" aria-label="Đã kiểm CFG-07"></td><th scope="row" class="col-id"><label for="ck-CFG-07">CFG-07</label></th><td><code>GameServer:<wbr>Analytics:<wbr>TimeZone</code> là tên IANA; <code>GameServer:<wbr>Analytics:<wbr>Enabled</code> giống nhau trên mọi instance</td><td>khởi động (zone sai thì exit 1); so cấu hình các instance</td><td class="col-role">DevOps, Data team</td><td class="col-status"><span class="badge badge--auto">Tự động</span> (zone) / <span class="badge badge--manual">Thủ công</span> (Enabled)</td><td class="col-sign"></td></tr>
+<tr id="chk-cfg-08"><td class="col-check"><input type="checkbox" id="ck-CFG-08" data-ck="CFG-08" aria-label="Đã kiểm CFG-08"></td><th scope="row" class="col-id"><label for="ck-CFG-08">CFG-08</label></th><td>IAP: verifier thật, đủ 5 key <code>Iap:<wbr>*</code>; không <code>Iap:<wbr>UseFakeVerifier=true</code></td><td>khởi động (thiếu thì exit 1); beta: một purchase sandbox thành công</td><td class="col-role">Backend lead</td><td class="col-status"><span class="badge badge--auto">Tự động</span> + smoke</td><td class="col-sign"></td></tr>
+<tr id="chk-cfg-09" class="is-todo"><td class="col-check"><input type="checkbox" id="ck-CFG-09" data-ck="CFG-09" aria-label="Đã kiểm CFG-09"></td><th scope="row" class="col-id"><label for="ck-CFG-09">CFG-09</label></th><td>Grace period orchestrator ≥ <code>GameServer:<wbr>Hosting:<wbr>ShutdownTimeoutSeconds</code> + 10 s (mặc định ≥ 35 s)</td><td>manifest; drill dừng giữa commit</td><td class="col-role">DevOps</td><td class="col-status"><span class="badge badge--manual">Thủ công</span> (drill <span class="badge badge--todo">→ 015</span>)</td><td class="col-sign"></td></tr>
+</tbody></table></div>
+</section>
+<section class="checklist-group">
+<h3 id="muc-17-4">17.4 Observability (9 mục) <a class="anchor" href="#muc-17-4" aria-label="Liên kết tới mục này">#</a></h3>
+<div class="table-wrap" role="region" aria-label="Checklist — 17.4 Observability (9 mục)" tabindex="0"><table class="tbl checklist"><thead><tr><th scope="col" class="col-check"><span class="visually-hidden">Đã kiểm</span><span aria-hidden="true">✓</span></th><th scope="col" class="col-id">ID</th><th scope="col">Mục</th><th scope="col">Cách kiểm</th><th scope="col" class="col-role">Ai ký</th><th scope="col" class="col-status">Trạng thái</th><th scope="col" class="col-sign">Ngày / chữ ký</th></tr></thead><tbody>
+<tr id="chk-obs-01"><td class="col-check"><input type="checkbox" id="ck-OBS-01" data-ck="OBS-01" aria-label="Đã kiểm OBS-01"></td><th scope="row" class="col-id"><label for="ck-OBS-01">OBS-01</label></th><td>Thư mục log trên volume bền hoặc có shipper (<code>Observability__<wbr>Logging__<wbr>Directory</code>)</td><td>restart pod, file log cũ còn hoặc đã ship</td><td class="col-role">DevOps</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-obs-02"><td class="col-check"><input type="checkbox" id="ck-OBS-02" data-ck="OBS-02" aria-label="Đã kiểm OBS-02"></td><th scope="row" class="col-id"><label for="ck-OBS-02">OBS-02</label></th><td>Thư mục analytics trên volume local/block bền riêng mỗi pod, đường dẫn tuyệt đối, user container ghi được</td><td>restart pod, file <code>.<wbr>jsonl</code> còn; không ghi được thì exit 1</td><td class="col-role">DevOps</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-obs-03"><td class="col-check"><input type="checkbox" id="ck-OBS-03" data-ck="OBS-03" aria-label="Đã kiểm OBS-03"></td><th scope="row" class="col-id"><label for="ck-OBS-03">OBS-03</label></th><td>Instance id ổn định và duy nhất mỗi thư mục (StatefulSet hoặc <code>Observability:<wbr>InstanceId</code>)</td><td>tên file không đổi qua restart; trùng id thì exit 1</td><td class="col-role">DevOps</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-obs-04" class="is-todo"><td class="col-check"><input type="checkbox" id="ck-OBS-04" data-ck="OBS-04" aria-label="Đã kiểm OBS-04"></td><th scope="row" class="col-id"><label for="ck-OBS-04">OBS-04</label></th><td>Image có tzdata (aspnet:10.0 Ubuntu hoặc chiseled-extra; không Alpine/chiseled thường)</td><td>khởi động Staging với <code>TimeZone=Asia/<wbr>Ho_<wbr>Chi_<wbr>Minh</code> thành công</td><td class="col-role">DevOps</td><td class="col-status"><span class="badge badge--todo">→ 015</span> (Dockerfile)</td><td class="col-sign"></td></tr>
+<tr id="chk-obs-05"><td class="col-check"><input type="checkbox" id="ck-OBS-05" data-ck="OBS-05" aria-label="Đã kiểm OBS-05"></td><th scope="row" class="col-id"><label for="ck-OBS-05">OBS-05</label></th><td>Shipper: trễ ≤ 60 s, bỏ dòng không parse được, coi file ngày UTC trước là hoàn chỉnh</td><td>kiểm cấu hình shipper; data team nhận được file</td><td class="col-role">DevOps, Data team</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-obs-06"><td class="col-check"><input type="checkbox" id="ck-OBS-06" data-ck="OBS-06" aria-label="Đã kiểm OBS-06"></td><th scope="row" class="col-id"><label for="ck-OBS-06">OBS-06</label></th><td>OTLP: <code>Observability:<wbr>Otlp:<wbr>Endpoint</code> + <code>Protocol</code> đặt, collector nhận trace/metric</td><td>thấy span <code>command {operation}</code> trên backend tracing</td><td class="col-role">DevOps</td><td class="col-status"><span class="badge badge--manual">Thủ công</span> (chưa kiểm với collector thật)</td><td class="col-sign"></td></tr>
+<tr id="chk-obs-07"><td class="col-check"><input type="checkbox" id="ck-OBS-07" data-ck="OBS-07" aria-label="Đã kiểm OBS-07"></td><th scope="row" class="col-id"><label for="ck-OBS-07">OBS-07</label></th><td>Cảnh báo theo bảng mục 9 đã cấu hình</td><td>alert rule tồn tại; thử kích một cảnh báo</td><td class="col-role">DevOps</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-obs-08"><td class="col-check"><input type="checkbox" id="ck-OBS-08" data-ck="OBS-08" aria-label="Đã kiểm OBS-08"></td><th scope="row" class="col-id"><label for="ck-OBS-08">OBS-08</label></th><td>Phát hiện <code>Degraded</code> (log/analytics) bằng metric hoặc body probe, không dựa vào HTTP status</td><td>alert trên <code>*_<wbr>sink_<wbr>errors_<wbr>total</code>, <code>*_<wbr>dir_<wbr>free_<wbr>bytes</code></td><td class="col-role">DevOps</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-obs-09" class="is-todo"><td class="col-check"><input type="checkbox" id="ck-OBS-09" data-ck="OBS-09" aria-label="Đã kiểm OBS-09"></td><th scope="row" class="col-id"><label for="ck-OBS-09">OBS-09</label></th><td>Retention log ≤ grace xoá tài khoản + thời gian purge (quyền riêng tư)</td><td>chính sách log store</td><td class="col-role">Security, Owner</td><td class="col-status"><span class="badge badge--todo">→ 015</span> (runbook)</td><td class="col-sign"></td></tr>
+</tbody></table></div>
+</section>
+<section class="checklist-group">
+<h3 id="muc-17-5">17.5 Capacity (6 mục) <a class="anchor" href="#muc-17-5" aria-label="Liên kết tới mục này">#</a></h3>
+<div class="table-wrap" role="region" aria-label="Checklist — 17.5 Capacity (6 mục)" tabindex="0"><table class="tbl checklist"><thead><tr><th scope="col" class="col-check"><span class="visually-hidden">Đã kiểm</span><span aria-hidden="true">✓</span></th><th scope="col" class="col-id">ID</th><th scope="col">Mục</th><th scope="col">Cách kiểm</th><th scope="col" class="col-role">Ai ký</th><th scope="col" class="col-status">Trạng thái</th><th scope="col" class="col-sign">Ngày / chữ ký</th></tr></thead><tbody>
+<tr id="chk-cap-01" class="is-todo"><td class="col-check"><input type="checkbox" id="ck-CAP-01" data-ck="CAP-01" aria-label="Đã kiểm CAP-01"></td><th scope="row" class="col-id"><label for="ck-CAP-01">CAP-01</label></th><td>Số instance × limit per instance (<code>GameServer:<wbr>Limits:<wbr>CommandConcurrency</code> 200, <code>GmConcurrency</code> 50, queue ×2, body 64 KiB / 1 MiB) đủ cho tải dự kiến</td><td>tính toán + load test</td><td class="col-role">Backend lead, DevOps</td><td class="col-status"><span class="badge badge--todo">→ 015</span> (load test TST-03, PERF-05)</td><td class="col-sign"></td></tr>
+<tr id="chk-cap-02"><td class="col-check"><input type="checkbox" id="ck-CAP-02" data-ck="CAP-02" aria-label="Đã kiểm CAP-02"></td><th scope="row" class="col-id"><label for="ck-CAP-02">CAP-02</label></th><td>Luôn ≥ 1 instance chạy (lost-transaction cleanup), khuyến nghị ≥ 2 cho HA; bảo trì không tắt hết instance</td><td>manifest (<code>replicas</code>, PodDisruptionBudget)</td><td class="col-role">DevOps</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-cap-03"><td class="col-check"><input type="checkbox" id="ck-CAP-03" data-ck="CAP-03" aria-label="Đã kiểm CAP-03"></td><th scope="row" class="col-id"><label for="ck-CAP-03">CAP-03</label></th><td>Đĩa: log ≈ 100 MiB × 30 file mỗi instance id; analytics ≈ 0,4 GB / triệu login / ngày; dư &gt; 1 GiB (<code>LowDiskBytes</code>)</td><td>kích thước volume; metric <code>*_<wbr>dir_<wbr>free_<wbr>bytes</code></td><td class="col-role">DevOps</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-cap-04"><td class="col-check"><input type="checkbox" id="ck-CAP-04" data-ck="CAP-04" aria-label="Đã kiểm CAP-04"></td><th scope="row" class="col-id"><label for="ck-CAP-04">CAP-04</label></th><td>Kết nối KV: (<code>NumKvConnections</code>..<code>MaxKvConnections</code>) × số node × số instance trong giới hạn của cluster</td><td>tính toán, dashboard Couchbase</td><td class="col-role">DBA</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-cap-05"><td class="col-check"><input type="checkbox" id="ck-CAP-05" data-ck="CAP-05" aria-label="Đã kiểm CAP-05"></td><th scope="row" class="col-id"><label for="ck-CAP-05">CAP-05</label></th><td>Throughput purge (mặc định ≈ 7 200 player/ngày) đủ; cảnh báo overdue bật</td><td>metric <code>account_<wbr>purge_<wbr>overdue_<wbr>seconds</code></td><td class="col-role">Backend lead</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-cap-06"><td class="col-check"><input type="checkbox" id="ck-CAP-06" data-ck="CAP-06" aria-label="Đã kiểm CAP-06"></td><th scope="row" class="col-id"><label for="ck-CAP-06">CAP-06</label></th><td><code>Couchbase:<wbr>ProvisioningTimeoutSeconds</code> đủ cho build index trên dữ liệu thật</td><td>lần <code>--provision</code> trên môi trường có dữ liệu; exit 2 vì timeout thì chạy lại hoặc tăng</td><td class="col-role">DBA</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+</tbody></table></div>
+</section>
+<section class="checklist-group">
+<h3 id="muc-17-6">17.6 Release / rollback (8 mục) <a class="anchor" href="#muc-17-6" aria-label="Liên kết tới mục này">#</a></h3>
+<div class="table-wrap" role="region" aria-label="Checklist — 17.6 Release / rollback (8 mục)" tabindex="0"><table class="tbl checklist"><thead><tr><th scope="col" class="col-check"><span class="visually-hidden">Đã kiểm</span><span aria-hidden="true">✓</span></th><th scope="col" class="col-id">ID</th><th scope="col">Mục</th><th scope="col">Cách kiểm</th><th scope="col" class="col-role">Ai ký</th><th scope="col" class="col-status">Trạng thái</th><th scope="col" class="col-sign">Ngày / chữ ký</th></tr></thead><tbody>
+<tr id="chk-rel-01"><td class="col-check"><input type="checkbox" id="ck-REL-01" data-ck="REL-01" aria-label="Đã kiểm REL-01"></td><th scope="row" class="col-id"><label for="ck-REL-01">REL-01</label></th><td>Đọc bảng breaking change của PCR platform §17, §18 (và PCR module) khi nâng phiên bản framework</td><td>ghi chú release</td><td class="col-role">Backend lead</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-rel-02"><td class="col-check"><input type="checkbox" id="ck-REL-02" data-ck="REL-02" aria-label="Đã kiểm REL-02"></td><th scope="row" class="col-id"><label for="ck-REL-02">REL-02</label></th><td>Rolling deploy: từng instance qua readiness 200 <code>Healthy</code> rồi mới tới instance kế; LB dùng <code>/<wbr>health/<wbr>ready</code></td><td>log deploy</td><td class="col-role">DevOps</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-rel-03"><td class="col-check"><input type="checkbox" id="ck-REL-03" data-ck="REL-03" aria-label="Đã kiểm REL-03"></td><th scope="row" class="col-id"><label for="ck-REL-03">REL-03</label></th><td>Smoke sau deploy (mục 15.1 bước 6) đạt</td><td>checklist smoke</td><td class="col-role">QA, DevOps</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-rel-04"><td class="col-check"><input type="checkbox" id="ck-REL-04" data-ck="REL-04" aria-label="Đã kiểm REL-04"></td><th scope="row" class="col-id"><label for="ck-REL-04">REL-04</label></th><td>Kế hoạch rollback: artifact trước còn sẵn; không rollback DB (schema chỉ thêm)</td><td>artifact registry</td><td class="col-role">DevOps</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-rel-05" class="is-todo"><td class="col-check"><input type="checkbox" id="ck-REL-05" data-ck="REL-05" aria-label="Đã kiểm REL-05"></td><th scope="row" class="col-id"><label for="ck-REL-05">REL-05</label></th><td>Rollback qua mốc 012: theo dõi <code>outbox_<wbr>dead_<wbr>letter_<wbr>total</code>, có sẵn N1QL re-drive</td><td>runbook</td><td class="col-role">DevOps, Data team</td><td class="col-status"><span class="badge badge--manual">Thủ công</span> (tool <span class="badge badge--todo">→ 015</span>)</td><td class="col-sign"></td></tr>
+<tr id="chk-rel-06" class="is-todo"><td class="col-check"><input type="checkbox" id="ck-REL-06" data-ck="REL-06" aria-label="Đã kiểm REL-06"></td><th scope="row" class="col-id"><label for="ck-REL-06">REL-06</label></th><td>Tương thích client cũ: kế hoạch dùng gate (<code>minClientVersions</code>, maintenance) và ma trận tương thích (OPS-06)</td><td>review</td><td class="col-role">Backend lead, Owner</td><td class="col-status"><span class="badge badge--todo">→ 015</span> (ACC-19)</td><td class="col-sign"></td></tr>
+<tr id="chk-rel-07"><td class="col-check"><input type="checkbox" id="ck-REL-07" data-ck="REL-07" aria-label="Đã kiểm REL-07"></td><th scope="row" class="col-id"><label for="ck-REL-07">REL-07</label></th><td>Owner chốt chính sách receipt sandbox của Apple ở Production trước Live</td><td>quyết định ghi lại</td><td class="col-role">Owner</td><td class="col-status"><span class="badge badge--open">Mở</span></td><td class="col-sign"></td></tr>
+<tr id="chk-rel-08" class="is-todo"><td class="col-check"><input type="checkbox" id="ck-REL-08" data-ck="REL-08" aria-label="Đã kiểm REL-08"></td><th scope="row" class="col-id"><label for="ck-REL-08">REL-08</label></th><td>Runbook deploy/rollback đã drill</td><td>biên bản drill</td><td class="col-role">DevOps</td><td class="col-status"><span class="badge badge--todo">→ 015</span></td><td class="col-sign"></td></tr>
+</tbody></table></div>
+</section>
+<section class="checklist-group">
+<h3 id="muc-17-7">17.7 Backup / restore (6 mục) <a class="anchor" href="#muc-17-7" aria-label="Liên kết tới mục này">#</a></h3>
+<div class="table-wrap" role="region" aria-label="Checklist — 17.7 Backup / restore (6 mục)" tabindex="0"><table class="tbl checklist"><thead><tr><th scope="col" class="col-check"><span class="visually-hidden">Đã kiểm</span><span aria-hidden="true">✓</span></th><th scope="col" class="col-id">ID</th><th scope="col">Mục</th><th scope="col">Cách kiểm</th><th scope="col" class="col-role">Ai ký</th><th scope="col" class="col-status">Trạng thái</th><th scope="col" class="col-sign">Ngày / chữ ký</th></tr></thead><tbody>
+<tr id="chk-bak-01" class="is-todo"><td class="col-check"><input type="checkbox" id="ck-BAK-01" data-ck="BAK-01" aria-label="Đã kiểm BAK-01"></td><th scope="row" class="col-id"><label for="ck-BAK-01">BAK-01</label></th><td>Backup gồm <strong>mọi</strong> collection của scope <code>g_<wbr>&lt;gameId&gt;</code>, kể cả <code>txn_<wbr>meta</code>, ở <strong>cùng một điểm thời gian</strong> (DAT-08)</td><td>cấu hình công cụ backup (cbbackupmgr / backup service)</td><td class="col-role">DBA</td><td class="col-status"><span class="badge badge--todo">→ 015</span></td><td class="col-sign"></td></tr>
+<tr id="chk-bak-02" class="is-todo"><td class="col-check"><input type="checkbox" id="ck-BAK-02" data-ck="BAK-02" aria-label="Đã kiểm BAK-02"></td><th scope="row" class="col-id"><label for="ck-BAK-02">BAK-02</label></th><td>Restore drill, RPO/RTO ghi nhận (TBD-09 còn mở, ACC-19)</td><td>biên bản drill</td><td class="col-role">DBA, Owner</td><td class="col-status"><span class="badge badge--todo">→ 015</span></td><td class="col-sign"></td></tr>
+<tr id="chk-bak-03" class="is-todo"><td class="col-check"><input type="checkbox" id="ck-BAK-03" data-ck="BAK-03" aria-label="Đã kiểm BAK-03"></td><th scope="row" class="col-id"><label for="ck-BAK-03">BAK-03</label></th><td>Sau restore: chạy lại purge cho mọi record <code>account_<wbr>deletions</code> ở trạng thái <code>purged</code></td><td>runbook</td><td class="col-role">Backend lead</td><td class="col-status"><span class="badge badge--todo">→ 015</span></td><td class="col-sign"></td></tr>
+<tr id="chk-bak-04"><td class="col-check"><input type="checkbox" id="ck-BAK-04" data-ck="BAK-04" aria-label="Đã kiểm BAK-04"></td><th scope="row" class="col-id"><label for="ck-BAK-04">BAK-04</label></th><td>Secret không nằm trong backup DB (master key, pepper, mật khẩu) được sao lưu ở secret manager</td><td>quy trình secret manager</td><td class="col-role">Security</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-bak-05"><td class="col-check"><input type="checkbox" id="ck-BAK-05" data-ck="BAK-05" aria-label="Đã kiểm BAK-05"></td><th scope="row" class="col-id"><label for="ck-BAK-05">BAK-05</label></th><td>File analytics/log được ship ra ngoài; backup DB không bao gồm chúng</td><td>data lake nhận đủ file</td><td class="col-role">Data team</td><td class="col-status"><span class="badge badge--manual">Thủ công</span></td><td class="col-sign"></td></tr>
+<tr id="chk-bak-06" class="is-todo"><td class="col-check"><input type="checkbox" id="ck-BAK-06" data-ck="BAK-06" aria-label="Đã kiểm BAK-06"></td><th scope="row" class="col-id"><label for="ck-BAK-06">BAK-06</label></th><td>Nếu dùng XDCR cho DR: XDCR <strong>không</strong> replicate metadata transaction (V17); có runbook</td><td>review thiết kế DR</td><td class="col-role">DBA</td><td class="col-status"><span class="badge badge--todo">→ 015</span></td><td class="col-sign"></td></tr>
+</tbody></table></div>
+</section>
+<p><strong>Tổng: 63 mục.</strong> Database 11, Security 14, Config 9, Observability 9, Capacity 6, Release/rollback 8, Backup/restore 6.</p>
+</section>
+<nav class="pager" aria-label="Chuyển trang"><a class="prev" href="02-them-command.html" rel="prev"><span class="dir">← Trang trước</span><span class="ttl">Thêm, bỏ, thay command</span></a><a class="next" href="index.html"><span class="dir">Về →</span><span class="ttl">Trang chủ</span></a></nav>
+</main>
+</div>
+<footer class="site-footer"><p>Đúng với commit <code>175df65</code> (2026-10-31) — cập nhật khi đổi pipeline, hosting hoặc deploy (DoD).</p></footer>
+<script>
+/* Progressive enhancement only — every page reads fine without this script. */
+(function () {
+  'use strict';
+  var doc = document;
+  var COPY_LABEL = 'Sao chép';
+  var COPY_DONE = 'Đã chép';
+  var COPY_FAIL = 'Không chép được';
+  var FLASH_MS = 1600;
+  var WIDE_QUERY = '(min-width: 75rem)';
+  var ACTIVE_OFFSET_PX = 96;
+  var CHECKLIST_KEY = 'gsf-docs:03-deploy:checklist:v1';
+
+  function each(list, fn) { Array.prototype.forEach.call(list, fn); }
+
+  // ------------------------------------------------------------ copy buttons
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function (resolve, reject) {
+      var ta = doc.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      doc.body.appendChild(ta);
+      ta.select();
+      try {
+        if (doc.execCommand('copy')) { resolve(); } else { reject(new Error('copy')); }
+      } catch (e) {
+        reject(e);
+      } finally {
+        doc.body.removeChild(ta);
+      }
+    });
+  }
+
+  each(doc.querySelectorAll('.code-block'), function (block) {
+    var head = block.querySelector('.code-head');
+    var code = block.querySelector('pre code');
+    if (!head || !code) { return; }
+    var btn = doc.createElement('button');
+    btn.type = 'button';
+    btn.className = 'copy-btn';
+    btn.textContent = COPY_LABEL;
+    var timer = 0;
+    btn.addEventListener('click', function () {
+      var done = function (label) {
+        btn.textContent = label;
+        clearTimeout(timer);
+        timer = setTimeout(function () { btn.textContent = COPY_LABEL; }, FLASH_MS);
+      };
+      copyText(code.textContent).then(function () { done(COPY_DONE); }, function () { done(COPY_FAIL); });
+    });
+    head.appendChild(btn);
+  });
+
+  // ------------------------------------------------------------ table of contents
+  var toc = doc.querySelector('.toc');
+  if (toc) {
+    var det = toc.querySelector('details');
+    if (det && window.matchMedia && !window.matchMedia(WIDE_QUERY).matches) { det.open = false; }
+
+    var links = toc.querySelectorAll('a[href^="#"]');
+    var targets = [];
+    each(links, function (a) {
+      var el = doc.getElementById(decodeURIComponent(a.getAttribute('href').slice(1)));
+      if (el) { targets.push({ link: a, el: el }); }
+    });
+
+    var current = null;
+    var ticking = false;
+    var update = function () {
+      ticking = false;
+      var active = null;
+      for (var i = 0; i < targets.length; i++) {
+        if (targets[i].el.getBoundingClientRect().top - ACTIVE_OFFSET_PX <= 0) { active = targets[i]; } else { break; }
+      }
+      if (active === current) { return; }
+      if (current) { current.link.removeAttribute('aria-current'); }
+      current = active;
+      if (current) { current.link.setAttribute('aria-current', 'true'); }
+    };
+    if (targets.length) {
+      window.addEventListener('scroll', function () {
+        if (!ticking) { ticking = true; window.requestAnimationFrame(update); }
+      }, { passive: true });
+      update();
+    }
+  }
+
+  // ------------------------------------------------------------ diagram zoom: Esc closes
+  doc.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Escape' || !location.hash) { return; }
+    var el = doc.getElementById(decodeURIComponent(location.hash.slice(1)));
+    if (el && el.classList.contains('diagram')) { location.hash = el.id + '-ref'; }
+  });
+
+  // ------------------------------------------------------------ checklist (03-deploy)
+  var boxes = doc.querySelectorAll('input[type="checkbox"][data-ck]');
+  var tools = doc.querySelector('.checklist-tools');
+  if (!boxes.length) { return; }
+
+  var store = null;
+  try {
+    store = window.localStorage;
+    store.getItem(CHECKLIST_KEY);
+  } catch (e) {
+    store = null;
+  }
+  var load = function () {
+    if (!store) { return {}; }
+    try { return JSON.parse(store.getItem(CHECKLIST_KEY) || '{}') || {}; } catch (e) { return {}; }
+  };
+  var save = function (state) {
+    if (!store) { return; }
+    try { store.setItem(CHECKLIST_KEY, JSON.stringify(state)); } catch (e) { /* quota or privacy mode: ignore */ }
+  };
+
+  var state = load();
+  var progress = null;
+  var refresh = function () {
+    var n = 0;
+    each(boxes, function (b) {
+      if (b.checked) { n++; }
+      var row = b.closest('tr');
+      if (row) { row.classList.toggle('is-done', b.checked); }
+    });
+    if (progress) { progress.textContent = 'Đã kiểm ' + n + ' / ' + boxes.length + ' mục'; }
+  };
+
+  each(boxes, function (b) {
+    if (state[b.getAttribute('data-ck')]) { b.checked = true; }
+    b.addEventListener('change', function () {
+      var id = b.getAttribute('data-ck');
+      if (b.checked) { state[id] = true; } else { delete state[id]; }
+      save(state);
+      refresh();
+    });
+  });
+
+  if (tools) {
+    progress = doc.createElement('span');
+    progress.className = 'checklist-progress';
+    progress.setAttribute('aria-live', 'polite');
+
+    var reset = doc.createElement('button');
+    reset.type = 'button';
+    reset.className = 'btn';
+    reset.textContent = 'Bỏ mọi dấu';
+    reset.addEventListener('click', function () {
+      each(boxes, function (b) { b.checked = false; });
+      state = {};
+      save(state);
+      refresh();
+    });
+
+    var printBtn = doc.createElement('button');
+    printBtn.type = 'button';
+    printBtn.className = 'btn';
+    printBtn.textContent = 'In riêng checklist';
+    printBtn.addEventListener('click', function () {
+      var root = doc.documentElement;
+      root.classList.add('print-checklist-only');
+      var cleanup = function () {
+        root.classList.remove('print-checklist-only');
+        window.removeEventListener('afterprint', cleanup);
+      };
+      window.addEventListener('afterprint', cleanup);
+      window.print();
+    });
+
+    var note = doc.createElement('p');
+    note.className = 'checklist-note';
+    note.textContent = store
+      ? 'Dấu tick chỉ lưu trong trình duyệt này (localStorage), không gửi đi đâu. Khi in, mỗi nhóm bắt đầu trang mới và có cột "Ngày / chữ ký".'
+      : 'Trình duyệt không cho lưu: dấu tick sẽ mất khi tải lại trang. Khi in, mỗi nhóm bắt đầu trang mới và có cột "Ngày / chữ ký".';
+
+    tools.appendChild(progress);
+    tools.appendChild(reset);
+    tools.appendChild(printBtn);
+    tools.appendChild(note);
+    tools.hidden = false;
+  }
+  refresh();
+})();
+</script>
+</body>
+</html>

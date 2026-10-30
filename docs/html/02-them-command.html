@@ -1,0 +1,1142 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Đường đi của một command từ Unity tới Couchbase, và cách thêm, bỏ, thay command trong game server framework (.NET/Kestrel).">
+<title>Thêm, bỏ, thay command — Game Server Framework</title>
+<style>
+/* Shared stylesheet — identical block in every page of docs/html. */
+:root {
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", Menlo, "Liberation Mono", monospace;
+  --content-w: 60rem;
+  --toc-w: 16rem;
+  --radius: 0.625rem;
+
+  --bg: #ffffff;
+  --surface: #f6f8fa;
+  --surface-2: #eef2f6;
+  --fg: #1b1f24;
+  --muted: #57606a;
+  --border: #d0d7de;
+  --border-strong: #afb8c1;
+  --accent: #0b5cad;
+  --accent-weak: #e8f1fb;
+  --ok: #1a7f37;
+  --ok-bg: #dcf5e3;
+  --warn: #9a4600;
+  --warn-bg: #fff0de;
+  --danger: #b42318;
+  --danger-bg: #fde8e8;
+  --violet: #6f42c1;
+  --violet-bg: #f1eafd;
+  --neutral: #4b5563;
+  --neutral-bg: #eceff3;
+  --code-bg: #f3f5f7;
+
+  --hl-kw: #8250df;
+  --hl-str: #0a3069;
+  --hl-com: #59636e;
+  --hl-num: #0550ae;
+  --hl-tag: #116329;
+  --hl-attr: #953800;
+
+  --dg-bg: var(--surface);
+  --dg-fill: #ffffff;
+  --dg-fill-2: #e8f1fb;
+  --dg-band: #eef2f6;
+  --dg-core: #e3e8ee;
+  --dg-line: #3d4652;
+  --dg-text: #1b1f24;
+  --dg-muted: #57606a;
+  --dg-accent: #0b5cad;
+  --dg-danger: #b42318;
+  --dg-violet: #6f42c1;
+  --dg-violet-bg: #f1eafd;
+  --dg-warn: #9a4600;
+  --dg-warn-bg: #fff0de;
+  --dg-ok: #1a7f37;
+  --dg-ok-bg: #dcf5e3;
+  --dg-frame: #7a8591;
+  --dg-frame-bg: #e4e9ef;
+
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1419;
+    --surface: #151b23;
+    --surface-2: #1c2430;
+    --fg: #e6edf3;
+    --muted: #9ba7b4;
+    --border: #2f3843;
+    --border-strong: #45505c;
+    --accent: #6cb6ff;
+    --accent-weak: #11263d;
+    --ok: #56d364;
+    --ok-bg: #12301c;
+    --warn: #ffa657;
+    --warn-bg: #3b2410;
+    --danger: #ff7b72;
+    --danger-bg: #3d1717;
+    --violet: #d2a8ff;
+    --violet-bg: #2a1d40;
+    --neutral: #c1cad4;
+    --neutral-bg: #26303b;
+    --code-bg: #151b23;
+
+    --hl-kw: #d2a8ff;
+    --hl-str: #a5d6ff;
+    --hl-com: #8b949e;
+    --hl-num: #79c0ff;
+    --hl-tag: #7ee787;
+    --hl-attr: #ffa657;
+
+    --dg-fill: #1c2430;
+    --dg-fill-2: #11263d;
+    --dg-band: #18202a;
+    --dg-core: #26303b;
+    --dg-line: #b3bdc8;
+    --dg-text: #e6edf3;
+    --dg-muted: #9ba7b4;
+    --dg-accent: #6cb6ff;
+    --dg-danger: #ff7b72;
+    --dg-violet: #d2a8ff;
+    --dg-violet-bg: #2a1d40;
+    --dg-warn: #ffa657;
+    --dg-warn-bg: #3b2410;
+    --dg-ok: #56d364;
+    --dg-ok-bg: #12301c;
+    --dg-frame: #7d8996;
+    --dg-frame-bg: #26303b;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; scroll-padding-top: 1rem; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.65;
+  overflow-wrap: break-word;
+}
+a { color: var(--accent); text-underline-offset: 0.18em; }
+a:hover { text-decoration-thickness: 2px; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+.visually-hidden {
+  position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+.skip-link {
+  position: absolute; left: 1rem; top: -3rem; z-index: 200;
+  background: var(--accent); color: var(--bg); padding: 0.5rem 0.875rem; border-radius: 0.375rem; font-weight: 600;
+}
+.skip-link:focus { top: 0.75rem; }
+
+/* ---------------------------------------------------------------- header */
+.site-header { border-bottom: 1px solid var(--border); background: var(--surface); }
+.site-header__inner {
+  max-width: calc(var(--content-w) + var(--toc-w) + 4.5rem);
+  margin: 0 auto; padding: 0.625rem 1rem;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.5rem;
+}
+.brand { font-weight: 700; color: var(--fg); text-decoration: none; letter-spacing: -0.01em; }
+.brand span { font-weight: 400; color: var(--muted); }
+.site-nav { display: flex; flex-wrap: wrap; gap: 0.25rem; list-style: none; margin: 0; padding: 0; }
+.site-nav a {
+  display: inline-block; padding: 0.3rem 0.65rem; border-radius: 999px;
+  color: var(--fg); text-decoration: none; font-size: 0.9rem;
+}
+.site-nav a:hover { background: var(--surface-2); }
+.site-nav a[aria-current="page"] { background: var(--accent); color: var(--bg); font-weight: 600; }
+
+/* ---------------------------------------------------------------- layout */
+.layout {
+  max-width: calc(var(--content-w) + var(--toc-w) + 4.5rem);
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+.content { min-width: 0; max-width: var(--content-w); padding-bottom: 3rem; }
+.content:focus { outline: none; }
+@media (min-width: 75rem) {
+  .layout {
+    display: grid;
+    grid-template-columns: var(--toc-w) minmax(0, var(--content-w));
+    gap: 2.5rem;
+    justify-content: center;
+  }
+  .layout.layout--single { display: block; }
+}
+.layout--single .content { margin: 0 auto; }
+
+/* ---------------------------------------------------------------- toc */
+.toc { margin: 1.25rem 0 0.5rem; font-size: 0.9rem; }
+.toc details { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.toc summary {
+  cursor: pointer; padding: 0.6rem 0.875rem; font-weight: 700; list-style-position: inside;
+}
+.toc ul { list-style: none; margin: 0; padding: 0 0.875rem 0.75rem; }
+.toc ul ul { padding: 0 0 0 0.875rem; }
+.toc li { margin: 0.1rem 0; }
+.toc a {
+  display: block; padding: 0.15rem 0.5rem; border-left: 2px solid transparent;
+  color: var(--fg); text-decoration: none; line-height: 1.4;
+}
+.toc a:hover { color: var(--accent); }
+.toc a[aria-current="true"] { border-left-color: var(--accent); color: var(--accent); font-weight: 600; }
+.toc .toc-h3 a { color: var(--muted); font-size: 0.85rem; }
+.toc .toc-h3 a[aria-current="true"] { color: var(--accent); }
+.toc code { font-size: 0.85em; background: none; border: 0; padding: 0; }
+@media (min-width: 75rem) {
+  .toc { margin: 0; padding-top: 1.5rem; }
+  .toc details {
+    position: sticky; top: 1rem;
+    max-height: calc(100vh - 2rem); overflow: auto;
+  }
+}
+
+/* ---------------------------------------------------------------- page head */
+.page-head { padding: 1.75rem 0 0.75rem; border-bottom: 1px solid var(--border); margin-bottom: 1rem; }
+.eyebrow { margin: 0; color: var(--muted); font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+h1 { font-size: clamp(1.6rem, 1.2rem + 2vw, 2.25rem); line-height: 1.2; margin: 0.35rem 0 0.5rem; letter-spacing: -0.02em; }
+.lead { font-size: 1.1rem; color: var(--muted); margin: 0 0 0.75rem; }
+.meta {
+  display: inline-block; margin: 0.25rem 0 0.75rem; padding: 0.35rem 0.75rem;
+  border-radius: 0.5rem; background: var(--surface-2); font-size: 0.9rem;
+}
+
+/* ---------------------------------------------------------------- headings & text */
+h2, h3, h4 { line-height: 1.3; letter-spacing: -0.01em; scroll-margin-top: 1rem; }
+h2 { font-size: 1.5rem; margin: 2.75rem 0 0.75rem; padding-top: 0.5rem; border-top: 1px solid var(--border); }
+.doc-section:first-of-type h2 { border-top: 0; margin-top: 1.5rem; }
+h3 { font-size: 1.2rem; margin: 2rem 0 0.6rem; }
+h4 { font-size: 1.05rem; margin: 1.5rem 0 0.5rem; }
+.anchor {
+  margin-left: 0.35rem; color: var(--muted); text-decoration: none; font-weight: 400;
+  opacity: 0; transition: opacity 0.15s;
+}
+h2:hover .anchor, h3:hover .anchor, .anchor:focus-visible { opacity: 1; }
+@media (hover: none) { .anchor { opacity: 0.55; } }
+p { margin: 0.75rem 0; }
+p.indent { margin-left: 1.5rem; }
+ul, ol { padding-left: 1.5rem; margin: 0.6rem 0; }
+li { margin: 0.25rem 0; }
+li > ul, li > ol { margin: 0.25rem 0; }
+strong { font-weight: 650; }
+blockquote { margin: 1rem 0; padding: 0.25rem 1rem; border-left: 4px solid var(--border-strong); color: var(--muted); }
+
+code {
+  font-family: var(--font-mono); font-size: 0.875em;
+  background: var(--code-bg); border: 1px solid var(--border); border-radius: 0.3rem;
+  padding: 0.05em 0.3em; overflow-wrap: break-word;
+  font-variant-ligatures: none;
+}
+a.path { text-decoration: none; }
+a.path code { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
+a.path:hover code { text-decoration: underline; }
+
+/* ---------------------------------------------------------------- code blocks */
+.code-block { margin: 1rem 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--code-bg); overflow: hidden; }
+.code-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+  padding: 0.3rem 0.5rem 0.3rem 0.875rem; border-bottom: 1px solid var(--border);
+  font-size: 0.78rem; color: var(--muted);
+}
+.code-lang { font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+.copy-btn {
+  font: inherit; font-size: 0.78rem; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--border); border-radius: 0.375rem; padding: 0.15rem 0.6rem; cursor: pointer;
+}
+.copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+pre.code { font-variant-ligatures: none; margin: 0; padding: 0.875rem 1rem; overflow-x: auto; line-height: 1.5; tab-size: 4; }
+pre.code code { background: none; border: 0; padding: 0; font-size: 0.84rem; overflow-wrap: normal; white-space: pre; }
+.hl-kw { color: var(--hl-kw); }
+.hl-str { color: var(--hl-str); }
+.hl-com { color: var(--hl-com); font-style: italic; }
+.hl-num { color: var(--hl-num); }
+.hl-tag { color: var(--hl-tag); }
+.hl-attr { color: var(--hl-attr); }
+
+/* ---------------------------------------------------------------- tables */
+.table-wrap { margin: 1rem 0; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+.tbl { width: 100%; border-collapse: collapse; font-size: 0.9rem; line-height: 1.5; }
+.tbl.wide { min-width: 44rem; }
+.tbl th, .tbl td { padding: 0.5rem 0.7rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+.tbl thead th { background: var(--surface-2); font-weight: 650; white-space: nowrap; }
+.tbl tbody tr:nth-child(even) { background: color-mix(in srgb, var(--surface) 70%, transparent); }
+.tbl tbody tr:last-child > * { border-bottom: 0; }
+.tbl code { font-size: 0.84em; }
+
+/* ---------------------------------------------------------------- callout */
+.callout {
+  margin: 1.5rem 0; padding: 0.25rem 1.1rem 0.75rem; border: 1px solid var(--accent);
+  border-left-width: 6px; border-radius: var(--radius); background: var(--accent-weak);
+}
+.callout-label {
+  display: inline-block; margin-top: 0.75rem; padding: 0.1rem 0.6rem; border-radius: 999px;
+  background: var(--accent); color: var(--bg); font-size: 0.78rem; font-weight: 700; letter-spacing: 0.03em;
+}
+.callout h3 { margin-top: 0.5rem; }
+.callout .table-wrap { background: var(--bg); }
+
+/* ---------------------------------------------------------------- badges */
+.badge {
+  display: inline-block; padding: 0.02rem 0.5rem; border-radius: 999px; border: 1px solid transparent;
+  font-size: 0.78em; font-weight: 700; line-height: 1.5; white-space: nowrap; vertical-align: 0.06em;
+}
+.badge--todo { color: var(--warn); background: var(--warn-bg); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.badge--ok { color: var(--ok); background: var(--ok-bg); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+.badge--neutral { color: var(--neutral); background: var(--neutral-bg); border-color: var(--border); }
+.badge--verify { color: var(--violet); background: var(--violet-bg); border-color: color-mix(in srgb, var(--violet) 45%, transparent); }
+.badge--auto { color: var(--accent); background: var(--accent-weak); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.badge--manual { color: var(--neutral); background: var(--neutral-bg); border-color: var(--border); }
+.badge--open { color: var(--danger); background: var(--danger-bg); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+
+/* ---------------------------------------------------------------- diagrams */
+.fig-ref { display: block; }
+.diagram { margin: 1.25rem 0 0.75rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--dg-bg); }
+.diagram-bar {
+  display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+  padding: 0.45rem 0.875rem; border-bottom: 1px solid var(--border); font-size: 0.85rem;
+}
+.diagram-title { font-weight: 650; margin-right: auto; }
+.zoom-link {
+  font-size: 0.8rem; padding: 0.1rem 0.6rem; border: 1px solid var(--border); border-radius: 999px;
+  text-decoration: none; background: var(--bg);
+}
+.zoom-close { display: none; }
+.diagram-scroll { overflow-x: auto; padding: 0.75rem; }
+.dg { display: block; width: 100%; height: auto; min-width: var(--min-w, 0); font-family: var(--font-sans); font-variant-ligatures: none; }
+.diagram:target {
+  position: fixed; inset: 0; z-index: 100; margin: 0; border-radius: 0; border: 0;
+  display: flex; flex-direction: column; background: var(--bg);
+}
+.diagram:target .diagram-scroll { flex: 1; overflow: auto; }
+.diagram:target .dg { width: var(--nat-w); min-width: 0; max-width: none; }
+.diagram:target .zoom-open { display: none; }
+.diagram:target .zoom-close { display: inline-block; }
+details.dg-text { margin: 0 0 1.25rem; border: 1px dashed var(--border-strong); border-radius: var(--radius); padding: 0 0.875rem; }
+details.dg-text > summary { cursor: pointer; padding: 0.5rem 0; color: var(--muted); font-size: 0.9rem; font-weight: 600; }
+details.dg-text[open] > summary { border-bottom: 1px solid var(--border); margin-bottom: 0.5rem; }
+
+.dg text { fill: var(--dg-text); font-size: 12px; }
+.dg .t-b { font-weight: 700; }
+.dg .t-lg { font-size: 14px; }
+.dg .t-sm, .dg .t-sm2 { font-size: 11px; fill: var(--dg-muted); }
+.dg .t-sm2 { fill: var(--dg-text); }
+.dg .t-cell { font-size: 11px; }
+.dg .t-mono { font-family: var(--font-mono); font-size: 10.5px; fill: var(--dg-muted); }
+.dg .t-head { font-size: 12px; font-weight: 700; fill: var(--dg-muted); letter-spacing: 0.06em; text-transform: uppercase; }
+.dg .t-band { font-size: 11.5px; font-weight: 700; fill: var(--dg-muted); }
+.dg .t-lbl { font-size: 11px; }
+.dg .t-note { font-size: 11px; font-style: italic; fill: var(--dg-muted); }
+.dg .t-accent { fill: var(--dg-accent); }
+.dg .t-danger { fill: var(--dg-danger); }
+.dg .t-violet { fill: var(--dg-violet); }
+.dg .t-muted { fill: var(--dg-muted); }
+.dg .t-num { font-weight: 800; fill: var(--dg-accent); }
+.dg .t-frame { font-size: 11px; font-weight: 700; }
+.dg .t-guard { font-size: 11px; font-style: italic; fill: var(--dg-muted); }
+.dg .halo { paint-order: stroke; stroke: var(--dg-bg); stroke-width: 4px; stroke-linejoin: round; }
+.dg .box { fill: var(--dg-fill); stroke: var(--dg-line); stroke-width: 1.25; }
+.dg .box--accent { fill: var(--dg-fill-2); stroke: var(--dg-accent); }
+.dg .box--core { fill: var(--dg-core); }
+.dg .box--violet { fill: var(--dg-violet-bg); stroke: var(--dg-violet); }
+.dg .box--warn { fill: var(--dg-warn-bg); stroke: var(--dg-warn); }
+.dg .box--ok { fill: var(--dg-ok-bg); stroke: var(--dg-ok); }
+.dg .box--ghost { fill: var(--dg-fill); stroke: var(--dg-muted); opacity: 0.7; }
+.dg .cyl-rim { fill: none; }
+.dg .band { fill: var(--dg-band); stroke: var(--dg-muted); stroke-width: 1; }
+.dg .group { fill: none; stroke: var(--dg-line); stroke-width: 1.5; }
+.dg .dashed { stroke-dasharray: 6 4; }
+.dg .edge { fill: none; stroke: var(--dg-line); stroke-width: 1.5; }
+.dg .edge--accent { stroke: var(--dg-accent); stroke-width: 1.75; }
+.dg .edge--danger { stroke: var(--dg-danger); stroke-dasharray: 6 4; }
+.dg .edge--violet { stroke: var(--dg-violet); stroke-width: 1.75; }
+.dg .edge--muted { stroke: var(--dg-muted); }
+.dg .ah { fill: var(--dg-line); }
+.dg .ah--accent { fill: var(--dg-accent); }
+.dg .ah--danger { fill: var(--dg-danger); }
+.dg .ah--violet { fill: var(--dg-violet); }
+.dg .ah--muted { fill: var(--dg-muted); }
+.dg .dot { fill: var(--dg-line); }
+.dg .no-entry circle { fill: var(--dg-bg); stroke: var(--dg-danger); stroke-width: 2; }
+.dg .no-entry line { stroke: var(--dg-danger); stroke-width: 2; }
+.dg .lifeline { stroke: var(--dg-muted); stroke-width: 1; stroke-dasharray: 4 4; }
+.dg .frame-box { fill: none; stroke: var(--dg-frame); stroke-width: 1.25; }
+.dg .frame-tag { fill: var(--dg-frame-bg); stroke: var(--dg-frame); stroke-width: 1.25; }
+.dg .pill rect { stroke-width: 1.25; }
+.dg .pill text { font-size: 11px; font-weight: 700; }
+.dg .pill--accent rect { fill: var(--dg-fill-2); stroke: var(--dg-accent); }
+.dg .pill--accent text { fill: var(--dg-accent); }
+.dg .pill--violet rect { fill: var(--dg-violet-bg); stroke: var(--dg-violet); }
+.dg .pill--violet text { fill: var(--dg-violet); }
+
+/* ---------------------------------------------------------------- checklist */
+.checklist-tools {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem;
+  margin: 1rem 0; padding: 0.6rem 0.875rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+}
+.checklist-tools[hidden] { display: none; }
+.checklist-progress { font-weight: 650; margin-right: auto; }
+.checklist-note { flex-basis: 100%; margin: 0; font-size: 0.85rem; color: var(--muted); }
+.btn {
+  font: inherit; font-size: 0.875rem; padding: 0.3rem 0.8rem; border-radius: 0.4rem; cursor: pointer;
+  border: 1px solid var(--border-strong); background: var(--bg); color: var(--fg);
+}
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.tbl.checklist { min-width: 52rem; }
+.checklist .col-check { width: 2.5rem; text-align: center; }
+.checklist .col-id { white-space: nowrap; font-family: var(--font-mono); font-size: 0.85rem; }
+.checklist .col-id label { cursor: pointer; }
+.checklist .col-role { min-width: 7rem; }
+.checklist .col-status { min-width: 8rem; }
+.checklist .col-status .badge { white-space: normal; }
+.checklist .col-sign { display: none; width: 8rem; }
+.checklist input[type="checkbox"] { width: 1.15rem; height: 1.15rem; accent-color: var(--accent); cursor: pointer; margin: 0.15rem 0 0; }
+.checklist tr.is-todo > * { background: color-mix(in srgb, var(--warn-bg) 55%, transparent); }
+.checklist tr.is-done > :not(.col-check) { color: var(--muted); }
+.checklist-total { font-weight: 650; }
+
+/* ---------------------------------------------------------------- index cards */
+.cards { display: grid; gap: 1rem; margin: 1.5rem 0; }
+@media (min-width: 48rem) { .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.card {
+  display: flex; flex-direction: column; gap: 0.25rem;
+  padding: 1rem 1.1rem 1.1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+}
+.card h2 { border: 0; margin: 0.15rem 0 0.25rem; padding: 0; font-size: 1.2rem; }
+.card h2 a { text-decoration: none; }
+.card h2 a:hover { text-decoration: underline; }
+.card .audience { margin: 0; font-size: 0.85rem; color: var(--muted); font-weight: 600; }
+.card p { margin: 0.4rem 0; font-size: 0.95rem; }
+.card .card-cta { margin-top: auto; padding-top: 0.5rem; font-weight: 650; }
+
+/* ---------------------------------------------------------------- pager & footer */
+.pager { display: grid; gap: 0.75rem; margin: 3rem 0 0; }
+@media (min-width: 40rem) { .pager { grid-template-columns: 1fr 1fr; } }
+.pager a {
+  display: block; padding: 0.75rem 1rem; border: 1px solid var(--border); border-radius: var(--radius);
+  text-decoration: none; background: var(--surface);
+}
+.pager a:hover { border-color: var(--accent); }
+.pager .dir { display: block; font-size: 0.8rem; color: var(--muted); }
+.pager .ttl { font-weight: 650; }
+.pager .next { text-align: right; grid-column: 2; }
+@media (max-width: 39.99rem) { .pager .next { grid-column: auto; } }
+.site-footer {
+  border-top: 1px solid var(--border); background: var(--surface); color: var(--muted);
+  font-size: 0.9rem; padding: 1rem;
+}
+.site-footer p { max-width: calc(var(--content-w) + var(--toc-w) + 2.5rem); margin: 0 auto; }
+
+/* ---------------------------------------------------------------- print */
+@media print {
+  :root {
+    --bg: #fff; --surface: #fff; --surface-2: #f0f0f0; --fg: #000; --muted: #333; --border: #999; --border-strong: #666;
+    --accent: #000; --accent-weak: #fff; --code-bg: #fff;
+    --ok: #000; --ok-bg: #fff; --warn: #000; --warn-bg: #fff; --danger: #000; --danger-bg: #fff;
+    --violet: #000; --violet-bg: #fff; --neutral: #000; --neutral-bg: #fff;
+    --hl-kw: #000; --hl-str: #000; --hl-com: #444; --hl-num: #000; --hl-tag: #000; --hl-attr: #000;
+    --dg-bg: #fff; --dg-fill: #fff; --dg-fill-2: #fff; --dg-band: #f4f4f4; --dg-core: #eee; --dg-line: #000; --dg-text: #000;
+    --dg-muted: #333; --dg-accent: #000; --dg-danger: #000; --dg-violet: #000; --dg-violet-bg: #fff; --dg-warn: #000;
+    --dg-warn-bg: #fff; --dg-ok: #000; --dg-ok-bg: #fff; --dg-frame: #333; --dg-frame-bg: #eee;
+    color-scheme: light;
+  }
+  @page { margin: 14mm 12mm; }
+  body { font-size: 10pt; line-height: 1.45; background: #fff; color: #000; }
+  .site-header, .toc, .pager, .skip-link, .anchor, .copy-btn, .zoom-link, .checklist-tools, .fig-ref { display: none !important; }
+  .layout { display: block; max-width: none; padding: 0; }
+  .content { max-width: none; padding: 0; }
+  a { color: #000; text-decoration: none; }
+  a.path code { color: #000; }
+  h2, h3, h4 { break-after: avoid; page-break-after: avoid; }
+  .table-wrap, .diagram-scroll { overflow: visible; border-color: #999; }
+  .tbl, .tbl.wide, .tbl.checklist { min-width: 0 !important; font-size: 8.5pt; }
+  .tbl tbody tr:nth-child(even), .checklist tr.is-todo > * { background: none; }
+  thead { display: table-header-group; }
+  tr, .code-block, .diagram, .callout { break-inside: avoid; page-break-inside: avoid; }
+  pre.code code { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .dg { min-width: 0 !important; width: 100% !important; }
+  .diagram:target { position: static; }
+  details.dg-text { border: 0; padding: 0; }
+  .badge { border-color: #000; background: none; color: #000; }
+  .checklist .col-sign { display: table-cell; }
+  .checklist input[type="checkbox"] { accent-color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .checklist tr.is-done > :not(.col-check) { color: #000; }
+  .checklist-group { break-before: page; page-break-before: always; }
+  .site-footer { background: none; border-top: 1px solid #999; color: #000; padding: 0.5rem 0 0; }
+  html.print-checklist-only .page-head,
+  html.print-checklist-only .doc-intro,
+  html.print-checklist-only .doc-section:not(.is-checklist) { display: none !important; }
+  html.print-checklist-only .checklist-group:first-of-type { break-before: auto; page-break-before: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#noi-dung">Bỏ qua tới nội dung</a>
+<header class="site-header">
+<div class="site-header__inner">
+<a class="brand" href="index.html">Game Server Framework <span>· tài liệu</span></a>
+<nav aria-label="Các trang tài liệu"><ul class="site-nav"><li><a href="index.html">Trang chủ</a></li><li><a href="01-gioi-thieu.html">1. Giới thiệu</a></li><li><a href="02-them-command.html" aria-current="page">2. Thêm command</a></li><li><a href="03-deploy.html">3. Deploy</a></li></ul></nav>
+</div>
+</header>
+<div class="layout">
+<nav class="toc" aria-label="Mục lục trang"><details open><summary>Mục lục</summary><ul><li><a href="#muc-1">1. Điều quan trọng nhất: handler không đọc hay ghi database</a><ul><li class="toc-h3"><a href="#bang-doi-chieu-moi-buoc-trong-mo-hinh-cua-ban-na">Bảng đối chiếu: mỗi bước trong mô hình của bạn nằm ở đâu trong code</a></li></ul></li><li><a href="#muc-2">2. Sơ đồ sequence một command (Sơ đồ C)</a></li><li><a href="#muc-3">3. Đường đi chi tiết khi nhận một command</a><ul><li class="toc-h3"><a href="#buoc-1-unity-gui-request">Bước 1 — Unity gửi request</a></li><li class="toc-h3"><a href="#buoc-2-kestrel-va-forwardedheaders">Bước 2 — Kestrel và <code>ForwardedHeaders</code></a></li><li class="toc-h3"><a href="#buoc-3-exceptionmiddleware-ngoai-cung">Bước 3 — <code>ExceptionMiddleware</code> (ngoài cùng)</a></li><li class="toc-h3"><a href="#buoc-4-correlationmiddleware">Bước 4 — <code>CorrelationMiddleware</code></a></li><li class="toc-h3"><a href="#buoc-5-routing-phan-loai-lan-1">Bước 5 — Routing (phân loại lần 1)</a></li><li class="toc-h3"><a href="#buoc-6-gatemiddleware-truoc-xac-thuc">Bước 6 — <code>GateMiddleware</code> (trước xác thực)</a></li><li class="toc-h3"><a href="#buoc-7-profileenforcementmiddleware-xac-thuc-pha">Bước 7 — <code>ProfileEnforcementMiddleware</code> (xác thực + phân quyền)</a></li><li class="toc-h3"><a href="#buoc-8-endpoint-cua-mapplayercommand-doc-param">Bước 8 — Endpoint của <code>MapPlayerCommand</code> (đọc param)</a></li><li class="toc-h3"><a href="#buoc-9-commandrunner-phan-loai-lan-2-get-db-logi">Bước 9 — <code>CommandRunner</code> (phân loại lần 2, get DB, logic, save DB)</a></li><li class="toc-h3"><a href="#buoc-10-response">Bước 10 — Response</a></li><li class="toc-h3"><a href="#buoc-11-unity-nhan-ket-qua">Bước 11 — Unity nhận kết quả</a></li><li class="toc-h3"><a href="#bang-tom-tat-ma-tra-ve">Bảng tóm tắt mã trả về</a></li></ul></li><li><a href="#muc-4">4. Walkthrough: module mẫu <code>Sample.Counter</code> (code thật)</a><ul><li class="toc-h3"><a href="#muc-4-1">4.1 File <code>.proto</code> — contract wire</a></li><li class="toc-h3"><a href="#muc-4-2">4.2 Aggregate, record command/result, error code — project nghiệp vụ</a></li><li class="toc-h3"><a href="#muc-4-3">4.3 <code>CommandDescriptor</code> và handler — logic</a></li><li class="toc-h3"><a href="#muc-4-4">4.4 <code>ModuleDescriptor</code> — đăng ký command</a></li><li class="toc-h3"><a href="#muc-4-5">4.5 Adapter: đăng ký DI, wire mapper, <code>MapPlayerCommand</code>, <code>ToDomain</code></a></li><li class="toc-h3"><a href="#muc-4-6">4.6 Đăng ký ở host</a></li><li class="toc-h3"><a href="#muc-4-7">4.7 PCR</a></li><li class="toc-h3"><a href="#muc-4-8">4.8 Test</a></li><li class="toc-h3"><a href="#muc-4-9">4.9 Query (đọc, không ghi) — để so sánh</a></li><li class="toc-h3"><a href="#muc-4-10">4.10 Gọi từ Unity</a></li></ul></li><li><a href="#muc-5">5. Ví dụ: thêm command thứ hai <code>counter.reset</code> (code mới cần viết)</a><ul><li class="toc-h3"><a href="#checklist-them-command">Checklist thêm command</a></li></ul></li><li><a href="#muc-6">6. Bỏ hoặc tắt command</a></li><li><a href="#muc-7">7. Thay handler hoặc policy của module có sẵn</a></li><li><a href="#muc-8">8. Command GM</a></li><li><a href="#muc-9">9. Các biến thể khác của <code>MapPlayerCommand</code></a></li><li><a href="#muc-10">10. Lỗi thường gặp</a></li><li><a href="#muc-11">11. Quy tắc viết handler (tóm tắt)</a></li></ul></details></nav>
+<main id="noi-dung" class="content" tabindex="-1">
+<header class="page-head">
+<p class="eyebrow">Trang 2 / 3 · Viết command</p>
+<h1>Thêm, bỏ, thay command (API) và đường đi của một request</h1>
+<p class="lead">Handler <strong>không</strong> đọc hay ghi database — framework làm hộ. Xem ngay <a href="#bang-doi-chieu-moi-buoc-trong-mo-hinh-cua-ban-na">bảng đối chiếu từng bước với code</a>.</p>
+<p class="meta">Đúng với commit <code>175df65</code> (nhánh <code>012-analytics-audit</code>, tài liệu làm trên <code>docs-html-guides</code>).</p>
+</header>
+
+<section class="doc-section" aria-labelledby="muc-1">
+<h2 id="muc-1">1. Điều quan trọng nhất: handler <strong>không</strong> đọc hay ghi database <a class="anchor" href="#muc-1" aria-label="Liên kết tới mục này">#</a></h2>
+<p>Mô hình quen thuộc khi viết API: <em>nhận message → phân loại → xử lý logic → đọc param → <strong>get DB</strong> → update → <strong>save DB</strong> → trả response</em>. Trong framework này, các bước đó vẫn có đủ, nhưng <strong>ba bước liên quan tới database do framework làm</strong>, không phải code của command:</p>
+<ul><li><strong>Trước</strong> khi gọi handler, <code>CommandRunner</code> mở một transaction và <strong>đọc sẵn</strong> mọi aggregate khai trong <code>Touches</code> và <code>Reads</code> của command (cộng receipt để chống chạy trùng).</li><li>Handler chỉ làm việc với <code>ICommandContext</code>: <code>ctx.<wbr>Get&lt;T&gt;(id)</code> lấy bản sao đã đọc, <code>ctx.<wbr>Set(id, newState)</code> ghi vào <strong>bộ đệm</strong>.</li><li><strong>Sau</strong> khi handler trả <code>Ok</code>, <code>CommandRunner</code> ghi các aggregate đã đổi với <code>rev + 1</code>, ghi <strong>receipt</strong>, và <strong>commit</strong> tất cả trong cùng một transaction. Nếu handler trả <code>Reject</code>, transaction rollback — không có gì được ghi.</li><li>Client gửi lại cùng <code>X-Request-Id</code> → framework trả lại kết quả cũ từ receipt (replay), handler không chạy lần hai.</li></ul>
+<p>Vì vậy handler phải &quot;thuần&quot;: không gọi HTTP, không gọi DB, không đọc giờ hệ thống; transaction có thể chạy lại handler nhiều lần khi có xung đột (comment của <code>ICommandHandler</code> trong <a class="path" href="../../src/GameServer.Core/Commands/ICommandHandler.cs"><code>src/<wbr>GameServer.<wbr>Core/<wbr>Commands/<wbr>ICommandHandler.<wbr>cs</code></a>).</p>
+<div class="callout"><span class="callout-label">Quan trọng nhất</span>
+<h3 id="bang-doi-chieu-moi-buoc-trong-mo-hinh-cua-ban-na">Bảng đối chiếu: mỗi bước trong mô hình của bạn nằm ở đâu trong code <a class="anchor" href="#bang-doi-chieu-moi-buoc-trong-mo-hinh-cua-ban-na" aria-label="Liên kết tới mục này">#</a></h3>
+<div class="table-wrap" role="region" aria-label="Bảng — Bảng đối chiếu: mỗi bước trong mô hình của bạn nằm ở đâu trong code" tabindex="0"><table class="tbl wide"><thead><tr><th scope="col">Bước (mô hình quen thuộc)</th><th scope="col">Ai làm</th><th scope="col">Ở đâu trong code</th><th scope="col">Ví dụ với <code>counter.<wbr>increment</code></th></tr></thead><tbody>
+<tr><td>Nhận message</td><td>Framework</td><td>Kestrel → middleware pipeline, <code>GameServerApplicationExtensions.<wbr>UseGameServer</code> (<a class="path" href="../../src/GameServer.Platform.Web/Hosting/GameServerApplicationExtensions.cs"><code>src/<wbr>GameServer.<wbr>Platform.<wbr>Web/<wbr>Hosting/<wbr>GameServerApplicationExtensions.<wbr>cs</code></a>)</td><td><code>POST /<wbr>api/<wbr>v1/<wbr>counter/<wbr>increment</code></td></tr>
+<tr><td><strong>Phân loại</strong> (message nào, xử lý bởi ai)</td><td>Framework, theo khai báo của module</td><td>(1) Routing chọn endpoint theo route — endpoint được tạo bởi <code>MapPlayerCommand</code> với tên operation; (2) <code>CommandRunner.<wbr>ExecuteCoreAsync</code> gọi <code>ModuleRegistry.<wbr>GetCommand(operation)</code> lấy <code>CommandRegistration</code> (descriptor + kiểu handler)</td><td>route → operation <code>&quot;counter.<wbr>increment&quot;</code> → <code>IncrementHandler</code></td></tr>
+<tr><td><strong>Đọc param</strong></td><td>Module (adapter) viết hàm <code>ToDomain</code>; framework gọi</td><td><code>CommandEndpointFactory.<wbr>MapCommand</code>: <code>ProtobufBinding.<wbr>ReadBodyAsync</code> → <code>ProtobufBinding.<wbr>Parse&lt;TWireRequest&gt;</code> → <code>toDomain(wire)</code> (<a class="path" href="../../src/GameServer.Platform.Web/Commands/CommandEndpointFactory.cs"><code>src/<wbr>GameServer.<wbr>Platform.<wbr>Web/<wbr>Commands/<wbr>CommandEndpointFactory.<wbr>cs</code></a>)</td><td><code>CounterModule.<wbr>ToDomain</code>: kiểm <code>note</code> ≤ 64 ký tự, tạo <code>IncrementCommand(By, Note)</code></td></tr>
+<tr><td><strong>Get DB</strong></td><td><strong>Framework</strong></td><td><code>CommandRunner.<wbr>ExecuteTransactionAsync</code> dựng danh sách key từ <code>Touches ∪ Reads</code> + receipt; <code>RunAttemptAsync</code> gọi <code>tx.<wbr>GetManyAsync(keys)</code> rồi <code>AggregateDocumentSerializer.<wbr>Load</code> (state mặc định nếu chưa có, nâng schema lười)</td><td>đọc <code>pa_<wbr>counter/<wbr>{playerId}</code> + <code>receipts/<wbr>rcpt::<wbr>{receiptId}</code></td></tr>
+<tr><td><strong>Xử lý logic cụ thể</strong> + <strong>update</strong></td><td><strong>Module</strong> (handler)</td><td><code>IncrementHandler.<wbr>HandleAsync</code>: kiểm rule, <code>context.<wbr>Get&lt;CounterState&gt;(...<wbr>)</code>, <code>context.<wbr>Set(...<wbr>)</code>, <code>context.<wbr>AddOutbox(...<wbr>)</code></td><td><code>By &lt;= 0</code> → <code>Reject(InvalidAmount)</code>; <code>By &gt; 10</code> → <code>Reject(LimitExceeded)</code>; còn lại <code>Value += By</code></td></tr>
+<tr><td><strong>Save DB</strong></td><td><strong>Framework</strong></td><td><code>CommandRunner.<wbr>RunAttemptAsync</code> sau handler: so state mới với cũ, <code>rev + 1</code>, <code>tx.<wbr>InsertAsync</code>/<code>tx.<wbr>ReplaceAsync</code> aggregate, insert claim marker, dựng và insert receipt; commit khi <code>store.<wbr>RunTransactionAsync</code> kết thúc</td><td>ghi <code>pa_<wbr>counter</code> rev N+1 + receipt (có outbox <code>counter_<wbr>log</code>)</td></tr>
+<tr><td>Hiệu ứng phụ sau commit</td><td>Framework</td><td><code>OutboxRelay.<wbr>TryRelayAsync</code> (inline) / <code>OutboxSweeper</code> (nền)</td><td>entry <code>counter_<wbr>log</code> được chiếu vào collection <code>counter_<wbr>log</code></td></tr>
+<tr><td><strong>Response cho client</strong></td><td>Framework</td><td><code>CommandEndpointFactory.<wbr>BuildResponse</code> → <code>ProtobufBinding.<wbr>WriteAsync</code>; lỗi → <code>ExceptionMiddleware</code> → <code>ErrorResponseWriter</code> (<code>ErrorEnvelope</code>)</td><td><code>CommandResponse{code=&quot;OK&quot;, result=IncrementResult, updates=[counter]}</code></td></tr>
+</tbody></table></div>
+<p>Tóm lại, để thêm một command, bạn viết: <strong>khai báo</strong> (<code>CommandDescriptor</code> với <code>Touches</code>/<code>Reads</code>), <strong>handler</strong> (logic), <strong>hàm <code>ToDomain</code></strong> (đọc param), <strong>hàm map kết quả sang wire</strong>, và <strong>một dòng map route</strong>. Bạn không viết code đọc/ghi DB, không viết transaction, không viết idempotency.</p>
+</div>
+</section>
+<section class="doc-section" aria-labelledby="muc-2">
+<h2 id="muc-2">2. Sơ đồ sequence một command (Sơ đồ C) <a class="anchor" href="#muc-2" aria-label="Liên kết tới mục này">#</a></h2>
+<span id="so-do-c-ref" class="fig-ref"></span><figure class="diagram" id="so-do-c"><div class="diagram-bar"><span class="diagram-title">Sơ đồ C — sequence một command (<code>counter.increment</code>)</span><a class="zoom-link zoom-open" href="#so-do-c">Phóng to</a><a class="zoom-link zoom-close" href="#so-do-c-ref">Đóng</a></div><div class="diagram-scroll" role="region" aria-label="Sơ đồ C — sequence một command (counter.increment) (cuộn ngang nếu màn hình hẹp)" tabindex="0"><svg class="dg " viewBox="0 0 1200 1000" role="img" aria-labelledby="sdC-title sdC-desc" style="--nat-w:1200px;--min-w:960px" focusable="false"><title id="sdC-title">Sơ đồ C — sequence một command counter.increment</title><desc id="sdC-desc">Bảy lifeline: Unity GameServerClient, ASP.NET pipeline, Endpoint (CommandEndpointFactory), CommandRunner, Handler (IncrementHandler), Couchbase (transaction), OutboxRelay. Các thông điệp 1 đến 14 như bảng bên dưới sơ đồ; khung loop tối đa 3 vòng bao bước 7 đến 11, khung transaction bao bước 9 đến 11; nhánh alt đã có receipt (7a, replay), nhánh alt Reject (rollback) và nhánh alt lỗi (14', ErrorEnvelope).</desc><defs><marker id="sdC-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker><marker id="sdC-ah-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah ah--accent"/></marker><marker id="sdC-ah-danger" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah ah--danger"/></marker><marker id="sdC-ah-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah ah--violet"/></marker><marker id="sdC-ah-muted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah ah--muted"/></marker></defs><line x1="90" y1="64" x2="90" y2="990" class="lifeline"/><g><rect x="12" y="16" width="156" height="48" rx="6" class="box"/><text x="90" y="37" text-anchor="middle" class=""><tspan x="90" dy="0" class="t-b">Unity:</tspan><tspan x="90" dy="14" class="t-sm">GameServerClient</tspan></text></g><line x1="260" y1="64" x2="260" y2="990" class="lifeline"/><g><rect x="182" y="16" width="156" height="48" rx="6" class="box"/><text x="260" y="37" text-anchor="middle" class=""><tspan x="260" dy="0" class="t-b">ASP.NET pipeline</tspan><tspan x="260" dy="14" class="t-sm">(gom các middleware)</tspan></text></g><line x1="430" y1="64" x2="430" y2="990" class="lifeline"/><g><rect x="352" y="16" width="156" height="48" rx="6" class="box"/><text x="430" y="37" text-anchor="middle" class=""><tspan x="430" dy="0" class="t-b">Endpoint</tspan><tspan x="430" dy="14" class="t-sm">(CommandEndpointFactory)</tspan></text></g><line x1="600" y1="64" x2="600" y2="990" class="lifeline"/><g><rect x="522" y="16" width="156" height="48" rx="6" class="box box--accent"/><text x="600" y="44" text-anchor="middle" class=""><tspan x="600" dy="0" class="t-b">CommandRunner</tspan></text></g><line x1="770" y1="64" x2="770" y2="990" class="lifeline"/><g><rect x="692" y="16" width="156" height="48" rx="6" class="box"/><text x="770" y="37" text-anchor="middle" class=""><tspan x="770" dy="0" class="t-b">Handler</tspan><tspan x="770" dy="14" class="t-sm">(IncrementHandler)</tspan></text></g><line x1="940" y1="64" x2="940" y2="990" class="lifeline"/><g><rect x="862" y="16" width="156" height="48" rx="6" class="box"/><text x="940" y="37" text-anchor="middle" class=""><tspan x="940" dy="0" class="t-b">Couchbase</tspan><tspan x="940" dy="14" class="t-sm">(transaction)</tspan></text></g><line x1="1110" y1="64" x2="1110" y2="990" class="lifeline"/><g><rect x="1032" y="16" width="156" height="48" rx="6" class="box"/><text x="1110" y="44" text-anchor="middle" class=""><tspan x="1110" dy="0" class="t-b">OutboxRelay</tspan></text></g><g class="frame "><rect x="548" y="346" width="482" height="462" class="frame-box"/><path d="M548,346 H592.8 V358 L584.8,366 H548 Z" class="frame-tag"/><text x="554" y="360" class="t-frame">loop</text><text x="600.8" y="360" class="t-guard">[tối đa 3 vòng]</text></g><g class="frame "><rect x="562" y="404" width="454" height="60" class="frame-box"/><path d="M562,404 H599.6 V416 L591.6,424 H562 Z" class="frame-tag"/><text x="568" y="418" class="t-frame">alt</text><text x="607.6" y="418" class="t-guard">[đã có receipt]</text></g><g class="frame "><rect x="562" y="518" width="454" height="276" class="frame-box"/><path d="M562,518 H657.2 V530 L649.2,538 H562 Z" class="frame-tag"/><text x="568" y="532" class="t-frame">transaction</text><text x="665.2" y="532" class="t-guard">(có thể chạy lại handler)</text></g><g class="frame "><rect x="576" y="694" width="426" height="48" class="frame-box"/><path d="M576,694 H613.6 V706 L605.6,714 H576 Z" class="frame-tag"/><text x="582" y="708" class="t-frame">alt</text><text x="621.6" y="708" class="t-guard">[Reject]</text></g><text x="588" y="733" text-anchor="start" class="t-lbl t-danger halo"><tspan x="588" dy="0">rollback, nhảy tới #13 với mã nghiệp vụ</tspan></text><g class="frame "><rect x="30" y="934" width="400" height="52" class="frame-box"/><path d="M30,934 H67.6 V946 L59.599999999999994,954 H30 Z" class="frame-tag"/><text x="36" y="948" class="t-frame">alt</text><text x="75.6" y="948" class="t-guard">[lỗi]</text></g><path d="M90,128 H258" class="edge edge--accent" marker-end="url(#sdC-ah-accent)"/><text x="100" y="96" text-anchor="start" class="t-lbl halo"><tspan x="100" dy="0"><tspan class="t-num">1</tspan> POST /api/v1/counter/increment</tspan><tspan x="100" dy="13">Protobuf; X-Request-Id, Authorization: Bearer,</tspan><tspan x="100" dy="13">X-Client-Version, X-Platform, X-Build-Id</tspan></text><path d="M260,146 H286 V164 H263" class="edge" marker-end="url(#sdC-ah)"/><text x="294" y="150" text-anchor="start" class="t-lbl halo"><tspan x="294" dy="0"><tspan class="t-num">2</tspan> ExceptionMiddleware → CorrelationMiddleware → routing →</tspan><tspan x="294" dy="13">GateMiddleware → ProfileEnforcementMiddleware (xác thực Bearer)</tspan><tspan x="294" dy="13">→ timeout → rate limiter</tspan></text><path d="M260,214 H428" class="edge" marker-end="url(#sdC-ah)"/><text x="270" y="208" text-anchor="start" class="t-lbl halo"><tspan x="270" dy="0"><tspan class="t-num">3</tspan> gọi delegate của route</tspan></text><path d="M430,232 H456 V250 H433" class="edge" marker-end="url(#sdC-ah)"/><text x="464" y="236" text-anchor="start" class="t-lbl halo"><tspan x="464" dy="0"><tspan class="t-num">4</tspan> đọc body ≤ 64 KiB, kiểm requestId, parse Protobuf,</tspan><tspan x="464" dy="13">ToDomain (đọc + validate param)</tspan></text><path d="M430,290 H598" class="edge" marker-end="url(#sdC-ah)"/><text x="440" y="284" text-anchor="start" class="t-lbl halo"><tspan x="440" dy="0"><tspan class="t-num">5</tspan> ExecuteAsync(CommandInvocation)</tspan></text><path d="M600,308 H626 V326 H603" class="edge" marker-end="url(#sdC-ah)"/><text x="634" y="312" text-anchor="start" class="t-lbl halo"><tspan x="634" dy="0"><tspan class="t-num">6</tspan> tra command, kiểm actor, khoá theo player,</tspan><tspan x="634" dy="13">tính receiptId</tspan></text><path d="M600,392 H938" class="edge" marker-end="url(#sdC-ah)"/><text x="610" y="386" text-anchor="start" class="t-lbl halo"><tspan x="610" dy="0"><tspan class="t-num">7</tspan> GetAsync(receipt) (ngoài transaction)</tspan></text><path d="M940,450 H602" class="edge edge--muted dashed" marker-end="url(#sdC-ah-muted)"/><text x="610" y="444" text-anchor="start" class="t-lbl halo"><tspan x="610" dy="0"><tspan class="t-num">7a</tspan> receipt → replay, nhảy tới #13</tspan></text><path d="M600,480 H626 V498 H603" class="edge" marker-end="url(#sdC-ah)"/><text x="634" y="484" text-anchor="start" class="t-lbl halo"><tspan x="634" dy="0"><tspan class="t-num">8</tspan> ICommandGuard (ban theo nhóm command)</tspan></text><path d="M600,568 H938" class="edge" marker-end="url(#sdC-ah)"/><text x="610" y="549" text-anchor="start" class="t-lbl halo"><tspan x="610" dy="0"><tspan class="t-num">9</tspan> RunTransactionAsync bắt đầu;</tspan><tspan x="610" dy="13">GetManyAsync(Touches ∪ Reads + receipt)</tspan></text><path d="M600,606 H768" class="edge edge--accent" marker-end="url(#sdC-ah-accent)"/><text x="610" y="600" text-anchor="start" class="t-lbl halo"><tspan x="610" dy="0"><tspan class="t-num">10</tspan> HandleAsync(request, ctx)</tspan></text><path d="M770,644 H602" class="edge" marker-end="url(#sdC-ah)"/><text x="610" y="638" text-anchor="start" class="t-lbl halo"><tspan x="610" dy="0"><tspan class="t-num">10a</tspan> ctx.Get / ctx.Set / ctx.AddOutbox (chỉ chạm bộ đệm trong RAM)</tspan></text><path d="M770,682 H602" class="edge edge--muted dashed" marker-end="url(#sdC-ah-muted)"/><text x="610" y="676" text-anchor="start" class="t-lbl halo"><tspan x="610" dy="0"><tspan class="t-num">10b</tspan> CommandOutcome.Ok(result) hoặc Reject(code)</tspan></text><path d="M600,776 H938" class="edge edge--accent" marker-end="url(#sdC-ah-accent)"/><text x="610" y="757" text-anchor="start" class="t-lbl halo"><tspan x="610" dy="0"><tspan class="t-num">11</tspan> encode result; Insert/Replace aggregate (rev+1),</tspan><tspan x="610" dy="13">Insert claim, Insert receipt; commit</tspan></text><path d="M600,846 H1108" class="edge" marker-end="url(#sdC-ah)"/><text x="610" y="840" text-anchor="start" class="t-lbl halo"><tspan x="610" dy="0"><tspan class="t-num">12</tspan> TryRelayAsync (best effort; lỗi thì sweeper làm sau)</tspan></text><path d="M600,884 H432" class="edge edge--muted dashed" marker-end="url(#sdC-ah-muted)"/><text x="440" y="878" text-anchor="start" class="t-lbl halo"><tspan x="440" dy="0"><tspan class="t-num">13</tspan> CommandExecution (code, receiptId, result bytes, updates)</tspan></text><path d="M430,922 H92" class="edge edge--muted dashed" marker-end="url(#sdC-ah-muted)"/><text x="100" y="916" text-anchor="start" class="t-lbl halo"><tspan x="100" dy="0"><tspan class="t-num">14</tspan> CommandResponse (Protobuf, HTTP 200)</tspan></text><path d="M260,974 H92" class="edge edge--muted dashed" marker-end="url(#sdC-ah-muted)"/><text x="100" y="968" text-anchor="start" class="t-lbl halo"><tspan x="100" dy="0"><tspan class="t-num">14'</tspan> ErrorEnvelope (HTTP 4xx/5xx) từ ExceptionMiddleware</tspan></text></svg></div></figure>
+<p><strong>Lifeline</strong> (trái → phải):</p>
+<ol><li><code>Unity:<wbr> GameServerClient</code></li><li><code>ASP.<wbr>NET pipeline</code> (gom các middleware)</li><li><code>Endpoint (CommandEndpointFactory)</code></li><li><code>CommandRunner</code></li><li><code>Handler (IncrementHandler)</code></li><li><code>Couchbase (transaction)</code></li><li><code>OutboxRelay</code></li></ol>
+<p><strong>Thông điệp</strong> (đánh số đúng như mục 3):</p>
+<div class="table-wrap" role="region" aria-label="Bảng — 2. Sơ đồ sequence một command (Sơ đồ C)" tabindex="0"><table class="tbl"><thead><tr><th scope="col">#</th><th scope="col">Từ → Tới</th><th scope="col">Nhãn</th></tr></thead><tbody>
+<tr><td>1</td><td>Unity → pipeline</td><td><code>POST /<wbr>api/<wbr>v1/<wbr>counter/<wbr>increment</code> (Protobuf; <code>X-Request-Id</code>, <code>Authorization:<wbr> Bearer</code>, <code>X-Client-Version</code>, <code>X-Platform</code>, <code>X-Build-Id</code>)</td></tr>
+<tr><td>2</td><td>pipeline (tự gọi)</td><td><code>ExceptionMiddleware</code> → <code>CorrelationMiddleware</code> → routing → <code>GateMiddleware</code> → <code>ProfileEnforcementMiddleware</code> (xác thực Bearer) → timeout → rate limiter</td></tr>
+<tr><td>3</td><td>pipeline → Endpoint</td><td>gọi delegate của route</td></tr>
+<tr><td>4</td><td>Endpoint (tự gọi)</td><td>đọc body ≤ 64 KiB, kiểm requestId, parse Protobuf, <code>ToDomain</code> (đọc + validate param)</td></tr>
+<tr><td>5</td><td>Endpoint → CommandRunner</td><td><code>ExecuteAsync(CommandInvocation)</code></td></tr>
+<tr><td>6</td><td>CommandRunner (tự gọi)</td><td>tra command, kiểm actor, khoá theo player, tính <code>receiptId</code></td></tr>
+<tr><td>7</td><td>CommandRunner → Couchbase</td><td><code>GetAsync(receipt)</code> (ngoài transaction)</td></tr>
+<tr><td>7a</td><td>Couchbase → CommandRunner (nhánh <code>alt</code>: đã có receipt)</td><td>receipt → <strong>replay</strong>, nhảy tới #13</td></tr>
+<tr><td>8</td><td>CommandRunner (tự gọi)</td><td><code>ICommandGuard</code> (ban theo nhóm command)</td></tr>
+<tr><td>9</td><td>CommandRunner → Couchbase</td><td><code>RunTransactionAsync</code> bắt đầu; <code>GetManyAsync(Touches ∪ Reads + receipt)</code></td></tr>
+<tr><td>10</td><td>CommandRunner → Handler</td><td><code>HandleAsync(request, ctx)</code></td></tr>
+<tr><td>10a</td><td>Handler → CommandRunner</td><td><code>ctx.<wbr>Get</code> / <code>ctx.<wbr>Set</code> / <code>ctx.<wbr>AddOutbox</code> (chỉ chạm bộ đệm trong RAM)</td></tr>
+<tr><td>10b</td><td>Handler → CommandRunner</td><td>trả <code>CommandOutcome.<wbr>Ok(result)</code> hoặc <code>Reject(code)</code> (nhánh <code>alt</code> Reject: rollback, nhảy tới #13 với mã nghiệp vụ)</td></tr>
+<tr><td>11</td><td>CommandRunner → Couchbase</td><td>encode result; Insert/Replace aggregate (<code>rev+1</code>), Insert claim, Insert receipt; <strong>commit</strong></td></tr>
+<tr><td>12</td><td>CommandRunner → OutboxRelay</td><td><code>TryRelayAsync</code> (best effort; lỗi thì sweeper làm sau)</td></tr>
+<tr><td>13</td><td>CommandRunner → Endpoint</td><td><code>CommandExecution</code> (code, receiptId, result bytes, updates)</td></tr>
+<tr><td>14</td><td>Endpoint → Unity</td><td><code>CommandResponse</code> (Protobuf, HTTP 200)</td></tr>
+<tr><td>14'</td><td>pipeline → Unity (nhánh lỗi)</td><td><code>ErrorEnvelope</code> (HTTP 4xx/5xx) từ <code>ExceptionMiddleware</code></td></tr>
+</tbody></table></div>
+<p>Khung <code>loop &quot;tối đa 3 vòng&quot;</code> bao #7–#11 (runner chạy lại khi đua insert receipt/claim hoặc stale read); khung <code>transaction (có thể chạy lại handler)</code> bao #9–#11.</p>
+</section>
+<section class="doc-section" aria-labelledby="muc-3">
+<h2 id="muc-3">3. Đường đi chi tiết khi nhận một command <a class="anchor" href="#muc-3" aria-label="Liên kết tới mục này">#</a></h2>
+<p>Tham chiếu: <a class="path" href="../../src/GameServer.Platform.Web/Hosting/GameServerApplicationExtensions.cs"><code>src/<wbr>GameServer.<wbr>Platform.<wbr>Web/<wbr>Hosting/<wbr>GameServerApplicationExtensions.<wbr>cs</code></a> (thứ tự middleware ≈ dòng 64–80), <a class="path" href="../../src/GameServer.Platform.Web/Commands/CommandEndpointFactory.cs"><code>src/<wbr>GameServer.<wbr>Platform.<wbr>Web/<wbr>Commands/<wbr>CommandEndpointFactory.<wbr>cs</code></a>, <a class="path" href="../../src/GameServer.Platform/Commands/CommandRunner.cs"><code>src/<wbr>GameServer.<wbr>Platform/<wbr>Commands/<wbr>CommandRunner.<wbr>cs</code></a>.</p>
+<h3 id="buoc-1-unity-gui-request">Bước 1 — Unity gửi request <a class="anchor" href="#buoc-1-unity-gui-request" aria-label="Liên kết tới mục này">#</a></h3>
+<p><code>GameServerClient.<wbr>SendCommandAsync(route, request, resultParser)</code> (<a class="path" href="../../sdk/unity/com.gameserver.client/Runtime/Core/GameServerClient.cs"><code>sdk/<wbr>unity/<wbr>com.<wbr>gameserver.<wbr>client/<wbr>Runtime/<wbr>Core/<wbr>GameServerClient.<wbr>cs</code></a>): serialize body <strong>một lần</strong>, gửi <code>POST</code> Protobuf với header <code>X-Request-Id</code> (UUID mới), <code>X-Client-Version</code>, <code>X-Platform</code>, <code>X-Build-Id</code>, <code>Authorization:<wbr> Bearer &lt;token&gt;</code>. Khi retry (lỗi mạng, <code>COMMIT_<wbr>UNKNOWN_<wbr>RETRY</code>, <code>CONCURRENT_<wbr>UPDATE</code>, <code>RATE_<wbr>LIMITED</code>…) gửi lại <strong>đúng bytes và đúng <code>X-Request-Id</code></strong>.</p>
+<h3 id="buoc-2-kestrel-va-forwardedheaders">Bước 2 — Kestrel và <code>ForwardedHeaders</code> <a class="anchor" href="#buoc-2-kestrel-va-forwardedheaders" aria-label="Liên kết tới mục này">#</a></h3>
+<p>Kestrel nhận request. Nếu cấu hình reverse proxy (<code>GameServer:<wbr>Hosting:<wbr>ForwardedHeaders</code>), <code>UseForwardedHeaders</code> chạy đầu tiên để IP client lấy từ proxy tin cậy.</p>
+<h3 id="buoc-3-exceptionmiddleware-ngoai-cung">Bước 3 — <code>ExceptionMiddleware</code> (ngoài cùng) <a class="anchor" href="#buoc-3-exceptionmiddleware-ngoai-cung" aria-label="Liên kết tới mục này">#</a></h3>
+<p><a class="path" href="../../src/GameServer.Platform.Web/Middleware/ExceptionMiddleware.cs"><code>src/<wbr>GameServer.<wbr>Platform.<wbr>Web/<wbr>Middleware/<wbr>ExceptionMiddleware.<wbr>cs</code></a>. Bọc toàn bộ phần sau. Đổi exception thành response lỗi: <code>GameServerException</code> → mã trong catalog; body Protobuf hỏng → 400 <code>BAD_<wbr>REQUEST</code>; body quá lớn → <code>PAYLOAD_<wbr>TOO_<wbr>LARGE</code>; exception lạ → 500 <code>INTERNAL</code> (không lộ chi tiết). Route không tồn tại → 404 <code>NOT_<wbr>FOUND</code>. Ghi bằng <code>ErrorResponseWriter</code> (Protobuf <code>ErrorEnvelope</code> cho Player API, JSON cho GM).</p>
+<h3 id="buoc-4-correlationmiddleware">Bước 4 — <code>CorrelationMiddleware</code> <a class="anchor" href="#buoc-4-correlationmiddleware" aria-label="Liên kết tới mục này">#</a></h3>
+<p><a class="path" href="../../src/GameServer.Platform.Web/Middleware/CorrelationMiddleware.cs"><code>src/<wbr>GameServer.<wbr>Platform.<wbr>Web/<wbr>Middleware/<wbr>CorrelationMiddleware.<wbr>cs</code></a>. Đọc <code>X-Request-Id</code>: UUID hợp lệ → dùng làm correlation id <strong>và</strong> requestId của command; không hợp lệ → server tự sinh id chỉ để log (command sẽ bị từ chối ở bước 8). Trả lại header <code>X-Request-Id</code>, gắn vào log scope và trace.</p>
+<h3 id="buoc-5-routing-phan-loai-lan-1">Bước 5 — Routing (<strong>phân loại lần 1</strong>) <a class="anchor" href="#buoc-5-routing-phan-loai-lan-1" aria-label="Liên kết tới mục này">#</a></h3>
+<p><code>app.<wbr>UseRouting()</code> chọn endpoint theo method + route. Endpoint của command được tạo lúc khởi động bởi <code>MapPlayerCommand</code> (bước 8), mang theo tên operation (vd. <code>&quot;counter.<wbr>increment&quot;</code>) và metadata profile <code>Player</code>, gate, timeout, rate limiter.</p>
+<h3 id="buoc-6-gatemiddleware-truoc-xac-thuc">Bước 6 — <code>GateMiddleware</code> (trước xác thực) <a class="anchor" href="#buoc-6-gatemiddleware-truoc-xac-thuc" aria-label="Liên kết tới mục này">#</a></h3>
+<p><a class="path" href="../../src/GameServer.Platform.Web/Middleware/GateMiddleware.cs"><code>src/<wbr>GameServer.<wbr>Platform.<wbr>Web/<wbr>Middleware/<wbr>GateMiddleware.<wbr>cs</code></a>. Chỉ áp cho endpoint có <code>GateMetadata</code> (Player API và login). <code>StoreGateEvaluator</code> đọc document <code>gate</code> (cache ≤ <code>GameServer:<wbr>Gate:<wbr>CacheSeconds</code>, mặc định 10 s): đang bảo trì → 503 <code>MAINTENANCE</code>; <code>X-Client-Version</code> thấp hơn tối thiểu của <code>X-Platform</code> → 426 <code>UPDATE_<wbr>REQUIRED</code>.</p>
+<h3 id="buoc-7-profileenforcementmiddleware-xac-thuc-pha">Bước 7 — <code>ProfileEnforcementMiddleware</code> (xác thực + phân quyền) <a class="anchor" href="#buoc-7-profileenforcementmiddleware-xac-thuc-pha" aria-label="Liên kết tới mục này">#</a></h3>
+<p><a class="path" href="../../src/GameServer.Platform.Web/Middleware/ProfileEnforcementMiddleware.cs"><code>src/<wbr>GameServer.<wbr>Platform.<wbr>Web/<wbr>Middleware/<wbr>ProfileEnforcementMiddleware.<wbr>cs</code></a>. Pipeline <strong>không</strong> dùng <code>UseAuthentication</code>; middleware này xác thực theo profile của endpoint:</p>
+<ul><li>Endpoint không có profile → 403 (deny-by-default).</li><li>Đặt giới hạn body theo profile (<code>GameServer:<wbr>Limits:<wbr>PlayerBodyBytes</code> = 64 KiB).</li><li>Profile <code>Player</code> → gọi scheme <code>PlayerBearer</code> = <code>PlayerBearerAuthenticationHandler</code> (<a class="path" href="../../src/GameServer.Modules.Identity.Adapters/PlayerBearerAuthenticationHandler.cs"><code>src/<wbr>GameServer.<wbr>Modules.<wbr>Identity.<wbr>Adapters/<wbr>PlayerBearerAuthenticationHandler.<wbr>cs</code></a>): token → session → profile; kiểm theo thứ tự tài khoản đã xoá (<code>ACCOUNT_<wbr>DELETED</code>) → bị khoá login (<code>ACCOUNT_<wbr>SUSPENDED</code>) → phiên cũ (<code>session.<wbr>Epoch &lt; profile.<wbr>SessionEpoch</code> → <code>SESSION_<wbr>REPLACED</code>). Thất bại → <code>UNAUTHENTICATED</code> hoặc mã tương ứng.</li><li>Profile <code>Gm</code> → cookie GM, CSRF cho thao tác ghi, permission của endpoint.</li></ul>
+<p>Sau đó <code>UseRequestTimeouts</code> (Player 10 s) và <code>UseRateLimiter</code> (concurrency command toàn instance, mặc định 200 + hàng đợi; quá thì <code>RATE_<wbr>LIMITED</code>).</p>
+<h3 id="buoc-8-endpoint-cua-mapplayercommand-doc-param">Bước 8 — Endpoint của <code>MapPlayerCommand</code> (<strong>đọc param</strong>) <a class="anchor" href="#buoc-8-endpoint-cua-mapplayercommand-doc-param" aria-label="Liên kết tới mục này">#</a></h3>
+<p><code>CommandEndpointFactory.<wbr>MapCommand</code> (≈ dòng 88–130):</p>
+<ol><li><code>ProtobufBinding.<wbr>ReadBodyAsync(http, options.<wbr>Limits.<wbr>PlayerBodyBytes)</code> — đọc raw body.</li><li><code>CorrelationMiddleware.<wbr>GetClientRequestId(http)</code> — thiếu hoặc không phải UUID → 400 <code>BAD_<wbr>REQUEST</code>.</li><li><code>ProtobufBinding.<wbr>Parse&lt;TWireRequest&gt;(body)</code> — message wire (vd. <code>Sample.<wbr>Counter.<wbr>Protocol.<wbr>V1.<wbr>IncrementRequest</code>).</li><li><code>ActorContextAccessor.<wbr>GetActor(http)</code> — actor (playerId) từ bước 7.</li><li><code>ReceiptIds.<wbr>BodyHash(body)</code> — SHA-256 của raw body (để phát hiện cùng requestId mà khác body).</li><li><strong><code>toDomain(wire)</code></strong> — hàm của module: validate và đổi wire → record domain (vd. <code>IncrementCommand</code>). Lỗi → ném <code>GameServerException(CoreErrorCodes.<wbr>BadRequest, ...<wbr>)</code> → 400.</li><li>Tạo <code>CommandInvocation(operation, actor, requestId, bodyHash, request, encodeResult)</code> rồi gọi <code>ICommandRunner.<wbr>ExecuteAsync</code>.</li></ol>
+<p>Biến thể <code>toDomainAsync</code> (IAP, <code>identity.<wbr>link</code>): gọi <code>runner.<wbr>TryReplayAsync</code> <strong>trước</strong> để retry không gọi lại store/provider.</p>
+<h3 id="buoc-9-commandrunner-phan-loai-lan-2-get-db-logi">Bước 9 — <code>CommandRunner</code> (<strong>phân loại lần 2, get DB, logic, save DB</strong>) <a class="anchor" href="#buoc-9-commandrunner-phan-loai-lan-2-get-db-logi" aria-label="Liên kết tới mục này">#</a></h3>
+<p><a class="path" href="../../src/GameServer.Platform/Commands/CommandRunner.cs"><code>src/<wbr>GameServer.<wbr>Platform/<wbr>Commands/<wbr>CommandRunner.<wbr>cs</code></a>:</p>
+<p><strong>9.1 <code>ExecuteCoreAsync</code></strong> (≈ dòng 55–113)</p>
+<ul><li><code>registry.<wbr>GetCommand(invocation.<wbr>Operation)</code> → <code>CommandRegistration</code> (descriptor + kiểu handler). Operation không đăng ký → 404 <code>NOT_<wbr>FOUND</code>.</li><li><code>EnsureActorAllowed</code>: command Player chỉ cho actor Player, command GM cần permission.</li><li><code>limiter.<wbr>AcquireAsync(playerId)</code> (<code>PerPlayerCommandLimiter</code>): mỗi player chạy <strong>một</strong> command một lúc trên instance, hàng đợi <code>GameServer:<wbr>Commands:<wbr>PerPlayerQueueLimit</code> (2); đầy → 429 <code>RATE_<wbr>LIMITED</code>.</li><li><code>ReceiptIds.<wbr>Compute(actorId, playerId, operation, requestId)</code> → <code>receiptId</code>, key <code>receipts/<wbr>rcpt::<wbr>{receiptId}</code>.</li><li><strong>Đường replay nhanh</strong> (ngoài transaction): <code>store.<wbr>GetAsync(receiptKey)</code>; có receipt trong replay window (24 h, <code>GameServer:<wbr>Commands:<wbr>ReplayWindowHours</code>) → <code>ReplayAsync</code>: body hash khác → 409 <code>IDEMPOTENCY_<wbr>PAYLOAD_<wbr>MISMATCH</code>; giống → trả <code>code</code>, <code>receiptId</code>, <code>result</code> y hệt lần đầu, <code>replayed = true</code>, kèm state <strong>hiện hành</strong> của các aggregate client-visible.</li><li>Các <code>ICommandGuard</code> (vd. <code>BanCommandGuard</code>, <a class="path" href="../../src/GameServer.Modules.Identity.Adapters/BanCommandGuard.cs"><code>src/<wbr>GameServer.<wbr>Modules.<wbr>Identity.<wbr>Adapters/<wbr>BanCommandGuard.<wbr>cs</code></a>) — chỉ chặn lần chạy mới; bị chặn → <code>ACCOUNT_<wbr>SUSPENDED</code>.</li><li>Gọi <code>ExecuteTransactionAsync</code>; đua insert receipt/claim (<code>DocumentExistsException</code>) hoặc <code>StaleReadException</code> → chạy lại tối đa 3 vòng (vòng sau thường gặp receipt và replay); hết → 409 <code>CONCURRENT_<wbr>UPDATE</code>.</li></ul>
+<p><strong>9.2 <code>ExecuteTransactionAsync</code></strong> (≈ dòng 161–239)</p>
+<ul><li>Dựng <code>keys</code> = aggregate trong <code>Touches ∪ Reads</code> (key <code>pa_<wbr>{aggregateId}/<wbr>{playerId}</code>) + receipt key.</li><li><code>store.<wbr>RunTransactionAsync(tx =&gt; RunAttemptAsync(...<wbr>), ExpirationSeconds = 10)</code>. Từ đây <strong>không</strong> dùng token huỷ của request: client ngắt kết nối không làm hỏng commit.</li><li>Lỗi transaction: commit không rõ → 503 <code>COMMIT_<wbr>UNKNOWN_<wbr>RETRY</code>; hết hạn → 409 <code>CONCURRENT_<wbr>UPDATE</code>; thất bại → 500 <code>INTERNAL</code>.</li></ul>
+<p><strong>9.3 <code>RunAttemptAsync</code></strong> (≈ dòng 241–347) — một lần thử trong transaction:</p>
+<ol><li><strong>Get DB:</strong> <code>tx.<wbr>GetManyAsync(keys)</code>. Nếu receipt đã có (instance khác vừa commit) → replay.</li><li><code>serializer.<wbr>Load(descriptor, playerId, document)</code> cho từng aggregate: không có document → state mặc định (<code>createDefault</code>), <code>rev = 0</code>; <code>schemaVersion</code> cũ → chạy upgrader; mới hơn code → 500.</li><li>Tạo <code>CommandContext</code> (actor, <code>now</code> = <code>IClock.<wbr>UtcNow</code> cố định cho lần thử, config, aggregate đã đọc).</li><li><code>ActivatorUtilities.<wbr>CreateInstance(services, registration.<wbr>HandlerType)</code> rồi <code>registration.<wbr>InvokeAsync(handler, request, ctx)</code> → <strong>handler chạy logic</strong>.</li><li>Outcome không OK → ném nội bộ → <strong>rollback</strong>, không receipt. Mã HTTP 200 (mã nghiệp vụ) → <code>CommandResponse</code> với <code>code</code>; mã khác 200 → <code>ErrorEnvelope</code>.</li><li><code>invocation.<wbr>EncodeResult(result)</code> → bytes kết quả (hàm <code>toWire</code> của module chạy <strong>ở đây</strong>, trong transaction); &gt; 512 B (<code>GameServer:<wbr>Commands:<wbr>ResultCompactMaxBytes</code>) → lỗi lập trình (500).</li><li><strong>Save DB:</strong> với mỗi aggregate trong <code>Touches</code> mà handler đã <code>Set</code> <strong>và</strong> state thực sự đổi: <code>newRev = rev + 1</code>, <code>serializer.<wbr>BuildDocument</code> (&gt; 64 KiB → <code>AGGREGATE_<wbr>TOO_<wbr>LARGE</code>), rồi <code>tx.<wbr>InsertAsync</code> (document mới) hoặc <code>tx.<wbr>ReplaceAsync</code>. Aggregate không đổi giữ nguyên <code>rev</code>.</li><li>Insert claim marker (<code>ctx.<wbr>TryClaimAsync</code>).</li><li><code>EnsureAudit</code>: command GM phải có đúng 1 audit, command khác 0.</li><li><code>BuildReceipt</code> (requestId, bodyHash, resultCode, resultCompact, các aggregate đã ghi và rev mới, outbox, commit time) — &gt; 4 KiB → 500; insert receipt. Kết thúc lambda → store <strong>commit</strong>.</li></ol>
+<p><strong>9.4 Sau commit</strong> (≈ dòng 212–238)</p>
+<ul><li><code>relay.<wbr>TryRelayAsync(...<wbr>)</code> nếu receipt có outbox (<code>GameServer:<wbr>Outbox:<wbr>InlineRelayEnabled</code>); thất bại thì <code>OutboxSweeper</code> giao lại.</li><li>Dựng <code>AggregateChange</code> cho các aggregate <strong>client-visible</strong> đã ghi → <code>CommandExecution</code>.</li></ul>
+<h3 id="buoc-10-response">Bước 10 — Response <a class="anchor" href="#buoc-10-response" aria-label="Liên kết tới mục này">#</a></h3>
+<p><code>CommandEndpointFactory.<wbr>BuildResponse</code> (≈ dòng 132–157): <code>CommandResponse</code> (<a class="path" href="../../proto/gameserver/core/v1/core.proto"><code>proto/<wbr>gameserver/<wbr>core/<wbr>v1/<wbr>core.<wbr>proto</code></a>) gồm <code>code</code>, <code>code_<wbr>number</code>, <code>receipt_<wbr>id</code> (rỗng khi bị từ chối), <code>result</code> (bytes kết quả của module), <code>config_<wbr>version</code>, <code>server_<wbr>time_<wbr>utc_<wbr>ms</code>, <code>replayed</code>, <code>updates</code> (mỗi aggregate đổi: <code>id</code>, <code>base_<wbr>rev</code>, <code>new_<wbr>rev</code>, <code>payload</code> qua wire mapper đăng ký bằng <code>AddAggregateWireMapper</code>, <code>full = true</code>). Ghi bằng <code>ProtobufBinding.<wbr>WriteAsync</code>, HTTP 200.</p>
+<p>Lỗi ở bất cứ bước nào → <code>ExceptionMiddleware</code> ghi <code>ErrorEnvelope</code> (<code>code</code>, <code>code_<wbr>number</code>, <code>message</code>, <code>request_<wbr>id</code>, <code>retryable</code>, <code>retry_<wbr>after_<wbr>ms</code>, <code>server_<wbr>time_<wbr>utc_<wbr>ms</code>, <code>config_<wbr>version</code>, <code>details</code>).</p>
+<h3 id="buoc-11-unity-nhan-ket-qua">Bước 11 — Unity nhận kết quả <a class="anchor" href="#buoc-11-unity-nhan-ket-qua" aria-label="Liên kết tới mục này">#</a></h3>
+<p><code>SendCommandAsync</code> áp <code>updates</code> vào <code>client.<wbr>Sections</code> theo <code>rev</code>; nếu lệch thì tự gọi snapshot cho section đó; parse <code>result</code> khi <code>code == &quot;OK&quot;</code>. Sau khi server đã trả lời, phương thức <strong>không ném lỗi</strong> (báo qua <code>SectionsStale</code>, <code>ResultUnreadable</code>) để game không vô tình gửi lại bằng requestId mới.</p>
+<h3 id="bang-tom-tat-ma-tra-ve">Bảng tóm tắt mã trả về <a class="anchor" href="#bang-tom-tat-ma-tra-ve" aria-label="Liên kết tới mục này">#</a></h3>
+<div class="table-wrap" role="region" aria-label="Bảng — Bảng tóm tắt mã trả về" tabindex="0"><table class="tbl wide"><thead><tr><th scope="col">Tình huống</th><th scope="col">HTTP</th><th scope="col">Body</th><th scope="col">Có receipt?</th></tr></thead><tbody>
+<tr><td>Thành công</td><td>200</td><td><code>CommandResponse</code>, <code>code = &quot;OK&quot;</code></td><td>có</td></tr>
+<tr><td>Từ chối nghiệp vụ (<code>Reject</code> với mã HTTP 200, vd. <code>COUNTER_<wbr>LIMIT_<wbr>EXCEEDED</code>)</td><td>200</td><td><code>CommandResponse</code>, <code>code</code> = mã, <code>receipt_<wbr>id</code> rỗng, không <code>updates</code></td><td><strong>không</strong> (retry được xử lý như mới)</td></tr>
+<tr><td>Commit kèm mã (<code>CommandOutcome.<wbr>Commit(result, code)</code>)</td><td>200</td><td><code>CommandResponse</code>, <code>code</code> = mã, có <code>updates</code></td><td>có</td></tr>
+<tr><td>Replay cùng body</td><td>200</td><td>như lần đầu, <code>replayed = true</code></td><td>(dùng receipt cũ)</td></tr>
+<tr><td>Cùng requestId, khác body</td><td>409</td><td><code>ErrorEnvelope</code> <code>IDEMPOTENCY_<wbr>PAYLOAD_<wbr>MISMATCH</code></td><td>—</td></tr>
+<tr><td>Thiếu/sai <code>X-Request-Id</code>, body sai, <code>ToDomain</code> từ chối</td><td>400</td><td><code>ErrorEnvelope</code> <code>BAD_<wbr>REQUEST</code></td><td>—</td></tr>
+<tr><td>Bảo trì / client cũ</td><td>503 / 426</td><td><code>MAINTENANCE</code> / <code>UPDATE_<wbr>REQUIRED</code></td><td>—</td></tr>
+<tr><td>Commit không rõ</td><td>503</td><td><code>COMMIT_<wbr>UNKNOWN_<wbr>RETRY</code> (retryable)</td><td>có thể đã commit → retry cùng bytes sẽ replay</td></tr>
+</tbody></table></div>
+<p>Test minh hoạ: <a class="path" href="../../tests/GameServer.Platform.Web.Tests/CommandPipelineTests.cs"><code>tests/<wbr>GameServer.<wbr>Platform.<wbr>Web.<wbr>Tests/<wbr>CommandPipelineTests.<wbr>cs</code></a>.</p>
+</section>
+<section class="doc-section" aria-labelledby="muc-4">
+<h2 id="muc-4">4. Walkthrough: module mẫu <code>Sample.<wbr>Counter</code> (code thật) <a class="anchor" href="#muc-4" aria-label="Liên kết tới mục này">#</a></h2>
+<p><a class="path" href="../../modules/Sample.Counter"><code>modules/<wbr>Sample.<wbr>Counter</code></a> có một command <code>counter.<wbr>increment</code>. Các mảnh dưới đây là <strong>toàn bộ</strong> những gì cần viết cho một command. Contract: <a class="path" href="../../docs/pcr/sample-counter.md"><code>docs/<wbr>pcr/<wbr>sample-counter.<wbr>md</code></a>.</p>
+<h3 id="muc-4-1">4.1 File <code>.<wbr>proto</code> — contract wire <a class="anchor" href="#muc-4-1" aria-label="Liên kết tới mục này">#</a></h3>
+<p><a class="path" href="../../modules/Sample.Counter/Sample.Counter.Adapters/Protos/sample_counter.proto"><code>modules/<wbr>Sample.<wbr>Counter/<wbr>Sample.<wbr>Counter.<wbr>Adapters/<wbr>Protos/<wbr>sample_<wbr>counter.<wbr>proto</code></a> (trích):</p>
+<div class="code-block"><div class="code-head"><span class="code-lang">Protobuf</span></div><pre class="code" data-lang="proto"><code><span class="hl-kw">syntax</span> = <span class="hl-str">&quot;proto3&quot;</span>;
+
+<span class="hl-kw">package</span> sample.counter.v1;
+
+<span class="hl-kw">option</span> csharp_namespace = <span class="hl-str">&quot;Sample.Counter.Protocol.V1&quot;</span>;
+
+<span class="hl-com">// State của aggregate `counter` trên wire (Section.payload).</span>
+<span class="hl-kw">message</span> CounterState {
+  <span class="hl-kw">int64</span> value = <span class="hl-num">1</span>;
+  <span class="hl-kw">int32</span> increments = <span class="hl-num">2</span>;
+}
+
+<span class="hl-com">// POST /api/v1/counter/increment  (header X-Request-Id bắt buộc)</span>
+<span class="hl-kw">message</span> IncrementRequest {
+  <span class="hl-kw">int64</span> by = <span class="hl-num">1</span>;
+  <span class="hl-kw">string</span> note = <span class="hl-num">2</span>;  <span class="hl-com">// tuỳ chọn, ≤ 64 ký tự; đi vào outbox counter_log</span>
+}
+
+<span class="hl-com">// CommandResponse.result</span>
+<span class="hl-kw">message</span> IncrementResult {
+  <span class="hl-kw">int64</span> value = <span class="hl-num">1</span>;
+}</code></pre></div>
+<p>Biên dịch bằng <code>Grpc.<wbr>Tools</code> trong <code>Sample.<wbr>Counter.<wbr>Adapters.<wbr>csproj</code>:</p>
+<div class="code-block"><div class="code-head"><span class="code-lang">XML</span></div><pre class="code" data-lang="xml"><code><span class="hl-tag">&lt;Protobuf</span> <span class="hl-attr">Include</span>=<span class="hl-str">&quot;Protos\sample_counter.proto&quot;</span> <span class="hl-attr">GrpcServices</span>=<span class="hl-str">&quot;None&quot;</span> <span class="hl-tag">/&gt;</span></code></pre></div>
+<p>Ghi chú: chỉ cần message request và result của command. Wrapper chung (<code>CommandResponse</code>, <code>SectionUpdate</code>, <code>ErrorEnvelope</code>) nằm ở <a class="path" href="../../proto/gameserver/core/v1/core.proto"><code>proto/<wbr>gameserver/<wbr>core/<wbr>v1/<wbr>core.<wbr>proto</code></a>, module không định nghĩa lại.</p>
+<h3 id="muc-4-2">4.2 Aggregate, record command/result, error code — project nghiệp vụ <a class="anchor" href="#muc-4-2" aria-label="Liên kết tới mục này">#</a></h3>
+<p><a class="path" href="../../modules/Sample.Counter/Sample.Counter/CounterModel.cs"><code>modules/<wbr>Sample.<wbr>Counter/<wbr>Sample.<wbr>Counter/<wbr>CounterModel.<wbr>cs</code></a> (trích):</p>
+<div class="code-block"><div class="code-head"><span class="code-lang">C#</span></div><pre class="code" data-lang="csharp"><code><span class="hl-kw">public</span> <span class="hl-kw">sealed</span> <span class="hl-kw">record</span> CounterState
+{
+    <span class="hl-kw">public</span> <span class="hl-kw">long</span> Value { <span class="hl-kw">get</span>; <span class="hl-kw">init</span>; }
+
+    <span class="hl-kw">public</span> <span class="hl-kw">int</span> Increments { <span class="hl-kw">get</span>; <span class="hl-kw">init</span>; }
+}
+
+<span class="hl-kw">public</span> <span class="hl-kw">sealed</span> <span class="hl-kw">record</span> IncrementCommand(<span class="hl-kw">long</span> By, <span class="hl-kw">string</span>? Note);
+
+<span class="hl-kw">public</span> <span class="hl-kw">sealed</span> <span class="hl-kw">record</span> IncrementResult(<span class="hl-kw">long</span> Value);
+
+<span class="hl-kw">public</span> <span class="hl-kw">static</span> <span class="hl-kw">class</span> CounterAggregates
+{
+    <span class="hl-kw">public</span> <span class="hl-kw">const</span> <span class="hl-kw">string</span> Counter = <span class="hl-str">&quot;counter&quot;</span>;
+
+    <span class="hl-kw">public</span> <span class="hl-kw">static</span> PlayerAggregateDescriptor&lt;CounterState&gt; CounterDescriptor { <span class="hl-kw">get</span>; } =
+        <span class="hl-kw">new</span>(Counter, schemaVersion: <span class="hl-num">2</span>, clientVisible: <span class="hl-kw">true</span>, createDefault: () =&gt; <span class="hl-kw">new</span> CounterState(), upgraders: [V1ToV2]);
+}
+
+<span class="hl-kw">public</span> <span class="hl-kw">static</span> <span class="hl-kw">class</span> CounterErrors
+{
+    <span class="hl-kw">public</span> <span class="hl-kw">static</span> <span class="hl-kw">readonly</span> ErrorCode LimitExceeded = <span class="hl-kw">new</span>(<span class="hl-num">10001</span>, <span class="hl-str">&quot;COUNTER_LIMIT_EXCEEDED&quot;</span>, <span class="hl-num">200</span>, <span class="hl-kw">false</span>, <span class="hl-str">&quot;The increment exceeds the allowed amount.&quot;</span>);
+    <span class="hl-kw">public</span> <span class="hl-kw">static</span> <span class="hl-kw">readonly</span> ErrorCode InvalidAmount = <span class="hl-kw">new</span>(<span class="hl-num">10002</span>, <span class="hl-str">&quot;COUNTER_INVALID_AMOUNT&quot;</span>, <span class="hl-num">200</span>, <span class="hl-kw">false</span>, <span class="hl-str">&quot;The increment must be positive.&quot;</span>);
+
+    <span class="hl-kw">public</span> <span class="hl-kw">static</span> ErrorCodeSet All { <span class="hl-kw">get</span>; } = <span class="hl-kw">new</span>(<span class="hl-num">10000</span>, <span class="hl-num">10099</span>, LimitExceeded, InvalidAmount);
+}</code></pre></div>
+<ul><li>Record command/result là <strong>type domain</strong>, không phải message Protobuf (test kiến trúc <code>Command_<wbr>handlers_<wbr>receive_<wbr>domain_<wbr>types_<wbr>not_<wbr>wire_<wbr>messages</code> chặn).</li><li><code>ErrorCode(number, name, httpStatus, retryable, message)</code>: mã nghiệp vụ dùng HTTP <strong>200</strong>. Mỗi module một dải số riêng, không chồng dải đã dùng (core 0–999, Counter 10000–10099, Economy 11000–11099, IAP 12000–12099, GM 13000–13099, Identity 14000–14099, SampleGame 40000–40099, template 90000–90099). Tên viết <code>UPPER_<wbr>SNAKE_<wbr>CASE</code>.</li><li>Aggregate mới: id dạng <code>[a-z][a-z0-9_<wbr>]{1,31}</code>, lưu ở collection <code>pa_<wbr>{id}</code>. <code>clientVisible:<wbr> true</code> thì adapter <strong>phải</strong> đăng ký wire mapper (mục 4.5), nếu không host không khởi động.</li></ul>
+<h3 id="muc-4-3">4.3 <code>CommandDescriptor</code> và handler — logic <a class="anchor" href="#muc-4-3" aria-label="Liên kết tới mục này">#</a></h3>
+<p><a class="path" href="../../modules/Sample.Counter/Sample.Counter/IncrementHandler.cs"><code>modules/<wbr>Sample.<wbr>Counter/<wbr>Sample.<wbr>Counter/<wbr>IncrementHandler.<wbr>cs</code></a> (trích):</p>
+<div class="code-block"><div class="code-head"><span class="code-lang">C#</span></div><pre class="code" data-lang="csharp"><code><span class="hl-kw">public</span> <span class="hl-kw">sealed</span> <span class="hl-kw">class</span> IncrementHandler(ICounterLimitPolicy policy) : ICommandHandler&lt;IncrementCommand, IncrementResult&gt;
+{
+    <span class="hl-kw">public</span> <span class="hl-kw">const</span> <span class="hl-kw">string</span> Operation = <span class="hl-str">&quot;counter.increment&quot;</span>;
+    <span class="hl-kw">public</span> <span class="hl-kw">const</span> <span class="hl-kw">string</span> LogKind = <span class="hl-str">&quot;counter_log&quot;</span>;
+
+    <span class="hl-kw">public</span> <span class="hl-kw">static</span> CommandDescriptor Descriptor { <span class="hl-kw">get</span>; } = <span class="hl-kw">new</span>(Operation, touches: [CounterAggregates.Counter]);
+
+    <span class="hl-kw">public</span> ValueTask&lt;CommandOutcome&lt;IncrementResult&gt;&gt; HandleAsync(IncrementCommand request, ICommandContext context)
+    {
+        <span class="hl-kw">if</span> (request.By &lt;= <span class="hl-num">0</span>)
+        {
+            <span class="hl-kw">return</span> ValueTask.FromResult(CommandOutcome&lt;IncrementResult&gt;.Reject(CounterErrors.InvalidAmount));
+        }
+
+        <span class="hl-kw">if</span> (request.By &gt; policy.MaxPerIncrement)
+        {
+            <span class="hl-kw">return</span> ValueTask.FromResult(CommandOutcome&lt;IncrementResult&gt;.Reject(CounterErrors.LimitExceeded));
+        }
+
+        <span class="hl-kw">var</span> state = context.Get&lt;CounterState&gt;(CounterAggregates.Counter);
+        <span class="hl-kw">var</span> next = state <span class="hl-kw">with</span> { Value = <span class="hl-kw">checked</span>(state.Value + request.By), Increments = state.Increments + <span class="hl-num">1</span> };
+        context.Set(CounterAggregates.Counter, next);
+        context.AddOutbox(LogKind, <span class="hl-kw">new</span> CounterLogEntry(request.By, request.Note, next.Value));
+        <span class="hl-kw">return</span> ValueTask.FromResult(CommandOutcome&lt;IncrementResult&gt;.Ok(<span class="hl-kw">new</span> IncrementResult(next.Value)));
+    }
+}</code></pre></div>
+<p>Đọc đoạn này theo mô hình của bạn:</p>
+<ul><li><code>Descriptor</code>: <code>touches:<wbr> [counter]</code> = &quot;command này đọc và có thể ghi aggregate <code>counter</code>&quot;. Muốn chỉ đọc thêm aggregate khác thì thêm <code>reads:<wbr> [...<wbr>]</code>. Framework dựa vào đây để <strong>get DB</strong> trước khi gọi handler.</li><li><code>context.<wbr>Get&lt;CounterState&gt;(...<wbr>)</code> = dữ liệu đã được framework đọc sẵn (bản sao, sửa thoải mái).</li><li><code>context.<wbr>Set(...<wbr>)</code> = &quot;save&quot; <strong>vào bộ đệm</strong>; framework ghi thật sau khi handler trả <code>Ok</code>.</li><li><code>context.<wbr>AddOutbox(...<wbr>)</code> = hiệu ứng phụ commit cùng transaction.</li><li><code>Reject(...<wbr>)</code> = không ghi gì.</li><li>Policy <code>ICounterLimitPolicy</code> được tiêm qua constructor (thay được, mục 7).</li></ul>
+<p>Các khả năng khác của <code>ICommandContext</code> (<a class="path" href="../../src/GameServer.Core/Commands/ICommandHandler.cs"><code>src/<wbr>GameServer.<wbr>Core/<wbr>Commands/<wbr>ICommandHandler.<wbr>cs</code></a>): <code>Actor</code>, <code>Now</code> (giờ server cố định cho lần thử), <code>Config</code>/<code>ConfigVersion</code> (game config), <code>TryClaimAsync(collection, key)</code> (hiệu ứng &quot;chỉ một lần&quot;, cần khai <code>maxClaimMarkers</code> trong descriptor), <code>NewId(purpose)</code> / <code>NewSeed(purpose)</code> (id và seed ngẫu nhiên ổn định qua các lần retry). Extension: <code>ctx.<wbr>AddAudit(...<wbr>)</code> (GM, <a class="path" href="../../src/GameServer.Core/Commands/Audit.cs"><code>src/<wbr>GameServer.<wbr>Core/<wbr>Commands/<wbr>Audit.<wbr>cs</code></a>), <code>ctx.<wbr>AddAnalyticsEvent(...<wbr>)</code> (<a class="path" href="../../src/GameServer.Core/Analytics/AnalyticsEvents.cs"><code>src/<wbr>GameServer.<wbr>Core/<wbr>Analytics/<wbr>AnalyticsEvents.<wbr>cs</code></a>).</p>
+<h3 id="muc-4-4">4.4 <code>ModuleDescriptor</code> — đăng ký command <a class="anchor" href="#muc-4-4" aria-label="Liên kết tới mục này">#</a></h3>
+<p><a class="path" href="../../modules/Sample.Counter/Sample.Counter/CounterModuleDefinition.cs"><code>modules/<wbr>Sample.<wbr>Counter/<wbr>Sample.<wbr>Counter/<wbr>CounterModuleDefinition.<wbr>cs</code></a> (trích):</p>
+<div class="code-block"><div class="code-head"><span class="code-lang">C#</span></div><pre class="code" data-lang="csharp"><code><span class="hl-kw">public</span> <span class="hl-kw">static</span> ModuleDescriptor Describe() =&gt; <span class="hl-kw">new</span>()
+{
+    Name = ModuleName,
+    Version = <span class="hl-str">&quot;0.1.0&quot;</span>,
+    DependsOn = [<span class="hl-str">&quot;identity&quot;</span>],
+    Permissions = [ReadPermission],
+    <span class="hl-com">// Log entries keep their history with the player id anonymized (PRIV-01, FR-019).</span>
+    Collections = [<span class="hl-kw">new</span> CollectionSpec(LogCollection, Deletion: DeletionTreatment.Anonymize)],
+    Aggregates = [CounterAggregates.CounterDescriptor],
+    Commands = [Command.Define&lt;IncrementCommand, IncrementResult&gt;(IncrementHandler.Descriptor).HandledBy&lt;IncrementHandler&gt;()],
+    ErrorCodes = CounterErrors.All,
+    OutboxProjections = [<span class="hl-kw">new</span> OutboxProjection(IncrementHandler.LogKind, LogCollection)],
+};</code></pre></div>
+<ul><li><code>Commands</code>: mỗi command một dòng <code>Command.<wbr>Define&lt;TReq, TRes&gt;(descriptor).<wbr>HandledBy&lt;THandler&gt;()</code>. Không có auto-discovery.</li><li>Collection phụ (như <code>counter_<wbr>log</code>) <strong>bắt buộc</strong> khai <code>Deletion:</code> (từ slice 010), nếu không host không khởi động.</li><li>Handler <strong>không</strong> cần đăng ký DI; runner tạo nó bằng <code>ActivatorUtilities</code> mỗi lần thử, dependency trong constructor lấy từ DI.</li></ul>
+<h3 id="muc-4-5">4.5 Adapter: đăng ký DI, wire mapper, <code>MapPlayerCommand</code>, <code>ToDomain</code> <a class="anchor" href="#muc-4-5" aria-label="Liên kết tới mục này">#</a></h3>
+<p><a class="path" href="../../modules/Sample.Counter/Sample.Counter.Adapters/CounterModule.cs"><code>modules/<wbr>Sample.<wbr>Counter/<wbr>Sample.<wbr>Counter.<wbr>Adapters/<wbr>CounterModule.<wbr>cs</code></a> (trích):</p>
+<div class="code-block"><div class="code-head"><span class="code-lang">C#</span></div><pre class="code" data-lang="csharp"><code><span class="hl-kw">public</span> <span class="hl-kw">sealed</span> <span class="hl-kw">class</span> CounterModule : IGameModule, IPlayerApiModule, IGmApiModule
+{
+    <span class="hl-kw">public</span> <span class="hl-kw">const</span> <span class="hl-kw">int</span> MaxNoteLength = <span class="hl-num">64</span>;
+
+    <span class="hl-kw">public</span> ModuleDescriptor Describe() =&gt; CounterModuleDefinition.Describe();
+
+    <span class="hl-kw">public</span> <span class="hl-kw">void</span> ConfigureServices(IServiceCollection services, ModuleContext context)
+    {
+        services.TryAddSingleton&lt;ICounterLimitPolicy, DefaultCounterLimitPolicy&gt;();
+        services.TryAddSingleton&lt;ICounterService, CounterService&gt;();
+        services.AddAggregateWireMapper&lt;CounterState&gt;(CounterAggregates.Counter, ToWire);
+    }
+
+    <span class="hl-kw">public</span> <span class="hl-kw">void</span> MapPlayerApi(IEndpointRouteBuilder routes)
+    {
+        routes.MapPlayerCommand&lt;Wire.IncrementRequest, IncrementCommand, IncrementResult&gt;(
+            <span class="hl-str">&quot;/api/v1/counter/increment&quot;</span>,
+            IncrementHandler.Operation,
+            ToDomain,
+            result =&gt; <span class="hl-kw">new</span> Wire.IncrementResult { Value = result.Value });
+        <span class="hl-com">// ... query /api/v1/counter/get (xem 4.9)</span>
+    }
+
+    <span class="hl-com">/// &lt;summary&gt;Wire → domain mapping and validation live in the adapter (ARC-02).&lt;/summary&gt;</span>
+    <span class="hl-kw">private</span> <span class="hl-kw">static</span> IncrementCommand ToDomain(Wire.IncrementRequest request)
+    {
+        <span class="hl-kw">if</span> (request.Note.Length &gt; MaxNoteLength)
+        {
+            <span class="hl-kw">throw</span> <span class="hl-kw">new</span> GameServerException(CoreErrorCodes.BadRequest, <span class="hl-str">$&quot;note longer than {MaxNoteLength} characters.&quot;</span>);
+        }
+
+        <span class="hl-kw">return</span> <span class="hl-kw">new</span> IncrementCommand(request.By, <span class="hl-kw">string</span>.IsNullOrEmpty(request.Note) ? <span class="hl-kw">null</span> : request.Note);
+    }
+
+    <span class="hl-kw">private</span> <span class="hl-kw">static</span> Wire.CounterState ToWire(CounterState state) =&gt; <span class="hl-kw">new</span>() { Value = state.Value, Increments = state.Increments };
+}</code></pre></div>
+<p><code>MapPlayerCommand&lt;TWireRequest, TRequest, TResult&gt;(route, operation, toDomain, toWire)</code> (<a class="path" href="../../src/GameServer.Platform.Web/Commands/CommandEndpointFactory.cs"><code>src/<wbr>GameServer.<wbr>Platform.<wbr>Web/<wbr>Commands/<wbr>CommandEndpointFactory.<wbr>cs</code></a>):</p>
+<ul><li><code>route</code> phải có đoạn version <code>/<wbr>v{n}/</code>.</li><li><code>operation</code> phải trùng tên trong <code>CommandDescriptor</code>.</li><li><code>toDomain</code>: <strong>đọc param</strong> + validate dạng/độ dài (lỗi → <code>BadRequest</code>). Rule nghiệp vụ (số âm, vượt hạn mức) để trong handler (trả mã nghiệp vụ).</li><li><code>toWire</code>: map result domain → message Protobuf.</li><li>Tự gắn profile <code>Player</code>, gate, timeout, rate limiter.</li><li><code>TryAddSingleton</code> cho policy để game thay được bằng <code>ReplacePolicy</code>.</li></ul>
+<h3 id="muc-4-6">4.6 Đăng ký ở host <a class="anchor" href="#muc-4-6" aria-label="Liên kết tới mục này">#</a></h3>
+<p><a class="path" href="../../samples/SampleHost/Program.cs"><code>samples/<wbr>SampleHost/<wbr>Program.<wbr>cs</code></a>: <code>.<wbr>AddModule&lt;CounterModule&gt;()</code>. Module phụ thuộc <code>identity</code> nên phải có <code>AddModule&lt;IdentityModule&gt;()</code> (thiếu → báo lỗi khi khởi động). Project host cần <code>ProjectReference</code> tới <code>Sample.<wbr>Counter.<wbr>Adapters</code> (<a class="path" href="../../samples/SampleHost/SampleHost.csproj"><code>samples/<wbr>SampleHost/<wbr>SampleHost.<wbr>csproj</code></a>) và hai project module nằm trong <a class="path" href="../../GameServer.slnx"><code>GameServer.<wbr>slnx</code></a>.</p>
+<h3 id="muc-4-7">4.7 PCR <a class="anchor" href="#muc-4-7" aria-label="Liên kết tới mục này">#</a></h3>
+<p>Cập nhật <a class="path" href="../../docs/pcr/sample-counter.md"><code>docs/<wbr>pcr/<wbr>sample-counter.<wbr>md</code></a> (hoặc <code>docs/<wbr>pcr/<wbr>&lt;module&gt;.<wbr>md</code>): bảng aggregate, bảng <strong>command → route, Touches, Reads, claim marker, outbox</strong>, bảng error code, capability thay được, cách xử lý khi xoá tài khoản.</p>
+<h3 id="muc-4-8">4.8 Test <a class="anchor" href="#muc-4-8" aria-label="Liên kết tới mục này">#</a></h3>
+<p>Test HTTP end-to-end dùng <code>TestHost</code> (<a class="path" href="../../tests/Shared/TestHost.cs"><code>tests/<wbr>Shared/<wbr>TestHost.<wbr>cs</code></a>, mặc định đăng ký <code>IdentityModule</code> + <code>CounterModule</code>, store in-memory, xác thực thử bằng header). Trích <a class="path" href="../../tests/GameServer.Platform.Web.Tests/CommandPipelineTests.cs"><code>tests/<wbr>GameServer.<wbr>Platform.<wbr>Web.<wbr>Tests/<wbr>CommandPipelineTests.<wbr>cs</code></a>:</p>
+<div class="code-block"><div class="code-head"><span class="code-lang">C#</span></div><pre class="code" data-lang="csharp"><code><span class="hl-attr">[Fact]</span>
+<span class="hl-kw">public</span> <span class="hl-kw">async</span> Task Business_rejection_is_200_with_code_and_no_receipt()
+{
+    <span class="hl-kw">var</span> response = <span class="hl-kw">await</span> _player.PostProtobufAsync(Increment, <span class="hl-kw">new</span> IncrementRequest { By = <span class="hl-num">11</span> }, ProtobufHttp.NewRequestId());
+
+    response.StatusCode.ShouldBe(HttpStatusCode.OK);
+    <span class="hl-kw">var</span> body = <span class="hl-kw">await</span> response.ReadProtobufAsync&lt;CommandResponse&gt;();
+    body.Code.ShouldBe(<span class="hl-str">&quot;COUNTER_LIMIT_EXCEEDED&quot;</span>);
+    body.CodeNumber.ShouldBe(<span class="hl-num">10001</span>);
+    body.ReceiptId.ShouldBeEmpty();
+    body.Updates.ShouldBeEmpty();
+    _host.Store.Count(<span class="hl-str">&quot;receipts&quot;</span>).ShouldBe(<span class="hl-num">0</span>);
+}</code></pre></div>
+<p>Test mở rộng (thay policy/handler, service-only): <a class="path" href="../../tests/Sample.Counter.Tests/ExtensionTests.cs"><code>tests/<wbr>Sample.<wbr>Counter.<wbr>Tests/<wbr>ExtensionTests.<wbr>cs</code></a>. Chạy:</p>
+<div class="code-block"><div class="code-head"><span class="code-lang">PowerShell</span></div><pre class="code" data-lang="powershell"><code>dotnet build GameServer.slnx <span class="hl-kw">-c</span> Release
+dotnet test <span class="hl-kw">--solution</span> GameServer.slnx <span class="hl-kw">-c</span> Release</code></pre></div>
+<p>Nên có tối thiểu: thành công + <code>updates</code>/<code>rev</code>; replay cùng requestId (<code>Replayed == true</code>, result giống hệt); mỗi mã từ chối; <code>ToDomain</code> từ chối (400).</p>
+<h3 id="muc-4-9">4.9 Query (đọc, không ghi) — để so sánh <a class="anchor" href="#muc-4-9" aria-label="Liên kết tới mục này">#</a></h3>
+<p>Không phải command: không receipt, không transaction. <code>CounterModule</code> map <code>POST /<wbr>api/<wbr>v1/<wbr>counter/<wbr>get</code> bằng <code>MapPost(...<wbr>).<wbr>AsPlayerEndpoint()</code> và đọc qua <code>PlayerSnapshotReader.<wbr>ReadOneAsync</code> (<code>CounterService</code>). Dùng cho dữ liệu cần đọc mà không đổi; còn client thường đọc section qua snapshot chung <code>POST /<wbr>api/<wbr>v1/<wbr>player/<wbr>snapshot</code>.</p>
+<h3 id="muc-4-10">4.10 Gọi từ Unity <a class="anchor" href="#muc-4-10" aria-label="Liên kết tới mục này">#</a></h3>
+<p>Code C# của message được sinh từ <code>.<wbr>proto</code> bằng project <a class="path" href="../../sdk/GameServer.Client/GameServer.Client.csproj"><code>sdk/<wbr>GameServer.<wbr>Client/<wbr>GameServer.<wbr>Client.<wbr>csproj</code></a> (<code>dotnet build sdk/<wbr>GameServer.<wbr>Client -c Release</code>):</p>
+<ul><li>contract của framework (<code>core.<wbr>proto</code>, <code>identity.<wbr>proto</code>, <code>economy.<wbr>proto</code>, <code>iap.<wbr>proto</code>) sinh vào gói <a class="path" href="../../sdk/unity/com.gameserver.client/Runtime/Generated"><code>sdk/<wbr>unity/<wbr>com.<wbr>gameserver.<wbr>client/<wbr>Runtime/<wbr>Generated</code></a>;</li><li>contract của game sinh vào <strong>project Unity của game</strong>, không vào gói. Ví dụ có sẵn (game mẫu):</li></ul>
+<div class="code-block"><div class="code-head"><span class="code-lang">XML</span></div><pre class="code" data-lang="xml"><code><span class="hl-tag">&lt;Protobuf</span> <span class="hl-attr">Include</span>=<span class="hl-str">&quot;..\..\samples\SampleGame\SampleGame.Adapters\Protos\sample_game.proto&quot;</span> <span class="hl-attr">ProtoRoot</span>=<span class="hl-str">&quot;..\..\samples\SampleGame\SampleGame.Adapters\Protos&quot;</span> <span class="hl-attr">AdditionalImportDirs</span>=<span class="hl-str">&quot;..\..\proto&quot;</span> <span class="hl-attr">GrpcServices</span>=<span class="hl-str">&quot;None&quot;</span> <span class="hl-attr">OutputDir</span>=<span class="hl-str">&quot;..\..\samples\SampleGame\KestrelDemo\Assets\SampleGame\Generated&quot;</span> <span class="hl-attr">CompileOutputs</span>=<span class="hl-str">&quot;false&quot;</span> <span class="hl-tag">/&gt;</span></code></pre></div>
+<p><strong>Lưu ý:</strong> <code>sample_<wbr>counter.<wbr>proto</code> hiện <strong>chưa</strong> được sinh cho Unity. Muốn gọi Counter từ KestrelDemo, thêm một dòng <code>&lt;Protobuf&gt;</code> tương tự (trỏ <a class="path" href="../../modules/Sample.Counter/Sample.Counter.Adapters/Protos/sample_counter.proto"><code>modules\<wbr>Sample.<wbr>Counter\<wbr>Sample.<wbr>Counter.<wbr>Adapters\<wbr>Protos\<wbr>sample_<wbr>counter.<wbr>proto</code></a>, cùng <code>OutputDir</code>, <code>CompileOutputs=&quot;false&quot;</code>), build lại project trên, và preserve assembly chứa message trong <code>link.<wbr>xml</code> của game (KestrelDemo: <a class="path" href="../../samples/SampleGame/KestrelDemo/Assets/link.xml"><code>Assets/<wbr>link.<wbr>xml</code></a>).</p>
+<p>Gọi command — mẫu thật từ <a class="path" href="../../samples/SampleGame/KestrelDemo/Assets/SampleGame/SampleGameClient.cs"><code>samples/<wbr>SampleGame/<wbr>KestrelDemo/<wbr>Assets/<wbr>SampleGame/<wbr>SampleGameClient.<wbr>cs</code></a>:</p>
+<div class="code-block"><div class="code-head"><span class="code-lang">C#</span></div><pre class="code" data-lang="csharp"><code><span class="hl-kw">var</span> buy = <span class="hl-kw">await</span> client.SendCommandAsync(SampleGameRoutes.Buy, <span class="hl-kw">new</span> BuyItemRequest { ShopItemId = <span class="hl-str">&quot;potion_pack&quot;</span>, Quantity = <span class="hl-num">1</span> }, BuyItemResult.Parser);
+log(<span class="hl-str">$&quot;Buy → {buy.Code}&quot;</span>);
+
+<span class="hl-kw">var</span> wallet = client.Sections.Get(<span class="hl-str">&quot;wallet&quot;</span>, WalletState.Parser);</code></pre></div>
+<p>Áp vào Counter (cùng API, sau khi đã sinh code):</p>
+<div class="code-block"><div class="code-head"><span class="code-lang">C#</span></div><pre class="code" data-lang="csharp"><code><span class="hl-kw">var</span> inc = <span class="hl-kw">await</span> client.SendCommandAsync(<span class="hl-str">&quot;api/v1/counter/increment&quot;</span>, <span class="hl-kw">new</span> IncrementRequest { By = <span class="hl-num">1</span> }, IncrementResult.Parser);
+<span class="hl-kw">if</span> (inc.IsOk) { /* inc.Result.Value */ } <span class="hl-kw">else</span> { /* inc.Code == <span class="hl-str">&quot;COUNTER_LIMIT_EXCEEDED&quot;</span> ... */ }
+<span class="hl-kw">var</span> counter = client.Sections.Get(<span class="hl-str">&quot;counter&quot;</span>, CounterState.Parser);   <span class="hl-com">// rev: client.Sections.RevOf(&quot;counter&quot;)</span></code></pre></div>
+<p>Route trong SDK <strong>không</strong> có <code>/</code> đầu (ghép với <code>BaseUrl</code> kết thúc bằng <code>/</code>). <code>inc.<wbr>Code</code> khác <code>&quot;OK&quot;</code> là mã nghiệp vụ; lỗi hạ tầng (4xx/5xx sau khi hết retry) là <code>GameServerException</code>.</p>
+</section>
+<section class="doc-section" aria-labelledby="muc-5">
+<h2 id="muc-5">5. Ví dụ: thêm command thứ hai <code>counter.<wbr>reset</code> (code mới cần viết) <a class="anchor" href="#muc-5" aria-label="Liên kết tới mục này">#</a></h2>
+<p>Phần này là <strong>code mới</strong>, dựng hoàn toàn từ API có sẵn ở mục 4; dùng làm bài tập kiểm tài liệu (task T5.5). Thứ tự làm:</p>
+<p><strong>(1) <code>.<wbr>proto</code></strong> — thêm vào <code>sample_<wbr>counter.<wbr>proto</code> (số field mới, không đổi số cũ):</p>
+<div class="code-block"><div class="code-head"><span class="code-lang">Protobuf</span></div><pre class="code" data-lang="proto"><code><span class="hl-com">// POST /api/v1/counter/reset  (header X-Request-Id bắt buộc)</span>
+<span class="hl-kw">message</span> ResetRequest {}
+
+<span class="hl-kw">message</span> ResetResult {
+  <span class="hl-kw">int64</span> previous_value = <span class="hl-num">1</span>;
+}</code></pre></div>
+<p><strong>(2) Domain</strong> — trong <code>CounterModel.<wbr>cs</code>:</p>
+<div class="code-block"><div class="code-head"><span class="code-lang">C#</span></div><pre class="code" data-lang="csharp"><code><span class="hl-kw">public</span> <span class="hl-kw">sealed</span> <span class="hl-kw">record</span> ResetCommand;
+
+<span class="hl-kw">public</span> <span class="hl-kw">sealed</span> <span class="hl-kw">record</span> ResetResult(<span class="hl-kw">long</span> PreviousValue);</code></pre></div>
+<p>và mã lỗi mới trong <code>CounterErrors</code> (cùng dải 10000–10099, thêm vào <code>All</code>):</p>
+<div class="code-block"><div class="code-head"><span class="code-lang">C#</span></div><pre class="code" data-lang="csharp"><code><span class="hl-kw">public</span> <span class="hl-kw">static</span> <span class="hl-kw">readonly</span> ErrorCode AlreadyZero = <span class="hl-kw">new</span>(<span class="hl-num">10003</span>, <span class="hl-str">&quot;COUNTER_ALREADY_ZERO&quot;</span>, <span class="hl-num">200</span>, <span class="hl-kw">false</span>, <span class="hl-str">&quot;The counter is already zero.&quot;</span>);
+
+<span class="hl-kw">public</span> <span class="hl-kw">static</span> ErrorCodeSet All { <span class="hl-kw">get</span>; } = <span class="hl-kw">new</span>(<span class="hl-num">10000</span>, <span class="hl-num">10099</span>, LimitExceeded, InvalidAmount, AlreadyZero);</code></pre></div>
+<p><strong>(3) Handler</strong> — file mới <code>ResetHandler.<wbr>cs</code> trong <code>Sample.<wbr>Counter</code>:</p>
+<div class="code-block"><div class="code-head"><span class="code-lang">C#</span></div><pre class="code" data-lang="csharp"><code><span class="hl-kw">public</span> <span class="hl-kw">sealed</span> <span class="hl-kw">class</span> ResetHandler : ICommandHandler&lt;ResetCommand, ResetResult&gt;
+{
+    <span class="hl-kw">public</span> <span class="hl-kw">const</span> <span class="hl-kw">string</span> Operation = <span class="hl-str">&quot;counter.reset&quot;</span>;
+
+    <span class="hl-kw">public</span> <span class="hl-kw">static</span> CommandDescriptor Descriptor { <span class="hl-kw">get</span>; } = <span class="hl-kw">new</span>(Operation, touches: [CounterAggregates.Counter]);
+
+    <span class="hl-kw">public</span> ValueTask&lt;CommandOutcome&lt;ResetResult&gt;&gt; HandleAsync(ResetCommand request, ICommandContext context)
+    {
+        <span class="hl-kw">var</span> state = context.Get&lt;CounterState&gt;(CounterAggregates.Counter);
+        <span class="hl-kw">if</span> (state.Value == <span class="hl-num">0</span>)
+        {
+            <span class="hl-kw">return</span> ValueTask.FromResult(CommandOutcome&lt;ResetResult&gt;.Reject(CounterErrors.AlreadyZero));
+        }
+
+        context.Set(CounterAggregates.Counter, state <span class="hl-kw">with</span> { Value = <span class="hl-num">0</span> });
+        <span class="hl-kw">return</span> ValueTask.FromResult(CommandOutcome&lt;ResetResult&gt;.Ok(<span class="hl-kw">new</span> ResetResult(state.Value)));
+    }
+}</code></pre></div>
+<p><strong>(4) Đăng ký</strong> — trong <code>CounterModuleDefinition.<wbr>Describe()</code>:</p>
+<div class="code-block"><div class="code-head"><span class="code-lang">C#</span></div><pre class="code" data-lang="csharp"><code>Commands =
+[
+    Command.Define&lt;IncrementCommand, IncrementResult&gt;(IncrementHandler.Descriptor).HandledBy&lt;IncrementHandler&gt;(),
+    Command.Define&lt;ResetCommand, ResetResult&gt;(ResetHandler.Descriptor).HandledBy&lt;ResetHandler&gt;(),
+],</code></pre></div>
+<p><strong>(5) Route</strong> — trong <code>CounterModule.<wbr>MapPlayerApi</code>:</p>
+<div class="code-block"><div class="code-head"><span class="code-lang">C#</span></div><pre class="code" data-lang="csharp"><code>routes.MapPlayerCommand&lt;Wire.ResetRequest, ResetCommand, ResetResult&gt;(
+    <span class="hl-str">&quot;/api/v1/counter/reset&quot;</span>,
+    ResetHandler.Operation,
+    _ =&gt; <span class="hl-kw">new</span> ResetCommand(),
+    result =&gt; <span class="hl-kw">new</span> Wire.ResetResult { PreviousValue = result.PreviousValue });</code></pre></div>
+<p><strong>(6) PCR</strong> — thêm dòng <code>counter.<wbr>reset</code> vào bảng command và mã <code>10003</code> vào bảng error code của <a class="path" href="../../docs/pcr/sample-counter.md"><code>docs/<wbr>pcr/<wbr>sample-counter.<wbr>md</code></a>.</p>
+<p><strong>(7) Test</strong> — theo mẫu <code>CommandPipelineTests</code>: increment 5 rồi reset → <code>Code == &quot;OK&quot;</code>, <code>ResetResult.<wbr>PreviousValue == 5</code>, <code>updates[0].<wbr>NewRev == 2</code>; reset lần nữa → <code>COUNTER_<wbr>ALREADY_<wbr>ZERO</code>, không receipt; gửi lại cùng requestId của lần reset đầu → <code>Replayed == true</code>.</p>
+<p><strong>(8) Unity</strong> — sinh lại code (mục 4.10) rồi <code>SendCommandAsync(&quot;api/<wbr>v1/<wbr>counter/<wbr>reset&quot;, new ResetRequest(), ResetResult.<wbr>Parser)</code>.</p>
+<p>Không cần sửa Core, Platform, store hay migration DB: collection <code>pa_<wbr>counter</code> đã có, state không đổi schema.</p>
+<h3 id="checklist-them-command">Checklist thêm command <a class="anchor" href="#checklist-them-command" aria-label="Liên kết tới mục này">#</a></h3>
+<div class="table-wrap" role="region" aria-label="Bảng — Checklist thêm command" tabindex="0"><table class="tbl wide"><thead><tr><th scope="col">#</th><th scope="col">Việc</th><th scope="col">File</th><th scope="col">Bị bắt ở đâu nếu quên</th></tr></thead><tbody>
+<tr><td>1</td><td>Message request/result trong <code>.<wbr>proto</code></td><td><code>&lt;Module&gt;.<wbr>Adapters/<wbr>Protos/<wbr>*.<wbr>proto</code></td><td>lỗi build</td></tr>
+<tr><td>2</td><td>Record command/result (domain)</td><td><code>&lt;Module&gt;/<wbr>*.<wbr>cs</code></td><td>lỗi build</td></tr>
+<tr><td>3</td><td>Error code mới trong dải của module, thêm vào <code>ErrorCodeSet</code></td><td><code>&lt;Module&gt;/<wbr>*.<wbr>cs</code></td><td>trùng số/tên/dải, sai <code>UPPER_<wbr>SNAKE_<wbr>CASE</code> → không khởi động; <strong>quên thêm vào set → không bị bắt</strong> (xem mục 10)</td></tr>
+<tr><td>4</td><td>Handler + <code>CommandDescriptor</code> (Touches/Reads đúng)</td><td><code>&lt;Module&gt;/<wbr>*Handler.<wbr>cs</code></td><td>aggregate không tồn tại → không khởi động; <code>Set</code> ngoài Touches → 500 lúc chạy</td></tr>
+<tr><td>5</td><td><code>Command.<wbr>Define(...<wbr>).<wbr>HandledBy&lt;...<wbr>&gt;()</code> trong <code>ModuleDescriptor.<wbr>Commands</code></td><td><code>&lt;Module&gt;/<wbr>*ModuleDefinition.<wbr>cs</code></td><td>quên → <strong>404 <code>NOT_<wbr>FOUND</code> lúc chạy</strong> (không bị bắt khi khởi động)</td></tr>
+<tr><td>6</td><td><code>MapPlayerCommand</code> route <code>/<wbr>api/<wbr>v1/...</code></td><td><code>&lt;Module&gt;.<wbr>Adapters/<wbr>*Module.<wbr>cs</code></td><td>thiếu <code>/<wbr>v{n}/</code> hoặc route trùng → không khởi động; quên → command không gọi được</td></tr>
+<tr><td>7</td><td>Aggregate mới client-visible → <code>AddAggregateWireMapper</code></td><td><code>&lt;Module&gt;.<wbr>Adapters/<wbr>*Module.<wbr>cs</code></td><td>không khởi động</td></tr>
+<tr><td>8</td><td>PCR</td><td><code>docs/<wbr>pcr/<wbr>&lt;module&gt;.<wbr>md</code></td><td>review</td></tr>
+<tr><td>9</td><td>Test</td><td><code>tests/...</code></td><td>review</td></tr>
+<tr><td>10</td><td>Sinh code Unity</td><td><a class="path" href="../../sdk/GameServer.Client/GameServer.Client.csproj"><code>sdk/<wbr>GameServer.<wbr>Client/<wbr>GameServer.<wbr>Client.<wbr>csproj</code></a></td><td>client không có type</td></tr>
+</tbody></table></div>
+<p>(Đối chiếu kiểm khi khởi động: <code>ModuleRegistry.<wbr>Validate</code>, <a class="path" href="../../src/GameServer.Platform/Registry/ModuleRegistry.cs"><code>src/<wbr>GameServer.<wbr>Platform/<wbr>Registry/<wbr>ModuleRegistry.<wbr>cs</code></a>; <code>EndpointSecurityValidator</code>, <a class="path" href="../../src/GameServer.Platform.Web/Validation/EndpointSecurityValidator.cs"><code>src/<wbr>GameServer.<wbr>Platform.<wbr>Web/<wbr>Validation/<wbr>EndpointSecurityValidator.<wbr>cs</code></a>. Mọi lỗi của một lần khởi động được báo cùng lúc, host thoát code 1.)</p>
+</section>
+<section class="doc-section" aria-labelledby="muc-6">
+<h2 id="muc-6">6. Bỏ hoặc tắt command <a class="anchor" href="#muc-6" aria-label="Liên kết tới mục này">#</a></h2>
+<p>Framework <strong>không có</strong> switch cấu hình để tắt từng command. Các cách theo trường hợp:</p>
+<div class="table-wrap" role="region" aria-label="Bảng — 6. Bỏ hoặc tắt command" tabindex="0"><table class="tbl"><thead><tr><th scope="col">Muốn</th><th scope="col">Cách</th><th scope="col">Ghi chú</th></tr></thead><tbody>
+<tr><td>Bỏ hẳn một command <strong>trong module của mình</strong></td><td>Xoá dòng <code>Command.<wbr>Define(...<wbr>)</code> trong <code>ModuleDescriptor.<wbr>Commands</code> <strong>và</strong> dòng <code>MapPlayerCommand</code> tương ứng; xoá handler/record; cập nhật PCR, test, code Unity</td><td>Giữ lại số field <code>.<wbr>proto</code> đã dùng (đánh <code>reserved</code>) nếu sau này thêm message mới vào cùng file. Receipt cũ trong DB vô hại</td></tr>
+<tr><td>Bỏ một module (vd. không dùng IAP)</td><td>Bỏ <code>AddModule&lt;IapModule&gt;()</code> ở host</td><td>Module khác <code>DependsOn</code> nó → lỗi khởi động chỉ rõ. Dữ liệu cũ của module vẫn nằm trong DB</td></tr>
+<tr><td>Giữ service của module nhưng không mở endpoint nào</td><td><code>AddModule&lt;X&gt;(m =&gt; m.<wbr>ServiceOnly())</code></td><td>Tắt <strong>mọi</strong> endpoint của module (ARC-04). Test: <code>Service_<wbr>only_<wbr>module_<wbr>maps_<wbr>no_<wbr>endpoint_<wbr>but_<wbr>its_<wbr>service_<wbr>works</code></td></tr>
+<tr><td>Chặn một command của module framework mà không sửa module đó</td><td><code>ConfigureExtensions(x =&gt; x.<wbr>ReplaceHandler&lt;TReq, TRes, THandler&gt;(operation))</code> với handler luôn <code>Reject(&lt;mã của game&gt;)</code></td><td>Endpoint vẫn tồn tại, client nhận mã nghiệp vụ; mã phải nằm trong dải error code của module game</td></tr>
+<tr><td>Host chỉ chạy GM (hoặc chỉ Player)</td><td><code>GameServer:<wbr>Hosting:<wbr>MapPlayerApi=false</code> / <code>MapGmApi=false</code></td><td>Tắt cả nhóm API</td></tr>
+<tr><td>Chặn một nhóm command với <strong>một player</strong></td><td>Ban theo scope (GM), <code>BanCommandGuard</code></td><td>Nhóm = phần trước dấu <code>.</code> của operation</td></tr>
+</tbody></table></div>
+<p>Cẩn thận: xoá đăng ký (<code>Commands</code>) nhưng quên xoá route → endpoint còn đó và <strong>mọi lời gọi trả 404 <code>NOT_<wbr>FOUND</code></strong>; host vẫn khởi động bình thường.</p>
+</section>
+<section class="doc-section" aria-labelledby="muc-7">
+<h2 id="muc-7">7. Thay handler hoặc policy của module có sẵn <a class="anchor" href="#muc-7" aria-label="Liên kết tới mục này">#</a></h2>
+<p>Game không sửa code của module framework; game đăng ký <strong>override</strong> sau khi <code>AddModule</code> module gốc (<a class="path" href="../../src/GameServer.Platform.Web/Hosting/ExtensionRegistry.cs"><code>src/<wbr>GameServer.<wbr>Platform.<wbr>Web/<wbr>Hosting/<wbr>ExtensionRegistry.<wbr>cs</code></a>). Trích <a class="path" href="../../tests/Sample.Counter.Tests/ExtensionTests.cs"><code>tests/<wbr>Sample.<wbr>Counter.<wbr>Tests/<wbr>ExtensionTests.<wbr>cs</code></a>:</p>
+<div class="code-block"><div class="code-head"><span class="code-lang">C#</span></div><pre class="code" data-lang="csharp"><code><span class="hl-kw">await</span> <span class="hl-kw">using</span> <span class="hl-kw">var</span> host = <span class="hl-kw">await</span> TestHost.StartAsync(b =&gt; b
+    .AddModule&lt;IdentityModule&gt;()
+    .AddModule&lt;CounterModule&gt;()
+    .ConfigureExtensions(x =&gt; x.ReplacePolicy&lt;ICounterLimitPolicy, GenerousPolicy&gt;()));</code></pre></div>
+<div class="code-block"><div class="code-head"><span class="code-lang">C#</span></div><pre class="code" data-lang="csharp"><code>.ConfigureExtensions(x =&gt; x.ReplaceHandler&lt;IncrementCommand, IncrementResult, DoublingHandler&gt;(IncrementHandler.Operation)));</code></pre></div>
+<ul><li><code>ReplacePolicy&lt;TService, TImpl&gt;()</code>: thay implementation đã đăng ký, giữ lifetime. Không có implementation mặc định → lỗi khởi động. Danh sách policy/service thay được của từng module: mục &quot;Extensible capabilities&quot; trong PCR (vd. <a class="path" href="../../docs/pcr/sample-counter.md"><code>docs/<wbr>pcr/<wbr>sample-counter.<wbr>md</code></a>, <a class="path" href="../../docs/pcr/platform.md"><code>docs/<wbr>pcr/<wbr>platform.<wbr>md</code></a> mục 10).</li><li><code>ReplaceHandler&lt;TReq, TRes, THandler&gt;(operation)</code>: handler mới phải implement đúng <code>ICommandHandler&lt;TReq, TRes&gt;</code> (sai kiểu hoặc operation không tồn tại → lỗi khởi động). <code>CommandDescriptor</code> (Touches/Reads, profile) <strong>giữ nguyên</strong> của module gốc — handler mới chỉ được <code>Get</code>/<code>Set</code> các aggregate đó.</li><li>Handler thay thế vẫn chạy trong pipeline chung: xác thực, gate, guard, idempotency, transaction. Test <code>Game_<wbr>can_<wbr>replace_<wbr>the_<wbr>handler_<wbr>and_<wbr>keeps_<wbr>idempotency</code> chứng minh replay vẫn đúng.</li><li>Gọi <code>ConfigureExtensions</code> <strong>sau</strong> <code>AddModule</code> của module gốc.</li></ul>
+</section>
+<section class="doc-section" aria-labelledby="muc-8">
+<h2 id="muc-8">8. Command GM <a class="anchor" href="#muc-8" aria-label="Liên kết tới mục này">#</a></h2>
+<p>Command do staff GM thực hiện trên một player dùng cùng runner (receipt, idempotency), khác ở:</p>
+<div class="table-wrap" role="region" aria-label="Bảng — 8. Command GM" tabindex="0"><table class="tbl"><thead><tr><th scope="col"></th><th scope="col">Player command</th><th scope="col">GM command</th></tr></thead><tbody>
+<tr><td>Map route</td><td><code>MapPlayerCommand</code></td><td><code>MapGmCommand&lt;TBody, TRequest, TResult&gt;(pattern, operation, permission, toDomain)</code> (<a class="path" href="../../src/GameServer.Platform.Web/Commands/GmCommandEndpointFactory.cs"><code>src/<wbr>GameServer.<wbr>Platform.<wbr>Web/<wbr>Commands/<wbr>GmCommandEndpointFactory.<wbr>cs</code></a>)</td></tr>
+<tr><td>Wire</td><td>Protobuf</td><td>JSON; body implement <code>IGmCommandBody</code> (có <code>Reason</code>, bắt buộc 1..500 ký tự)</td></tr>
+<tr><td>Player đích</td><td>actor</td><td>route phải chứa <code>{playerId}</code></td></tr>
+<tr><td>Descriptor</td><td>profile mặc định <code>Player</code></td><td><code>profile:<wbr> SecurityProfile.<wbr>Gm, permission:<wbr> &quot;&lt;permission&gt;&quot;</code>; permission phải khai trong <code>ModuleDescriptor.<wbr>Permissions</code></td></tr>
+<tr><td>Audit</td><td>cấm</td><td><strong>bắt buộc đúng một</strong> <code>context.<wbr>AddAudit(...<wbr>)</code> (runner kiểm, sai → 500)</td></tr>
+<tr><td>Kiểm player đích</td><td>—</td><td>các <code>IGmTargetValidator</code> chạy trước (vd. player tồn tại, chưa xoá)</td></tr>
+<tr><td>Response</td><td><code>CommandResponse</code></td><td><code>GmCommandResponse</code> (JSON)</td></tr>
+</tbody></table></div>
+<p>Ví dụ thật — <a class="path" href="../../samples/SampleGame/SampleGame/GmProgressionHandler.cs"><code>samples/<wbr>SampleGame/<wbr>SampleGame/<wbr>GmProgressionHandler.<wbr>cs</code></a>:</p>
+<div class="code-block"><div class="code-head"><span class="code-lang">C#</span></div><pre class="code" data-lang="csharp"><code><span class="hl-kw">public</span> <span class="hl-kw">static</span> CommandDescriptor Descriptor { <span class="hl-kw">get</span>; } = <span class="hl-kw">new</span>(
+    Operation,
+    touches: [SampleGameAggregates.Progression],
+    profile: SecurityProfile.Gm,
+    permission: SampleGamePermissions.ProgressionEdit);
+<span class="hl-com">// ...</span>
+context.Set(SampleGameAggregates.Progression, after);
+context.AddAudit(SampleGamePermissions.ProgressionEdit, Operation, request.Reason, before, after);</code></pre></div>
+<p>và route — <a class="path" href="../../samples/SampleGame/SampleGame.Adapters/SampleGameModule.cs"><code>samples/<wbr>SampleGame/<wbr>SampleGame.<wbr>Adapters/<wbr>SampleGameModule.<wbr>cs</code></a>:</p>
+<div class="code-block"><div class="code-head"><span class="code-lang">C#</span></div><pre class="code" data-lang="csharp"><code>routes.MapGmCommand&lt;SetProgressionBody, SetProgressionCommand, SetProgressionResult&gt;(
+    GmProgressionRoute,                       <span class="hl-com">// &quot;/gm/v1/players/{playerId}/progression&quot;</span>
+    SetProgressionHandler.Operation,
+    SampleGamePermissions.ProgressionEdit,
+    body =&gt; { /* validate */ <span class="hl-kw">return</span> <span class="hl-kw">new</span> SetProgressionCommand(body.Level, body.Xp, body.Stage, body.Reason!); });</code></pre></div>
+<p>Module map GM API trong <code>IGmApiModule.<wbr>MapGmApi</code>. GM request cần <code>X-Request-Id</code> UUID như Player. Đổi GM API thì cập nhật <a class="path" href="../../docs/api/gm-openapi.json"><code>docs/<wbr>api/<wbr>gm-openapi.<wbr>json</code></a>: chạy test với <code>UPDATE_<wbr>OPENAPI=1</code> (<a class="path" href="../../tests/GameServer.Gm.Tests/OpenApiTests.cs"><code>tests/<wbr>GameServer.<wbr>Gm.<wbr>Tests/<wbr>OpenApiTests.<wbr>cs</code></a>) rồi commit file. GM chỉ <strong>đọc</strong> thì dùng <code>MapGet(...<wbr>).<wbr>AsGmEndpoint(permission)</code> như <code>CounterModule.<wbr>MapGmApi</code>.</p>
+</section>
+<section class="doc-section" aria-labelledby="muc-9">
+<h2 id="muc-9">9. Các biến thể khác của <code>MapPlayerCommand</code> <a class="anchor" href="#muc-9" aria-label="Liên kết tới mục này">#</a></h2>
+<div class="table-wrap" role="region" aria-label="Bảng — 9. Các biến thể khác của MapPlayerCommand" tabindex="0"><table class="tbl"><thead><tr><th scope="col">Biến thể</th><th scope="col">Dùng khi</th><th scope="col">Ví dụ</th></tr></thead><tbody>
+<tr><td><code>toDomainAsync:<wbr> Func&lt;TWire, HttpContext, Task&lt;TRequest&gt;&gt;</code></td><td>Cần gọi ra ngoài <strong>trước</strong> transaction (xác minh receipt IAP, token provider). Retry được replay trước khi gọi lại</td><td><code>IapModule.<wbr>VerifyAsync</code> (<a class="path" href="../../src/GameServer.Modules.Iap.Adapters/IapModule.cs"><code>src/<wbr>GameServer.<wbr>Modules.<wbr>Iap.<wbr>Adapters/<wbr>IapModule.<wbr>cs</code></a>)</td></tr>
+<tr><td><code>toDomainAsync</code> (tiếp)</td><td></td><td><code>identity.<wbr>link</code> → <code>VerifyLinkAsync</code> (<a class="path" href="../../src/GameServer.Modules.Identity.Adapters/IdentityModule.cs"><code>src/<wbr>GameServer.<wbr>Modules.<wbr>Identity.<wbr>Adapters/<wbr>IdentityModule.<wbr>cs</code></a>)</td></tr>
+<tr><td><code>afterExecute:<wbr> Func&lt;CommandExecution, HttpContext, Task&gt;</code></td><td>Làm mới cache của instance sau khi commit/replay (không chạy khi bị từ chối)</td><td><code>identity.<wbr>request_<wbr>deletion</code> → <code>AfterDeletionRequestAsync</code> (<code>IdentityModule.<wbr>cs</code>)</td></tr>
+<tr><td><code>MapDevCommand</code></td><td>Cheat/công cụ dev; profile Dev, bị chặn ở Production</td><td><code>CheatModule</code> trong <a class="path" href="../../src/GameServer.Modules.Economy.Adapters/EconomyModule.cs"><code>src/<wbr>GameServer.<wbr>Modules.<wbr>Economy.<wbr>Adapters/<wbr>EconomyModule.<wbr>cs</code></a></td></tr>
+<tr><td><code>CommandOutcome.<wbr>Commit(result, code)</code></td><td>Ghi thay đổi nhưng báo một mã nghiệp vụ (vd. trận hết hạn được dọn)</td><td><code>SampleGameErrors.<wbr>BattleExpired</code> trong <a class="path" href="../../samples/SampleGame/SampleGame/BattleHandlers.cs"><code>samples/<wbr>SampleGame/<wbr>SampleGame/<wbr>BattleHandlers.<wbr>cs</code></a></td></tr>
+</tbody></table></div>
+</section>
+<section class="doc-section" aria-labelledby="muc-10">
+<h2 id="muc-10">10. Lỗi thường gặp <a class="anchor" href="#muc-10" aria-label="Liên kết tới mục này">#</a></h2>
+<div class="table-wrap" role="region" aria-label="Bảng — 10. Lỗi thường gặp" tabindex="0"><table class="tbl"><thead><tr><th scope="col">Triệu chứng</th><th scope="col">Nguyên nhân</th><th scope="col">Sửa</th></tr></thead><tbody>
+<tr><td>Build lỗi &quot;Use IClock (TIME-01)&quot;</td><td>Dùng <code>DateTime.<wbr>UtcNow</code>, <code>DateTimeOffset.<wbr>UtcNow</code>, <code>DateTime.<wbr>Now</code>, <code>DateTime.<wbr>Today</code>, <code>TimeZoneInfo.<wbr>Local</code> (<a class="path" href="../../BannedSymbols.txt"><code>BannedSymbols.<wbr>txt</code></a>)</td><td>Trong handler dùng <code>ctx.<wbr>Now</code>; nơi khác tiêm <code>IClock</code></td></tr>
+<tr><td>Build lỗi &quot;Use await (PERF-01)&quot;</td><td><code>.<wbr>Wait()</code>, <code>.<wbr>Result</code>, <code>GetAwaiter().<wbr>GetResult()</code></td><td><code>await</code></td></tr>
+<tr><td>500 <code>INTERNAL</code>, log &quot;wrote aggregate '…' which is not declared in Touches (DAT-09)&quot;</td><td><code>ctx.<wbr>Set</code> aggregate không có trong <code>Touches</code></td><td>Thêm vào <code>Touches</code> (tối đa 4)</td></tr>
+<tr><td>500, log &quot;accessed aggregate '…' which is not declared in Touches or Reads (DAT-11)&quot;</td><td><code>ctx.<wbr>Get</code> aggregate chưa khai</td><td>Thêm vào <code>Reads</code> (hoặc <code>Touches</code>)</td></tr>
+<tr><td>Host không khởi động: &quot;route has no version segment&quot;</td><td>Route thiếu <code>/<wbr>v{n}/</code></td><td><code>/<wbr>api/<wbr>v1/...</code>, <code>/<wbr>gm/<wbr>v1/...</code></td></tr>
+<tr><td>Host không khởi động: &quot;command … references unknown aggregate&quot; / &quot;touches 0 aggregates&quot;</td><td>Sai tên aggregate, <code>Touches</code> rỗng</td><td>Sửa descriptor</td></tr>
+<tr><td>Host không khởi động: &quot;error-code range … overlaps&quot;</td><td>Dải error code trùng module khác</td><td>Chọn dải trống (xem 4.2)</td></tr>
+<tr><td>Host không khởi động: &quot;is client-visible but has no wire mapper&quot;</td><td>Aggregate <code>clientVisible:<wbr> true</code> thiếu <code>AddAggregateWireMapper</code></td><td>Đăng ký trong <code>ConfigureServices</code></td></tr>
+<tr><td>Host không khởi động: &quot;collection … declares no deletion treatment&quot;</td><td><code>CollectionSpec</code> thiếu <code>Deletion:</code></td><td>Khai <code>Deletion:<wbr> DeletionTreatment.<wbr>NoPlayerData /<wbr> Anonymize /<wbr> Remove /<wbr> ModuleStep</code></td></tr>
+<tr><td>Mọi lời gọi command trả 404 <code>NOT_<wbr>FOUND</code></td><td>Có route nhưng chưa thêm vào <code>ModuleDescriptor.<wbr>Commands</code>, hoặc tên operation ở route khác descriptor</td><td>Dùng chung hằng <code>Operation</code> cho cả hai</td></tr>
+<tr><td>400 <code>BAD_<wbr>REQUEST</code> dù body đúng</td><td>Thiếu <code>X-Request-Id</code> hoặc không phải UUID</td><td>SDK tự gửi; test dùng <code>ProtobufHttp.<wbr>NewRequestId()</code></td></tr>
+<tr><td>409 <code>IDEMPOTENCY_<wbr>PAYLOAD_<wbr>MISMATCH</code></td><td>Client dùng lại requestId cho body khác</td><td>Mỗi command mới một requestId; retry phải gửi đúng bytes cũ</td></tr>
+<tr><td>500, log &quot;Result of '…' is N bytes; resultCompact max is 512&quot;</td><td>Result quá lớn (lưu trong receipt)</td><td>Trả ít dữ liệu; dữ liệu lớn đi qua <code>updates</code> (section)</td></tr>
+<tr><td>500, log &quot;Receipt of '…' is N bytes; max is 4096&quot;</td><td>Outbox payload quá lớn</td><td>Thu gọn payload outbox</td></tr>
+<tr><td><code>AGGREGATE_<wbr>TOO_<wbr>LARGE</code></td><td>Document aggregate &gt; 64 KiB</td><td>Tách aggregate, dọn dữ liệu cũ</td></tr>
+<tr><td>Hiệu ứng ngoài (HTTP, gửi mail…) chạy hai lần</td><td>Gọi trong handler; transaction chạy lại handler</td><td>Gọi trong <code>toDomainAsync</code> (trước) hoặc qua outbox consumer (sau)</td></tr>
+<tr><td>Random/ID khác nhau giữa các lần retry</td><td><code>Random</code>, <code>Guid.<wbr>NewGuid()</code> trong handler</td><td><code>ctx.<wbr>NewSeed(purpose)</code>, <code>ctx.<wbr>NewId(purpose)</code></td></tr>
+<tr><td>Thao tác &quot;chỉ một lần&quot; (nhận quà theo mã) bị nhân đôi giữa nhiều request khác requestId</td><td>Chỉ dựa vào receipt (theo requestId)</td><td><code>ctx.<wbr>TryClaimAsync(collection, key)</code> + <code>maxClaimMarkers</code> trong descriptor</td></tr>
+<tr><td>GM command 500 &quot;wrote 0 audit entries; expected 1&quot;</td><td>Quên <code>ctx.<wbr>AddAudit</code></td><td>Gọi đúng một lần</td></tr>
+<tr><td><code>Commit(result, code)</code> nhưng client nhận <code>code = &quot;OK&quot;</code>; mã không có trong PCR/catalog</td><td>Tạo <code>ErrorCode</code> nhưng quên thêm vào <code>ErrorCodeSet</code> của module. Không bị bắt khi khởi động; runner tra mã đã commit trong catalog (<code>registry.<wbr>Errors.<wbr>FindByName</code>), không thấy thì coi là <code>OK</code></td><td>Luôn thêm mã mới vào <code>ErrorCodeSet</code> (<code>ModuleDescriptor.<wbr>ErrorCodes</code>)</td></tr>
+<tr><td>Handler không tạo được (lỗi DI)</td><td>Dependency của constructor chưa đăng ký, hoặc đăng ký scoped</td><td>Đăng ký trong <code>ConfigureServices</code>, dạng singleton như <code>CounterModule</code> (runner tạo handler từ service provider gốc)</td></tr>
+</tbody></table></div>
+</section>
+<section class="doc-section" aria-labelledby="muc-11">
+<h2 id="muc-11">11. Quy tắc viết handler (tóm tắt) <a class="anchor" href="#muc-11" aria-label="Liên kết tới mục này">#</a></h2>
+<ol><li>Chỉ dùng <code>ICommandContext</code> và dependency đã tiêm; không HTTP, không DB, không file.</li><li>Có thể bị gọi nhiều lần cho một request: không side effect ngoài <code>ctx</code>.</li><li>Chỉ <code>Set</code> aggregate trong <code>Touches</code>; chỉ <code>Get</code> aggregate trong <code>Touches</code>/<code>Reads</code>.</li><li>Giờ: <code>ctx.<wbr>Now</code>. Random/ID: <code>ctx.<wbr>NewSeed</code>/<code>ctx.<wbr>NewId</code>.</li><li>Lỗi nghiệp vụ: <code>CommandOutcome.<wbr>Reject(code)</code> (không ném exception). Lỗi dạng/độ dài input: trong <code>ToDomain</code>.</li><li>Hiệu ứng phụ: <code>ctx.<wbr>AddOutbox</code> (+ <code>OutboxProjection</code> hoặc <code>IOutboxConsumer</code>); audit GM: <code>ctx.<wbr>AddAudit</code>; analytics: <code>ctx.<wbr>AddAnalyticsEvent</code>.</li><li>Kết quả nhỏ (≤ 512 B); dữ liệu lớn đi qua section.</li></ol>
+<p>Tài liệu liên quan: <a class="path" href="../../docs/guides/module-authoring.md"><code>docs/<wbr>guides/<wbr>module-authoring.<wbr>md</code></a>, <a class="path" href="../../templates/module/README.md"><code>templates/<wbr>module/<wbr>README.<wbr>md</code></a>, <a class="path" href="../../docs/pcr/platform.md"><code>docs/<wbr>pcr/<wbr>platform.<wbr>md</code></a> mục 2–3, 7, 10.</p>
+</section>
+<nav class="pager" aria-label="Chuyển trang"><a class="prev" href="01-gioi-thieu.html" rel="prev"><span class="dir">← Trang trước</span><span class="ttl">Giới thiệu framework</span></a><a class="next" href="03-deploy.html" rel="next"><span class="dir">Trang sau →</span><span class="ttl">Deploy cho DevOps</span></a></nav>
+</main>
+</div>
+<footer class="site-footer"><p>Đúng với commit <code>175df65</code> — cập nhật khi đổi pipeline, hosting hoặc deploy.</p></footer>
+<script>
+/* Progressive enhancement only — every page reads fine without this script. */
+(function () {
+  'use strict';
+  var doc = document;
+  var COPY_LABEL = 'Sao chép';
+  var COPY_DONE = 'Đã chép';
+  var COPY_FAIL = 'Không chép được';
+  var FLASH_MS = 1600;
+  var WIDE_QUERY = '(min-width: 75rem)';
+  var ACTIVE_OFFSET_PX = 96;
+  var CHECKLIST_KEY = 'gsf-docs:03-deploy:checklist:v1';
+
+  function each(list, fn) { Array.prototype.forEach.call(list, fn); }
+
+  // ------------------------------------------------------------ copy buttons
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function (resolve, reject) {
+      var ta = doc.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      doc.body.appendChild(ta);
+      ta.select();
+      try {
+        if (doc.execCommand('copy')) { resolve(); } else { reject(new Error('copy')); }
+      } catch (e) {
+        reject(e);
+      } finally {
+        doc.body.removeChild(ta);
+      }
+    });
+  }
+
+  each(doc.querySelectorAll('.code-block'), function (block) {
+    var head = block.querySelector('.code-head');
+    var code = block.querySelector('pre code');
+    if (!head || !code) { return; }
+    var btn = doc.createElement('button');
+    btn.type = 'button';
+    btn.className = 'copy-btn';
+    btn.textContent = COPY_LABEL;
+    var timer = 0;
+    btn.addEventListener('click', function () {
+      var done = function (label) {
+        btn.textContent = label;
+        clearTimeout(timer);
+        timer = setTimeout(function () { btn.textContent = COPY_LABEL; }, FLASH_MS);
+      };
+      copyText(code.textContent).then(function () { done(COPY_DONE); }, function () { done(COPY_FAIL); });
+    });
+    head.appendChild(btn);
+  });
+
+  // ------------------------------------------------------------ table of contents
+  var toc = doc.querySelector('.toc');
+  if (toc) {
+    var det = toc.querySelector('details');
+    if (det && window.matchMedia && !window.matchMedia(WIDE_QUERY).matches) { det.open = false; }
+
+    var links = toc.querySelectorAll('a[href^="#"]');
+    var targets = [];
+    each(links, function (a) {
+      var el = doc.getElementById(decodeURIComponent(a.getAttribute('href').slice(1)));
+      if (el) { targets.push({ link: a, el: el }); }
+    });
+
+    var current = null;
+    var ticking = false;
+    var update = function () {
+      ticking = false;
+      var active = null;
+      for (var i = 0; i < targets.length; i++) {
+        if (targets[i].el.getBoundingClientRect().top - ACTIVE_OFFSET_PX <= 0) { active = targets[i]; } else { break; }
+      }
+      if (active === current) { return; }
+      if (current) { current.link.removeAttribute('aria-current'); }
+      current = active;
+      if (current) { current.link.setAttribute('aria-current', 'true'); }
+    };
+    if (targets.length) {
+      window.addEventListener('scroll', function () {
+        if (!ticking) { ticking = true; window.requestAnimationFrame(update); }
+      }, { passive: true });
+      update();
+    }
+  }
+
+  // ------------------------------------------------------------ diagram zoom: Esc closes
+  doc.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Escape' || !location.hash) { return; }
+    var el = doc.getElementById(decodeURIComponent(location.hash.slice(1)));
+    if (el && el.classList.contains('diagram')) { location.hash = el.id + '-ref'; }
+  });
+
+  // ------------------------------------------------------------ checklist (03-deploy)
+  var boxes = doc.querySelectorAll('input[type="checkbox"][data-ck]');
+  var tools = doc.querySelector('.checklist-tools');
+  if (!boxes.length) { return; }
+
+  var store = null;
+  try {
+    store = window.localStorage;
+    store.getItem(CHECKLIST_KEY);
+  } catch (e) {
+    store = null;
+  }
+  var load = function () {
+    if (!store) { return {}; }
+    try { return JSON.parse(store.getItem(CHECKLIST_KEY) || '{}') || {}; } catch (e) { return {}; }
+  };
+  var save = function (state) {
+    if (!store) { return; }
+    try { store.setItem(CHECKLIST_KEY, JSON.stringify(state)); } catch (e) { /* quota or privacy mode: ignore */ }
+  };
+
+  var state = load();
+  var progress = null;
+  var refresh = function () {
+    var n = 0;
+    each(boxes, function (b) {
+      if (b.checked) { n++; }
+      var row = b.closest('tr');
+      if (row) { row.classList.toggle('is-done', b.checked); }
+    });
+    if (progress) { progress.textContent = 'Đã kiểm ' + n + ' / ' + boxes.length + ' mục'; }
+  };
+
+  each(boxes, function (b) {
+    if (state[b.getAttribute('data-ck')]) { b.checked = true; }
+    b.addEventListener('change', function () {
+      var id = b.getAttribute('data-ck');
+      if (b.checked) { state[id] = true; } else { delete state[id]; }
+      save(state);
+      refresh();
+    });
+  });
+
+  if (tools) {
+    progress = doc.createElement('span');
+    progress.className = 'checklist-progress';
+    progress.setAttribute('aria-live', 'polite');
+
+    var reset = doc.createElement('button');
+    reset.type = 'button';
+    reset.className = 'btn';
+    reset.textContent = 'Bỏ mọi dấu';
+    reset.addEventListener('click', function () {
+      each(boxes, function (b) { b.checked = false; });
+      state = {};
+      save(state);
+      refresh();
+    });
+
+    var printBtn = doc.createElement('button');
+    printBtn.type = 'button';
+    printBtn.className = 'btn';
+    printBtn.textContent = 'In riêng checklist';
+    printBtn.addEventListener('click', function () {
+      var root = doc.documentElement;
+      root.classList.add('print-checklist-only');
+      var cleanup = function () {
+        root.classList.remove('print-checklist-only');
+        window.removeEventListener('afterprint', cleanup);
+      };
+      window.addEventListener('afterprint', cleanup);
+      window.print();
+    });
+
+    var note = doc.createElement('p');
+    note.className = 'checklist-note';
+    note.textContent = store
+      ? 'Dấu tick chỉ lưu trong trình duyệt này (localStorage), không gửi đi đâu. Khi in, mỗi nhóm bắt đầu trang mới và có cột "Ngày / chữ ký".'
+      : 'Trình duyệt không cho lưu: dấu tick sẽ mất khi tải lại trang. Khi in, mỗi nhóm bắt đầu trang mới và có cột "Ngày / chữ ký".';
+
+    tools.appendChild(progress);
+    tools.appendChild(reset);
+    tools.appendChild(printBtn);
+    tools.appendChild(note);
+    tools.hidden = false;
+  }
+  refresh();
+})();
+</script>
+</body>
+</html>

@@ -116,7 +116,7 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
 
 ## Technical notes from 011
 
-- Flavors: `GameServer:Environment` ∈ local/dev/beta/uat/live (`DeploymentEnvironments`) → ASP.NET env local/dev =
+- Flavors: `GameServer:EnvironmentId` ∈ local/dev/beta/uat/live (`DeploymentEnvironments`) → ASP.NET env local/dev =
   Development, beta/uat = Staging, live = Production. Unknown or mismatched flavor stops startup; never silently
   Development. `TestHost` uses EnvironmentId `test` and skips `appsettings.{env}.json`.
 - Startup: `IStartupCheck` + `GameServerApplicationExtensions.CheckAll` (each check caught, one aggregated report);

@@ -1,0 +1,879 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Giới thiệu game server framework .NET/Kestrel: nhu cầu, phạm vi, cấu trúc repo, kiến trúc, điểm mạnh kèm bằng chứng, giới hạn hiện tại.">
+<title>Giới thiệu framework — Game Server Framework</title>
+<style>
+/* Shared stylesheet — identical block in every page of docs/html. */
+:root {
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", Menlo, "Liberation Mono", monospace;
+  --content-w: 60rem;
+  --toc-w: 16rem;
+  --radius: 0.625rem;
+
+  --bg: #ffffff;
+  --surface: #f6f8fa;
+  --surface-2: #eef2f6;
+  --fg: #1b1f24;
+  --muted: #57606a;
+  --border: #d0d7de;
+  --border-strong: #afb8c1;
+  --accent: #0b5cad;
+  --accent-weak: #e8f1fb;
+  --ok: #1a7f37;
+  --ok-bg: #dcf5e3;
+  --warn: #9a4600;
+  --warn-bg: #fff0de;
+  --danger: #b42318;
+  --danger-bg: #fde8e8;
+  --violet: #6f42c1;
+  --violet-bg: #f1eafd;
+  --neutral: #4b5563;
+  --neutral-bg: #eceff3;
+  --code-bg: #f3f5f7;
+
+  --hl-kw: #8250df;
+  --hl-str: #0a3069;
+  --hl-com: #59636e;
+  --hl-num: #0550ae;
+  --hl-tag: #116329;
+  --hl-attr: #953800;
+
+  --dg-bg: var(--surface);
+  --dg-fill: #ffffff;
+  --dg-fill-2: #e8f1fb;
+  --dg-band: #eef2f6;
+  --dg-core: #e3e8ee;
+  --dg-line: #3d4652;
+  --dg-text: #1b1f24;
+  --dg-muted: #57606a;
+  --dg-accent: #0b5cad;
+  --dg-danger: #b42318;
+  --dg-violet: #6f42c1;
+  --dg-violet-bg: #f1eafd;
+  --dg-warn: #9a4600;
+  --dg-warn-bg: #fff0de;
+  --dg-ok: #1a7f37;
+  --dg-ok-bg: #dcf5e3;
+  --dg-frame: #7a8591;
+  --dg-frame-bg: #e4e9ef;
+
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1419;
+    --surface: #151b23;
+    --surface-2: #1c2430;
+    --fg: #e6edf3;
+    --muted: #9ba7b4;
+    --border: #2f3843;
+    --border-strong: #45505c;
+    --accent: #6cb6ff;
+    --accent-weak: #11263d;
+    --ok: #56d364;
+    --ok-bg: #12301c;
+    --warn: #ffa657;
+    --warn-bg: #3b2410;
+    --danger: #ff7b72;
+    --danger-bg: #3d1717;
+    --violet: #d2a8ff;
+    --violet-bg: #2a1d40;
+    --neutral: #c1cad4;
+    --neutral-bg: #26303b;
+    --code-bg: #151b23;
+
+    --hl-kw: #d2a8ff;
+    --hl-str: #a5d6ff;
+    --hl-com: #8b949e;
+    --hl-num: #79c0ff;
+    --hl-tag: #7ee787;
+    --hl-attr: #ffa657;
+
+    --dg-fill: #1c2430;
+    --dg-fill-2: #11263d;
+    --dg-band: #18202a;
+    --dg-core: #26303b;
+    --dg-line: #b3bdc8;
+    --dg-text: #e6edf3;
+    --dg-muted: #9ba7b4;
+    --dg-accent: #6cb6ff;
+    --dg-danger: #ff7b72;
+    --dg-violet: #d2a8ff;
+    --dg-violet-bg: #2a1d40;
+    --dg-warn: #ffa657;
+    --dg-warn-bg: #3b2410;
+    --dg-ok: #56d364;
+    --dg-ok-bg: #12301c;
+    --dg-frame: #7d8996;
+    --dg-frame-bg: #26303b;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; scroll-padding-top: 1rem; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.65;
+  overflow-wrap: break-word;
+}
+a { color: var(--accent); text-underline-offset: 0.18em; }
+a:hover { text-decoration-thickness: 2px; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+.visually-hidden {
+  position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+.skip-link {
+  position: absolute; left: 1rem; top: -3rem; z-index: 200;
+  background: var(--accent); color: var(--bg); padding: 0.5rem 0.875rem; border-radius: 0.375rem; font-weight: 600;
+}
+.skip-link:focus { top: 0.75rem; }
+
+/* ---------------------------------------------------------------- header */
+.site-header { border-bottom: 1px solid var(--border); background: var(--surface); }
+.site-header__inner {
+  max-width: calc(var(--content-w) + var(--toc-w) + 4.5rem);
+  margin: 0 auto; padding: 0.625rem 1rem;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.5rem;
+}
+.brand { font-weight: 700; color: var(--fg); text-decoration: none; letter-spacing: -0.01em; }
+.brand span { font-weight: 400; color: var(--muted); }
+.site-nav { display: flex; flex-wrap: wrap; gap: 0.25rem; list-style: none; margin: 0; padding: 0; }
+.site-nav a {
+  display: inline-block; padding: 0.3rem 0.65rem; border-radius: 999px;
+  color: var(--fg); text-decoration: none; font-size: 0.9rem;
+}
+.site-nav a:hover { background: var(--surface-2); }
+.site-nav a[aria-current="page"] { background: var(--accent); color: var(--bg); font-weight: 600; }
+
+/* ---------------------------------------------------------------- layout */
+.layout {
+  max-width: calc(var(--content-w) + var(--toc-w) + 4.5rem);
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+.content { min-width: 0; max-width: var(--content-w); padding-bottom: 3rem; }
+.content:focus { outline: none; }
+@media (min-width: 75rem) {
+  .layout {
+    display: grid;
+    grid-template-columns: var(--toc-w) minmax(0, var(--content-w));
+    gap: 2.5rem;
+    justify-content: center;
+  }
+  .layout.layout--single { display: block; }
+}
+.layout--single .content { margin: 0 auto; }
+
+/* ---------------------------------------------------------------- toc */
+.toc { margin: 1.25rem 0 0.5rem; font-size: 0.9rem; }
+.toc details { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.toc summary {
+  cursor: pointer; padding: 0.6rem 0.875rem; font-weight: 700; list-style-position: inside;
+}
+.toc ul { list-style: none; margin: 0; padding: 0 0.875rem 0.75rem; }
+.toc ul ul { padding: 0 0 0 0.875rem; }
+.toc li { margin: 0.1rem 0; }
+.toc a {
+  display: block; padding: 0.15rem 0.5rem; border-left: 2px solid transparent;
+  color: var(--fg); text-decoration: none; line-height: 1.4;
+}
+.toc a:hover { color: var(--accent); }
+.toc a[aria-current="true"] { border-left-color: var(--accent); color: var(--accent); font-weight: 600; }
+.toc .toc-h3 a { color: var(--muted); font-size: 0.85rem; }
+.toc .toc-h3 a[aria-current="true"] { color: var(--accent); }
+.toc code { font-size: 0.85em; background: none; border: 0; padding: 0; }
+@media (min-width: 75rem) {
+  .toc { margin: 0; padding-top: 1.5rem; }
+  .toc details {
+    position: sticky; top: 1rem;
+    max-height: calc(100vh - 2rem); overflow: auto;
+  }
+}
+
+/* ---------------------------------------------------------------- page head */
+.page-head { padding: 1.75rem 0 0.75rem; border-bottom: 1px solid var(--border); margin-bottom: 1rem; }
+.eyebrow { margin: 0; color: var(--muted); font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+h1 { font-size: clamp(1.6rem, 1.2rem + 2vw, 2.25rem); line-height: 1.2; margin: 0.35rem 0 0.5rem; letter-spacing: -0.02em; }
+.lead { font-size: 1.1rem; color: var(--muted); margin: 0 0 0.75rem; }
+.meta {
+  display: inline-block; margin: 0.25rem 0 0.75rem; padding: 0.35rem 0.75rem;
+  border-radius: 0.5rem; background: var(--surface-2); font-size: 0.9rem;
+}
+
+/* ---------------------------------------------------------------- headings & text */
+h2, h3, h4 { line-height: 1.3; letter-spacing: -0.01em; scroll-margin-top: 1rem; }
+h2 { font-size: 1.5rem; margin: 2.75rem 0 0.75rem; padding-top: 0.5rem; border-top: 1px solid var(--border); }
+.doc-section:first-of-type h2 { border-top: 0; margin-top: 1.5rem; }
+h3 { font-size: 1.2rem; margin: 2rem 0 0.6rem; }
+h4 { font-size: 1.05rem; margin: 1.5rem 0 0.5rem; }
+.anchor {
+  margin-left: 0.35rem; color: var(--muted); text-decoration: none; font-weight: 400;
+  opacity: 0; transition: opacity 0.15s;
+}
+h2:hover .anchor, h3:hover .anchor, .anchor:focus-visible { opacity: 1; }
+@media (hover: none) { .anchor { opacity: 0.55; } }
+p { margin: 0.75rem 0; }
+p.indent { margin-left: 1.5rem; }
+ul, ol { padding-left: 1.5rem; margin: 0.6rem 0; }
+li { margin: 0.25rem 0; }
+li > ul, li > ol { margin: 0.25rem 0; }
+strong { font-weight: 650; }
+blockquote { margin: 1rem 0; padding: 0.25rem 1rem; border-left: 4px solid var(--border-strong); color: var(--muted); }
+
+code {
+  font-family: var(--font-mono); font-size: 0.875em;
+  background: var(--code-bg); border: 1px solid var(--border); border-radius: 0.3rem;
+  padding: 0.05em 0.3em; overflow-wrap: break-word;
+  font-variant-ligatures: none;
+}
+a.path { text-decoration: none; }
+a.path code { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
+a.path:hover code { text-decoration: underline; }
+
+/* ---------------------------------------------------------------- code blocks */
+.code-block { margin: 1rem 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--code-bg); overflow: hidden; }
+.code-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+  padding: 0.3rem 0.5rem 0.3rem 0.875rem; border-bottom: 1px solid var(--border);
+  font-size: 0.78rem; color: var(--muted);
+}
+.code-lang { font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+.copy-btn {
+  font: inherit; font-size: 0.78rem; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--border); border-radius: 0.375rem; padding: 0.15rem 0.6rem; cursor: pointer;
+}
+.copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+pre.code { font-variant-ligatures: none; margin: 0; padding: 0.875rem 1rem; overflow-x: auto; line-height: 1.5; tab-size: 4; }
+pre.code code { background: none; border: 0; padding: 0; font-size: 0.84rem; overflow-wrap: normal; white-space: pre; }
+.hl-kw { color: var(--hl-kw); }
+.hl-str { color: var(--hl-str); }
+.hl-com { color: var(--hl-com); font-style: italic; }
+.hl-num { color: var(--hl-num); }
+.hl-tag { color: var(--hl-tag); }
+.hl-attr { color: var(--hl-attr); }
+
+/* ---------------------------------------------------------------- tables */
+.table-wrap { margin: 1rem 0; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+.tbl { width: 100%; border-collapse: collapse; font-size: 0.9rem; line-height: 1.5; }
+.tbl.wide { min-width: 44rem; }
+.tbl th, .tbl td { padding: 0.5rem 0.7rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+.tbl thead th { background: var(--surface-2); font-weight: 650; white-space: nowrap; }
+.tbl tbody tr:nth-child(even) { background: color-mix(in srgb, var(--surface) 70%, transparent); }
+.tbl tbody tr:last-child > * { border-bottom: 0; }
+.tbl code { font-size: 0.84em; }
+
+/* ---------------------------------------------------------------- callout */
+.callout {
+  margin: 1.5rem 0; padding: 0.25rem 1.1rem 0.75rem; border: 1px solid var(--accent);
+  border-left-width: 6px; border-radius: var(--radius); background: var(--accent-weak);
+}
+.callout-label {
+  display: inline-block; margin-top: 0.75rem; padding: 0.1rem 0.6rem; border-radius: 999px;
+  background: var(--accent); color: var(--bg); font-size: 0.78rem; font-weight: 700; letter-spacing: 0.03em;
+}
+.callout h3 { margin-top: 0.5rem; }
+.callout .table-wrap { background: var(--bg); }
+
+/* ---------------------------------------------------------------- badges */
+.badge {
+  display: inline-block; padding: 0.02rem 0.5rem; border-radius: 999px; border: 1px solid transparent;
+  font-size: 0.78em; font-weight: 700; line-height: 1.5; white-space: nowrap; vertical-align: 0.06em;
+}
+.badge--todo { color: var(--warn); background: var(--warn-bg); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.badge--ok { color: var(--ok); background: var(--ok-bg); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+.badge--neutral { color: var(--neutral); background: var(--neutral-bg); border-color: var(--border); }
+.badge--verify { color: var(--violet); background: var(--violet-bg); border-color: color-mix(in srgb, var(--violet) 45%, transparent); }
+.badge--auto { color: var(--accent); background: var(--accent-weak); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.badge--manual { color: var(--neutral); background: var(--neutral-bg); border-color: var(--border); }
+.badge--open { color: var(--danger); background: var(--danger-bg); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+
+/* ---------------------------------------------------------------- diagrams */
+.fig-ref { display: block; }
+.diagram { margin: 1.25rem 0 0.75rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--dg-bg); }
+.diagram-bar {
+  display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+  padding: 0.45rem 0.875rem; border-bottom: 1px solid var(--border); font-size: 0.85rem;
+}
+.diagram-title { font-weight: 650; margin-right: auto; }
+.zoom-link {
+  font-size: 0.8rem; padding: 0.1rem 0.6rem; border: 1px solid var(--border); border-radius: 999px;
+  text-decoration: none; background: var(--bg);
+}
+.zoom-close { display: none; }
+.diagram-scroll { overflow-x: auto; padding: 0.75rem; }
+.dg { display: block; width: 100%; height: auto; min-width: var(--min-w, 0); font-family: var(--font-sans); font-variant-ligatures: none; }
+.diagram:target {
+  position: fixed; inset: 0; z-index: 100; margin: 0; border-radius: 0; border: 0;
+  display: flex; flex-direction: column; background: var(--bg);
+}
+.diagram:target .diagram-scroll { flex: 1; overflow: auto; }
+.diagram:target .dg { width: var(--nat-w); min-width: 0; max-width: none; }
+.diagram:target .zoom-open { display: none; }
+.diagram:target .zoom-close { display: inline-block; }
+details.dg-text { margin: 0 0 1.25rem; border: 1px dashed var(--border-strong); border-radius: var(--radius); padding: 0 0.875rem; }
+details.dg-text > summary { cursor: pointer; padding: 0.5rem 0; color: var(--muted); font-size: 0.9rem; font-weight: 600; }
+details.dg-text[open] > summary { border-bottom: 1px solid var(--border); margin-bottom: 0.5rem; }
+
+.dg text { fill: var(--dg-text); font-size: 12px; }
+.dg .t-b { font-weight: 700; }
+.dg .t-lg { font-size: 14px; }
+.dg .t-sm, .dg .t-sm2 { font-size: 11px; fill: var(--dg-muted); }
+.dg .t-sm2 { fill: var(--dg-text); }
+.dg .t-cell { font-size: 11px; }
+.dg .t-mono { font-family: var(--font-mono); font-size: 10.5px; fill: var(--dg-muted); }
+.dg .t-head { font-size: 12px; font-weight: 700; fill: var(--dg-muted); letter-spacing: 0.06em; text-transform: uppercase; }
+.dg .t-band { font-size: 11.5px; font-weight: 700; fill: var(--dg-muted); }
+.dg .t-lbl { font-size: 11px; }
+.dg .t-note { font-size: 11px; font-style: italic; fill: var(--dg-muted); }
+.dg .t-accent { fill: var(--dg-accent); }
+.dg .t-danger { fill: var(--dg-danger); }
+.dg .t-violet { fill: var(--dg-violet); }
+.dg .t-muted { fill: var(--dg-muted); }
+.dg .t-num { font-weight: 800; fill: var(--dg-accent); }
+.dg .t-frame { font-size: 11px; font-weight: 700; }
+.dg .t-guard { font-size: 11px; font-style: italic; fill: var(--dg-muted); }
+.dg .halo { paint-order: stroke; stroke: var(--dg-bg); stroke-width: 4px; stroke-linejoin: round; }
+.dg .box { fill: var(--dg-fill); stroke: var(--dg-line); stroke-width: 1.25; }
+.dg .box--accent { fill: var(--dg-fill-2); stroke: var(--dg-accent); }
+.dg .box--core { fill: var(--dg-core); }
+.dg .box--violet { fill: var(--dg-violet-bg); stroke: var(--dg-violet); }
+.dg .box--warn { fill: var(--dg-warn-bg); stroke: var(--dg-warn); }
+.dg .box--ok { fill: var(--dg-ok-bg); stroke: var(--dg-ok); }
+.dg .box--ghost { fill: var(--dg-fill); stroke: var(--dg-muted); opacity: 0.7; }
+.dg .cyl-rim { fill: none; }
+.dg .band { fill: var(--dg-band); stroke: var(--dg-muted); stroke-width: 1; }
+.dg .group { fill: none; stroke: var(--dg-line); stroke-width: 1.5; }
+.dg .dashed { stroke-dasharray: 6 4; }
+.dg .edge { fill: none; stroke: var(--dg-line); stroke-width: 1.5; }
+.dg .edge--accent { stroke: var(--dg-accent); stroke-width: 1.75; }
+.dg .edge--danger { stroke: var(--dg-danger); stroke-dasharray: 6 4; }
+.dg .edge--violet { stroke: var(--dg-violet); stroke-width: 1.75; }
+.dg .edge--muted { stroke: var(--dg-muted); }
+.dg .ah { fill: var(--dg-line); }
+.dg .ah--accent { fill: var(--dg-accent); }
+.dg .ah--danger { fill: var(--dg-danger); }
+.dg .ah--violet { fill: var(--dg-violet); }
+.dg .ah--muted { fill: var(--dg-muted); }
+.dg .dot { fill: var(--dg-line); }
+.dg .no-entry circle { fill: var(--dg-bg); stroke: var(--dg-danger); stroke-width: 2; }
+.dg .no-entry line { stroke: var(--dg-danger); stroke-width: 2; }
+.dg .lifeline { stroke: var(--dg-muted); stroke-width: 1; stroke-dasharray: 4 4; }
+.dg .frame-box { fill: none; stroke: var(--dg-frame); stroke-width: 1.25; }
+.dg .frame-tag { fill: var(--dg-frame-bg); stroke: var(--dg-frame); stroke-width: 1.25; }
+.dg .pill rect { stroke-width: 1.25; }
+.dg .pill text { font-size: 11px; font-weight: 700; }
+.dg .pill--accent rect { fill: var(--dg-fill-2); stroke: var(--dg-accent); }
+.dg .pill--accent text { fill: var(--dg-accent); }
+.dg .pill--violet rect { fill: var(--dg-violet-bg); stroke: var(--dg-violet); }
+.dg .pill--violet text { fill: var(--dg-violet); }
+
+/* ---------------------------------------------------------------- checklist */
+.checklist-tools {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem;
+  margin: 1rem 0; padding: 0.6rem 0.875rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+}
+.checklist-tools[hidden] { display: none; }
+.checklist-progress { font-weight: 650; margin-right: auto; }
+.checklist-note { flex-basis: 100%; margin: 0; font-size: 0.85rem; color: var(--muted); }
+.btn {
+  font: inherit; font-size: 0.875rem; padding: 0.3rem 0.8rem; border-radius: 0.4rem; cursor: pointer;
+  border: 1px solid var(--border-strong); background: var(--bg); color: var(--fg);
+}
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.tbl.checklist { min-width: 52rem; }
+.checklist .col-check { width: 2.5rem; text-align: center; }
+.checklist .col-id { white-space: nowrap; font-family: var(--font-mono); font-size: 0.85rem; }
+.checklist .col-id label { cursor: pointer; }
+.checklist .col-role { min-width: 7rem; }
+.checklist .col-status { min-width: 8rem; }
+.checklist .col-status .badge { white-space: normal; }
+.checklist .col-sign { display: none; width: 8rem; }
+.checklist input[type="checkbox"] { width: 1.15rem; height: 1.15rem; accent-color: var(--accent); cursor: pointer; margin: 0.15rem 0 0; }
+.checklist tr.is-todo > * { background: color-mix(in srgb, var(--warn-bg) 55%, transparent); }
+.checklist tr.is-done > :not(.col-check) { color: var(--muted); }
+.checklist-total { font-weight: 650; }
+
+/* ---------------------------------------------------------------- index cards */
+.cards { display: grid; gap: 1rem; margin: 1.5rem 0; }
+@media (min-width: 48rem) { .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.card {
+  display: flex; flex-direction: column; gap: 0.25rem;
+  padding: 1rem 1.1rem 1.1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+}
+.card h2 { border: 0; margin: 0.15rem 0 0.25rem; padding: 0; font-size: 1.2rem; }
+.card h2 a { text-decoration: none; }
+.card h2 a:hover { text-decoration: underline; }
+.card .audience { margin: 0; font-size: 0.85rem; color: var(--muted); font-weight: 600; }
+.card p { margin: 0.4rem 0; font-size: 0.95rem; }
+.card .card-cta { margin-top: auto; padding-top: 0.5rem; font-weight: 650; }
+
+/* ---------------------------------------------------------------- pager & footer */
+.pager { display: grid; gap: 0.75rem; margin: 3rem 0 0; }
+@media (min-width: 40rem) { .pager { grid-template-columns: 1fr 1fr; } }
+.pager a {
+  display: block; padding: 0.75rem 1rem; border: 1px solid var(--border); border-radius: var(--radius);
+  text-decoration: none; background: var(--surface);
+}
+.pager a:hover { border-color: var(--accent); }
+.pager .dir { display: block; font-size: 0.8rem; color: var(--muted); }
+.pager .ttl { font-weight: 650; }
+.pager .next { text-align: right; grid-column: 2; }
+@media (max-width: 39.99rem) { .pager .next { grid-column: auto; } }
+.site-footer {
+  border-top: 1px solid var(--border); background: var(--surface); color: var(--muted);
+  font-size: 0.9rem; padding: 1rem;
+}
+.site-footer p { max-width: calc(var(--content-w) + var(--toc-w) + 2.5rem); margin: 0 auto; }
+
+/* ---------------------------------------------------------------- print */
+@media print {
+  :root {
+    --bg: #fff; --surface: #fff; --surface-2: #f0f0f0; --fg: #000; --muted: #333; --border: #999; --border-strong: #666;
+    --accent: #000; --accent-weak: #fff; --code-bg: #fff;
+    --ok: #000; --ok-bg: #fff; --warn: #000; --warn-bg: #fff; --danger: #000; --danger-bg: #fff;
+    --violet: #000; --violet-bg: #fff; --neutral: #000; --neutral-bg: #fff;
+    --hl-kw: #000; --hl-str: #000; --hl-com: #444; --hl-num: #000; --hl-tag: #000; --hl-attr: #000;
+    --dg-bg: #fff; --dg-fill: #fff; --dg-fill-2: #fff; --dg-band: #f4f4f4; --dg-core: #eee; --dg-line: #000; --dg-text: #000;
+    --dg-muted: #333; --dg-accent: #000; --dg-danger: #000; --dg-violet: #000; --dg-violet-bg: #fff; --dg-warn: #000;
+    --dg-warn-bg: #fff; --dg-ok: #000; --dg-ok-bg: #fff; --dg-frame: #333; --dg-frame-bg: #eee;
+    color-scheme: light;
+  }
+  @page { margin: 14mm 12mm; }
+  body { font-size: 10pt; line-height: 1.45; background: #fff; color: #000; }
+  .site-header, .toc, .pager, .skip-link, .anchor, .copy-btn, .zoom-link, .checklist-tools, .fig-ref { display: none !important; }
+  .layout { display: block; max-width: none; padding: 0; }
+  .content { max-width: none; padding: 0; }
+  a { color: #000; text-decoration: none; }
+  a.path code { color: #000; }
+  h2, h3, h4 { break-after: avoid; page-break-after: avoid; }
+  .table-wrap, .diagram-scroll { overflow: visible; border-color: #999; }
+  .tbl, .tbl.wide, .tbl.checklist { min-width: 0 !important; font-size: 8.5pt; }
+  .tbl tbody tr:nth-child(even), .checklist tr.is-todo > * { background: none; }
+  thead { display: table-header-group; }
+  tr, .code-block, .diagram, .callout { break-inside: avoid; page-break-inside: avoid; }
+  pre.code code { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .dg { min-width: 0 !important; width: 100% !important; }
+  .diagram:target { position: static; }
+  details.dg-text { border: 0; padding: 0; }
+  .badge { border-color: #000; background: none; color: #000; }
+  .checklist .col-sign { display: table-cell; }
+  .checklist input[type="checkbox"] { accent-color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .checklist tr.is-done > :not(.col-check) { color: #000; }
+  .checklist-group { break-before: page; page-break-before: always; }
+  .site-footer { background: none; border-top: 1px solid #999; color: #000; padding: 0.5rem 0 0; }
+  html.print-checklist-only .page-head,
+  html.print-checklist-only .doc-intro,
+  html.print-checklist-only .doc-section:not(.is-checklist) { display: none !important; }
+  html.print-checklist-only .checklist-group:first-of-type { break-before: auto; page-break-before: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#noi-dung">Bỏ qua tới nội dung</a>
+<header class="site-header">
+<div class="site-header__inner">
+<a class="brand" href="index.html">Game Server Framework <span>· tài liệu</span></a>
+<nav aria-label="Các trang tài liệu"><ul class="site-nav"><li><a href="index.html">Trang chủ</a></li><li><a href="01-gioi-thieu.html" aria-current="page">1. Giới thiệu</a></li><li><a href="02-them-command.html">2. Thêm command</a></li><li><a href="03-deploy.html">3. Deploy</a></li></ul></nav>
+</div>
+</header>
+<div class="layout">
+<nav class="toc" aria-label="Mục lục trang"><details open><summary>Mục lục</summary><ul><li><a href="#muc-1">1. Framework này giải quyết nhu cầu gì</a></li><li><a href="#muc-2">2. Phạm vi và trạng thái hiện tại</a></li><li><a href="#muc-3">3. Cấu trúc repo</a></li><li><a href="#muc-4">4. Kiến trúc</a><ul><li class="toc-h3"><a href="#muc-4-1">4.1 Sơ đồ khối (Sơ đồ A)</a></li><li class="toc-h3"><a href="#muc-4-2">4.2 Phân tầng và luật phụ thuộc (Sơ đồ B)</a></li><li class="toc-h3"><a href="#muc-4-3">4.3 Mô hình module</a></li><li class="toc-h3"><a href="#muc-4-4">4.4 Mô hình &quot;một command = một transaction&quot;</a></li><li class="toc-h3"><a href="#muc-4-5">4.5 Security profile và xác thực</a></li><li class="toc-h3"><a href="#muc-4-6">4.6 Gate, ban và giới hạn tải</a></li><li class="toc-h3"><a href="#muc-4-7">4.7 Lưu trữ</a></li><li class="toc-h3"><a href="#muc-4-8">4.8 Flavor (môi trường) — slice 011</a></li><li class="toc-h3"><a href="#muc-4-9">4.9 Việc chạy nền</a></li><li class="toc-h3"><a href="#muc-4-10">4.10 Quan sát và audit</a></li><li class="toc-h3"><a href="#muc-4-11">4.11 Unity client SDK</a></li><li class="toc-h3"><a href="#muc-4-12">4.12 GM API</a></li></ul></li><li><a href="#muc-5">5. Điểm mạnh (mỗi điểm kèm bằng chứng)</a></li><li><a href="#muc-6">6. Giới hạn hiện tại</a></li><li><a href="#muc-7">7. Đọc tiếp</a></li></ul></details></nav>
+<main id="noi-dung" class="content" tabindex="-1">
+<header class="page-head">
+<p class="eyebrow">Trang 1 / 3 · Giới thiệu</p>
+<h1>Giới thiệu framework</h1>
+<p class="lead">Nhu cầu, phạm vi, cấu trúc repo, kiến trúc, điểm mạnh (kèm bằng chứng) và giới hạn hiện tại.</p>
+<p class="meta">Đúng với commit <code>175df65</code> (nhánh <code>012-analytics-audit</code>, tài liệu làm trên <code>docs-html-guides</code>).</p>
+</header>
+
+<section class="doc-section" aria-labelledby="muc-1">
+<h2 id="muc-1">1. Framework này giải quyết nhu cầu gì <a class="anchor" href="#muc-1" aria-label="Liên kết tới mục này">#</a></h2>
+<p><strong>Một backend dùng chung cho nhiều game mobile.</strong> Mỗi game Unity cần cùng một nhóm việc: đăng nhập, lưu tiến trình và tài nguyên, mua IAP, công cụ GM, log, kiểm soát bảo trì. Framework làm sẵn các phần chung đó; mỗi game chỉ viết phần nghiệp vụ riêng (command, rule, aggregate) dưới dạng <strong>module</strong>, và không sửa core.</p>
+<p><strong>Server là nguồn sự thật (server-authoritative).</strong> Client gửi <em>hành động</em> (ví dụ &quot;kết thúc trận, thắng&quot;), không gửi kết quả (&quot;tôi có 500 gold&quot;). Server kiểm tra, tính kết quả, lưu, rồi trả về phần dữ liệu đã đổi. Client không bao giờ tự quyết số dư. (Yêu cầu PLY-01, <a class="path" href="../../Requirements/Game_Server_System_Requirements_v1.2.md"><code>Requirements/<wbr>Game_<wbr>Server_<wbr>System_<wbr>Requirements_<wbr>v1.<wbr>2.<wbr>md</code></a> mục 8.1.)</p>
+<p><strong>Kiểu giao tiếp:</strong> HTTP request–response. Unity dùng HTTPS + Protobuf; GM tool web dùng HTTPS + JSON. Không có realtime tick, UDP hay đồng bộ di chuyển (ngoài phạm vi, yêu cầu mục 2.1).</p>
+<p>Ba mục tiêu chính của tài liệu yêu cầu (mục 1), mỗi mục được đo bằng tiêu chí nghiệm thu:</p>
+<div class="table-wrap" role="region" aria-label="Bảng — 1. Framework này giải quyết nhu cầu gì" tabindex="0"><table class="tbl"><thead><tr><th scope="col">#</th><th scope="col">Mục tiêu</th><th scope="col">Đo bằng (ID yêu cầu)</th></tr></thead><tbody>
+<tr><td>1</td><td>I/O bất đồng bộ, chịu được tải dồn: không sync-over-async, giới hạn hàng đợi có số</td><td>PERF-01..10, ACC-16, ACC-52</td></tr>
+<tr><td>2</td><td>Kiến trúc module: thêm module/command/policy mà không sửa Core; game tự định nghĩa dữ liệu player</td><td>ARC-01..10, EXT-01..05, ACC-13</td></tr>
+<tr><td>3</td><td>Xác thực, phân quyền, audit GM thống nhất cho module cũ và mới</td><td>SEC-02, SEC-07, SEC-08, SEC-14, ACC-09..12</td></tr>
+</tbody></table></div>
+<p>Công nghệ nền: C# / .NET 10 (SDK <code>10.<wbr>0.<wbr>403</code> ghim trong <a class="path" href="../../global.json"><code>global.<wbr>json</code></a>), ASP.NET Core + Kestrel, Minimal API, Couchbase ≥ 7.6 (distributed transactions bắt buộc), Google.Protobuf (cùng một version ở server và Unity).</p>
+</section>
+<section class="doc-section" aria-labelledby="muc-2">
+<h2 id="muc-2">2. Phạm vi và trạng thái hiện tại <a class="anchor" href="#muc-2" aria-label="Liên kết tới mục này">#</a></h2>
+<p>Phân kỳ theo tài liệu yêu cầu mục 2.6:</p>
+<div class="table-wrap" role="region" aria-label="Bảng — 2. Phạm vi và trạng thái hiện tại" tabindex="0"><table class="tbl"><thead><tr><th scope="col">Phase</th><th scope="col">Nội dung</th><th scope="col">Trạng thái (tại commit 175df65)</th></tr></thead><tbody>
+<tr><td><strong>P0</strong> — MVP vertical slice</td><td>Host, module registry, command runner một transaction + receipt/replay, outbox; Identity (guest, session một thiết bị); Economy (wallet/inventory/ledger); IAP (verifier Apple/Google + fake); GetConfig; SampleGame (battle start/end, shop); GM backend; observability; Unity SDK</td><td><strong>Xong</strong>, slice 001–006 (<code>specs/<wbr>001-*</code> … <code>specs/<wbr>006-*</code>), đã merge vào <code>main</code></td></tr>
+<tr><td><strong>P0.5</strong> — Production hardening</td><td>GM SSO/CSRF/CORS/Data Protection (007), gate bảo trì + version tối thiểu + ban (008), Google Play Games / Game Center (009), lease job + xoá tài khoản (010), flavor + file store + <code>--provision</code> + script chạy local (011), audit log analytics login/payment (012)</td><td>007–012 <strong>xong</strong>. 007–009 đã vào <code>main</code>; 010–012 nằm trên nhánh của từng slice, chưa merge</td></tr>
+<tr><td>P0.5 — còn lại</td><td>giftcode (013), IAP S2S notification + refund (014), ops-readiness: secret scan, load test report, container guide, runbook, deploy/rollback, restore drill (015)</td><td>Chưa làm</td></tr>
+<tr><td><strong>P1</strong> — Feature modules</td><td>Event, durable jobs, GM page tương ứng, PRIV-02 (export dữ liệu), GFT-07, MSG-01, ANA-01 phần còn lại</td><td>Chưa làm</td></tr>
+<tr><td>P2</td><td>Mở rộng riêng của từng game</td><td>Do game làm</td></tr>
+</tbody></table></div>
+<p>Ngoài phạm vi framework: realtime, Leaderboard/League (owner bỏ 26/10/2026), GM frontend đầy đủ (dev khác làm dựa trên <a class="path" href="../../docs/api/gm-openapi.json"><code>docs/<wbr>api/<wbr>gm-openapi.<wbr>json</code></a>).</p>
+<p>Nguồn trạng thái: <a class="path" href="../../AgentMemories/features/p05-speckit/00_summary.md"><code>AgentMemories/<wbr>features/<wbr>p05-speckit/<wbr>00_<wbr>summary.<wbr>md</code></a>.</p>
+</section>
+<section class="doc-section" aria-labelledby="muc-3">
+<h2 id="muc-3">3. Cấu trúc repo <a class="anchor" href="#muc-3" aria-label="Liên kết tới mục này">#</a></h2>
+<p>Hiện tại framework <strong>chưa đóng gói thành NuGet package</strong> (task đóng gói được tách ra làm sau). Game và host tham chiếu các project bằng <code>ProjectReference</code> trong cùng solution <a class="path" href="../../GameServer.slnx"><code>GameServer.<wbr>slnx</code></a>.</p>
+<div class="table-wrap" role="region" aria-label="Bảng — 3. Cấu trúc repo" tabindex="0"><table class="tbl"><thead><tr><th scope="col">Đường dẫn</th><th scope="col">Nội dung</th></tr></thead><tbody>
+<tr><td><a class="path" href="../../src/GameServer.Core"><code>src/<wbr>GameServer.<wbr>Core</code></a></td><td>Contract dùng chung, không phụ thuộc web/DB/Protobuf: <code>ICommandHandler</code>, <code>ICommandContext</code>, <code>CommandDescriptor</code>, <code>CommandOutcome</code>, <code>ModuleDescriptor</code>, <code>PlayerAggregateDescriptor</code>, <code>ErrorCode</code>, <code>IClock</code>, <code>ILeaseJob</code>, <code>AnalyticsEvents</code></td></tr>
+<tr><td><a class="path" href="../../src/GameServer.Platform"><code>src/<wbr>GameServer.<wbr>Platform</code></a></td><td>Lõi runtime: <code>ModuleRegistry</code> (đăng ký + kiểm tra khi khởi động), <code>CommandRunner</code>, receipt, outbox (<code>OutboxRelay</code>, <code>OutboxSweeper</code>), store abstraction (<code>ITransactionalDocumentStore</code>), lease job (<code>LeaseJobRunner</code>), xoá tài khoản (<code>AccountPurgeService</code>), analytics pipeline, <code>GameServerOptions</code></td></tr>
+<tr><td><a class="path" href="../../src/GameServer.Platform.Web"><code>src/<wbr>GameServer.<wbr>Platform.<wbr>Web</code></a></td><td>Hosting (<code>AddGameServer</code>, <code>UseGameServer</code>, <code>RunGameServerAsync</code>), middleware, map endpoint command (<code>CommandEndpointFactory</code>, <code>GmCommandEndpointFactory</code>), Protobuf binding, lỗi (<code>ErrorResponseWriter</code>), security profile, Data Protection, GM OpenAPI</td></tr>
+<tr><td><a class="path" href="../../src/GameServer.Platform.Couchbase"><code>src/<wbr>GameServer.<wbr>Platform.<wbr>Couchbase</code></a></td><td>Store Couchbase (transactions, provisioning, TLS, RBAC) — nơi <strong>duy nhất</strong> gọi Couchbase SDK</td></tr>
+<tr><td><a class="path" href="../../src/GameServer.Platform.Observability"><code>src/<wbr>GameServer.<wbr>Platform.<wbr>Observability</code></a></td><td>Log file JSON (Serilog), OpenTelemetry, <code>/<wbr>health/<wbr>live</code> + <code>/<wbr>health/<wbr>ready</code>, file sink analytics</td></tr>
+<tr><td><a class="path" href="../../src/GameServer.Platform.Testing"><code>src/<wbr>GameServer.<wbr>Platform.<wbr>Testing</code></a></td><td>Store in-memory (có tiêm lỗi), <code>FakeClock</code>, file store của flavor <code>Local</code></td></tr>
+<tr><td><code>src/<wbr>GameServer.<wbr>Modules.<wbr>Identity*</code></td><td>Aggregate bắt buộc <code>profile</code>, guest login, provider login (Play Games, Game Center), session, ban, xoá tài khoản</td></tr>
+<tr><td><code>src/<wbr>GameServer.<wbr>Modules.<wbr>Economy*</code></td><td>Wallet, inventory, ledger, GM adjust</td></tr>
+<tr><td><code>src/<wbr>GameServer.<wbr>Modules.<wbr>Iap*</code></td><td>Mua IAP: verifier Apple/Google/fake</td></tr>
+<tr><td><code>src/<wbr>GameServer.<wbr>Modules.<wbr>Gm*</code></td><td>GM: staff, cookie session, SSO, permission, audit, trang <code>/<wbr>gm/<wbr>v1/<wbr>ui</code></td></tr>
+<tr><td><a class="path" href="../../modules/Sample.Counter"><code>modules/<wbr>Sample.<wbr>Counter</code></a></td><td><strong>Module mẫu</strong> tối thiểu (1 command, 1 query, 1 policy thay được, 1 endpoint GM, 1 outbox projection) — ví dụ của trang 5b</td></tr>
+<tr><td><a class="path" href="../../templates/module"><code>templates/<wbr>module</code></a></td><td>Khung module 2 project để copy (<a class="path" href="../../templates/module/README.md"><code>templates/<wbr>module/<wbr>README.<wbr>md</code></a>)</td></tr>
+<tr><td><a class="path" href="../../samples/SampleGame"><code>samples/<wbr>SampleGame</code></a></td><td>Game mẫu: module <code>SampleGame</code> (battle, shop, GM progression) + client Unity 6 <a class="path" href="../../samples/SampleGame/KestrelDemo"><code>samples/<wbr>SampleGame/<wbr>KestrelDemo</code></a></td></tr>
+<tr><td><a class="path" href="../../samples/SampleHost"><code>samples/<wbr>SampleHost</code></a></td><td>Host chạy thử: <code>Program.<wbr>cs</code> + <code>appsettings.<wbr>{Local,Dev,Beta,Uat,Live}.<wbr>json</code></td></tr>
+<tr><td><a class="path" href="../../sdk/unity/com.gameserver.client"><code>sdk/<wbr>unity/<wbr>com.<wbr>gameserver.<wbr>client</code></a></td><td>Gói Unity (UPM) client SDK; <a class="path" href="../../sdk/GameServer.Client"><code>sdk/<wbr>GameServer.<wbr>Client</code></a> build cùng mã nguồn cho .NET và sinh code Protobuf</td></tr>
+<tr><td><a class="path" href="../../proto/gameserver/core/v1/core.proto"><code>proto/<wbr>gameserver/<wbr>core/<wbr>v1/<wbr>core.<wbr>proto</code></a></td><td>Contract wire chung: <code>CommandResponse</code>, <code>SectionUpdate</code>, <code>ErrorEnvelope</code>, snapshot, config</td></tr>
+<tr><td><code>tests/<wbr>*</code></td><td>Unit, HTTP, kiến trúc, Couchbase integration, SDK (mục 5)</td></tr>
+<tr><td><a class="path" href="../../tools/local"><code>tools/<wbr>local</code></a>, <a class="path" href="../../tools/GameServer.LoadTest"><code>tools/<wbr>GameServer.<wbr>LoadTest</code></a></td><td>Script chạy local, chạy nhiều instance, drill sự cố; công cụ tải/tranh chấp</td></tr>
+<tr><td><a class="path" href="../../docs/pcr"><code>docs/<wbr>pcr</code></a>, <a class="path" href="../../docs/adr"><code>docs/<wbr>adr</code></a>, <a class="path" href="../../docs/guides"><code>docs/<wbr>guides</code></a>, <a class="path" href="../../docs/api"><code>docs/<wbr>api</code></a></td><td>Published Contract Register từng module, ADR, hướng dẫn, OpenAPI GM</td></tr>
+<tr><td><code>specs/</code></td><td>Spec Kit: spec, plan, tasks theo slice</td></tr>
+</tbody></table></div>
+<p><strong>Một game cụ thể dùng framework thế nào:</strong> game viết module của mình (2 project, giống <a class="path" href="../../modules/Sample.Counter"><code>modules/<wbr>Sample.<wbr>Counter</code></a>), tạo một host (giống <a class="path" href="../../samples/SampleHost/Program.cs"><code>samples/<wbr>SampleHost/<wbr>Program.<wbr>cs</code></a>) gọi <code>AddGameServer()</code> rồi <code>AddModule&lt;...<wbr>&gt;()</code> cho từng module cần dùng, cấu hình bằng <code>appsettings.<wbr>{Flavor}.<wbr>json</code>.</p>
+</section>
+<section class="doc-section" aria-labelledby="muc-4">
+<h2 id="muc-4">4. Kiến trúc <a class="anchor" href="#muc-4" aria-label="Liên kết tới mục này">#</a></h2>
+<h3 id="muc-4-1">4.1 Sơ đồ khối (Sơ đồ A) <a class="anchor" href="#muc-4-1" aria-label="Liên kết tới mục này">#</a></h3>
+<span id="so-do-a-ref" class="fig-ref"></span><figure class="diagram" id="so-do-a"><div class="diagram-bar"><span class="diagram-title">Sơ đồ A — kiến trúc khối</span><a class="zoom-link zoom-open" href="#so-do-a">Phóng to</a><a class="zoom-link zoom-close" href="#so-do-a-ref">Đóng</a></div><div class="diagram-scroll" role="region" aria-label="Sơ đồ A — kiến trúc khối (cuộn ngang nếu màn hình hẹp)" tabindex="0"><svg class="dg " viewBox="0 0 1240 640" role="img" aria-labelledby="sdA-title sdA-desc" style="--nat-w:1240px;--min-w:900px" focusable="false"><title id="sdA-title">Sơ đồ A — kiến trúc khối</title><desc id="sdA-desc">Ba cột. Trái: Unity game (chứa gói com.gameserver.client, GameServerClient) và GM tool web. Giữa: host process ASP.NET Core + Kestrel gồm middleware pipeline (ForwardedHeaders, ExceptionMiddleware, CorrelationMiddleware, Routing, GateMiddleware, ProfileEnforcementMiddleware, RequestTimeouts, RateLimiter), endpoints (Player API Protobuf, GM API JSON, Public), Platform (ModuleRegistry, Lease jobs, CommandRunner, Outbox relay + sweeper, Analytics pipeline), Modules (Identity, Economy, IAP, GM, SampleGame, Sample.Counter, module của game) và Core. Phải: Couchbase, file store chỉ cho flavor Local, file log và analytics, OTLP collector tuỳ chọn, Apple/Google. CommandRunner ghi Couchbase một transaction cho mỗi command; outbox chiếu sang Couchbase; analytics ghi JSONL; IAP gọi Apple/Google trước transaction; host gửi traces, metrics tới OTLP.</desc><defs><marker id="sdA-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker><marker id="sdA-ah-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah ah--accent"/></marker><marker id="sdA-ah-danger" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah ah--danger"/></marker><marker id="sdA-ah-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah ah--violet"/></marker><marker id="sdA-ah-muted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah ah--muted"/></marker></defs><text x="101" y="56" text-anchor="middle" class="t-head"><tspan x="101" dy="0">Client</tspan></text><text x="1130" y="56" text-anchor="middle" class="t-head"><tspan x="1130" dy="0">Hạ tầng</tspan></text><rect x="16" y="70" width="170" height="124" rx="8" class="box"/><text x="101" y="92" text-anchor="middle" class="t-b"><tspan x="101" dy="0">Unity game</tspan></text><g><rect x="28" y="106" width="146" height="74" rx="6" class="box box--accent"/><text x="101" y="140" text-anchor="middle" class="t-sm2"><tspan x="101" dy="0">com.gameserver.client</tspan><tspan x="101" dy="14">(GameServerClient)</tspan></text></g><g><rect x="16" y="270" width="170" height="50" rx="6" class="box"/><text x="101" y="299" text-anchor="middle" class=""><tspan x="101" dy="0" class="t-b">GM tool (web)</tspan></text></g><rect x="316" y="20" width="610" height="606" rx="12" class="group"/><text x="332" y="44" text-anchor="start" class="t-b t-lg"><tspan x="332" dy="0">Host process (ASP.NET Core + Kestrel)</tspan></text><rect x="331" y="58" width="580" height="144" rx="8" class="band"/><text x="345" y="77" text-anchor="start" class="t-band"><tspan x="345" dy="0">Middleware pipeline</tspan></text><g><rect x="345" y="86" width="126" height="40" rx="6" class="box"/><text x="408" y="110" text-anchor="middle" class="t-cell"><tspan x="408" dy="0">ForwardedHeaders</tspan></text></g><g><rect x="487" y="86" width="126" height="40" rx="6" class="box"/><text x="550" y="110" text-anchor="middle" class="t-cell"><tspan x="550" dy="0">ExceptionMiddleware</tspan></text></g><g><rect x="629" y="86" width="126" height="40" rx="6" class="box"/><text x="692" y="110" text-anchor="middle" class="t-cell"><tspan x="692" dy="0">CorrelationMiddleware</tspan></text></g><g><rect x="771" y="86" width="126" height="40" rx="6" class="box"/><text x="834" y="110" text-anchor="middle" class="t-cell"><tspan x="834" dy="0">Routing</tspan></text></g><g><rect x="345" y="146" width="126" height="40" rx="6" class="box"/><text x="408" y="170" text-anchor="middle" class="t-cell"><tspan x="408" dy="0">GateMiddleware</tspan></text></g><g><rect x="487" y="146" width="126" height="40" rx="6" class="box"/><text x="550" y="163.5" text-anchor="middle" class="t-cell"><tspan x="550" dy="0">ProfileEnforcement</tspan><tspan x="550" dy="13">Middleware (auth)</tspan></text></g><g><rect x="629" y="146" width="126" height="40" rx="6" class="box"/><text x="692" y="170" text-anchor="middle" class="t-cell"><tspan x="692" dy="0">RequestTimeouts</tspan></text></g><g><rect x="771" y="146" width="126" height="40" rx="6" class="box"/><text x="834" y="170" text-anchor="middle" class="t-cell"><tspan x="834" dy="0">RateLimiter</tspan></text></g><path d="M471,106 H487" class="edge" marker-end="url(#sdA-ah)"/><path d="M471,166 H487" class="edge" marker-end="url(#sdA-ah)"/><path d="M613,106 H629" class="edge" marker-end="url(#sdA-ah)"/><path d="M613,166 H629" class="edge" marker-end="url(#sdA-ah)"/><path d="M755,106 H771" class="edge" marker-end="url(#sdA-ah)"/><path d="M755,166 H771" class="edge" marker-end="url(#sdA-ah)"/><path d="M834,126 V136 H408 V146" class="edge" marker-end="url(#sdA-ah)"/><path d="M621,202 V226" class="edge" marker-end="url(#sdA-ah)"/><rect x="331" y="226" width="580" height="86" rx="8" class="band"/><text x="345" y="245" text-anchor="start" class="t-band"><tspan x="345" dy="0">Endpoints</tspan></text><g><rect x="345" y="254" width="176" height="48" rx="6" class="box"/><text x="433" y="275" text-anchor="middle" class=""><tspan x="433" dy="0" class="t-b">Player API (Protobuf)</tspan><tspan x="433" dy="14" class="t-mono">/api/v1/...</tspan></text></g><g><rect x="533" y="254" width="176" height="48" rx="6" class="box"/><text x="621" y="275" text-anchor="middle" class=""><tspan x="621" dy="0" class="t-b">GM API (JSON)</tspan><tspan x="621" dy="14" class="t-mono">/gm/v1/...</tspan></text></g><g><rect x="721" y="254" width="176" height="48" rx="6" class="box"/><text x="809" y="275" text-anchor="middle" class=""><tspan x="809" dy="0" class="t-b">Public</tspan><tspan x="809" dy="14" class="t-mono">/v1/time, login, /health/*</tspan></text></g><path d="M433,302 V326 H621" class="edge edge--accent"/><path d="M621,302 V392" class="edge edge--accent" marker-end="url(#sdA-ah-accent)"/><text x="527" y="320" text-anchor="middle" class="t-lbl t-accent halo"><tspan x="527" dy="0">command</tspan></text><rect x="331" y="346" width="580" height="106" rx="8" class="band"/><text x="345" y="365" text-anchor="start" class="t-band"><tspan x="345" dy="0">Platform</tspan></text><g><rect x="345" y="392" width="102" height="48" rx="6" class="box"/><text x="396" y="420" text-anchor="middle" class="t-cell"><tspan x="396" dy="0">ModuleRegistry</tspan></text></g><g><rect x="457.5" y="392" width="102" height="48" rx="6" class="box"/><text x="508.5" y="420" text-anchor="middle" class="t-cell"><tspan x="508.5" dy="0">Lease jobs</tspan></text></g><g><rect x="570" y="392" width="102" height="48" rx="6" class="box box--accent"/><text x="621" y="420" text-anchor="middle" class="t-cell"><tspan x="621" dy="0">CommandRunner</tspan></text></g><g><rect x="682.5" y="392" width="102" height="48" rx="6" class="box"/><text x="733.5" y="413.5" text-anchor="middle" class="t-cell"><tspan x="733.5" dy="0">Outbox relay</tspan><tspan x="733.5" dy="13">+ sweeper</tspan></text></g><g><rect x="795" y="392" width="102" height="48" rx="6" class="box"/><text x="846" y="413.5" text-anchor="middle" class="t-cell"><tspan x="846" dy="0">Analytics</tspan><tspan x="846" dy="13">pipeline</tspan></text></g><path d="M650,392 V370 H954 V128 H1036" class="edge edge--accent" marker-end="url(#sdA-ah-accent)"/><text x="995" y="108" text-anchor="middle" class="t-lbl t-accent halo"><tspan x="995" dy="0">1 transaction</tspan><tspan x="995" dy="12">/ command</tspan></text><path d="M745,392 V382 H974 V186 H1036" class="edge" marker-end="url(#sdA-ah)"/><text x="1005" y="180" text-anchor="middle" class="t-lbl halo"><tspan x="1005" dy="0">projection</tspan></text><path d="M897,416 H1036" class="edge" marker-end="url(#sdA-ah)"/><text x="981" y="410" text-anchor="middle" class="t-lbl halo"><tspan x="981" dy="0">JSONL</tspan></text><path d="M621,440 V476" class="edge edge--accent" marker-end="url(#sdA-ah-accent)"/><text x="630" y="462" text-anchor="start" class="t-lbl t-accent halo"><tspan x="630" dy="0">gọi handler</tspan></text><rect x="331" y="476" width="580" height="82" rx="8" class="band"/><text x="345" y="495" text-anchor="start" class="t-band"><tspan x="345" dy="0">Modules</tspan></text><g><rect x="345" y="504" width="72" height="44" rx="6" class="box"/><text x="381" y="530" text-anchor="middle" class="t-cell"><tspan x="381" dy="0">Identity</tspan></text></g><g><rect x="425" y="504" width="72" height="44" rx="6" class="box"/><text x="461" y="530" text-anchor="middle" class="t-cell"><tspan x="461" dy="0">Economy</tspan></text></g><g><rect x="505" y="504" width="72" height="44" rx="6" class="box"/><text x="541" y="530" text-anchor="middle" class="t-cell"><tspan x="541" dy="0">IAP</tspan></text></g><g><rect x="585" y="504" width="72" height="44" rx="6" class="box"/><text x="621" y="530" text-anchor="middle" class="t-cell"><tspan x="621" dy="0">GM</tspan></text></g><g><rect x="665" y="504" width="72" height="44" rx="6" class="box"/><text x="701" y="530" text-anchor="middle" class="t-cell"><tspan x="701" dy="0">SampleGame</tspan></text></g><g><rect x="745" y="504" width="72" height="44" rx="6" class="box"/><text x="781" y="523.5" text-anchor="middle" class="t-cell"><tspan x="781" dy="0">Sample.</tspan><tspan x="781" dy="13">Counter</tspan></text></g><g><rect x="825" y="504" width="72" height="44" rx="6" class="box dashed"/><text x="861" y="523.5" text-anchor="middle" class="t-cell"><tspan x="861" dy="0">Module</tspan><tspan x="861" dy="13">của game</tspan></text></g><path d="M541,548 V566 H1036" class="edge" marker-end="url(#sdA-ah)"/><text x="981" y="560" text-anchor="middle" class="t-lbl halo"><tspan x="981" dy="0">trước transaction</tspan></text><rect x="331" y="574" width="580" height="38" rx="6" class="box box--core"/><text x="621" y="598" text-anchor="middle"><tspan class="t-b">Core (contract)</tspan><tspan class="t-sm" dx="10">· Modules chỉ phụ thuộc Core</tspan></text><path d="M926,482 H1036" class="edge edge--muted dashed" marker-end="url(#sdA-ah-muted)"/><text x="981" y="476" text-anchor="middle" class="t-lbl t-muted halo"><tspan x="981" dy="0">traces, metrics</tspan></text><g><path d="M1036,81 L1036,209 A94,11 0 0 0 1224,209 L1224,81 A94,11 0 0 0 1036,81 Z" class="box"/><path d="M1036,81 A94,11 0 0 0 1224,81" class="box cyl-rim"/><text x="1130" y="112" text-anchor="middle" class=""><tspan x="1130" dy="0" class="t-b">Couchbase</tspan></text></g><text x="1130" y="150" text-anchor="middle" class="t-sm"><tspan x="1130" dy="0">bucket theo môi trường,</tspan><tspan x="1130" dy="14">scope g_{gameId},</tspan><tspan x="1130" dy="14">collection pa_*, receipts, …</tspan></text><g><path d="M1036,251 L1036,305 A94,11 0 0 0 1224,305 L1224,251 A94,11 0 0 0 1036,251 Z" class="box dashed"/><path d="M1036,251 A94,11 0 0 0 1224,251" class="box dashed cyl-rim"/><text x="1130" y="280.5" text-anchor="middle" class=""><tspan x="1130" dy="0" class="t-b">File store</tspan><tspan x="1130" dy="14" class="t-sm">(chỉ flavor Local)</tspan></text></g><g><rect x="1036" y="392" width="188" height="48" rx="6" class="box"/><text x="1130" y="413" text-anchor="middle" class=""><tspan x="1130" dy="0" class="t-b">Files</tspan><tspan x="1130" dy="14" class="t-mono">logs/*.json, analytics/*.jsonl</tspan></text></g><g><rect x="1036" y="462" width="188" height="40" rx="6" class="box dashed"/><text x="1130" y="486" text-anchor="middle" class=""><tspan x="1130" dy="0" class="t-b">OTLP collector (tuỳ chọn)</tspan></text></g><g><rect x="1036" y="540" width="188" height="52" rx="6" class="box"/><text x="1130" y="563" text-anchor="middle" class=""><tspan x="1130" dy="0" class="t-b">Apple / Google</tspan><tspan x="1130" dy="14" class="t-sm">(verify IAP, identity)</tspan></text></g><path d="M186,120 L331,110" class="edge edge--accent" marker-end="url(#sdA-ah-accent)"/><text x="258" y="86" text-anchor="middle" class="t-lbl halo"><tspan x="258" dy="0">HTTPS POST, Protobuf,</tspan><tspan x="258" dy="13">X-Request-Id + Bearer</tspan></text><path d="M186,295 L331,180" class="edge" marker-end="url(#sdA-ah)"/><text x="262" y="270" text-anchor="middle" class="t-lbl halo"><tspan x="262" dy="0">HTTPS, JSON,</tspan><tspan x="262" dy="13">cookie + CSRF</tspan></text></svg></div></figure>
+<details class="dg-text"><summary>Mô tả dạng chữ của sơ đồ A (khối và mũi tên)</summary>
+<p>Đặc tả để vẽ. Bố cục từ trái sang phải, ba cột.</p>
+<p><strong>Cột trái — Client</strong></p>
+<ul><li>Hộp <code>Unity game</code> chứa hộp con <code>com.<wbr>gameserver.<wbr>client (GameServerClient)</code>.</li><li>Hộp <code>GM tool (web)</code>.</li></ul>
+<p><strong>Cột giữa — một hộp lớn &quot;Host process (ASP.NET Core + Kestrel)&quot;</strong>, bên trong xếp từ trên xuống:</p>
+<ol><li>Dải ngang <code>Middleware pipeline</code>: các ô nối tiếp <code>ForwardedHeaders</code> → <code>ExceptionMiddleware</code> → <code>CorrelationMiddleware</code> → <code>Routing</code> → <code>GateMiddleware</code> → <code>ProfileEnforcementMiddleware (auth)</code> → <code>RequestTimeouts</code> → <code>RateLimiter</code>.</li><li>Dải ngang <code>Endpoints</code>: ô <code>Player API (Protobuf) /<wbr>api/<wbr>v1/...</code>, ô <code>GM API (JSON) /<wbr>gm/<wbr>v1/...</code>, ô <code>Public /<wbr>v1/<wbr>time, login, /<wbr>health/<wbr>*</code>.</li><li>Hộp <code>Platform</code>: ô <code>CommandRunner</code>, ô <code>ModuleRegistry</code>, ô <code>Outbox relay + sweeper</code>, ô <code>Lease jobs</code>, ô <code>Analytics pipeline</code>.</li><li>Dải ngang <code>Modules</code> (mỗi module một ô): <code>Identity</code>, <code>Economy</code>, <code>IAP</code>, <code>GM</code>, <code>SampleGame</code>, <code>Sample.<wbr>Counter</code>, ô nét đứt <code>Module của game</code>.</li><li>Hộp <code>Core (contract)</code> nằm dưới cùng, mỏng, có nhãn &quot;Modules chỉ phụ thuộc Core&quot;.</li></ol>
+<p><strong>Cột phải — Hạ tầng</strong></p>
+<ul><li>Trụ <code>Couchbase</code> (nhãn: &quot;bucket theo môi trường, scope <code>g_<wbr>{gameId}</code>, collection <code>pa_<wbr>*</code>, <code>receipts</code>, …&quot;).</li><li>Trụ nét đứt <code>File store (chỉ flavor Local)</code>.</li><li>Hộp <code>Files:<wbr> logs/<wbr>*.<wbr>json, analytics/<wbr>*.<wbr>jsonl</code>.</li><li>Hộp <code>OTLP collector (tuỳ chọn)</code>.</li><li>Hộp <code>Apple /<wbr> Google (verify IAP, identity)</code>.</li></ul>
+<p><strong>Mũi tên</strong></p>
+<ul><li><code>Unity game</code> → dải <code>Middleware pipeline</code>: nhãn &quot;HTTPS POST, Protobuf, X-Request-Id + Bearer&quot;.</li><li><code>GM tool</code> → dải <code>Middleware pipeline</code>: nhãn &quot;HTTPS, JSON, cookie + CSRF&quot;.</li><li><code>Endpoints (Player API /<wbr> GM API)</code> → <code>CommandRunner</code>: nhãn &quot;command&quot;.</li><li><code>CommandRunner</code> → <code>Modules</code>: nhãn &quot;gọi handler&quot;.</li><li><code>CommandRunner</code> → <code>Couchbase</code>: nhãn &quot;1 transaction / command&quot;.</li><li><code>Outbox relay + sweeper</code> → <code>Couchbase</code>: nhãn &quot;projection&quot;.</li><li><code>Analytics pipeline</code> → <code>Files</code>: nhãn &quot;JSONL&quot;.</li><li><code>IAP</code> module (thực ra endpoint IAP) → <code>Apple /<wbr> Google</code>: nhãn &quot;trước transaction&quot;.</li><li><code>Host</code> → <code>OTLP collector</code>: nét đứt, nhãn &quot;traces, metrics&quot;.</li></ul>
+</details>
+<h3 id="muc-4-2">4.2 Phân tầng và luật phụ thuộc (Sơ đồ B) <a class="anchor" href="#muc-4-2" aria-label="Liên kết tới mục này">#</a></h3>
+<p>Sơ đồ chiều <strong>tham chiếu project</strong> (không phải đường mạng). Các hộp và mũi tên &quot;A → B&quot; nghĩa là &quot;A tham chiếu B&quot;:</p>
+<span id="so-do-b-ref" class="fig-ref"></span><figure class="diagram" id="so-do-b"><div class="diagram-bar"><span class="diagram-title">Sơ đồ B — chiều tham chiếu project</span><a class="zoom-link zoom-open" href="#so-do-b">Phóng to</a><a class="zoom-link zoom-close" href="#so-do-b-ref">Đóng</a></div><div class="diagram-scroll" role="region" aria-label="Sơ đồ B — chiều tham chiếu project (cuộn ngang nếu màn hình hẹp)" tabindex="0"><svg class="dg " viewBox="0 0 1000 500" role="img" aria-labelledby="sdB-title sdB-desc" style="--nat-w:1000px;--min-w:720px" focusable="false"><title id="sdB-title">Sơ đồ B — chiều tham chiếu project</title><desc id="sdB-desc">Mũi tên A → B nghĩa là A tham chiếu B. SampleHost tham chiếu Module.Adapters, GameServer.Platform.Couchbase và GameServer.Platform.Observability. Module.Adapters tham chiếu Module và GameServer.Platform.Web. Module chỉ tham chiếu GameServer.Core (ARC-01). GameServer.Platform.Web và GameServer.Platform.Couchbase tham chiếu GameServer.Platform, Platform tham chiếu GameServer.Core. Module bị cấm tham chiếu Platform.Web, Platform.Couchbase và Google.Protobuf; test kiến trúc chặn.</desc><defs><marker id="sdB-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker><marker id="sdB-ah-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah ah--accent"/></marker><marker id="sdB-ah-danger" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah ah--danger"/></marker><marker id="sdB-ah-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah ah--violet"/></marker><marker id="sdB-ah-muted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah ah--muted"/></marker></defs><g><rect x="40" y="24" width="200" height="44" rx="6" class="box box--accent"/><text x="140" y="50" text-anchor="middle" class=""><tspan x="140" dy="0" class="t-b">SampleHost</tspan></text></g><g><rect x="40" y="130" width="200" height="44" rx="6" class="box"/><text x="140" y="156" text-anchor="middle" class=""><tspan x="140" dy="0" class="t-b">Module.Adapters</tspan></text></g><g><rect x="40" y="260" width="200" height="44" rx="6" class="box"/><text x="140" y="286" text-anchor="middle" class=""><tspan x="140" dy="0" class="t-b">Module</tspan></text></g><g><rect x="40" y="420" width="920" height="44" rx="6" class="box box--core"/><text x="500" y="446" text-anchor="middle" class=""><tspan x="500" dy="0" class="t-b">GameServer.Core</tspan></text></g><g><rect x="380" y="130" width="240" height="44" rx="6" class="box"/><text x="500" y="156" text-anchor="middle" class=""><tspan x="500" dy="0" class="t-b">GameServer.Platform.Web</tspan></text></g><g><rect x="380" y="330" width="240" height="44" rx="6" class="box dashed"/><text x="500" y="349.5" text-anchor="middle" class=""><tspan x="500" dy="0" class="t-b">Google.Protobuf</tspan><tspan x="500" dy="13" class="t-sm">(package ngoài)</tspan></text></g><g><rect x="700" y="24" width="260" height="44" rx="6" class="box"/><text x="830" y="50" text-anchor="middle" class=""><tspan x="830" dy="0" class="t-b">GameServer.Platform.Observability</tspan></text></g><g><rect x="700" y="130" width="260" height="44" rx="6" class="box"/><text x="830" y="156" text-anchor="middle" class=""><tspan x="830" dy="0" class="t-b">GameServer.Platform.Couchbase</tspan></text></g><g><rect x="700" y="260" width="260" height="44" rx="6" class="box"/><text x="830" y="286" text-anchor="middle" class=""><tspan x="830" dy="0" class="t-b">GameServer.Platform</tspan></text></g><path d="M140,68 V130" class="edge" marker-end="url(#sdB-ah)"/><path d="M240,46 H700" class="edge" marker-end="url(#sdB-ah)"/><path d="M650,46 V152 H700" class="edge" marker-end="url(#sdB-ah)"/><circle cx="650" cy="46" r="3" class="dot"/><path d="M140,174 V260" class="edge" marker-end="url(#sdB-ah)"/><path d="M240,152 H380" class="edge" marker-end="url(#sdB-ah)"/><path d="M620,160 H680 V282 H700" class="edge" marker-end="url(#sdB-ah)"/><path d="M830,174 V260" class="edge" marker-end="url(#sdB-ah)"/><path d="M830,304 V420" class="edge" marker-end="url(#sdB-ah)"/><path d="M140,304 V420" class="edge edge--accent" marker-end="url(#sdB-ah-accent)"/><text x="152" y="372" text-anchor="start" class="t-lbl t-accent t-b halo"><tspan x="152" dy="0">chỉ được tham chiếu Core (ARC-01)</tspan></text><path d="M240,270 L430,174" class="edge edge--danger" marker-end="url(#sdB-ah-danger)"/><g class="no-entry"><circle cx="335" cy="222" r="8"/><line x1="329.5" y1="227.5" x2="340.5" y2="216.5"/></g><path d="M240,282 L700,168" class="edge edge--danger" marker-end="url(#sdB-ah-danger)"/><g class="no-entry"><circle cx="470" cy="225" r="8"/><line x1="464.5" y1="230.5" x2="475.5" y2="219.5"/></g><path d="M240,294 L380,345" class="edge edge--danger" marker-end="url(#sdB-ah-danger)"/><g class="no-entry"><circle cx="310" cy="319" r="8"/><line x1="304.5" y1="324.5" x2="315.5" y2="313.5"/></g><text x="470" y="205" text-anchor="middle" class="t-lbl t-danger t-b halo"><tspan x="470" dy="0">arch test chặn</tspan></text><g class="legend"><path d="M40,488 H80" class="edge" marker-end="url(#sdB-ah)"/><text x="88" y="492" text-anchor="start" class="t-sm"><tspan x="88" dy="0">A → B: A tham chiếu B (ProjectReference)</tspan></text><path d="M420,488 H460" class="edge edge--danger" marker-end="url(#sdB-ah-danger)"/><text x="468" y="492" text-anchor="start" class="t-sm"><tspan x="468" dy="0">bị cấm — test kiến trúc chặn</tspan></text></g></svg></div></figure>
+<details class="dg-text"><summary>Mô tả dạng chữ của sơ đồ B</summary>
+<div class="code-block"><div class="code-head"><span class="code-lang">text</span></div><pre class="code" data-lang="text"><code>SampleHost ──► Module.Adapters ──► Module ──► GameServer.Core
+SampleHost ──► GameServer.Platform.Couchbase ──► GameServer.Platform ──► GameServer.Core
+SampleHost ──► GameServer.Platform.Observability
+Module.Adapters ──► GameServer.Platform.Web ──► GameServer.Platform</code></pre></div>
+<p>Nhãn trên mũi tên <code>Module ──► GameServer.<wbr>Core</code>: &quot;chỉ được tham chiếu Core (ARC-01)&quot;. Đặt một biển cấm (nét đỏ có gạch chéo) từ <code>Module</code> tới <code>Platform.<wbr>Web</code>, <code>Platform.<wbr>Couchbase</code>, <code>Google.<wbr>Protobuf</code>, nhãn &quot;arch test chặn&quot;.</p>
+</details>
+<p>Luật được <strong>test kiến trúc</strong> kiểm (<a class="path" href="../../tests/GameServer.Architecture.Tests/ArchitectureTests.cs"><code>tests/<wbr>GameServer.<wbr>Architecture.<wbr>Tests/<wbr>ArchitectureTests.<wbr>cs</code></a>), không chỉ là quy ước:</p>
+<div class="table-wrap" role="region" aria-label="Bảng — 4.2 Phân tầng và luật phụ thuộc (Sơ đồ B)" tabindex="0"><table class="tbl"><thead><tr><th scope="col">Luật</th><th scope="col">Tên test</th></tr></thead><tbody>
+<tr><td>Core và project nghiệp vụ không phụ thuộc web, database, wire, logging</td><td><code>Core_<wbr>and_<wbr>business_<wbr>projects_<wbr>are_<wbr>independent_<wbr>of_<wbr>web_<wbr>database_<wbr>wire_<wbr>and_<wbr>logging</code></td></tr>
+<tr><td>Chỉ adapter Couchbase dùng Couchbase SDK</td><td><code>Only_<wbr>the_<wbr>couchbase_<wbr>adapter_<wbr>uses_<wbr>the_<wbr>couchbase_<wbr>sdk</code></td></tr>
+<tr><td>Chỉ Platform ghi qua transaction; module không chạm store trực tiếp</td><td><code>Only_<wbr>platform_<wbr>writes_<wbr>through_<wbr>transactions</code>, <code>Modules_<wbr>do_<wbr>not_<wbr>touch_<wbr>the_<wbr>document_<wbr>store_<wbr>directly</code></td></tr>
+<tr><td>Project nghiệp vụ không phụ thuộc adapter của mình hay module khác</td><td><code>Business_<wbr>projects_<wbr>do_<wbr>not_<wbr>depend_<wbr>on_<wbr>their_<wbr>adapters_<wbr>or_<wbr>other_<wbr>modules</code></td></tr>
+<tr><td>Handler nhận type domain, không nhận message wire</td><td><code>Command_<wbr>handlers_<wbr>receive_<wbr>domain_<wbr>types_<wbr>not_<wbr>wire_<wbr>messages</code></td></tr>
+<tr><td>Không MVC controller (chỉ Minimal API, đăng ký tường minh)</td><td><code>No_<wbr>mvc_<wbr>controllers</code></td></tr>
+<tr><td>Chỉ Observability dùng Serilog/OpenTelemetry</td><td><code>Only_<wbr>the_<wbr>observability_<wbr>project_<wbr>uses_<wbr>serilog_<wbr>and_<wbr>opentelemetry</code></td></tr>
+</tbody></table></div>
+<p>Thêm: <a class="path" href="../../BannedSymbols.txt"><code>BannedSymbols.<wbr>txt</code></a> cấm <code>DateTime.<wbr>UtcNow</code>, <code>DateTime.<wbr>Now</code>, <code>DateTimeOffset.<wbr>UtcNow</code>, <code>TimeZoneInfo.<wbr>Local</code>, <code>DateTime.<wbr>Today</code> (dùng <code>IClock</code>) và <code>Task.<wbr>Wait</code>/<code>.<wbr>Result</code> (dùng <code>await</code>) — vi phạm là lỗi build vì build bật warnings-as-errors.</p>
+<h3 id="muc-4-3">4.3 Mô hình module <a class="anchor" href="#muc-4-3" aria-label="Liên kết tới mục này">#</a></h3>
+<p>Một module gồm <strong>2 project</strong> (tài liệu yêu cầu mục 4.2; ví dụ <a class="path" href="../../modules/Sample.Counter"><code>modules/<wbr>Sample.<wbr>Counter</code></a>):</p>
+<div class="table-wrap" role="region" aria-label="Bảng — 4.3 Mô hình module" tabindex="0"><table class="tbl"><thead><tr><th scope="col">Project</th><th scope="col">Chứa</th><th scope="col">Tham chiếu</th></tr></thead><tbody>
+<tr><td><code>Module</code> (vd. <code>Sample.<wbr>Counter</code>)</td><td>State aggregate, record command/result, handler, policy, error code, nửa nghiệp vụ của <code>ModuleDescriptor</code></td><td>chỉ <code>GameServer.<wbr>Core</code></td></tr>
+<tr><td><code>Module.<wbr>Adapters</code> (vd. <code>Sample.<wbr>Counter.<wbr>Adapters</code>)</td><td>Lớp <code>IGameModule</code> (+ <code>IPlayerApiModule</code> / <code>IGmApiModule</code>), file <code>.<wbr>proto</code>, map wire ↔ domain, đăng ký DI</td><td>module + <code>GameServer.<wbr>Platform.<wbr>Web</code></td></tr>
+</tbody></table></div>
+<p>Điểm vào duy nhất của module là <code>ModuleDescriptor</code> (<a class="path" href="../../src/GameServer.Core/Modules/ModuleDescriptor.cs"><code>src/<wbr>GameServer.<wbr>Core/<wbr>Modules/<wbr>ModuleDescriptor.<wbr>cs</code></a>): tên, <code>DependsOn</code>, <code>Permissions</code>, <code>Aggregates</code>, <code>Commands</code>, <code>ErrorCodes</code>, <code>Collections</code> (kèm cách xử lý khi xoá tài khoản), <code>OutboxProjections</code>, <code>Jobs</code>, <code>DeletionSteps</code>, <code>PublicEndpoints</code>, <code>RequiredConfigFiles</code>.</p>
+<p>Host đăng ký module tường minh, không quét assembly (ARC-07):</p>
+<div class="code-block"><div class="code-head"><span class="code-lang">C#</span></div><pre class="code" data-lang="csharp"><code>gameServer
+    .AddModule&lt;IdentityModule&gt;()
+    .AddModule&lt;EconomyModule&gt;()
+    .AddModule&lt;IapModule&gt;()
+    .AddModule&lt;SampleGameModule&gt;()
+    .AddModule&lt;CounterModule&gt;()
+    .AddModule&lt;GmModule&gt;();</code></pre></div>
+<p>(trích <a class="path" href="../../samples/SampleHost/Program.cs"><code>samples/<wbr>SampleHost/<wbr>Program.<wbr>cs</code></a>). <code>AddModule&lt;T&gt;(m =&gt; m.<wbr>ServiceOnly())</code> đăng ký service của module mà không map endpoint (ARC-04). Game thay rule bằng <code>ConfigureExtensions(x =&gt; x.<wbr>ReplacePolicy&lt;...<wbr>&gt;().<wbr>ReplaceHandler&lt;...<wbr>&gt;(...<wbr>))</code> (<a class="path" href="../../src/GameServer.Platform.Web/Hosting/ExtensionRegistry.cs"><code>src/<wbr>GameServer.<wbr>Platform.<wbr>Web/<wbr>Hosting/<wbr>ExtensionRegistry.<wbr>cs</code></a>).</p>
+<h3 id="muc-4-4">4.4 Mô hình &quot;một command = một transaction&quot; <a class="anchor" href="#muc-4-4" aria-label="Liên kết tới mục này">#</a></h3>
+<p>Đây là ý quan trọng nhất của framework. Mọi thao tác <strong>làm đổi dữ liệu player</strong> là một <em>command</em>:</p>
+<ul><li><strong>Aggregate</strong>: dữ liệu player chia thành các khối JSON (aggregate), mỗi khối một document <code>pa_<wbr>{aggregateId}</code> với key = <code>playerId</code>, có <code>rev</code> và <code>schemaVersion</code>. Ví dụ <code>profile</code>, <code>wallet</code>, <code>inventory</code>, <code>counter</code>. Tối đa 16 aggregate một game.</li><li><strong><code>CommandDescriptor</code></strong> (<a class="path" href="../../src/GameServer.Core/Commands/CommandDescriptor.cs"><code>src/<wbr>GameServer.<wbr>Core/<wbr>Commands/<wbr>CommandDescriptor.<wbr>cs</code></a>) khai báo trước: tên operation (<code>&lt;module&gt;.<wbr>&lt;command&gt;</code>), <code>Touches</code> (aggregate được ghi, 1..4), <code>Reads</code> (chỉ đọc), số claim marker tối đa (0..2), security profile, permission GM.</li><li><strong><code>CommandRunner</code></strong> (<a class="path" href="../../src/GameServer.Platform/Commands/CommandRunner.cs"><code>src/<wbr>GameServer.<wbr>Platform/<wbr>Commands/<wbr>CommandRunner.<wbr>cs</code></a>) mở <strong>một</strong> transaction Couchbase, đọc <code>Touches ∪ Reads</code> + receipt, gọi handler, rồi ghi các aggregate đã đổi (<code>rev + 1</code>), claim marker và <strong>receipt</strong> trong cùng transaction, commit. Handler <strong>không</strong> gọi database.</li><li><strong>Receipt + replay (idempotency)</strong>: client sinh <code>X-Request-Id</code> (UUID) cho mỗi command. <code>receiptId</code> = SHA-256(actorId | playerId | operation | requestId). Gửi lại cùng requestId và cùng body trong 24 h → server trả <strong>đúng kết quả cũ</strong> (<code>replayed = true</code>), không chạy lại. Cùng requestId nhưng body khác → 409 <code>IDEMPOTENCY_<wbr>PAYLOAD_<wbr>MISMATCH</code>.</li><li><strong>Từ chối nghiệp vụ</strong> (<code>CommandOutcome.<wbr>Reject</code>) → rollback, không ghi gì, không receipt; client nhận HTTP 200 với mã nghiệp vụ.</li><li><strong>Outbox</strong>: hiệu ứng phụ (log, ledger, audit GM, analytics) là entry <code>ctx.<wbr>AddOutbox(kind, payload)</code> nằm <strong>trong receipt</strong>, nên commit cùng lúc với dữ liệu. Sau commit, relay inline giao cho consumer; nếu lỗi, <code>OutboxSweeper</code> (mỗi 30 s) giao lại; quá 10 lần → dead letter. Consumer mặc định chiếu entry vào một collection (<code>OutboxProjection</code>).</li><li><strong>Section / rev</strong>: response trả các aggregate <em>client-visible</em> đã đổi (<code>SectionUpdate</code> có <code>base_<wbr>rev</code>, <code>new_<wbr>rev</code>, payload Protobuf). SDK Unity giữ bản sao theo <code>rev</code>.</li><li><strong>Nâng schema lười</strong>: tăng <code>schemaVersion</code> của aggregate thì khai một <code>IAggregateUpgrader</code> cho mỗi bước; document cũ được nâng khi đọc và ghi lại ở lần commit kế tiếp.</li></ul>
+<p>Chi tiết đường đi của một command và cách viết command mới: <strong>trang 5b</strong> (<a class="path" href="./02-them-command.html"><code>02-them-command.<wbr>html</code></a>).</p>
+<h3 id="muc-4-5">4.5 Security profile và xác thực <a class="anchor" href="#muc-4-5" aria-label="Liên kết tới mục này">#</a></h3>
+<p>Mọi endpoint phải có <strong>đúng một</strong> security profile, gắn bằng helper trong <a class="path" href="../../src/GameServer.Platform.Web/Routing/ApiModules.cs"><code>src/<wbr>GameServer.<wbr>Platform.<wbr>Web/<wbr>Routing/<wbr>ApiModules.<wbr>cs</code></a>:</p>
+<div class="table-wrap" role="region" aria-label="Bảng — 4.5 Security profile và xác thực" tabindex="0"><table class="tbl wide"><thead><tr><th scope="col">Profile</th><th scope="col">Helper</th><th scope="col">Dùng cho</th><th scope="col">Xác thực</th></tr></thead><tbody>
+<tr><td>Player</td><td><code>AsPlayerEndpoint()</code> (tự gắn bởi <code>MapPlayerCommand</code>)</td><td>API game, Protobuf</td><td><code>Authorization:<wbr> Bearer &lt;token&gt;</code> → <code>PlayerBearerAuthenticationHandler</code> (session, profile: đã xoá → bị khoá → bị thay phiên)</td></tr>
+<tr><td>Gm</td><td><code>AsGmEndpoint(permission)</code> (tự gắn bởi <code>MapGmCommand</code>)</td><td>GM API, JSON</td><td>cookie GM + permission + CSRF cho thao tác ghi</td></tr>
+<tr><td>Public</td><td><code>AsPublicEndpoint(...<wbr>)</code>, <code>AsPublicPlayerEndpoint()</code></td><td><code>/<wbr>v1/<wbr>time</code>, login, health</td><td>không; route phải nằm trong allowlist (<code>GameServer:<wbr>PublicEndpointAllowlist</code> hoặc <code>ModuleDescriptor.<wbr>PublicEndpoints</code>)</td></tr>
+<tr><td>Dev</td><td><code>AsDevEndpoint()</code></td><td>cheat, công cụ dev</td><td>chỉ Development/Test; startup chặn ở Production</td></tr>
+</tbody></table></div>
+<ul><li><strong>Deny-by-default</strong>: <code>ProfileEnforcementMiddleware</code> trả 403 cho endpoint không có profile, kể cả khi bộ kiểm tra lúc khởi động bị tắt.</li><li><strong>Kiểm tra lúc khởi động</strong> (<code>EndpointSecurityValidator</code>): route thiếu <code>/<wbr>v{n}/</code>, route trùng, Public chưa vào allowlist, Dev ở Production, GM mutation Public thiếu CSRF → host <strong>không khởi động</strong>.</li><li>Session một thiết bị: login mới tăng <code>SessionEpoch</code> của profile; token cũ nhận <code>SESSION_<wbr>REPLACED</code>.</li><li>GM (slice 007): SSO OIDC, cookie, CSRF, CORS allowlist, Data Protection key ring lưu trong store, audit mọi thao tác ghi (mỗi GM command ghi đúng một entry <code>gm_<wbr>audit</code>, runner kiểm).</li></ul>
+<h3 id="muc-4-6">4.6 Gate, ban và giới hạn tải <a class="anchor" href="#muc-4-6" aria-label="Liên kết tới mục này">#</a></h3>
+<ul><li><strong>Gate</strong> (<code>GateMiddleware</code>, slice 008): document <code>gate</code> chứa cờ bảo trì và version client tối thiểu theo platform. Chạy <strong>trước</strong> xác thực trên Player API và login; trả 503 <code>MAINTENANCE</code> hoặc 426 <code>UPDATE_<wbr>REQUIRED</code>. Cache ≤ 10 s mỗi instance (<code>GameServer:<wbr>Gate:<wbr>CacheSeconds</code>). GM, health, Dev vẫn hoạt động.</li><li><strong>Ban</strong>: ban login làm xác thực thất bại (<code>ACCOUNT_<wbr>SUSPENDED</code>); ban theo nhóm command do <code>BanCommandGuard</code> (một <code>ICommandGuard</code>) chặn <strong>lần chạy mới</strong> trong <code>CommandRunner</code>, retry của command đã commit vẫn được replay.</li><li><strong>Giới hạn</strong> (<code>GameServer:<wbr>Limits:<wbr>*</code>, <code>GameServer:<wbr>Commands:<wbr>*</code>): body Player ≤ 64 KiB, timeout Player 10 s, concurrency command toàn instance 200 + hàng đợi, mỗi player chạy tuần tự 1 command (hàng đợi 2, quá thì <code>RATE_<wbr>LIMITED</code>).</li></ul>
+<h3 id="muc-4-7">4.7 Lưu trữ <a class="anchor" href="#muc-4-7" aria-label="Liên kết tới mục này">#</a></h3>
+<div class="table-wrap" role="region" aria-label="Bảng — 4.7 Lưu trữ" tabindex="0"><table class="tbl"><thead><tr><th scope="col">Store</th><th scope="col">Dùng ở</th><th scope="col">Ghi chú</th></tr></thead><tbody>
+<tr><td>Couchbase (<code>AddCouchbaseDocumentStore</code>)</td><td>flavor <code>Dev</code>, <code>Beta</code>, <code>Uat</code>, <code>Live</code></td><td>bucket theo môi trường, scope <code>g_<wbr>{gameId}</code> (<code>CouchbaseOptions.<wbr>ScopeName</code>), distributed transactions; <code>Live</code> bắt buộc <code>couchbases://</code> (TLS)</td></tr>
+<tr><td>File store (<code>AddFileDocumentStore</code>)</td><td>flavor <code>Local</code></td><td>một file/document, journal làm điểm commit; bị từ chối ngoài Development/Test</td></tr>
+<tr><td>In-memory (<code>AddInMemoryDocumentStore</code>)</td><td>test</td><td>có tiêm lỗi (<code>StoreFaultInjector</code>)</td></tr>
+</tbody></table></div>
+<p>Cả ba implement cùng contract <code>ITransactionalDocumentStore</code> (<a class="path" href="../../src/GameServer.Platform/Persistence/DocumentStore.cs"><code>src/<wbr>GameServer.<wbr>Platform/<wbr>Persistence/<wbr>DocumentStore.<wbr>cs</code></a>) và chạy cùng bộ test conformance (<a class="path" href="../../tests/GameServer.Platform.Tests/Persistence/StoreConformanceTests.cs"><code>tests/<wbr>GameServer.<wbr>Platform.<wbr>Tests/<wbr>Persistence/<wbr>StoreConformanceTests.<wbr>cs</code></a>, <code>FileStoreConformanceTests.<wbr>cs</code>, <a class="path" href="../../tests/GameServer.Platform.Couchbase.IntegrationTests/CouchbaseStoreConformanceTests.cs"><code>tests/<wbr>GameServer.<wbr>Platform.<wbr>Couchbase.<wbr>IntegrationTests/<wbr>CouchbaseStoreConformanceTests.<wbr>cs</code></a>). Quyết định kiến trúc: <a class="path" href="../../docs/adr/0001-runner-store-abstraction.md"><code>docs/<wbr>adr/<wbr>0001-runner-store-abstraction.<wbr>md</code></a>.</p>
+<p><strong>Provisioning</strong> (slice 011): <code>dotnet SampleHost.<wbr>dll --provision</code> tạo scope, collection, index rồi thoát (exit 0/1/2). Collection và index được suy ra từ <code>ModuleDescriptor</code> của các module đã đăng ký. Quyền RBAC tối thiểu và lệnh mẫu: <a class="path" href="../../docs/guides/environments-and-local-run.md"><code>docs/<wbr>guides/<wbr>environments-and-local-run.<wbr>md</code></a> mục 5.</p>
+<h3 id="muc-4-8">4.8 Flavor (môi trường) — slice 011 <a class="anchor" href="#muc-4-8" aria-label="Liên kết tới mục này">#</a></h3>
+<p>Một bản build chạy mọi môi trường. Flavor = tên môi trường host (<code>ASPNETCORE_<wbr>ENVIRONMENT</code>), nạp <code>appsettings.<wbr>{Flavor}.<wbr>json</code>.</p>
+<div class="table-wrap" role="region" aria-label="Bảng — 4.8 Flavor (môi trường) — slice 011" tabindex="0"><table class="tbl wide"><thead><tr><th scope="col">Flavor</th><th scope="col"><code>GameServer:<wbr>DeploymentEnvironment</code></th><th scope="col"><code>GameServer:<wbr>EnvironmentId</code></th><th scope="col"><code>GameServer:<wbr>Store</code></th><th scope="col">Công cụ dev</th></tr></thead><tbody>
+<tr><td><code>Local</code></td><td>Development</td><td><code>local</code></td><td><code>File</code></td><td>bật</td></tr>
+<tr><td><code>Dev</code></td><td>Development</td><td><code>dev</code></td><td><code>Couchbase</code></td><td>bật</td></tr>
+<tr><td><code>Beta</code></td><td>Staging</td><td><code>beta</code></td><td><code>Couchbase</code></td><td>tắt</td></tr>
+<tr><td><code>Uat</code></td><td>Staging</td><td><code>uat</code></td><td><code>Couchbase</code></td><td>tắt</td></tr>
+<tr><td><code>Live</code></td><td>Production</td><td><code>live</code></td><td><code>Couchbase</code></td><td>tắt</td></tr>
+</tbody></table></div>
+<p>(Ánh xạ trong code: <code>StandardFlavors.<wbr>DeploymentEnvironmentById</code>, <a class="path" href="../../src/GameServer.Platform/DeploymentEnvironments.cs"><code>src/<wbr>GameServer.<wbr>Platform/<wbr>DeploymentEnvironments.<wbr>cs</code></a>.) &quot;Công cụ dev&quot; = xác thực thử bằng header, module cheat, staff GM seed, OpenAPI GM, verifier IAP và identity provider giả. Flavor sai hoặc không khớp → host dừng khi khởi động, không bao giờ âm thầm chạy như Development.</p>
+<p>Chạy local một lệnh: <code>./<wbr>tools/<wbr>local/<wbr>run-local.<wbr>ps1</code> (Windows) hoặc <a class="path" href="../../tools/local/run-local.sh"><code>tools/<wbr>local/<wbr>run-local.<wbr>sh</code></a> — cổng 5080, file store, không cần Couchbase. Chi tiết: <a class="path" href="../../README.md"><code>README.<wbr>md</code></a>, <a class="path" href="../../docs/guides/environments-and-local-run.md"><code>docs/<wbr>guides/<wbr>environments-and-local-run.<wbr>md</code></a>.</p>
+<h3 id="muc-4-9">4.9 Việc chạy nền <a class="anchor" href="#muc-4-9" aria-label="Liên kết tới mục này">#</a></h3>
+<ul><li><strong>Outbox sweeper</strong> (<code>OutboxSweeper</code>): giao lại outbox chưa giao, mỗi 30 s, an toàn khi nhiều instance (consumer idempotent).</li><li><strong>Lease job</strong> (slice 010, <code>LeaseJobRunner</code>, contract <code>ILeaseJob</code> trong Core): job khai trong <code>ModuleDescriptor.<wbr>Jobs</code>, mỗi lúc chỉ một instance giữ lease (document <code>leases::<wbr>{job}</code>, fencing token).</li><li><strong>Xoá tài khoản</strong> (slice 010): player gửi <code>identity.<wbr>request_<wbr>deletion</code>; job <code>identity.<wbr>account-purge</code> xoá/ẩn danh dữ liệu theo <code>DeletionTreatment</code> mà mỗi <code>CollectionSpec</code> bắt buộc khai (NoPlayerData / Anonymize / Remove / ModuleStep).</li></ul>
+<h3 id="muc-4-10">4.10 Quan sát và audit <a class="anchor" href="#muc-4-10" aria-label="Liên kết tới mục này">#</a></h3>
+<ul><li><strong>Log</strong>: file JSON theo instance (rolling, hàng đợi có giới hạn, che secret) — <a class="path" href="../../src/GameServer.Platform.Observability"><code>src/<wbr>GameServer.<wbr>Platform.<wbr>Observability</code></a>.</li><li><strong>OpenTelemetry</strong>: mỗi command là một span <code>command {operation}</code>; metric command, transaction, outbox. Gửi tới collector khi đặt <code>Observability:<wbr>Otlp:<wbr>Endpoint</code>.</li><li><strong>Health</strong>: <code>/<wbr>health/<wbr>live</code> (không kiểm dependency), <code>/<wbr>health/<wbr>ready</code> (kiểm store, analytics…).</li><li><strong>Audit bền</strong>: receipt (mọi command), ledger (Economy), <code>gm_<wbr>audit</code> (mọi thao tác GM).</li><li><strong>Analytics</strong> (slice 012): file JSONL <code>{gameId}-{instanceId}-{event}-{yyyyMMdd}.<wbr>jsonl</code> cho <code>login</code> và <code>payment</code>. Payment ghi ít nhất một lần (nằm trong outbox của transaction cấp quà); login best effort. Module dùng <code>ctx.<wbr>AddAnalyticsEvent(...<wbr>)</code> (<a class="path" href="../../src/GameServer.Core/Analytics/AnalyticsEvents.cs"><code>src/<wbr>GameServer.<wbr>Core/<wbr>Analytics/<wbr>AnalyticsEvents.<wbr>cs</code></a>). Hướng dẫn cho data team: <a class="path" href="../../docs/guides/analytics.md"><code>docs/<wbr>guides/<wbr>analytics.<wbr>md</code></a>.</li></ul>
+<h3 id="muc-4-11">4.11 Unity client SDK <a class="anchor" href="#muc-4-11" aria-label="Liên kết tới mục này">#</a></h3>
+<p>Gói <a class="path" href="../../sdk/unity/com.gameserver.client"><code>sdk/<wbr>unity/<wbr>com.<wbr>gameserver.<wbr>client</code></a> (version 0.6.0), lớp chính <code>GameServerClient</code> (<a class="path" href="../../sdk/unity/com.gameserver.client/Runtime/Core/GameServerClient.cs"><code>Runtime/<wbr>Core/<wbr>GameServerClient.<wbr>cs</code></a>):</p>
+<ul><li>Gắn header <code>X-Request-Id</code>, <code>X-Client-Version</code>, <code>X-Platform</code>, <code>X-Build-Id</code>, <code>Authorization:<wbr> Bearer</code> cho mọi request.</li><li><code>SendCommandAsync(route, request, resultParser)</code>: serialize body <strong>một lần</strong>, retry gửi lại đúng bytes với cùng requestId → server replay, một hiệu ứng duy nhất.</li><li><code>Sections</code> (<code>SectionStore</code>): bản sao aggregate theo <code>rev</code>; tự refresh khi lệch.</li><li>Sự kiện <code>SessionReplaced</code>, <code>AccountBlocked</code>, <code>Maintenance</code>, <code>UpdateRequired</code>, <code>ConfigVersionChanged</code>.</li><li><code>ServerNow</code>: giờ server theo đồng hồ monotonic.</li></ul>
+<p>Client mẫu Unity 6: <a class="path" href="../../samples/SampleGame/KestrelDemo"><code>samples/<wbr>SampleGame/<wbr>KestrelDemo</code></a> (scene <code>SampleGameClient</code>). Contract: <a class="path" href="../../docs/pcr/unity-sdk.md"><code>docs/<wbr>pcr/<wbr>unity-sdk.<wbr>md</code></a>.</p>
+<h3 id="muc-4-12">4.12 GM API <a class="anchor" href="#muc-4-12" aria-label="Liên kết tới mục này">#</a></h3>
+<p>GM API là JSON dưới <code>/<wbr>gm/<wbr>v1/...</code>, dùng chung pipeline command (receipt, idempotency, audit). Trang tĩnh tối thiểu <code>/<wbr>gm/<wbr>v1/<wbr>ui</code>; GM frontend đầy đủ do dev khác làm dựa trên <a class="path" href="../../docs/api/gm-openapi.json"><code>docs/<wbr>api/<wbr>gm-openapi.<wbr>json</code></a> (test <a class="path" href="../../tests/GameServer.Gm.Tests/OpenApiTests.cs"><code>tests/<wbr>GameServer.<wbr>Gm.<wbr>Tests/<wbr>OpenApiTests.<wbr>cs</code></a> bắt bản commit phải khớp host đang chạy).</p>
+</section>
+<section class="doc-section" aria-labelledby="muc-5">
+<h2 id="muc-5">5. Điểm mạnh (mỗi điểm kèm bằng chứng) <a class="anchor" href="#muc-5" aria-label="Liên kết tới mục này">#</a></h2>
+<div class="table-wrap" role="region" aria-label="Bảng — 5. Điểm mạnh (mỗi điểm kèm bằng chứng)" tabindex="0"><table class="tbl"><thead><tr><th scope="col">Điểm mạnh</th><th scope="col">Cơ chế</th><th scope="col">Bằng chứng</th></tr></thead><tbody>
+<tr><td><strong>Không mất, không nhân đôi giao dịch khi mạng chập chờn</strong></td><td>Receipt + replay theo requestId; SDK gửi lại đúng bytes; commit không rõ → 503 <code>COMMIT_<wbr>UNKNOWN_<wbr>RETRY</code>, retry trả kết quả đã commit</td><td><a class="path" href="../../tests/GameServer.Platform.Web.Tests/CommandPipelineTests.cs"><code>tests/<wbr>GameServer.<wbr>Platform.<wbr>Web.<wbr>Tests/<wbr>CommandPipelineTests.<wbr>cs</code></a>: <code>Command_<wbr>returns_<wbr>section_<wbr>update_<wbr>and_<wbr>replays_<wbr>identically</code>, <code>Concurrent_<wbr>identical_<wbr>requests_<wbr>have_<wbr>one_<wbr>effect</code>, <code>Ambiguous_<wbr>commit_<wbr>returns_<wbr>503_<wbr>and_<wbr>retry_<wbr>returns_<wbr>committed_<wbr>result</code>, <code>Timeout_<wbr>after_<wbr>commit_<wbr>returns_<wbr>503_<wbr>and_<wbr>retry_<wbr>replays_<wbr>without_<wbr>second_<wbr>effect</code></td></tr>
+<tr><td><strong>Không tiêu trùng số dư khi nhiều instance cùng ghi</strong></td><td>Đọc + kiểm + ghi trong một Couchbase transaction; xung đột write-write do transaction giải quyết</td><td>ACC-06 trên Couchbase EE 7.6.12, 2 instance: 20/20 vòng đúng một <code>OK</code> + một <code>INSUFFICIENT_<wbr>FUNDS</code>, ledger khớp wallet (<a class="path" href="../../docs/guides/local-real-env-testing.md"><code>docs/<wbr>guides/<wbr>local-real-env-testing.<wbr>md</code></a> mục 6)</td></tr>
+<tr><td><strong>Chịu tải dồn</strong></td><td>Async toàn bộ (analyzer cấm <code>.<wbr>Wait()</code>/<code>.<wbr>Result</code>), limiter concurrency + hàng đợi có số, mỗi player tuần tự</td><td>ACC-16 burst 150 command/s + 60 login/s: 100 % OK, p95 command 42–54 ms, p99 ≤ 180 ms; dừng êm giữa burst và kill -9 giữa burst: dữ liệu khớp 100/100, outbox pending 0 (cùng nguồn)</td></tr>
+<tr><td><strong>Đăng ký tường minh, sai là không khởi động</strong></td><td><code>ModuleRegistry.<wbr>Validate</code> + <code>EndpointSecurityValidator</code> + <code>IStartupCheck</code>; mọi lỗi của một lần khởi động được báo <strong>cùng lúc</strong></td><td>Ví dụ lỗi được bắt: command trùng tên, aggregate không tồn tại trong <code>Touches</code>, dải error code chồng nhau, thiếu upgrader, route thiếu <code>/<wbr>v{n}/</code>, aggregate client-visible thiếu wire mapper, collection thiếu deletion treatment, store dev ở Production. Test: <a class="path" href="../../tests/GameServer.Platform.Web.Tests/StartupValidationTests.cs"><code>tests/<wbr>GameServer.<wbr>Platform.<wbr>Web.<wbr>Tests/<wbr>StartupValidationTests.<wbr>cs</code></a></td></tr>
+<tr><td><strong>Mở rộng mà không sửa core</strong></td><td><code>ReplacePolicy</code>, <code>ReplaceHandler</code>, <code>ServiceOnly</code>, <code>ICommandGuard</code>, <code>IGateEvaluator</code>, <code>IOutboxConsumer</code>, <code>IIdentityProviderAdapter</code> — handler thay thế vẫn chạy trong pipeline chung</td><td><a class="path" href="../../tests/Sample.Counter.Tests/ExtensionTests.cs"><code>tests/<wbr>Sample.<wbr>Counter.<wbr>Tests/<wbr>ExtensionTests.<wbr>cs</code></a>: <code>Game_<wbr>can_<wbr>replace_<wbr>the_<wbr>policy</code>, <code>Game_<wbr>can_<wbr>replace_<wbr>the_<wbr>handler_<wbr>and_<wbr>keeps_<wbr>idempotency</code>, <code>Service_<wbr>only_<wbr>module_<wbr>maps_<wbr>no_<wbr>endpoint_<wbr>but_<wbr>its_<wbr>service_<wbr>works</code>; bảng capability: <a class="path" href="../../docs/pcr/platform.md"><code>docs/<wbr>pcr/<wbr>platform.<wbr>md</code></a> mục 10</td></tr>
+<tr><td><strong>Ranh giới kiến trúc được kiểm bằng test</strong></td><td>Test kiến trúc + banned symbols</td><td><a class="path" href="../../tests/GameServer.Architecture.Tests/ArchitectureTests.cs"><code>tests/<wbr>GameServer.<wbr>Architecture.<wbr>Tests/<wbr>ArchitectureTests.<wbr>cs</code></a> (mục 4.2)</td></tr>
+<tr><td><strong>Kiểm thử nhiều tầng</strong></td><td>Unit (in-memory store có tiêm lỗi, <code>FakeClock</code>), HTTP end-to-end (<a class="path" href="../../tests/Shared/TestHost.cs"><code>tests/<wbr>Shared/<wbr>TestHost.<wbr>cs</code></a>), kiến trúc, conformance store chạy trên in-memory / file / Couchbase, integration Couchbase thật, SDK chạy với server thật (<a class="path" href="../../tests/GameServer.Client.Tests"><code>tests/<wbr>GameServer.<wbr>Client.<wbr>Tests</code></a>), smoke build Unity IL2CPP (<a class="path" href="../../sdk/unity/ci/smoke-build.ps1"><code>sdk/<wbr>unity/<wbr>ci/<wbr>smoke-build.<wbr>ps1</code></a>)</td><td>Slice 012: 1174 test (in-memory 1089 pass + 85 skip vì cần Couchbase/điều kiện riêng); bộ Couchbase chạy ~23–25 phút (ghi chép <a class="path" href="../../AgentMemories/features/p05-speckit/00_summary.md"><code>AgentMemories/<wbr>features/<wbr>p05-speckit/<wbr>00_<wbr>summary.<wbr>md</code></a>)</td></tr>
+<tr><td><strong>Một bản build cho mọi môi trường, an toàn mặc định</strong></td><td>Flavor; công cụ dev bị từ chối ngoài Development; secret chỉ từ biến môi trường; <code>Live</code> bắt buộc TLS</td><td><a class="path" href="../../docs/guides/environments-and-local-run.md"><code>docs/<wbr>guides/<wbr>environments-and-local-run.<wbr>md</code></a> mục 1–2, PCR platform mục 17</td></tr>
+<tr><td><strong>Dev chạy local không cần hạ tầng</strong></td><td>File store + <code>run-local</code> một lệnh, dữ liệu giữ qua lần chạy</td><td><a class="path" href="../../tools/local/run-local.ps1"><code>tools/<wbr>local/<wbr>run-local.<wbr>ps1</code></a>, <a class="path" href="../../tests/Sample.Counter.Tests/SampleHostSmokeTests.cs"><code>tests/<wbr>Sample.<wbr>Counter.<wbr>Tests/<wbr>SampleHostSmokeTests.<wbr>cs</code></a></td></tr>
+<tr><td><strong>Audit và analytics đáng tin</strong></td><td>Audit GM và analytics payment nằm trong outbox của chính transaction</td><td>PCR platform mục 18, <a class="path" href="../../docs/guides/analytics.md"><code>docs/<wbr>guides/<wbr>analytics.<wbr>md</code></a></td></tr>
+</tbody></table></div>
+</section>
+<section class="doc-section" aria-labelledby="muc-6">
+<h2 id="muc-6">6. Giới hạn hiện tại <a class="anchor" href="#muc-6" aria-label="Liên kết tới mục này">#</a></h2>
+<div class="table-wrap" role="region" aria-label="Bảng — 6. Giới hạn hiện tại" tabindex="0"><table class="tbl"><thead><tr><th scope="col">Giới hạn</th><th scope="col">Chi tiết</th></tr></thead><tbody>
+<tr><td>Chưa kiểm cluster Couchbase nhiều node</td><td>Mới chạy Couchbase EE 7.6.12 <strong>một node</strong> (2026-10-27)</td></tr>
+<tr><td>Chưa kiểm sandbox thật của Apple/Google</td><td>Verifier IAP chạy với fake; ACC-47 sandbox thật thuộc P0.5</td></tr>
+<tr><td>Chưa kiểm thiết bị thật</td><td>Play Games / Game Center (ACC-03, ACC-29) và Unity trên Android/iOS (ACC-18): còn thủ công; chưa build iOS</td></tr>
+<tr><td>TLS release gate chưa chạy</td><td>Test TLS Couchbase (opt-in) chưa chạy vì máy dev không có cluster TLS — bắt buộc trước khi lên <code>Live</code></td></tr>
+<tr><td>Đọc bundle trong transaction chưa đạt &quot;≈ 1 RTT&quot;</td><td>Mặc định đọc tuần tự từng aggregate; <code>Couchbase:<wbr>UseGetMulti</code> tắt mặc định (PCR platform mục 2)</td></tr>
+<tr><td>Chưa có giftcode, IAP refund/S2S, runbook/deploy/restore drill</td><td>Slice 013, 014, 015</td></tr>
+<tr><td>Chưa có Event, durable job (P1), GM frontend đầy đủ</td><td>P1; GM frontend do dev khác làm</td></tr>
+<tr><td>Chưa đóng gói NuGet</td><td>Game dùng <code>ProjectReference</code> trong cùng repo</td></tr>
+<tr><td>010–012 chưa merge vào <code>main</code></td><td>Nằm trên nhánh của slice</td></tr>
+<tr><td>Giới hạn thiết kế (cố ý)</td><td>≤ 16 aggregate/game; <code>Touches</code> ≤ 4; claim marker ≤ 2; aggregate ≤ 64 KiB; receipt ≤ 4 KiB; result ≤ 512 B; replay window 24 h</td></tr>
+</tbody></table></div>
+</section>
+<section class="doc-section" aria-labelledby="muc-7">
+<h2 id="muc-7">7. Đọc tiếp <a class="anchor" href="#muc-7" aria-label="Liên kết tới mục này">#</a></h2>
+<ul><li>Thêm command mới, đường đi của một request: <strong>trang 5b</strong> (<a class="path" href="./02-them-command.html"><code>02-them-command.<wbr>html</code></a>).</li><li>Viết module: <a class="path" href="../../docs/guides/module-authoring.md"><code>docs/<wbr>guides/<wbr>module-authoring.<wbr>md</code></a>, <a class="path" href="../../templates/module/README.md"><code>templates/<wbr>module/<wbr>README.<wbr>md</code></a>.</li><li>Môi trường, chạy local, Couchbase, provisioning: <a class="path" href="../../docs/guides/environments-and-local-run.md"><code>docs/<wbr>guides/<wbr>environments-and-local-run.<wbr>md</code></a>.</li><li>Kiểm thử như môi trường thật: <a class="path" href="../../docs/guides/local-real-env-testing.md"><code>docs/<wbr>guides/<wbr>local-real-env-testing.<wbr>md</code></a>.</li><li>Analytics: <a class="path" href="../../docs/guides/analytics.md"><code>docs/<wbr>guides/<wbr>analytics.<wbr>md</code></a>.</li><li>Contract: <a class="path" href="../../docs/pcr/platform.md"><code>docs/<wbr>pcr/<wbr>platform.<wbr>md</code></a> (transaction, idempotency, outbox, error code, extensible capabilities), <a class="path" href="../../docs/pcr/sample-counter.md"><code>docs/<wbr>pcr/<wbr>sample-counter.<wbr>md</code></a>, <a class="path" href="../../docs/pcr/unity-sdk.md"><code>docs/<wbr>pcr/<wbr>unity-sdk.<wbr>md</code></a>.</li><li>Yêu cầu: <a class="path" href="../../Requirements/Game_Server_System_Requirements_v1.2.md"><code>Requirements/<wbr>Game_<wbr>Server_<wbr>System_<wbr>Requirements_<wbr>v1.<wbr>2.<wbr>md</code></a>.</li></ul>
+</section>
+<nav class="pager" aria-label="Chuyển trang"><a class="prev" href="index.html" rel="prev"><span class="dir">← Trang trước</span><span class="ttl">Trang chủ</span></a><a class="next" href="02-them-command.html" rel="next"><span class="dir">Trang sau →</span><span class="ttl">Thêm, bỏ, thay command</span></a></nav>
+</main>
+</div>
+<footer class="site-footer"><p>Đúng với commit <code>175df65</code> — cập nhật khi đổi pipeline, hosting hoặc deploy.</p></footer>
+<script>
+/* Progressive enhancement only — every page reads fine without this script. */
+(function () {
+  'use strict';
+  var doc = document;
+  var COPY_LABEL = 'Sao chép';
+  var COPY_DONE = 'Đã chép';
+  var COPY_FAIL = 'Không chép được';
+  var FLASH_MS = 1600;
+  var WIDE_QUERY = '(min-width: 75rem)';
+  var ACTIVE_OFFSET_PX = 96;
+  var CHECKLIST_KEY = 'gsf-docs:03-deploy:checklist:v1';
+
+  function each(list, fn) { Array.prototype.forEach.call(list, fn); }
+
+  // ------------------------------------------------------------ copy buttons
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function (resolve, reject) {
+      var ta = doc.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      doc.body.appendChild(ta);
+      ta.select();
+      try {
+        if (doc.execCommand('copy')) { resolve(); } else { reject(new Error('copy')); }
+      } catch (e) {
+        reject(e);
+      } finally {
+        doc.body.removeChild(ta);
+      }
+    });
+  }
+
+  each(doc.querySelectorAll('.code-block'), function (block) {
+    var head = block.querySelector('.code-head');
+    var code = block.querySelector('pre code');
+    if (!head || !code) { return; }
+    var btn = doc.createElement('button');
+    btn.type = 'button';
+    btn.className = 'copy-btn';
+    btn.textContent = COPY_LABEL;
+    var timer = 0;
+    btn.addEventListener('click', function () {
+      var done = function (label) {
+        btn.textContent = label;
+        clearTimeout(timer);
+        timer = setTimeout(function () { btn.textContent = COPY_LABEL; }, FLASH_MS);
+      };
+      copyText(code.textContent).then(function () { done(COPY_DONE); }, function () { done(COPY_FAIL); });
+    });
+    head.appendChild(btn);
+  });
+
+  // ------------------------------------------------------------ table of contents
+  var toc = doc.querySelector('.toc');
+  if (toc) {
+    var det = toc.querySelector('details');
+    if (det && window.matchMedia && !window.matchMedia(WIDE_QUERY).matches) { det.open = false; }
+
+    var links = toc.querySelectorAll('a[href^="#"]');
+    var targets = [];
+    each(links, function (a) {
+      var el = doc.getElementById(decodeURIComponent(a.getAttribute('href').slice(1)));
+      if (el) { targets.push({ link: a, el: el }); }
+    });
+
+    var current = null;
+    var ticking = false;
+    var update = function () {
+      ticking = false;
+      var active = null;
+      for (var i = 0; i < targets.length; i++) {
+        if (targets[i].el.getBoundingClientRect().top - ACTIVE_OFFSET_PX <= 0) { active = targets[i]; } else { break; }
+      }
+      if (active === current) { return; }
+      if (current) { current.link.removeAttribute('aria-current'); }
+      current = active;
+      if (current) { current.link.setAttribute('aria-current', 'true'); }
+    };
+    if (targets.length) {
+      window.addEventListener('scroll', function () {
+        if (!ticking) { ticking = true; window.requestAnimationFrame(update); }
+      }, { passive: true });
+      update();
+    }
+  }
+
+  // ------------------------------------------------------------ diagram zoom: Esc closes
+  doc.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Escape' || !location.hash) { return; }
+    var el = doc.getElementById(decodeURIComponent(location.hash.slice(1)));
+    if (el && el.classList.contains('diagram')) { location.hash = el.id + '-ref'; }
+  });
+
+  // ------------------------------------------------------------ checklist (03-deploy)
+  var boxes = doc.querySelectorAll('input[type="checkbox"][data-ck]');
+  var tools = doc.querySelector('.checklist-tools');
+  if (!boxes.length) { return; }
+
+  var store = null;
+  try {
+    store = window.localStorage;
+    store.getItem(CHECKLIST_KEY);
+  } catch (e) {
+    store = null;
+  }
+  var load = function () {
+    if (!store) { return {}; }
+    try { return JSON.parse(store.getItem(CHECKLIST_KEY) || '{}') || {}; } catch (e) { return {}; }
+  };
+  var save = function (state) {
+    if (!store) { return; }
+    try { store.setItem(CHECKLIST_KEY, JSON.stringify(state)); } catch (e) { /* quota or privacy mode: ignore */ }
+  };
+
+  var state = load();
+  var progress = null;
+  var refresh = function () {
+    var n = 0;
+    each(boxes, function (b) {
+      if (b.checked) { n++; }
+      var row = b.closest('tr');
+      if (row) { row.classList.toggle('is-done', b.checked); }
+    });
+    if (progress) { progress.textContent = 'Đã kiểm ' + n + ' / ' + boxes.length + ' mục'; }
+  };
+
+  each(boxes, function (b) {
+    if (state[b.getAttribute('data-ck')]) { b.checked = true; }
+    b.addEventListener('change', function () {
+      var id = b.getAttribute('data-ck');
+      if (b.checked) { state[id] = true; } else { delete state[id]; }
+      save(state);
+      refresh();
+    });
+  });
+
+  if (tools) {
+    progress = doc.createElement('span');
+    progress.className = 'checklist-progress';
+    progress.setAttribute('aria-live', 'polite');
+
+    var reset = doc.createElement('button');
+    reset.type = 'button';
+    reset.className = 'btn';
+    reset.textContent = 'Bỏ mọi dấu';
+    reset.addEventListener('click', function () {
+      each(boxes, function (b) { b.checked = false; });
+      state = {};
+      save(state);
+      refresh();
+    });
+
+    var printBtn = doc.createElement('button');
+    printBtn.type = 'button';
+    printBtn.className = 'btn';
+    printBtn.textContent = 'In riêng checklist';
+    printBtn.addEventListener('click', function () {
+      var root = doc.documentElement;
+      root.classList.add('print-checklist-only');
+      var cleanup = function () {
+        root.classList.remove('print-checklist-only');
+        window.removeEventListener('afterprint', cleanup);
+      };
+      window.addEventListener('afterprint', cleanup);
+      window.print();
+    });
+
+    var note = doc.createElement('p');
+    note.className = 'checklist-note';
+    note.textContent = store
+      ? 'Dấu tick chỉ lưu trong trình duyệt này (localStorage), không gửi đi đâu. Khi in, mỗi nhóm bắt đầu trang mới và có cột "Ngày / chữ ký".'
+      : 'Trình duyệt không cho lưu: dấu tick sẽ mất khi tải lại trang. Khi in, mỗi nhóm bắt đầu trang mới và có cột "Ngày / chữ ký".';
+
+    tools.appendChild(progress);
+    tools.appendChild(reset);
+    tools.appendChild(printBtn);
+    tools.appendChild(note);
+    tools.hidden = false;
+  }
+  refresh();
+})();
+</script>
+</body>
+</html>
