@@ -19,7 +19,8 @@ P0 is merged into `main` and pushed (fda9f00). The real-environment test tools f
 | 007 gm-security | `007-gm-security` | DONE: 35/35 tasks. `5232fa1` feat, `3fce8ab` review fixes (0 Blocker, 5 Major, 8 Minor, all fixed) |
 | 008 gate-ban | `008-gate-ban` | DONE: 15/15 tasks. `f2b8d98` feat, review fixes commit "fix: ... (008 review)" (gate cache snapshot, ban scope validation, display-name Unicode rules, audit permission) |
 | 009 identity-providers | `009-identity-providers` | DONE: 18/18 tasks, review (0 Blocker, 4 Major, 9 Minor) fixed before commit. ACC-03/29 with real devices still manual |
-| 010 jobs-account-deletion | — | Minimal lease jobs, PRIV-01 deletion with 30-day grace, purge and anonymization (ACC-37) |
+| 010 jobs-account-deletion | `010-jobs-account-deletion` | DONE: 55/55 tasks. `5c88392` feat (review 1 Blocker, 1 Major, 12 Minor; 2 Minor open in PCR platform §16) |
+| (batch 2026-10-30) local-env, analytics, HTML docs | — | Owner tasks `tasks/task_30102026.txt`, plan + owner decisions `AgentMemories/features/task-30102026/00_plan.md`; runs BEFORE 011. Packaging (task 4) skipped, separate later |
 | 011 giftcode | — | GFT-01..06, GM-04 API, reaper (ACC-08, 22, 23) |
 | 012 iap-notifications | — | IAP-03 S2S: Google RTDN, Apple v2, refund/revoke |
 | 013 ops-readiness | — | Secret scan in CI, PERF-05 budgets, load test report (TST-03), Linux/container guide, runbooks, deploy/rollback, restore drill (ACC-16, 19, 48; ACC-19 blocked on TBD-09) |
@@ -92,6 +93,22 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
   2021 CA1 → DigiCert Trusted Root G4. Fixture `tests/GameServer.Platform.Web.Tests/Fixtures/gc-prod-12.cer`.
 - Tests: 489/489 including Couchbase. `TelemetryTests.A_command_is_one_trace...` failed once under full-suite load
   (passes alone) — watch for flakiness.
+
+## Technical notes from 010
+
+- Jobs: `ModuleDescriptor.Jobs`, `LeaseJobRunner` (lease `leases::{job}`, CAS, fencing token, `nextRunAtUtc`, release on
+  shutdown); off in `TestHost`, drive with `RunOnceAsync`. Per-job config key naming an unknown job fails startup.
+  Never delete `leases::*` (token restart → purge records fence out; runbook in PCR platform §16).
+- Every `CollectionSpec` declares a deletion treatment (NoPlayerData / Anonymize / Remove / ModuleStep) or startup
+  fails. Platform provisions `ix_{c}_player_ref (playerField, META().id)` + partial due indexes (with `META().id`).
+- Deletion: `identity.request_deletion` (`POST /api/v1/identity/delete-account`), GM `identity.cancel_deletion`
+  (`player.ban`). Purge job `identity.account-purge` → `IAccountPurgeService` → `IAccountPurgeWriter` (only writer, arch
+  test; ≤25 docs per fenced transaction). Order: receipts → anonymize → module steps → verify → other aggregates →
+  remove:* → final (profile last). Receipts lose `resultCompact`, `bodyHash`, `requestId`, `correlationId`; gm_audit
+  `payload.correlationId` blanked — otherwise `ReceiptIds.Compute` re-links anon id (B1).
+- `ProfileCache` never caches a missing profile (M1). `afterExecute` hook failures are logged, response stays committed.
+- `IGmTargetValidator.ValidateAsync(playerId, operation, ct)` — breaking change for game validators.
+- Tests: 623/623 including Couchbase (`CouchbaseLeaseAndPurgeTests` ~4 min).
 
 ## Current state (2026-10-28, session restart)
 
