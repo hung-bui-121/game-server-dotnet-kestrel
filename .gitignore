@@ -25,3 +25,6 @@ appsettings.*.local.json
 
 # Claude Code local
 .claude/settings.local.json
+
+# Local flavor data (file store: samples/_database/<name>; holds key material and guest credentials)
+_database/

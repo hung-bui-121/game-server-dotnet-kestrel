@@ -1,0 +1,21 @@
+{
+  "profiles": {
+    "local": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "launchUrl": "gm/v1/ui",
+      "applicationUrl": "http://localhost:5080",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Local"
+      }
+    },
+    "dev-couchbase": {
+      "commandName": "Project",
+      "launchBrowser": false,
+      "applicationUrl": "http://localhost:5080",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Dev"
+      }
+    }
+  }
+}

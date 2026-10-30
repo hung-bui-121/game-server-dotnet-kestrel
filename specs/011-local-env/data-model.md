@@ -93,6 +93,12 @@ Required environment variables per flavor (documented in the guide; missing ones
 | live | as beta/uat; `Couchbase__ConnectionString` must be `couchbases://…` (+ `Couchbase__TrustCertificatePath` for a private CA) |
 | provisioning run (any Couchbase flavor) | `Couchbase__ConnectionString`, `Couchbase__Username`, `Couchbase__Password` (administrative identity) only |
 
+IAP keys are validated at startup (T055, `IapOptionsValidator`, same report): whenever the real verifiers are used (default
+outside Development/Test) `Iap:Google:PackageName`, `Iap:Google:ServiceAccountEmail`, `Iap:Google:ServiceAccountPrivateKeyPem`
+(must import as an RSA private key), `Iap:Apple:BundleId` and `Iap:Apple:RootCertificateBase64` (must load as a DER certificate)
+are required; `Iap:UseFakeVerifier=true` outside Development/Test is an error. `Couchbase__Password` is required in every
+environment that uses Couchbase, including the dev flavor (T055).
+
 `samples/SampleHost/Properties/launchSettings.json`:
 
 ```json

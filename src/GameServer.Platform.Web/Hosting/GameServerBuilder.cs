@@ -114,16 +114,19 @@ public static class GameServerBuilderExtensions
     /// <summary>Registers the framework services and binds <see cref="GameServerOptions"/> from <c>GameServer</c>.</summary>
     public static GameServerBuilder AddGameServer(this WebApplicationBuilder builder)
     {
-        var options = builder.Configuration.GetSection(GameServerOptions.SectionName).Get<GameServerOptions>() ?? new GameServerOptions();
-        if (builder.Configuration[$"{GameServerOptions.SectionName}:DeploymentEnvironment"] is null)
-        {
-            options.DeploymentEnvironment = builder.Environment.EnvironmentName;
-        }
+        var options = builder.Configuration.GetSettings<GameServerOptions>(GameServerOptions.SectionName);
+
+        // Resolved once and validated by DeploymentIdentityCheck (FR-003): an invalid value never reads as Development/Test,
+        // so registration decisions taken before validation (test auth, cheats, OpenAPI) fail closed.
+        var deployment = DeploymentEnvironmentResolution.Resolve(builder.Configuration, builder.Environment);
+        options.DeploymentEnvironment = deployment.Effective;
 
         var registry = new ModuleRegistry();
         var services = builder.Services;
 
         services.AddSingleton(options);
+        services.AddSingleton(deployment);
+        services.AddSingleton<IStartupCheck, DeploymentIdentityCheck>();
         services.AddSingleton(registry);
         services.TryAddSingleton<IClock, GameServer.Time.SystemClock>();
         services.AddSingleton<PlatformMetrics>();

@@ -148,7 +148,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2b7c4cd1b3fee6d49908a5e0ed6101ce, type: 3}
   m_Name: 
   m_EditorClassIdentifier: SampleGame.Client::SampleGame.Client.SampleGameClient
-  serverUrl: http://localhost:5000/
+  serverUrl: http://localhost:5080/
 --- !u!4 &357321901
 Transform:
   m_ObjectHideFlags: 0

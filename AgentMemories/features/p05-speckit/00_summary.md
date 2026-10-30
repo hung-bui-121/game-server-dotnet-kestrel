@@ -20,10 +20,14 @@ P0 is merged into `main` and pushed (fda9f00). The real-environment test tools f
 | 008 gate-ban | `008-gate-ban` | DONE: 15/15 tasks. `f2b8d98` feat, review fixes commit "fix: ... (008 review)" (gate cache snapshot, ban scope validation, display-name Unicode rules, audit permission) |
 | 009 identity-providers | `009-identity-providers` | DONE: 18/18 tasks, review (0 Blocker, 4 Major, 9 Minor) fixed before commit. ACC-03/29 with real devices still manual |
 | 010 jobs-account-deletion | `010-jobs-account-deletion` | DONE: 55/55 tasks. `5c88392` feat (review 1 Blocker, 1 Major, 12 Minor; 2 Minor open in PCR platform §16) |
-| (batch 2026-10-30) local-env, analytics, HTML docs | — | Owner tasks `tasks/task_30102026.txt`, plan + owner decisions `AgentMemories/features/task-30102026/00_plan.md`; runs BEFORE 011. Packaging (task 4) skipped, separate later |
-| 011 giftcode | — | GFT-01..06, GM-04 API, reaper (ACC-08, 22, 23) |
-| 012 iap-notifications | — | IAP-03 S2S: Google RTDN, Apple v2, refund/revoke |
-| 013 ops-readiness | — | Secret scan in CI, PERF-05 budgets, load test report (TST-03), Linux/container guide, runbooks, deploy/rollback, restore drill (ACC-16, 19, 48; ACC-19 blocked on TBD-09) |
+| 011 local-env (batch 2026-10-30 tasks 1+2) | `011-local-env` | DONE: 57/57 tasks + T048a. Flavors, file store, `--provision`, run-local scripts. Review CONDITIONAL (0 Blocker, 4 Major, 9 Minor, all fixed) |
+| (batch 2026-10-30) analytics, HTML docs | — | Owner tasks `tasks/task_30102026.txt`, plan + owner decisions `AgentMemories/features/task-30102026/00_plan.md`. Next: analytics Login/Payment (task 3, own slice before iap-notifications), then HTML docs (task 5). Packaging (task 4) skipped, separate later |
+| 012 giftcode (was 011) | — | GFT-01..06, GM-04 API, reaper (ACC-08, 22, 23). Number may shift if analytics takes 012 |
+| 013 iap-notifications (was 012) | — | IAP-03 S2S: Google RTDN, Apple v2, refund/revoke |
+| 014 ops-readiness (was 013) | — | Secret scan in CI, PERF-05 budgets, load test report (TST-03), Linux/container guide, runbooks, deploy/rollback, restore drill (ACC-16, 19, 48; ACC-19 blocked on TBD-09), finish deploy guide (task 5c), TLS release gate |
+
+Slice numbers are "next free number" (owner Q18): the analytics slice takes the next number when it starts and the
+rows below it shift.
 
 After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02, GFT-07, MSG-01, ANA-01.
 
@@ -110,18 +114,46 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
 - `IGmTargetValidator.ValidateAsync(playerId, operation, ct)` — breaking change for game validators.
 - Tests: 623/623 including Couchbase (`CouchbaseLeaseAndPurgeTests` ~4 min).
 
+## Technical notes from 011
+
+- Flavors: `GameServer:Environment` ∈ local/dev/beta/uat/live (`DeploymentEnvironments`) → ASP.NET env local/dev =
+  Development, beta/uat = Staging, live = Production. Unknown or mismatched flavor stops startup; never silently
+  Development. `TestHost` uses EnvironmentId `test` and skips `appsettings.{env}.json`.
+- Startup: `IStartupCheck` + `GameServerApplicationExtensions.CheckAll` (each check caught, one aggregated report);
+  `ConfigurationBinding.GetSettings<T>` turns binder errors into exit 1. `GameServerCommandLine.Parse` throws on bad
+  switches (`--provision=x`, `-provision`, `/provision` → exit 1); `--provision` is case-insensitive.
+- File store (`src/GameServer.Platform.Testing/FileStore/*`): `InMemoryDocumentStore` + persistence seam, one file per
+  document, journal = commit point, `.lock`, `store.json` format version; refused outside Development before touching
+  disk; open errors → `GameServerStartupException`. Sample data in `samples/SampleHost/_database/` (gitignored).
+  Tests: `GAMESERVER_TEST_STORE=File`.
+- Couchbase: `CouchbaseClusterOptionsFactory` (Snappy on; rollback `Couchbase:Compression=false`), Production requires
+  `couchbases://`; `CouchbaseTrustedRoots` with `DisableCertificateDownloads = true`, file must be the root CA.
+  `Couchbase:Password` required in every environment.
+- `--provision` (exit 0/1/2): `CouchbaseManagementRetry` retries cluster-manager 503 (8 attempts, ~22 s); unknown
+  collection surfaces as `UnambiguousTimeoutException` (reason `CollectionNotFound`); RBAC scope roles written
+  `[bucket:scope]`; minimal provisioner roles (tested): `bucket_admin`, `query_manage_index`, `data_reader` on the bucket
+  + `query_system_catalog` (without it the index is hidden from `system:indexes`). Index in state `error` fails at once;
+  wait bounded by `ProvisioningTimeoutSeconds`. Provision mode refuses JSON-file secrets outside Development/Test.
+- IAP: `IapOptionsValidator` checks 5 keys at startup when real verifiers are used (private key must sign, Apple root
+  must load); fake verifier refused outside Development/Test.
+- Local run: `tools/local/run-local.ps1|.sh` (port 5080, `-Port/-Reset/-Lan`, exit 2–7), launchSettings profiles
+  `local`, `dev-couchbase`. Unity sample client now on 5080.
+- Breaking changes listed in PCR platform §17.
+- Tests: 930 (926 pass + 4 skipped: kill, perf, 2 TLS) incl. Couchbase ~19 min; in-memory/File ~35 s each.
+
 ## Current state (2026-10-30)
 
 - 007–009 fast-forwarded into `main` and pushed (9c93705) on 2026-10-30 at owner request.
 - `010-jobs-account-deletion` (from main): docs `003cebf`, feat `5c88392`, pushed to origin; **not merged into main yet**.
-- `.specify/feature.json` (gitignored) points to `specs/010-jobs-account-deletion`; next slice must repoint it.
-- Review summary of 010 is at the end of `specs/010-jobs-account-deletion/tasks.md`.
-- Next work: owner batch `tasks/task_30102026.txt` (see `AgentMemories/features/task-30102026/00_plan.md`).
+- `011-local-env` (from 010): docs `ed78fff` + feat commit, pushed; **not merged into main yet**.
+- `.specify/feature.json` (gitignored) points to `specs/011-local-env`; next slice must repoint it.
+- Review summaries are at the end of each `specs/0NN-*/tasks.md`.
+- Next work: analytics Login/Payment slice (batch task 3), see `AgentMemories/features/task-30102026/00_plan.md`.
 
 ## How to resume
 
-1. Read this file, then `specs/010-jobs-account-deletion/{spec,plan,tasks}.md` as the latest template for slice docs.
-2. Branch the next slice from `010-jobs-account-deletion` (or main once 010 is merged).
+1. Read this file, then `specs/011-local-env/{spec,plan,tasks}.md` as the latest template for slice docs.
+2. Branch the next slice from `011-local-env` (or main once 010 + 011 are merged).
 3. Per slice: spec + plan + tasks (commit `docs: add spec, plan and tasks for 0NN …`) → implement → full tests incl.
    Couchbase → tech-lead-reviewer → fix → `feat:` commit → update this file (`docs: update P0.5 resume after 0NN`).
    No stop for owner review (the single gate was after 007 spec+plan). Owner runs slices autonomously.
@@ -151,6 +183,12 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
   (generator limitation); no supported way to scrub a purged id from *other* players' `pa_*` (needed for P1 MSG-01);
   backup restore before a purge resurrects data (013 runbook must re-run purges); Couchbase tombstones keep keys ~3 days.
 - `AccountPurgeService.cs` ~300 lines, split later.
+- Merge 011 into main: not asked yet.
+- 011 open: **TLS release gate** (`CouchbaseSettingsIntegrationTests.Tls_…`, opt-in) never run — no TLS cluster locally;
+  mandatory before any Live cutover. `run-local.sh` 35 s kill fallback needs bash ≥ 4.4 (stock macOS bash 3.2 only
+  graceful stop); not run on macOS/Linux or PowerShell 7. Unity E2E against port 5080 not run. Index `error`/timeout
+  paths have no automated test. Ctrl+C before ready reports exit 6. Restricted-user provisioning test adds ~3.7 min.
 
-**Next:** owner batch 2026-10-30 — local-env (tasks 1+2) → analytics Login/Payment (task 3, before 012) → HTML docs
-(task 5; 5c drafted, finished in 013). Then 011 giftcode → 012 → 013. Packaging (task 4) is a separate later effort.
+**Next:** analytics Login/Payment (batch task 3, own slice, before iap-notifications) → HTML docs (task 5; 5c drafted,
+finished in ops-readiness). Then giftcode → iap-notifications → ops-readiness. Packaging (task 4) is a separate later
+effort.

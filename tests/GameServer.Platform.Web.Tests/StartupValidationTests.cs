@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using GameServer.Aggregates;
 using GameServer.Modules;
 using GameServer.Modules.Identity;
@@ -5,6 +6,7 @@ using GameServer.Platform.Web.Routing;
 using GameServer.Tests.Shared;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Sample.Counter;
 using Sample.Counter.Adapters;
 using Shouldly;
@@ -75,7 +77,7 @@ public sealed class StartupValidationTests
 
         ex.Message.ShouldContain("uses profile Dev in Production");
         ex.Message.ShouldContain("test authentication is enabled in 'Production'");
-        ex.Message.ShouldContain("the in-memory store is configured in 'Production'");
+        ex.Message.ShouldContain("the InMemory store is configured in 'Production'");
     }
 
     [Fact]
@@ -84,7 +86,8 @@ public sealed class StartupValidationTests
         var ex = await StartupFails(settings: s => s["GameServer:DeploymentEnvironment"] = "Staging");
 
         ex.Message.ShouldContain("test authentication is enabled in 'Staging'");
-        ex.Message.ShouldContain("in-memory store is configured in 'Staging'");
+        ex.Message.ShouldContain("the InMemory store is configured in 'Staging'");
+        ex.Message.ShouldContain("the InMemory and File stores are for Development/Test only");
     }
 
     [Fact]
@@ -134,6 +137,82 @@ public sealed class StartupValidationTests
     {
         await using var host = await TestHost.StartAsync();
         host.Services.GetRequiredService<Registry.ModuleRegistry>().Modules.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task Startup_check_errors_join_the_report()
+    {
+        var ex = await Should.ThrowAsync<GameServerStartupException>(async () =>
+        {
+            await using var host = await TestHost.StartAsync(services: s => s.AddSingleton<IStartupCheck>(new FixedCheck(error: "[test] contributed error")));
+        });
+
+        ex.Violations.ShouldContain("[test] contributed error");
+    }
+
+    [Fact]
+    public async Task Startup_check_warnings_are_logged_once_under_the_startup_category()
+    {
+        var entries = new ConcurrentQueue<(string Category, LogLevel Level, string Message)>();
+        await using var host = await TestHost.StartAsync(services: s =>
+        {
+            s.AddSingleton<IStartupCheck>(new FixedCheck(warning: "[test] contributed warning"));
+            s.AddSingleton<ILoggerProvider>(new CategoryLoggerProvider(entries));
+        });
+
+        entries.Count(e => e.Message == "[test] contributed warning").ShouldBe(1);
+        entries.Single(e => e.Message == "[test] contributed warning").ShouldBe(("GameServer.Startup", LogLevel.Warning, "[test] contributed warning"));
+    }
+
+    [Fact]
+    public async Task Module_options_validated_on_start_are_reported_by_UseGameServer()
+    {
+        // A GameServerStartupException (not an OptionsValidationException from StartAsync) proves UseGameServer reported it.
+        var ex = await StartupFails(modules: b =>
+        {
+            TestHost.DefaultModules(b);
+            b.Services.AddOptions<ProbeOptions>().Validate(_ => false, "[test] probe options are invalid").ValidateOnStart();
+        });
+
+        ex.Violations.ShouldContain("[test] probe options are invalid");
+    }
+
+    private sealed class ProbeOptions;
+
+    private sealed class FixedCheck(string? error = null, string? warning = null) : IStartupCheck
+    {
+        public void Check(StartupCheckResult result)
+        {
+            if (error is not null)
+            {
+                result.Errors.Add(error);
+            }
+
+            if (warning is not null)
+            {
+                result.Warnings.Add(warning);
+            }
+        }
+    }
+
+    private sealed class CategoryLoggerProvider(ConcurrentQueue<(string Category, LogLevel Level, string Message)> sink) : ILoggerProvider
+    {
+        public ILogger CreateLogger(string categoryName) => new CategoryLogger(categoryName, sink);
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class CategoryLogger(string category, ConcurrentQueue<(string Category, LogLevel Level, string Message)> sink) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            sink.Enqueue((category, logLevel, formatter(state, exception)));
     }
 
     private sealed class NoMapperModule : IGameModule

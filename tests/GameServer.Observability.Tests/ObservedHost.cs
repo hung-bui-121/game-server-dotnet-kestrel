@@ -12,17 +12,24 @@ using OpenTelemetry.Trace;
 
 namespace GameServer.Observability.Tests;
 
-/// <summary>Full SampleGame host + GM + observability, logging into a private temp directory.</summary>
+/// <summary>
+/// Full SampleGame host + GM + observability, logging into a private temp directory. Without a directory from the caller the host
+/// owns one and deletes it on dispose; a test that reads the files after the host stopped passes its own
+/// <see cref="TempLogDirectory"/>.
+/// </summary>
 public sealed class ObservedHost : IAsyncDisposable
 {
     public const string ProbeRoute = "/v1/test/log-probe";
     public const string Pepper = "pepper-SECRET-9f3a71";
     public const string StaffPassword = "staff-PASSWORD-77e1";
 
-    private ObservedHost(TestHost host, string logDirectory, List<Activity> activities, List<MetricSnapshot> metrics)
+    private readonly TempLogDirectory? _ownedLogDirectory;
+
+    private ObservedHost(TestHost host, string logDirectory, TempLogDirectory? ownedLogDirectory, List<Activity> activities, List<MetricSnapshot> metrics)
     {
         Host = host;
         LogDirectory = logDirectory;
+        _ownedLogDirectory = ownedLogDirectory;
         Activities = activities;
         Metrics = metrics;
     }
@@ -35,17 +42,36 @@ public sealed class ObservedHost : IAsyncDisposable
 
     public List<MetricSnapshot> Metrics { get; }
 
-    public static string NewLogDirectory() => Path.Combine(Path.GetTempPath(), "gs-logs-" + Guid.NewGuid().ToString("N"));
-
     public static async Task<ObservedHost> StartAsync(
         string? logDirectory = null,
         Action<Dictionary<string, string?>>? settings = null,
         Action<WebApplication>? beforeUseGameServer = null)
     {
-        logDirectory ??= NewLogDirectory();
+        var owned = logDirectory is null ? new TempLogDirectory() : null;
+        logDirectory ??= owned!.Path;
         var activities = new List<Activity>();
         var metrics = new List<MetricSnapshot>();
-        var host = await TestHost.StartAsync(
+        TestHost host;
+        try
+        {
+            host = await StartHostAsync(logDirectory, settings, beforeUseGameServer, activities, metrics);
+        }
+        catch
+        {
+            owned?.Dispose();
+            throw;
+        }
+
+        return new ObservedHost(host, logDirectory, owned, activities, metrics);
+    }
+
+    private static Task<TestHost> StartHostAsync(
+        string logDirectory,
+        Action<Dictionary<string, string?>>? settings,
+        Action<WebApplication>? beforeUseGameServer,
+        List<Activity> activities,
+        List<MetricSnapshot> metrics) =>
+        TestHost.StartAsync(
             b =>
             {
                 GameHttp.FullGame(b.AddModule<GmModule>());
@@ -86,8 +112,6 @@ public sealed class ObservedHost : IAsyncDisposable
                 s.ConfigureOpenTelemetryTracerProvider(t => t.AddInMemoryExporter(activities));
                 s.ConfigureOpenTelemetryMeterProvider(m => m.AddInMemoryExporter(metrics));
             });
-        return new ObservedHost(host, logDirectory, activities, metrics);
-    }
 
     /// <summary>Every line of every log file (call after disposing the host so the queue is flushed).</summary>
     public static string ReadAllLogs(string directory) =>
@@ -102,5 +126,9 @@ public sealed class ObservedHost : IAsyncDisposable
         return reader.ReadToEnd();
     }
 
-    public async ValueTask DisposeAsync() => await Host.DisposeAsync();
+    public async ValueTask DisposeAsync()
+    {
+        await Host.DisposeAsync();
+        _ownedLogDirectory?.Dispose();
+    }
 }

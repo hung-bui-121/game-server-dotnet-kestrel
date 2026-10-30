@@ -7,6 +7,9 @@ public enum StoreKind
 {
     InMemory,
     Couchbase,
+
+    /// <summary>Development-only store backed by a folder of JSON files (local flavor, slice 011).</summary>
+    File,
 }
 
 /// <summary>
@@ -45,6 +48,7 @@ public sealed class GameServerOptions
         "Iap:Google:ServiceAccountPrivateKeyPem",
         "DataProtection:MasterKey",
         "Gm:Oidc:ClientSecret",
+        "Identity:Providers:PlayGames:ClientSecret",
     ];
 
     public TransactionSettings Transactions { get; set; } = new();

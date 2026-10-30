@@ -595,6 +595,12 @@ public sealed class CouchbaseLeaseAndPurgeTests(CouchbaseGameFixture fixture) : 
     // ---------------------------------------------------------------- helpers: scans and end state
 
     /// <summary>
+    /// Test scans run in parallel with the whole suite: the SDK default (75 s), not the 20 s <c>Couchbase:QueryTimeoutMs</c>
+    /// default meant for GM pages (slice 011).
+    /// </summary>
+    private static readonly TimeSpan ScanTimeout = TimeSpan.FromSeconds(75);
+
+    /// <summary>
     /// Every document of a collection at RequestPlus: a sequential scan (Couchbase ≥ 7.6), about 1.5 s per collection
     /// whatever its size on a local node, so callers scan collections in parallel.
     /// </summary>
@@ -603,7 +609,7 @@ public sealed class CouchbaseLeaseAndPurgeTests(CouchbaseGameFixture fixture) : 
         var scope = await fixture.Connection.GetScopeAsync();
         var result = await scope.QueryAsync<ScanRow>(
             $"SELECT META(d).id AS id, d AS doc FROM `{collection}` AS d",
-            new QueryOptions().ScanConsistency(QueryScanConsistency.RequestPlus));
+            new QueryOptions().ScanConsistency(QueryScanConsistency.RequestPlus).Timeout(ScanTimeout));
         var rows = new List<(string, JsonObject)>();
         await foreach (var row in result.Rows)
         {
@@ -624,7 +630,7 @@ public sealed class CouchbaseLeaseAndPurgeTests(CouchbaseGameFixture fixture) : 
         var scope = await fixture.Connection.GetScopeAsync();
         var result = await scope.QueryAsync<ScanRow>(
             $"SELECT META(d).id AS id, d AS doc FROM `{collection}` AS d WHERE d.playerId = $player",
-            new QueryOptions().Parameter("player", playerId).ScanConsistency(QueryScanConsistency.RequestPlus));
+            new QueryOptions().Parameter("player", playerId).ScanConsistency(QueryScanConsistency.RequestPlus).Timeout(ScanTimeout));
         var rows = new List<(string, JsonObject)>();
         await foreach (var row in result.Rows)
         {

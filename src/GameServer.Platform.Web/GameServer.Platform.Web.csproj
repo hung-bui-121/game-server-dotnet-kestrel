@@ -11,6 +11,9 @@
     <PackageReference Include="Grpc.Tools" PrivateAssets="all" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="GameServer.Platform.Web.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <Protobuf Include="..\..\proto\gameserver\core\v1\core.proto" ProtoRoot="..\..\proto" GrpcServices="None" Link="Protos\core.proto" />
   </ItemGroup>
 </Project>

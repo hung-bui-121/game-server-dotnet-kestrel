@@ -4,7 +4,8 @@ Published Contract Register của nền tảng (PCR-01). Thay đổi mục **sem
 thay đổi mục **vận hành** chỉ cần ghi changelog. Nguồn yêu cầu: `Requirements/Game_Server_System_Requirements_v1.2.md` rev 4.
 
 Phiên bản: 0.6.0 (slice 001 + sửa sau review + slice 002 identity + slice 004 GM + slice 005 observability, 2026-10-26;
-slice 010 lease job và xoá tài khoản, 2026-10-30 — mục 16).
+slice 010 lease job và xoá tài khoản, 2026-10-30 — mục 16; slice 011 môi trường theo flavor, file store, setting Couchbase,
+`--provision`, 2026-10-30 — mục 17).
 
 ## 1. Limits và timeout theo nhóm endpoint (vận hành — API-06, PERF-04)
 
@@ -256,7 +257,7 @@ chỉ proxy trong danh sách được tin `X-Forwarded-For`/`-Proto`; bật mà 
 CDN + load balancer cần `ForwardLimit` = số hop tin cậy (để 1 thì IP client là IP edge của CDN).
 
 **Secret (OPS-08):** ngoài Development/Test, các khoá `GameServer:SecretKeys` (mặc định `Identity:GuestPepper`,
-`Couchbase:Password`, `Iap:Google:ServiceAccountPrivateKeyPem`) không được có giá trị trong **bất kỳ** file cấu hình nào (kể cả
+`Couchbase:Password`, `Iap:Google:ServiceAccountPrivateKeyPem`; danh sách hiện tại: mục 17) không được có giá trị trong **bất kỳ** file cấu hình nào (kể cả
 khi biến môi trường ghi đè) → startup fail; dùng biến môi trường (`Identity__GuestPepper`) hoặc secret provider.
 
 ## 15. Gate: bảo trì và phiên bản client tối thiểu (slice 008 — GATE-01, GATE-02, PERF-08)
@@ -466,3 +467,194 @@ transaction có fencing. `AuditedStore` vẫn từ chối sửa audit ở mọi 
 | Log giữ scope `RequestId` cạnh player id (LOG-01) | trong thời gian giữ log, `RequestId` + player id trong log nối lại được receipt (khoá tính lại được) dù store đã ẩn danh | ngoài store; retention log là giới hạn thời gian của liên kết này — runbook (slice 013) đặt retention log ≤ grace + thời gian purge, hoặc xoá log theo player id khi purge |
 | Document `leases::*` bị xoá | player có record token lớn hơn bị bỏ qua (LogError) | runbook ở mục Lease job |
 | Backlog > ≈ 7 200/ngày | SC-006 trễ | cảnh báo overdue; tăng `MaxPlayersPerRun` / giảm interval |
+
+## 17. Môi trường, store và provisioning (slice 011 — OPS-01, OPS-08, OPS-09, SEC-01, DAT-03, DAT-04, DAT-07)
+
+Hướng dẫn dùng: `docs/guides/environments-and-local-run.md`. Đổi exit code, switch hoặc tiền tố output dưới đây là breaking
+change với pipeline và script.
+
+### Flavor (semantic với vận hành)
+
+Flavor = tên môi trường của host (`ASPNETCORE_ENVIRONMENT`/`DOTNET_ENVIRONMENT`), nạp `appsettings.{Flavor}.json` trên file chung;
+biến môi trường rồi dòng lệnh ghi đè. Nguồn duy nhất của bảng: `StandardFlavors` (`GameServer.Platform`).
+
+| Flavor | `GameServer:DeploymentEnvironment` | `GameServer:EnvironmentId` | `GameServer:Store` | Công cụ dev |
+| --- | --- | --- | --- | --- |
+| `Local` | Development | `local` | `File` | bật |
+| `Dev` | Development | `dev` | `Couchbase` | bật |
+| `Beta` | Staging | `beta` | `Couchbase` | tắt |
+| `Uat` | Staging | `uat` | `Couchbase` | tắt |
+| `Live` | Production | `live` | `Couchbase` (bắt buộc TLS) | tắt |
+
+| Quy tắc (khởi động, trước traffic) | Thông báo nêu |
+| --- | --- |
+| `GameServer:DeploymentEnvironment` ∈ {Development, Staging, Production, Test}, không phân biệt hoa thường, chuẩn hoá về cách viết chuẩn. Không đặt → dùng tên môi trường của host **chỉ khi** tên đó là deployment environment. Giá trị sai/thiếu không bao giờ thành Development (fail-closed) | key, giá trị hợp lệ, file `appsettings.<Tên>.json` mong đợi (tìm thấy hay không), bảng flavor |
+| `GameServer:EnvironmentId` là id chuẩn ⇒ `GameServer:DeploymentEnvironment` = giá trị của bảng (Test không được miễn) | cả hai key, giá trị mong đợi |
+| Store `InMemory`/`File` chỉ ở Development/Test | `[deployment] the <InMemory/File> store is configured in '<env>'. Fix: set GameServer:Store=Couchbase …` |
+| Secret trong file cấu hình ngoài Development/Test (`GameServer:SecretKeys`) | key, file, tên biến môi trường |
+| Development nghe trên địa chỉ không phải loopback | một Warning sau khi server nghe (không lỗi) |
+
+Mọi lỗi của một lần khởi động (deployment identity, registry, service, secret, `IStartupCheck`, validator option của module qua
+`IStartupValidator`) nằm trong **một** `GameServerStartupException`; Warning ghi một lần, category `GameServer.Startup`.
+Overlay config game `config/env/<DeploymentEnvironment>`: beta và uat dùng chung `Staging`. Staging (beta, uat) **không** có cheat,
+xác thực thử nghiệm, seed staff GM, GM OpenAPI, verifier/provider giả (chặt hơn OPS-09).
+
+`GameServer:SecretKeys` mặc định (6 key): `Identity:GuestPepper`, `Couchbase:Password`, `Iap:Google:ServiceAccountPrivateKeyPem`,
+`DataProtection:MasterKey`, `Gm:Oidc:ClientSecret`, `Identity:Providers:PlayGames:ClientSecret` (mới).
+
+### Store (semantic)
+
+| `GameServer:Store` | Dùng cho | Được phép |
+| --- | --- | --- |
+| `InMemory` (mặc định của class — test) | test, chạy thử bỏ đi | Development/Test |
+| `File` | flavor `Local` | Development/Test |
+| `Couchbase` | dev, beta, uat, live | mọi môi trường |
+
+Store bị từ chối thì thư mục/kết nối không bị chạm tới (lỗi báo trước khi store mở).
+
+### File store (semantic với công cụ dev)
+
+`FileDocumentStore` (`GameServer.Platform.Testing`) = `InMemoryDocumentStore` (cùng semantic transaction; conformance chạy cả
+trên file store, kèm kiểm mở lại) + ghi xuống đĩa trước khi thay đổi được nhìn thấy. Đăng ký: `AddFileDocumentStore(services,
+configuration, environment)`; arch test: ngoài `GameServer.Platform.Testing` chỉ host và test được phụ thuộc.
+
+| Mục | Giá trị |
+| --- | --- |
+| Cấu hình | `FileStore:Folder` (bắt buộc khi Store=File, tương đối tính từ content root; mẫu `../_database/dbbase`, gitignore `_database/`), `FileStore:ResetOnStart` (false) |
+| Format | `store.json` = `{"format":"gameserver-file-store","version":1}`; document `g_<gameId>/<collection>/<tên>.json` = `{key, expiresAtUtc, content}`; tên: `[a-z0-9._-]` giữ nguyên, byte khác `%XX` (hex hoa), tên thiết bị Windows mã hoá ký tự đầu, tên mã hoá > 120 ký tự → `~` + 52 ký tự base32 của SHA-256 (khoá thật trong `key`) |
+| Commit | một document: file tạm → rename; nhiều document: `journal.json.tmp` → rename `journal.json` (**commit point**) → áp → xoá journal. Khởi động: xoá `*.tmp`, replay journal. Tất cả hoặc không có gì (kiểm ở mọi bước crash + 20 lần kill process thật) |
+| Độ bền | flush xuống OS, **không fsync**: chịu mọi kiểu process chết, không chịu mất điện/OS crash (file cắt dở → khởi động lỗi nêu tên) |
+| Lỗi ghi | trước commit point → `TransactionFailedException` (`INTERNAL`), không ghi gì, readiness healthy (kể cả đĩa đầy); sau commit point → store faulted: mọi lần ghi sau lỗi, health `store` unhealthy, LogError; restart replay journal |
+| Khoá | `.lock` mở `FileShare.None` suốt đời store; host thứ hai thoát 1 (≤ 5 s); OS nhả khi crash |
+| Lỗi mở | lỗi I/O hoặc quyền khi mở (thư mục chỉ đọc, ACL, một file thay cho thư mục) → `[filestore] the data folder '<thư mục>' cannot be opened (<KiểuException>: …)`, exit 1 (T055) |
+| Nạp | song song; file hỏng (JSON sai, key ≠ tên, `content` không phải object, `expiresAtUtc` sai, tên lạ) → khởi động lỗi nêu 20 file đầu + số còn lại; thư mục lạ không rỗng / format hoặc version khác → lỗi có hướng dẫn reset |
+| Hết hạn | absolute UTC; không bao giờ trả về; file xoá ở lần khởi động sau (không sweeper) |
+| Reset | `FileStore:ResetOnStart=true`: sau khi lấy khoá, xoá mọi thứ trừ `.lock`, tạo lại `store.json`; từ chối thư mục không phải store và không rỗng, gốc ổ đĩa, user profile, content root và thư mục cha, thư mục có `.git` |
+| Giới hạn | không N1QL; không hot reload (sửa tay chỉ khi host dừng); Windows: đường dẫn document dài nhất ≤ 259 ký tự (kiểm khi khởi động); thao tác file đồng bộ trong lock của store (ngoại lệ constitution IV, chỉ Development) |
+| Bảo mật | thư mục chứa key ring Data Protection **không mã hoá** (Development không có master key), phiên, credential guest |
+
+**Hiệu năng (T020, `GAMESERVER_PERF=1`, Windows 11, SSD, 2026-10-30):** ổ D: nạp 10 000 document 546 ms (chỉ tiêu ≤ 10 s);
+500 commit 6 document p50 22,8 ms, p95 44,8 ms (chỉ tiêu ≤ 50 ms), max 404 ms. Trong `%TEMP%` trên C: p95 82 ms (không đạt):
+antivirus làm ghi + rename ~3,5 ms so với ~0,8 ms — giữ thư mục dữ liệu ngoài đường dẫn bị quét hoặc thêm exclusion.
+
+### `IStartupCheck` (extension point, semantic với package store/host)
+
+```csharp
+public interface IStartupCheck { void Check(StartupCheckResult result); }   // GameServer.Platform
+public sealed class StartupCheckResult { List<string> Errors; List<string> Warnings; }
+```
+
+Đăng ký bằng DI (nhiều implementation). `UseGameServer` và chế độ provisioning chạy mọi check: Errors gộp vào báo cáo khởi động
+(exit 1), Warnings ghi một lần (provisioning: stderr `warning: …`). Check không được ném lỗi và không I/O ngoài đọc file local do
+cấu hình chỉ định. Một check vẫn ném (T055): `GameServerStartupException` → các violation của nó vào báo cáo; exception khác →
+một lỗi `[<TênKiểuCheck>] the startup check failed: <KiểuException>: <message>`; các check còn lại vẫn chạy, báo cáo vẫn đủ. Có
+sẵn: `DeploymentIdentityCheck`, `CouchbaseSettingsCheck`, `FileStoreCheck`.
+
+Binding: `IConfiguration.GetSettings<T>(section)` (`GameServer.Platform.Web.Hosting.ConfigurationBinding`, dùng cho
+`GameServer` trong `AddGameServer` và cho `Couchbase` trong host mẫu) đổi lỗi binder (giá trị sai kiểu) thành
+`GameServerStartupException` `[configuration] … at '<key>' …` → exit 1 với báo cáo, thay vì exception không xử lý.
+
+### Couchbase (vận hành)
+
+| Key | Mặc định | Giới hạn |
+| --- | --- | --- |
+| `Couchbase:ConnectionString` | — (bắt buộc) | `couchbase://` hoặc `couchbases://`, ≥ 1 host, seed list phân tách bằng dấu phẩy |
+| `Couchbase:Username` | — (bắt buộc) | |
+| `Couchbase:Password` | — | bắt buộc ở mọi môi trường (từ T055 cả Development/Test), chỉ từ môi trường |
+| `Couchbase:BucketName` | — (bắt buộc) | |
+| `Couchbase:KvTimeoutMs` | 2500 | 100 .. 1000 × min(`GameServer:Limits:PlayerTimeoutSeconds`, `GameServer:Limits:GmTimeoutSeconds`) |
+| `Couchbase:QueryTimeoutMs` | 20000 | 100 .. 1000 × `GameServer:Limits:GmTimeoutSeconds` |
+| `Couchbase:TrustCertificatePath` | null | file X.509 PEM/DER đọc được của **root CA**, tương đối tính từ content root |
+| `Couchbase:Compression` | true | Snappy (`WithSnappyCompression()` của SDK 3.10) |
+| `Couchbase:CompressionMinSizeBytes` | 32 | 0 .. 20 971 520 |
+| `Couchbase:NumKvConnections` | 2 | 1 .. 32 |
+| `Couchbase:MaxKvConnections` | 5 | `Couchbase:NumKvConnections` .. 64 |
+| `Couchbase:UseGetMulti` | false | không đổi (mục 2) |
+| `Couchbase:ProvisionOnStartup` | Development true, còn lại false | |
+| `Couchbase:ProvisioningTimeoutSeconds` | 600 | 30 .. 7200 |
+
+- **TLS (SEC-01):** Production + `couchbase://` → lỗi khởi động; Staging → Warning; Development/Test → không gì. CA của
+  `Couchbase:TrustCertificatePath` là root tin cậy **duy nhất** cho KV và HTTP (`X509Chain` `CustomRootTrust` qua callback xác thực
+  certificate của `TlsSettings`; `WithTrustedServerCertificates` của SDK vẫn tin trust store của OS trước nên không dùng), tên host
+  vẫn được kiểm, không kiểm revocation (như mặc định SDK). File phải là root CA tự ký: chỉ intermediate → chuỗi `PartialChain` →
+  từ chối (test đơn vị `Only_the_root_ca_anchors_the_chain_and_missing_intermediates_are_not_fetched`). Không tải certificate
+  thiếu qua AIA trong handshake (`ChainPolicy.DisableCertificateDownloads = true`): node phải gửi intermediate.
+- **Cổng phát hành TLS (bắt buộc trước mọi cutover Live):** cluster local không có TLS, nên hai test opt-in
+  `CouchbaseSettingsIntegrationTests.Tls_trusts_the_configured_ca_and_refuses_another` và
+  `CouchbaseProvisioningTests.Production_provisions_without_runtime_secrets_and_serves_on_the_data_only_identity_over_tls` phải
+  chạy và pass trên một cluster TLS có CA riêng (`COUCHBASE_TLS_CONNSTR` + `COUCHBASE_CA_PATH`) trước khi live dùng `couchbases://`.
+- **Nén:** trước slice 011 `Compression=true` không nén gì (thuật toán mặc định của SDK là null); nay body KV ≥ 32 byte được nén
+  Snappy — cả bộ Couchbase chạy với nén bật. Vận hành: theo dõi CPU của data service và latency KV (p95/p99 của command) trên
+  beta trước khi lên live; rollback không cần deploy code: `Couchbase:Compression=false` (biến `Couchbase__Compression=false`)
+  rồi restart instance.
+- **Key cũ** của `database_settings.json` (`Couchbase:ServerIp`, `Couchbase:OperationTimeOut`, `Couchbase:CompressThreshold`,
+  `Couchbase:MoxiPort`, `Couchbase:BucketType`, `Couchbase:DbCache`, `dbbase:*`, `dbcache`) → Warning nêu key thay thế, không bao giờ
+  lỗi. Bỏ hẳn: `dbcache` (owner), bucket memcached (deprecated, không transaction), `moxiPort` (Moxi không còn).
+- Query timeout 20 s cũng giới hạn câu lệnh của provisioner → `CREATE INDEX` dùng `Couchbase:ProvisioningTimeoutSeconds` làm timeout
+  câu lệnh (dưới tải, 20 s làm build index bị cắt phía client).
+
+### Provisioning (semantic với pipeline — DAT-07)
+
+```text
+<host> [--provision] [--urls <url>] [--<Section>:<Key>=<value> …]
+```
+
+| Mục | Giá trị |
+| --- | --- |
+| Switch | `--provision`, không phân biệt hoa thường (bị bỏ khỏi args trước khi dựng cấu hình); không có → chạy server. `--provision=…`, `-provision`, `/provision[=…]` → exit 1 (`[provision] '<arg>' is not the provisioning switch …`, không in giá trị) |
+| Cần | flavor hợp lệ, `GameServer:Store=Couchbase`, connection string, user, password, bucket; secret không nằm trong file JSON ngoài Development/Test (như chạy server). **Không** cần SSO GM, IAP, pepper, master key. Không chạy web server, job, sweeper |
+| Thứ tự | scope → `txn_meta` → collection khác (thứ tự ordinal) → chờ collection trả lời KV → index (framework, module, tham chiếu purge) → chờ mọi index `online` (poll 2 s) → kiểm lại |
+| Output (stdout) | `provision: game <id>, environment <env> (<DeploymentEnvironment>), bucket <b>, scope g_<id>`, mỗi mục `provision: <kind> <name> created` hoặc `present` (index mới: `created (online after N s)`), cuối `provision: done: X created, Y present`. Lỗi: `provision: FAILED <kind> <name>: <cause>` + `provision: stopped after N items; fix the cause and run again (idempotent)`; nguyên nhân = `<kiểu exception>[ (HTTP n)]: <dòng đầu message>`, không chứa credential |
+| Exit code | 0 mọi thứ đã có; 1 cấu hình sai, secret trong file, switch viết sai hoặc store không phải Couchbase (`[provision] --provision needs GameServer:Store=Couchbase …`); 2 lỗi, timeout hoặc Ctrl+C |
+| Lỗi tạm thời | cluster manager trả 503 khi bận (đo: cả `GetAllScopesAsync` lẫn tạo collection dưới tải) → liệt kê scope, tạo scope, tạo collection thử lại tối đa 8 lần, backoff 0,5 s gấp đôi, tối đa 5 s; lỗi khác không thử lại. Câu đọc `system:indexes` là read-only (SDK tự thử lại lỗi tạm thời). Index trạng thái `error` → exit 2 ngay (gợi ý `DROP INDEX`); chờ index `online` giới hạn bởi `Couchbase:ProvisioningTimeoutSeconds` |
+| Idempotent | mục có sẵn báo `present`, không bao giờ sửa/xoá; chạy lại sau lỗi tiếp tục phần còn thiếu; không tạo bucket; index trùng tên khác định nghĩa vẫn `present`; index có sẵn ở trạng thái `deferred` → lỗi kèm gợi ý `BUILD INDEX` |
+| Credential | cùng key `Couchbase:Username`/`Couchbase:Password`, pipeline đặt identity quản trị: `bucket_admin[b]` + `query_manage_index[b]` + `data_reader[b]` (bước chờ/kiểm đọc KV) + `query_system_catalog` — cấp bucket vì scope chưa có ở lần đầu. Đã kiểm bằng user hạn chế (T055, `CouchbaseProvisionerRolesTests`: scope mới exit 0, chạy lại toàn `present`); bỏ bất kỳ role nào trong bốn role → exit 2 (đã đo từng role). Runtime dùng identity data-only trên scope (`Data Reader`, `Data Writer`, `Query Select/Insert/Update/Delete`); role theo scope viết `[bucket:scope]` (7.6 từ chối `[bucket:scope:*]`). Data-only chạy `--provision` → exit 2 ở mục đầu (`FAILED scope …: CouchbaseException (HTTP 403)`, đã kiểm) |
+| Thời gian | `CREATE INDEX` không `defer_build` chờ tới khi build xong (EE 7.6.12: 200 000 document 8,3 s); dưới tải của cả bộ test mỗi index của scope mới 23–88 s → một scope mới có thể vượt 600 s: exit 2, chạy lại tiếp tục |
+
+**Kiểm schema khi khởi động (`Couchbase:ProvisionOnStartup` = false):** trước khi nghe cổng, mọi collection bắt buộc (kể cả
+`txn_meta`) được đọc thử song song (`GetAsync("_schema_probe")`, 3 s) bằng identity runtime. Collection lạ trên SDK 3.10 + EE 7.6.12
+**không** ném `CollectionNotFoundException`: là `UnambiguousTimeoutException` (sau `KvTimeout`) có retry reason `CollectionNotFound`
+(scope lạ: `ScopeNotFound`) — cả hai dạng đều tính là thiếu; lỗi khác (không kết nối được, xác thực) giữ nguyên. Thiếu → exit 1
+trước khi nghe cổng: `[couchbase] scope g_<id> in bucket <b> is missing collections <c1>, <c2>. Fix: run the provisioning command
+(<host> --provision) with an administrative credential (DAT-07).` (`<host>` in nguyên văn). Index không được kiểm khi khởi động.
+
+**Exit code của host (chạy server):** 0 dừng êm; 1 cấu hình sai hoặc bị từ chối trước traffic (validation kể cả giá trị sai kiểu,
+file store khoá/hỏng/sai format/không đọc-ghi được, thiếu collection, switch `--provision` viết sai), stderr
+`Game server startup validation failed:` + mỗi lỗi một dòng ` - …`; khác = lỗi runtime không xử lý. `RunGameServerAsync` trả code, không gọi `Environment.Exit` (`WebApplicationFactory<Program>` chạy cùng entry point).
+
+### Chạy local (vận hành)
+
+| Mục | Giá trị |
+| --- | --- |
+| Cổng mặc định | `http://localhost:5080` (`Urls` trong `appsettings.Local.json`, launch profile, client Unity mẫu, `smoke-build.ps1`) |
+| Thứ tự URL | `--urls` > `Urls` của file flavor > `ASPNETCORE_URLS` (biến tiền tố host là nguồn thấp nhất: `applicationUrl` của launch profile **không** đổi được cổng) |
+| Launch profile | `local` (mặc định; flavor Local) và `dev-couchbase` (flavor Dev, mật khẩu từ biến môi trường user `Couchbase__Password`); `dotnet run --launch-profile` dùng thư mục project làm working directory |
+| `tools/local/run-local.ps1` / `.sh` | `-Port`/`--port` (5080), `-Reset`/`--reset` (`--FileStore:ResetOnStart=true`), `-Lan`/`--lan` (`0.0.0.0`, cảnh báo đỏ + địa chỉ LAN); build Debug mỗi lần, `dotnet run --no-build --launch-profile local` từ `samples/SampleHost`, readiness `http://127.0.0.1:<port>/health/ready` ≤ 60 s |
+| Exit code script | 0 dừng bằng Ctrl+C sau khi host dừng êm; 2 tham số sai; 3 thiếu SDK của `global.json`; 4 cổng bận; 5 build lỗi; 6 host thoát trước khi sẵn sàng; 7 quá 60 s (in 20 dòng log cuối, dừng host); khác = exit code của host sau khi sẵn sàng. Không đường nào để lại host chạy |
+| `start-hosts.ps1` | đặt `ASPNETCORE_ENVIRONMENT=Dev` cho mỗi host (khôi phục sau); tham số và cổng 5080+ giữ nguyên |
+
+Nghiệm thu thủ công (T048, 2026-10-30): Windows PowerShell 5.1 và Git Bash đạt mọi mục đã chạy; **chưa chạy**: PowerShell 7,
+macOS/Linux, IDE, điện thoại thật qua `-Lan`, Unity E2E trên 5080.
+
+### Breaking (so với slice 010)
+
+| Mục | Thay đổi | Cách chuyển |
+| --- | --- | --- |
+| `Couchbase:ConnectionString` | bỏ mặc định `couchbase://localhost` | đặt trong file flavor hoặc `Couchbase__ConnectionString` |
+| Host `Program.cs` | trong `try … catch (GameServerStartupException)`: `GameServerCommandLine.Parse(args)` (ném khi switch viết sai) → `WebApplication.CreateBuilder(commandLine.HostArgs)` → … (section store đọc bằng `GetSettings<T>`) → `Build()`; sau đó `return await app.RunGameServerAsync(mode);` thay cho `UseGameServer()` + `Run()` | theo `samples/SampleHost/Program.cs`; `--provision` chỉ có khi dùng `RunGameServerAsync` |
+| `Couchbase:Password` ở Development/Test | trước: không bắt buộc; nay thiếu → lỗi khởi động | đặt `Couchbase__Password` (biến môi trường user cho profile `dev-couchbase`) |
+| Khoá IAP | trước: chỉ lỗi ở lần xác minh receipt đầu tiên; nay kiểm khi khởi động (PCR iap) | đặt đủ `Iap__*` (kể cả `Iap__Apple__RootCertificateBase64`) cho beta/uat/live |
+| `GameServer:SecretKeys` | thêm `Identity:Providers:PlayGames:ClientSecret` | chuyển giá trị đó khỏi file cấu hình ngoài Development/Test |
+| Thông báo store chỉ-dev | `in-memory store is configured` → `[deployment] the <InMemory/File> store is configured in '<env>'. …` | ai so khớp text cũ phải sửa |
+| `TestHost` | `GameServer:EnvironmentId` mặc định `dev` → `test` (id chuẩn `dev` + Staging/Production/Test giờ là lỗi) | test cần `dev` phải đặt cả Development |
+| `appsettings.json` của host mẫu | không còn deployment environment, environment id, store, seed staff; chạy không flavor → exit 1, không bao giờ Development | chọn flavor (`ASPNETCORE_ENVIRONMENT`) |
+| Nén Couchbase | thực sự bật (Snappy) | theo dõi CPU data service + latency KV trên beta; rollback `Couchbase:Compression=false` |
+
+### Không cung cấp
+
+| Hạng mục | Ghi chú |
+| --- | --- |
+| `GameServer:Staging:AllowCheatModule` | điểm mở rộng hoãn (R13): nếu QA cần cheat trên uat — chỉ Staging, từ chối ở Production, chỉ đăng ký `CheatModule` sau permission GM có audit, không bao giờ xác thực thử nghiệm hay seed |
+| Overlay config theo `EnvironmentId` | beta/uat dùng chung `config/env/Staging` (owner) |
+| Kiểm index khi khởi động | cần quyền catalog; báo cáo provisioning là nguồn đúng |
+| CI chạy integration Couchbase | CI-01 còn mở; chạy local với EE 7.6.12 trước merge |

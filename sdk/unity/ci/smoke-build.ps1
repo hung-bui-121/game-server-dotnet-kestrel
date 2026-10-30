@@ -6,7 +6,7 @@
     ./smoke-build.ps1 -Unity "<path>\Unity.exe"                 # Android smoke build -> KestrelDemo/Build/KestrelDemo.apk
     ./smoke-build.ps1 -Unity "<path>\Unity.exe" -CompileOnly    # import + compile only
     ./smoke-build.ps1 -Unity "<path>\Unity.exe" -Setup          # (re)create the demo scene and settings
-    ./smoke-build.ps1 -Unity "<path>\Unity.exe" -E2E [-ServerUrl http://localhost:5000/]   # flow against a live SampleHost
+    ./smoke-build.ps1 -Unity "<path>\Unity.exe" -E2E [-ServerUrl http://localhost:5080/]   # flow against a live SampleHost
   Exit code 0 = success. Logs: <LogDir>\*.log. The project must not be open in an Editor.
   Windows: keep the project path short; IL2CPP/Gradle paths under Library exceed MAX_PATH otherwise.
 #>
@@ -17,7 +17,7 @@ param(
     [switch]$CompileOnly,
     [switch]$Setup,
     [switch]$E2E,
-    [string]$ServerUrl = "http://localhost:5000/"
+    [string]$ServerUrl = "http://localhost:5080/"
 )
 
 $ErrorActionPreference = "Stop"

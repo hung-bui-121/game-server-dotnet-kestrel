@@ -46,7 +46,7 @@ if (Test-Path $appDir) { Remove-Item -Recurse -Force $appDir }
 Copy-Item -Recurse (Join-Path $hostDir "bin\Release\net10.0") $appDir
 
 # Child processes inherit this session's environment: set per host, then restore whatever the caller had.
-$names = "GameServer__Store", "Couchbase__ConnectionString", "Couchbase__Username", "Couchbase__Password",
+$names = "ASPNETCORE_ENVIRONMENT", "GameServer__Store", "Couchbase__ConnectionString", "Couchbase__Username", "Couchbase__Password",
     "Couchbase__BucketName", "Couchbase__ProvisionOnStartup", "Observability__InstanceId", "Observability__Otlp__Endpoint"
 $saved = @{}
 foreach ($n in $names) { $saved[$n] = [Environment]::GetEnvironmentVariable($n, "Process") }
@@ -55,6 +55,8 @@ try {
     for ($i = 0; $i -lt $Count; $i++) {
         $port = $BasePort + $i
         $id = [string][char]([int][char]'a' + $i)
+        # Dev flavor (appsettings.Dev.json); the variables below still override its Couchbase settings (FR-033).
+        $env:ASPNETCORE_ENVIRONMENT = "Dev"
         $env:GameServer__Store = "Couchbase"
         $env:Couchbase__ConnectionString = $ConnectionString
         $env:Couchbase__Username = $Username

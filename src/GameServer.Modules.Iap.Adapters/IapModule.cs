@@ -25,7 +25,9 @@ public sealed class IapModule : IGameModule, IPlayerApiModule
 
     public void ConfigureServices(IServiceCollection services, ModuleContext context)
     {
-        services.AddOptions<IapOptions>().BindConfiguration(IapOptions.SectionName);
+        // Validated at startup (IapOptionsValidator): missing or unreadable verifier keys fail the start, not the first purchase.
+        services.AddOptions<IapOptions>().BindConfiguration(IapOptions.SectionName).ValidateOnStart();
+        services.AddSingleton<IValidateOptions<IapOptions>, IapOptionsValidator>();
         services.TryAddSingleton(sp => IapCatalog.Load(sp.GetRequiredService<IGameConfig>()));
         services.AddHttpClient(GooglePlayReceiptVerifier.HttpClientName, (sp, client) =>
             client.Timeout = TimeSpan.FromSeconds(sp.GetRequiredService<IOptions<IapOptions>>().Value.StoreTimeoutSeconds));

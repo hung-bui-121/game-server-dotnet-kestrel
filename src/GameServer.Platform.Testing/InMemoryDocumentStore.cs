@@ -9,12 +9,26 @@ namespace GameServer.Platform.Testing;
 /// <summary>
 /// In-process transactional store with optimistic concurrency (research R15). Reproduces the semantics the
 /// command runner relies on: atomic multi-document commit, conflict retry until expiration, staged writes
-/// invisible outside the transaction, and injectable ambiguous/failed commits.
+/// invisible outside the transaction, and injectable ambiguous/failed commits. The file store (slice 011) is this
+/// store with an internal persistence seam: every mutation is persisted before it becomes visible.
 /// </summary>
 public sealed class InMemoryDocumentStore(IClock? clock = null)
     : ITransactionalDocumentStore, IKeyValueStore, IPagedQueryStore, IMaintenanceQueryStore, ICollectionAwareStore, IDevelopmentOnlyStore,
         ITransactionOnlyAwareStore
 {
+    /// <summary>
+    /// A store fed by <paramref name="persistence"/> (research R6): closed until <see cref="LoadCommitted"/>, except for the
+    /// collection declarations <c>UseGameServer</c> makes before the store opens.
+    /// </summary>
+    internal InMemoryDocumentStore(IClock clock, IDocumentPersistence persistence)
+        : this(clock)
+    {
+        _persistence = persistence;
+        _open = false;
+    }
+
+    private readonly IDocumentPersistence? _persistence;
+    private volatile bool _open = true;
     private IReadOnlySet<string> _transactionOnly = new HashSet<string>(StringComparer.Ordinal);
 
     /// <summary>Collections that refuse plain key-value writes (set at startup from the module registry).</summary>
@@ -28,6 +42,7 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
 
     public Task<Page> QueryPageAsync(PagedQuery query, CancellationToken cancellationToken)
     {
+        EnsureOpen();
         query.Validate();
         var after = PageCursor.Decode(query.Cursor);
         lock (_lock)
@@ -59,6 +74,7 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
     /// <summary>String comparison like N1QL: the due field is compared with the query value as written, oldest first.</summary>
     public Task<IReadOnlyList<StoredDocument>> QueryDueAsync(DueQuery query, CancellationToken cancellationToken)
     {
+        EnsureOpen();
         query.Validate();
         var now = query.NowValue;
         lock (_lock)
@@ -81,6 +97,7 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
 
     public Task<IReadOnlyList<DocumentKey>> QueryReferencesAsync(ReferenceQuery query, CancellationToken cancellationToken)
     {
+        EnsureOpen();
         query.Validate();
         lock (_lock)
         {
@@ -109,6 +126,7 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
 
     public Task MarkOutboxFailedAsync(DocumentKey receiptKey, int attempts, DateTimeOffset nextAttemptAt, bool deadLetter, CancellationToken cancellationToken)
     {
+        EnsureOpen();
         lock (_lock)
         {
             if (Live(receiptKey) is { } entry)
@@ -117,6 +135,7 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
                 content["outboxAttempts"] = attempts;
                 content["outboxNextAttemptAtUtc"] = AggregateDocumentSerializer.FormatTime(nextAttemptAt);
                 content["outboxDeadLetter"] = deadLetter;
+                PersistOne(receiptKey, content, entry.ExpiresAt);
                 _documents[receiptKey] = new Entry(content, ++_versionSequence, entry.ExpiresAt);
             }
 
@@ -131,6 +150,7 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
 
     public async Task<T> RunTransactionAsync<T>(Func<ITransactionContext, Task<T>> body, TransactionRunOptions options)
     {
+        EnsureOpen();
         Faults.ThrowIfUnavailable();
         var stopwatch = Stopwatch.StartNew();
         while (true)
@@ -178,6 +198,7 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
 
     public Task<StoredDocument?> GetAsync(DocumentKey key, CancellationToken cancellationToken)
     {
+        EnsureOpen();
         Faults.ThrowIfUnavailable();
         lock (_lock)
         {
@@ -187,6 +208,7 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
 
     Task<bool> IKeyValueStore.InsertAsync(DocumentKey key, JsonObject content, TimeSpan? expiry, CancellationToken cancellationToken)
     {
+        EnsureOpen();
         KeyValueCollections.EnsureWritable(key, _transactionOnly);
         lock (_lock)
         {
@@ -195,13 +217,17 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
                 return Task.FromResult(false);
             }
 
-            _documents[key] = new Entry(Clone(content), ++_versionSequence, ExpiresAt(expiry));
+            var stored = Clone(content);
+            var expiresAt = ExpiresAt(expiry);
+            PersistOne(key, stored, expiresAt);
+            _documents[key] = new Entry(stored, ++_versionSequence, expiresAt);
             return Task.FromResult(true);
         }
     }
 
     Task<bool> IKeyValueStore.ReplaceAsync(StoredDocument existing, JsonObject content, TimeSpan? expiry, CancellationToken cancellationToken)
     {
+        EnsureOpen();
         KeyValueCollections.EnsureWritable(existing.Key, _transactionOnly);
         lock (_lock)
         {
@@ -211,23 +237,34 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
                 return Task.FromResult(false);
             }
 
-            _documents[existing.Key] = new Entry(Clone(content), ++_versionSequence, ExpiresAt(expiry));
+            var stored = Clone(content);
+            var expiresAt = ExpiresAt(expiry);
+            PersistOne(existing.Key, stored, expiresAt);
+            _documents[existing.Key] = new Entry(stored, ++_versionSequence, expiresAt);
             return Task.FromResult(true);
         }
     }
 
     Task IKeyValueStore.RemoveAsync(DocumentKey key, CancellationToken cancellationToken)
     {
+        EnsureOpen();
         KeyValueCollections.EnsureWritable(key, _transactionOnly);
         lock (_lock)
         {
-            _documents.Remove(key);
+            // An expired entry still in memory still has a file: its removal is persisted too.
+            if (_documents.ContainsKey(key))
+            {
+                PersistOne(key, null, null);
+                _documents.Remove(key);
+            }
+
             return Task.CompletedTask;
         }
     }
 
     public Task<IReadOnlyList<StoredDocument?>> GetManyAsync(IReadOnlyList<DocumentKey> keys, CancellationToken cancellationToken)
     {
+        EnsureOpen();
         Faults.ThrowIfUnavailable();
         lock (_lock)
         {
@@ -238,6 +275,7 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
 
     public Task<bool> InsertIfAbsentAsync(DocumentKey key, JsonObject content, CancellationToken cancellationToken)
     {
+        EnsureOpen();
         lock (_lock)
         {
             if (Live(key) is not null)
@@ -245,19 +283,23 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
                 return Task.FromResult(false);
             }
 
-            _documents[key] = new Entry(Clone(content), ++_versionSequence, null);
+            var stored = Clone(content);
+            PersistOne(key, stored, null);
+            _documents[key] = new Entry(stored, ++_versionSequence, null);
             return Task.FromResult(true);
         }
     }
 
     public Task MarkOutboxRelayedAsync(DocumentKey receiptKey, CancellationToken cancellationToken)
     {
+        EnsureOpen();
         lock (_lock)
         {
             if (Live(receiptKey) is { } entry)
             {
                 var content = Clone(entry.Content);
                 content["outboxPending"] = false;
+                PersistOne(receiptKey, content, entry.ExpiresAt);
                 _documents[receiptKey] = new Entry(content, ++_versionSequence, entry.ExpiresAt);
             }
 
@@ -267,6 +309,7 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
 
     public Task<IReadOnlyList<StoredDocument>> QueryPendingOutboxAsync(DateTimeOffset committedBefore, DateTimeOffset now, int limit, CancellationToken cancellationToken)
     {
+        EnsureOpen();
         lock (_lock)
         {
             IReadOnlyList<StoredDocument> result = _documents
@@ -288,15 +331,19 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
     /// <summary>Writes a committed document directly (test setup only).</summary>
     public void Seed(DocumentKey key, JsonObject content)
     {
+        EnsureOpen();
         lock (_lock)
         {
-            _documents[key] = new Entry(Clone(content), ++_versionSequence, null);
+            var stored = Clone(content);
+            PersistOne(key, stored, null);
+            _documents[key] = new Entry(stored, ++_versionSequence, null);
         }
     }
 
     /// <summary>Committed content of a document, or null.</summary>
     public JsonObject? Peek(DocumentKey key)
     {
+        EnsureOpen();
         lock (_lock)
         {
             return Live(key) is { } entry ? Clone(entry.Content) : null;
@@ -305,6 +352,7 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
 
     public int Count(string collection)
     {
+        EnsureOpen();
         lock (_lock)
         {
             return _documents.Keys.Count(k => k.Collection == collection);
@@ -313,11 +361,52 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
 
     public IReadOnlyList<(DocumentKey Key, JsonObject Content)> All(string collection)
     {
+        EnsureOpen();
         lock (_lock)
         {
             return _documents.Where(d => d.Key.Collection == collection).Select(d => (d.Key, Clone(d.Value.Content))).ToArray();
         }
     }
+
+    /// <summary>Collections declared by <see cref="UseCollections"/>; null when the store is unrestricted (unit tests).</summary>
+    internal IReadOnlySet<string>? DeclaredCollections
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _collections;
+            }
+        }
+    }
+
+    /// <summary>Replaces the committed state with loaded documents and opens the store (file store, research R6).</summary>
+    internal void LoadCommitted(IEnumerable<(DocumentKey Key, JsonObject Content, DateTimeOffset? ExpiresAt)> documents)
+    {
+        lock (_lock)
+        {
+            _documents.Clear();
+            foreach (var (key, content, expiresAt) in documents)
+            {
+                _documents[key] = new Entry(content, ++_versionSequence, expiresAt);
+            }
+
+            _open = true;
+        }
+    }
+
+    private void EnsureOpen()
+    {
+        if (!_open)
+        {
+            throw new InvalidOperationException(
+                "The file store is not open yet: it loads its folder in IStoreInitializer.EnsureInitializedAsync, before the host serves (research R6).");
+        }
+    }
+
+    /// <summary>Persists one change before it becomes visible; a no-op without persistence (allocates nothing then).</summary>
+    private void PersistOne(DocumentKey key, JsonObject? content, DateTimeOffset? expiresAt) =>
+        _persistence?.Persist([new DocumentChange(key, content, expiresAt)]);
 
     private StoredDocument? ReadCommitted(DocumentKey key) =>
         Live(key) is { } entry ? new StoredDocument(key, Clone(entry.Content), entry.Version) : null;
@@ -379,6 +468,19 @@ public sealed class InMemoryDocumentStore(IClock? clock = null)
                 if (current != write.ExpectedVersion)
                 {
                     return false;
+                }
+            }
+
+            if (_persistence is not null && attempt.Writes.Count > 0)
+            {
+                try
+                {
+                    _persistence.Persist(attempt.Writes.Select(w => new DocumentChange(w.Key, w.Value.Content, null)).ToArray());
+                }
+                catch (Exception ex)
+                {
+                    // Refused before its commit point: nothing was applied, the transaction definitely did not commit (D1).
+                    throw new TransactionFailedException("The commit could not be persisted; nothing was written.", ex);
                 }
             }
 

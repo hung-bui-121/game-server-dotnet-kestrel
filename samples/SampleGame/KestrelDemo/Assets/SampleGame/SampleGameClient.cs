@@ -21,7 +21,7 @@ namespace SampleGame.Client
         private const string SecretKey = "gs.secret";
 
         [SerializeField]
-        private string serverUrl = "http://localhost:5000/";
+        private string serverUrl = "http://localhost:5080/";
 
         private readonly List<string> _lines = new List<string>();
 

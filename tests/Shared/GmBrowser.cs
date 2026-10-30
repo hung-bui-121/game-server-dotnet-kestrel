@@ -13,7 +13,11 @@ public static class GmBrowser
     /// like in a browser. Pass <paramref name="cookies"/> to share one jar between instances (ACC-49).
     /// </summary>
     public static HttpClient Browser(this TestHost host, CookieContainer? cookies = null, bool https = false) =>
-        new(new CookieJarHandler(cookies ?? new CookieContainer()) { InnerHandler = host.App.GetTestServer().CreateHandler() })
+        host.App.GetTestServer().Browser(cookies, https);
+
+    /// <summary>The same browser on any TestServer (e.g. <c>WebApplicationFactory.Server</c> of the sample host).</summary>
+    public static HttpClient Browser(this TestServer server, CookieContainer? cookies = null, bool https = false) =>
+        new(new CookieJarHandler(cookies ?? new CookieContainer()) { InnerHandler = server.CreateHandler() })
         {
             BaseAddress = new Uri(https ? "https://localhost/" : "http://localhost/"),
         };
@@ -30,9 +34,13 @@ public static class GmBrowser
     }
 
     /// <summary>Local GM login (Development/Test) as the GM page does it; returns a client with session + CSRF token.</summary>
-    public static async Task<HttpClient> GmLoginAsync(this TestHost host, string staffId, string password, CookieContainer? cookies = null)
+    public static Task<HttpClient> GmLoginAsync(this TestHost host, string staffId, string password, CookieContainer? cookies = null) =>
+        host.App.GetTestServer().GmLoginAsync(staffId, password, cookies);
+
+    /// <summary>Local GM login on any TestServer.</summary>
+    public static async Task<HttpClient> GmLoginAsync(this TestServer server, string staffId, string password, CookieContainer? cookies = null)
     {
-        var client = host.Browser(cookies);
+        var client = server.Browser(cookies);
         await client.RefreshCsrfAsync();
         var login = await client.PostAsync(
             GmModule.LoginRoute,

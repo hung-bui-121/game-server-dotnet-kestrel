@@ -9,8 +9,10 @@ output prefix below is a breaking change for pipelines and scripts (PCR-01).
 <host> [--provision] [--urls <url>[;<url>…]] [--<Section>:<Key>=<value> …]
 ```
 
-- `--provision` — provisioning mode (FR-029). Removed from the arguments before configuration is built; every other
-  argument is ordinary command-line configuration (highest precedence).
+- `--provision` — provisioning mode (FR-029), matched in any letter case. Removed from the arguments before configuration is
+  built; every other argument is ordinary command-line configuration (highest precedence). `--provision=<value>`,
+  `-provision` and `/provision[=<value>]` are refused with exit 1 (the configuration provider would read them as a key and
+  the host would serve instead of provisioning); the message never echoes the value.
 - Flavor = host environment name (`ASPNETCORE_ENVIRONMENT` or `DOTNET_ENVIRONMENT`): `Local`, `Dev`, `Beta`, `Uat`,
   `Live` (exact spelling on case-sensitive file systems), or a game-defined name with its own
   `appsettings.<Name>.json` that sets `GameServer:DeploymentEnvironment`.
@@ -20,7 +22,7 @@ output prefix below is a breaking change for pipelines and scripts (PCR-01).
 | Code | Serve mode | Provision mode |
 | --- | --- | --- |
 | 0 | graceful stop after serving | everything present (created now or before) |
-| 1 | invalid configuration or startup refusal before traffic: validation errors, file store locked / malformed / unknown format, Couchbase scope missing collections (when startup provisioning is off) | invalid configuration (deployment identity, Couchbase settings, registry rules) or the store is not Couchbase |
+| 1 | invalid configuration or startup refusal before traffic: validation errors (also a value of the wrong type), file store locked / malformed / unknown format / not readable or writable, Couchbase scope missing collections (when startup provisioning is off), a misspelled provisioning switch | invalid configuration (deployment identity, Couchbase settings, registry rules, a secret in a JSON file outside Development/Test, a misspelled switch) or the store is not Couchbase |
 | 2 | — | provisioning failed or timed out (`Couchbase:ProvisioningTimeoutSeconds`); re-run after the fix continues |
 | other | unhandled runtime failure (.NET default) | unhandled failure |
 
@@ -34,9 +36,20 @@ environment), `GameServer:Store=Couchbase`, `Couchbase:ConnectionString`, `Couch
 `Couchbase:BucketName`. Not required: GM SSO, IAP credentials, identity pepper, data-protection master key. Starts no
 web server, no job, no sweeper. Never creates buckets; never drops or alters anything.
 
-Credential: an identity with `Bucket Admin` on the bucket and `Query Manage Index` (plus `Query System Catalog`). The
-API deployment uses a data-only identity (`Data Reader`, `Data Writer`, `Query Select`, `Query Insert`, `Query Update`,
-`Query Delete` on the scope).
+Credential: an identity with `Bucket Admin`, `Query Manage Index` and `Data Reader` on the bucket, plus `Query System
+Catalog` (7.6 syntax: `bucket_admin[<bucket>]`, `query_manage_index[<bucket>]`, `data_reader[<bucket>]`,
+`query_system_catalog`). Bucket level, because the scope does not exist before the first run. `Data Reader` is needed by the
+KV visibility wait and the final verification. Verified on EE 7.6.12 with a restricted user (T055): this set provisions a
+fresh scope; without any one of the four roles the run exits 2. The API deployment uses a data-only identity
+(`Data Reader`, `Data Writer`, `Query Select`, `Query Insert`, `Query Update`, `Query Delete` on the scope).
+
+Secrets: as in serve mode, `Couchbase:Password` (and every `GameServer:SecretKeys` entry) must not come from a JSON file
+outside Development/Test (exit 1, OPS-08).
+
+Transient errors: a cluster-manager 503 ("Service is temporarily unavailable") on the scope listing or a scope/collection
+creation is retried up to 8 attempts with backoff 0.5 s doubling to at most 5 s; other errors are not retried. An index in
+state `error` fails at once (exit 2, drop it and run again); waiting for an index to be online is bounded by
+`Couchbase:ProvisioningTimeoutSeconds`.
 
 Order: scope → `txn_meta` → other collections (ordinal) → wait until collections answer KV → indexes (framework,
 module, purge reference) → wait until every index is online → verification.

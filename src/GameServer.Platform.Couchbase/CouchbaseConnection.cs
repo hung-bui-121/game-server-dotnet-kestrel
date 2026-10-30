@@ -1,17 +1,17 @@
 using System.Collections.Concurrent;
 using Couchbase;
-using Couchbase.Client.Transactions;
-using Couchbase.Client.Transactions.Config;
 using Couchbase.Core.IO.Serializers;
 using Couchbase.Core.IO.Transcoders;
 using Couchbase.KeyValue;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace GameServer.Platform.Couchbase;
 
 /// <summary>
 /// Process-wide cluster connection (PERF-03): one <see cref="ICluster"/> with transactions configured for
-/// the framework (expiration 10 s, durability Majority, metadata collection <c>g_&lt;gameId&gt;.txn_meta</c> — DAT-07, OPS-05).
+/// the framework (expiration 10 s, durability Majority, metadata collection <c>g_&lt;gameId&gt;.txn_meta</c> — DAT-07, OPS-05)
+/// and the settings of <see cref="CouchbaseOptions"/> (<see cref="CouchbaseClusterOptionsFactory"/>).
 /// A failed connection attempt is not cached: the next caller retries (review M5).
 /// </summary>
 public sealed class CouchbaseConnection : IAsyncDisposable
@@ -21,15 +21,29 @@ public sealed class CouchbaseConnection : IAsyncDisposable
     private readonly CouchbaseOptions _options;
     private readonly GameServerOptions _gameServer;
     private readonly ILoggerFactory _loggerFactory;
+    private readonly string _contentRoot;
     private readonly SemaphoreSlim _connectLock = new(1, 1);
     private readonly ConcurrentDictionary<string, ICouchbaseCollection> _collections = new(StringComparer.Ordinal);
     private ICluster? _cluster;
 
+    /// <summary>Host construction: a relative <c>Couchbase:TrustCertificatePath</c> resolves against the content root.</summary>
+    public CouchbaseConnection(CouchbaseOptions options, GameServerOptions gameServer, ILoggerFactory loggerFactory, IHostEnvironment environment)
+        : this(options, gameServer, loggerFactory, environment.ContentRootPath)
+    {
+    }
+
+    /// <summary>Construction without a host (tests, tools): a relative <c>Couchbase:TrustCertificatePath</c> resolves against the application folder.</summary>
     public CouchbaseConnection(CouchbaseOptions options, GameServerOptions gameServer, ILoggerFactory loggerFactory)
+        : this(options, gameServer, loggerFactory, AppContext.BaseDirectory)
+    {
+    }
+
+    private CouchbaseConnection(CouchbaseOptions options, GameServerOptions gameServer, ILoggerFactory loggerFactory, string contentRoot)
     {
         _options = options;
         _gameServer = gameServer;
         _loggerFactory = loggerFactory;
+        _contentRoot = contentRoot;
         Serializer = SystemTextJsonSerializer.Create(GameServerJson.Options);
         Transcoder = new JsonTranscoder(Serializer);
     }
@@ -84,21 +98,11 @@ public sealed class CouchbaseConnection : IAsyncDisposable
     /// <summary>Creates the cluster with the transaction configuration every instance must share.</summary>
     private async Task<ICluster> ConnectAsync()
     {
-        var clusterOptions = new ClusterOptions
-        {
-            ConnectionString = _options.ConnectionString,
-            KvDurabilityTimeout = TimeSpan.FromSeconds(_gameServer.Transactions.KvDurableTimeoutSeconds),
-        };
-        clusterOptions.WithPasswordAuthentication(_options.Username, _options.Password);
-        clusterOptions.WithSerializer(Serializer);
-        clusterOptions.WithLogging(_loggerFactory);
-        clusterOptions.TransactionsConfig = TransactionsConfigBuilder.Create()
-            .ExpirationTime(TimeSpan.FromSeconds(_gameServer.Transactions.ExpirationSeconds))
-            .DurabilityLevel(DurabilityLevel.Majority)
-            .MetadataCollection(new Keyspace(_options.BucketName, ScopeName, TransactionMetadataCollection))
-            .LoggerFactory(_loggerFactory)
-            .Build();
-
+        // Only a TLS connection uses the CA; CouchbaseSettingsCheck already reported an unreadable file at startup.
+        var trustedRoots = _options.UsesTls && !string.IsNullOrWhiteSpace(_options.TrustCertificatePath)
+            ? CouchbaseTrustedRoots.Load(CouchbaseTrustedRoots.ResolvePath(_contentRoot, _options.TrustCertificatePath))
+            : null;
+        var clusterOptions = CouchbaseClusterOptionsFactory.Create(_options, _gameServer, Serializer, trustedRoots, _loggerFactory);
         return await Cluster.ConnectAsync(clusterOptions);
     }
 

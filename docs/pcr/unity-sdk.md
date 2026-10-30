@@ -14,7 +14,7 @@ API-09/10, IDN-10, GATE-02, TIME-01, CFG-03.
 | `Runtime/Plugins/System.Runtime.CompilerServices.Unsafe.dll` | 4.5.2 netstandard2.0 — phụ thuộc của Google.Protobuf mà profile Unity không có trên Android (V7: thiếu thì IL2CPP build fail "Unable to resolve reference") |
 | `Runtime/link.xml` + `Editor/LinkXmlProvider.cs` | preserve `Google.Protobuf` và `GameServer.Client`; provider đưa link.xml cho Unity linker (Unity không tự đọc link.xml trong package). **Game phải tự preserve assembly chứa message proto của game** (KestrelDemo: `Assets/link.xml` → `SampleGame.Client`) |
 | `Runtime/Unity/UnityWebRequestTransport` | gọi từ main thread; huỷ (`CancellationToken`) được chuyển về main thread để `Abort`; lỗi khi khởi tạo request → `TransportException`, tài nguyên được dispose |
-| Client mẫu | **không** nằm trong gói: project Unity 6 `samples/SampleGame/KestrelDemo` tham chiếu gói bằng `file:` (login → config → battle → shop, log trên màn hình); code sinh từ `sample_game.proto` ở `Assets/SampleGame/Generated` |
+| Client mẫu | **không** nằm trong gói: project Unity 6 `samples/SampleGame/KestrelDemo` tham chiếu gói bằng `file:` (login → config → battle → shop, log trên màn hình); code sinh từ `sample_game.proto` ở `Assets/SampleGame/Generated`. `serverUrl` mặc định `http://localhost:5080/` = cổng của flavor local (slice 011; `SmokeBuild.cs` và `smoke-build.ps1` dùng cùng giá trị) |
 
 Yêu cầu: Unity 2021.3+ (C# 9, .NET Standard 2.1). Code SDK giữ C# 9, không `record`/`init`. `.meta` được commit (cài qua git URL).
 

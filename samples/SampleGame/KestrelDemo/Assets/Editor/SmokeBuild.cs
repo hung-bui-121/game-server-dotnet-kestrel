@@ -35,7 +35,7 @@ public static class KestrelDemoBuild
     /// <summary>Started without -quit: the editor update loop drives UnityWebRequest and the awaits until Exit.</summary>
     public static void EndToEnd()
     {
-        var url = Environment.GetEnvironmentVariable("GS_SERVER_URL") ?? "http://localhost:5000/";
+        var url = Environment.GetEnvironmentVariable("GS_SERVER_URL") ?? "http://localhost:5080/";
         var started = DateTime.UtcNow;
         var finished = false;
         EditorApplication.update += () =>

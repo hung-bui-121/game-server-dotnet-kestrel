@@ -150,6 +150,20 @@ public sealed class ArchitectureTests
     }
 
     [Fact]
+    public void Only_the_testing_assembly_knows_the_file_store()
+    {
+        // The development-only file store (slice 011) is chosen by hosts; framework and module code never depends on it.
+        Types.InAssembly(PlatformTesting).That().HaveDependencyOn(typeof(FileDocumentStore).FullName!).GetTypes()
+            .ShouldContain(typeof(FileStoreServiceCollectionExtensions), "rule must see a real dependency");
+        foreach (var assembly in AllFrameworkAndModules.Where(a => a != PlatformTesting))
+        {
+            ShouldPass(
+                Types.InAssembly(assembly).ShouldNot().HaveDependencyOn(typeof(FileDocumentStore).FullName!),
+                $"{assembly.GetName().Name} must not depend on the development-only file store (FR-007)");
+        }
+    }
+
+    [Fact]
     public void Modules_do_not_touch_the_document_store_directly()
     {
         foreach (var assembly in ModuleAssemblies)

@@ -28,9 +28,10 @@ namespace GameServer.Platform.Web.Tests;
 /// Slice 010 US2: the account purge job end to end on the full sample game (PRIV-01, ACC-37): every player aggregate,
 /// identity and session removed; receipts, ledger, audit, claims and projections kept under one anonymous id; the purge
 /// record without it (FR-013..FR-018, SC-002, SC-003, SC-006). Failures, resume, budget, limits and fencing (US2-4, US4-3);
-/// login and stale sessions racing the purge (US2-5, research R9).
+/// login and stale sessions racing the purge (US2-5, research R9). Runs on the in-memory and the file store (slice 011
+/// SC-003): the subclasses below choose the store; <c>host.Store</c> is the in-memory store (inner store of the file store).
 /// </summary>
-public sealed class AccountPurgeTests
+public abstract class AccountPurgeTests
 {
     private const string IncrementRoute = "/api/v1/counter/increment";
     private const string AnonymousIdPattern = "^anon_[0-9a-hjkmnp-tv-z]{26}$";
@@ -48,7 +49,10 @@ public sealed class AccountPurgeTests
     /// Sessions outlive the grace period here (sliding 60 days instead of 30), so the purge itself must remove them and stale
     /// tokens still reach the profile check.
     /// </summary>
-    private static Task<TestHost> StartAsync(Action<Dictionary<string, string?>>? settings = null, InMemoryDocumentStore? store = null, FakeClock? clock = null) =>
+    /// <summary>The store each host of this class runs on (a host sharing another's store keeps that store).</summary>
+    protected abstract TestStoreKind StoreKind { get; }
+
+    private Task<TestHost> StartAsync(Action<Dictionary<string, string?>>? settings = null, InMemoryDocumentStore? store = null, FakeClock? clock = null) =>
         TestHost.StartAsync(
             modules: b => GameHttp.FullGame(b.AddModule<GmModule>()),
             settings: s =>
@@ -57,7 +61,8 @@ public sealed class AccountPurgeTests
                 settings?.Invoke(s);
             },
             store: store,
-            clock: clock);
+            clock: clock,
+            storeKind: StoreKind);
 
     private static ProviderCredential Pgs(string id) => new() { PlayGames = new PlayGames { ServerAuthCode = FakeIdentityAdapter.Prefix + id } };
 
@@ -685,4 +690,19 @@ public sealed class AccountPurgeTests
 
         public int GetHashCode(Footprint obj) => obj.Receipts;
     }
+}
+
+/// <summary>The purge on the in-memory store.</summary>
+/// <remarks>Both variants share one collection: the purge metrics are read through a process-wide MeterListener.</remarks>
+[Collection(nameof(AccountPurgeTests))]
+public sealed class InMemoryAccountPurgeTests : AccountPurgeTests
+{
+    protected override TestStoreKind StoreKind => TestStoreKind.InMemory;
+}
+
+/// <summary>The purge on the file store: same semantics, every write persisted (slice 011 T023).</summary>
+[Collection(nameof(AccountPurgeTests))]
+public sealed class FileAccountPurgeTests : AccountPurgeTests
+{
+    protected override TestStoreKind StoreKind => TestStoreKind.File;
 }

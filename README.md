@@ -29,23 +29,53 @@ xem `docs/guides/local-real-env-testing.md`. Chưa kiểm: cluster nhiều node,
 
 - .NET SDK **10.0.403** (`global.json`). Trên máy chỉ có .NET 10 RC thì cài bản GA vào thư mục user:
   `dotnet-install.ps1 -Channel 10.0 -InstallDir $env:USERPROFILE\.dotnet10` rồi dùng `~/.dotnet10/dotnet`.
-- Couchbase Server ≥ 7.6 chỉ cần cho integration test và chạy thật (`Store=Couchbase`).
+- Couchbase Server ≥ 7.6 chỉ cần cho integration test và "môi trường thật" (flavor `Dev`, `Beta`, `Uat`, `Live`); chạy local
+  không cần.
 
-## Build, test, chạy
+## Chạy server local (một lệnh)
+
+```powershell
+./tools/local/run-local.ps1          # Windows PowerShell 5.1 / PowerShell 7
+```
+
+```bash
+tools/local/run-local.sh             # macOS, Linux, Git Bash
+```
+
+Script build `samples/SampleHost`, chạy flavor `Local` (file store ở `samples/_database/dbbase`, không cần Couchbase), chờ server
+sẵn sàng rồi in các URL:
+
+| | URL |
+| --- | --- |
+| Player API | `http://localhost:5080/` (Unity client mẫu dùng mặc định địa chỉ này) |
+| Health | `http://localhost:5080/health/ready` |
+| GM tool | `http://localhost:5080/gm/v1/ui` — staff seed `admin` / `dev-only-change-me` (chỉ có ở flavor `Local` và `Dev`) |
+
+Ctrl+C dừng êm; chạy lại giữ nguyên dữ liệu. `-Port 5090` đổi cổng, `-Reset` bắt đầu với store rỗng, `-Lan` cho điện thoại cùng
+mạng kết nối (bash: `--port`, `--reset`, `--lan`). Từ IDE hoặc `dotnet run --project samples/SampleHost`: launch profile `local`
+cho cùng kết quả (không in URL).
+
+Flavor `Local`/`Dev`/`Beta`/`Uat`/`Live`, biến môi trường bắt buộc của từng flavor, file store, cấu hình Couchbase, TLS, quyền RBAC
+và lệnh `--provision`: `docs/guides/environments-and-local-run.md`.
+
+## Build và test
 
 ```powershell
 dotnet build GameServer.slnx -c Release          # warnings-as-errors, analyzers bật
 dotnet test --solution GameServer.slnx -c Release # unit + HTTP + arch; integration Skipped nếu thiếu COUCHBASE_CONNSTR
-dotnet run --project samples/SampleHost          # store in-memory, xác thực thử nghiệm qua header X-Test-Player
 ```
 
 Log ghi ở `samples/SampleHost/logs/` (compact JSON); health: `/health/live`, `/health/ready`. Gửi trace/metrics tới
 collector: đặt `Observability__Otlp__Endpoint=http://localhost:4317`.
 
-GM tool khi chạy SampleHost (Development): mở `http://localhost:5000/gm/v1/ui`, đăng nhập staff seed trong
-`samples/SampleHost/appsettings.json` (`Gm:Bootstrap:Staff`, chỉ hợp lệ ở Development/Test).
+## Môi trường thật: Couchbase, nhiều instance
 
-Integration test với Couchbase thật (chạy nhiều instance, tải và drill sự cố: `docs/guides/local-real-env-testing.md`):
+Flavor `Dev` chạy SampleHost trên Couchbase local (bucket `gameserver-dev`, mật khẩu trong biến môi trường user
+`Couchbase__Password`): `dotnet run --project samples/SampleHost --launch-profile dev-couchbase`, hoặc nhiều instance
+`./tools/local/start-hosts.ps1 -Count 2` (cổng 5080, 5081). Chuẩn bị Couchbase, tải và drill sự cố:
+`docs/guides/local-real-env-testing.md`.
+
+Integration test với Couchbase thật:
 
 ```powershell
 $env:COUCHBASE_CONNSTR="couchbase://localhost"; $env:COUCHBASE_USERNAME="Administrator"
@@ -62,7 +92,7 @@ dotnet test --project tests/GameServer.Platform.Couchbase.IntegrationTests -c Re
 | `src/GameServer.Platform.Web` | hosting (`AddGameServer`/`UseGameServer`), Protobuf, lỗi, profile, limit |
 | `src/GameServer.Platform.Couchbase` | store Couchbase (transactions, GetMulti, provisioning) |
 | `src/GameServer.Platform.Observability` | Serilog file log, OpenTelemetry, health checks (`AddObservability()`) |
-| `src/GameServer.Platform.Testing` | store in-memory + tiêm lỗi, `FakeClock` |
+| `src/GameServer.Platform.Testing` | store in-memory + tiêm lỗi, `FakeClock`, file store của flavor local |
 | `src/GameServer.Modules.Identity*` | aggregate bắt buộc `profile`, guest login, session |
 | `src/GameServer.Modules.Economy*`, `src/GameServer.Modules.Iap*` | wallet/inventory/ledger; mua IAP |
 | `src/GameServer.Modules.Gm*` | GM: staff, cookie session, lookup, audit, trang `/gm/v1/ui` |
@@ -72,6 +102,6 @@ dotnet test --project tests/GameServer.Platform.Couchbase.IntegrationTests -c Re
 | `sdk/unity/ci/smoke-build.ps1` | CI-02: build smoke Android IL2CPP + stripping High của KestrelDemo |
 | `modules/Sample.Counter` | module mẫu (ACC-13) |
 | `templates/module` | khung module 2 project |
-| `docs/pcr`, `docs/adr`, `docs/guides` | Published Contract Register, ADR, hướng dẫn viết module, kiểm thử như môi trường thật |
-| `tools/GameServer.LoadTest`, `tools/local` | công cụ tải/tranh chấp (ACC-06, ACC-16) và script chạy nhiều instance, drill dừng/crash/mất DB |
+| `docs/pcr`, `docs/adr`, `docs/guides` | Published Contract Register, ADR, hướng dẫn viết module, môi trường và chạy local, kiểm thử như môi trường thật |
+| `tools/GameServer.LoadTest`, `tools/local` | công cụ tải/tranh chấp (ACC-06, ACC-16); script chạy local (`run-local`), chạy nhiều instance, drill dừng/crash/mất DB |
 | `specs/` | Spec Kit: spec, plan, tasks theo slice |

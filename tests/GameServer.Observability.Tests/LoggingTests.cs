@@ -16,11 +16,11 @@ public sealed class LoggingTests
     [Fact]
     public async Task Logs_are_compact_json_per_instance_with_request_and_trace_ids_and_masked_secrets()
     {
-        string directory;
+        using var logFolder = new TempLogDirectory();
+        var directory = logFolder.Path;
         string requestId = Guid.NewGuid().ToString("D");
-        await using (var observed = await ObservedHost.StartAsync())
+        await using (var observed = await ObservedHost.StartAsync(directory))
         {
-            directory = observed.LogDirectory;
             var request = new HttpRequestMessage(HttpMethod.Get, ObservedHost.ProbeRoute + "?value=hello");
             request.Headers.Add("X-Request-Id", requestId);
             (await observed.Host.Client().SendAsync(request)).EnsureSuccessStatusCode();
@@ -47,13 +47,13 @@ public sealed class LoggingTests
     [Fact]
     public async Task No_credential_reaches_the_log_files_after_the_main_flows()
     {
-        string directory;
+        using var logFolder = new TempLogDirectory();
+        var directory = logFolder.Path;
         string sessionToken;
         string secret;
         string? gmCookie;
-        await using (var observed = await ObservedHost.StartAsync())
+        await using (var observed = await ObservedHost.StartAsync(directory))
         {
-            directory = observed.LogDirectory;
             var host = observed.Host;
             var secretBytes = IdentityHttp.NewSecret();
             secret = Convert.ToBase64String(secretBytes);
@@ -88,7 +88,8 @@ public sealed class LoggingTests
     [Fact]
     public async Task Files_roll_by_size_keep_the_count_limit_and_restart_appends()
     {
-        var directory = ObservedHost.NewLogDirectory();
+        using var logFolder = new TempLogDirectory();
+        var directory = logFolder.Path;
         void Small(Dictionary<string, string?> s)
         {
             s["Observability:Logging:FileSizeLimitBytes"] = "4096";
@@ -126,9 +127,10 @@ public sealed class LoggingTests
     [InlineData("Information", true)]
     public async Task Couchbase_sdk_information_is_off_by_default_and_can_be_turned_on(string? level, bool expected)
     {
-        string directory;
+        using var logFolder = new TempLogDirectory();
+        var directory = logFolder.Path;
         var marker = Guid.NewGuid().ToString("N");
-        await using (var observed = await ObservedHost.StartAsync(settings: s =>
+        await using (var observed = await ObservedHost.StartAsync(directory, s =>
         {
             s["Observability:Logging:MinimumLevel"] = "Information";
             if (level != null)
@@ -137,7 +139,6 @@ public sealed class LoggingTests
             }
         }))
         {
-            directory = observed.LogDirectory;
             var factory = observed.Host.Services.GetRequiredService<ILoggerFactory>();
             factory.CreateLogger("Couchbase.Client.Transactions.AttemptContext").LogInformation("Sdk detail {Marker}", marker);
             factory.CreateLogger("ExecuteApplicationLambda").LogInformation("Sdk lambda {Marker}", marker);
@@ -173,8 +174,9 @@ public sealed class LoggingTests
     [Fact]
     public async Task Sink_errors_are_counted_and_make_readiness_degraded()
     {
-        // A file where the log directory should be: the sink cannot create its file.
-        var blocker = Path.Combine(Path.GetTempPath(), "gs-blocker-" + Guid.NewGuid().ToString("N"));
+        // A file where the log directory should be: the sink cannot create its file. The file lives in a deleted temp folder.
+        using var root = new TempLogDirectory();
+        var blocker = Path.Combine(Directory.CreateDirectory(root.Path).FullName, "blocker");
         await File.WriteAllTextAsync(blocker, "not a directory");
         var errors = LogSinkMonitor.Instance.SinkErrors;
 

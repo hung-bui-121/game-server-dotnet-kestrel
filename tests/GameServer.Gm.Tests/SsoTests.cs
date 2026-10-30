@@ -149,15 +149,12 @@ public sealed class SsoTests : IAsyncLifetime
                 Settings(values);
                 values["Gm:Oidc:BootstrapManagers:0:StaffId"] = "boss";
                 values["Gm:Oidc:BootstrapManagers:0:Email"] = "boss@corp.test";
-
-                // samples/SampleHost/appsettings.json seeds an Administrator: make it a non-manager for this case.
-                values["Gm:Bootstrap:Staff:0:Roles:0"] = "Support";
             });
         var boss = host.Services.GetRequiredService<GameServer.Platform.Persistence.IKeyValueStore>();
         var staff = StaffDirectory.Parse(await boss.GetAsync(StaffDirectory.Key("boss"), CancellationToken.None));
         staff.ShouldNotBeNull(string.Join(" | ", host.Logs.Where(l => l.Contains("staff", StringComparison.OrdinalIgnoreCase)).TakeLast(15)));
         staff.Status.ShouldBe(StaffStatus.Invited);
-        staff.EffectivePermissions("test", "dev").ShouldContain(GmPermissions.StaffManage);
+        staff.EffectivePermissions("test", "test").ShouldContain(GmPermissions.StaffManage);
         (await host.Services.GetRequiredService<StaffAdminService>().CountManagersAsync(CancellationToken.None)).ShouldBe(0);
     }
 

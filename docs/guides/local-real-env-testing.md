@@ -6,6 +6,9 @@ không mô phỏng được: ghi đè ngoài transaction, ATR/cleanup, độ tr�
 Số đo trên một node localhost (RTT < 1 ms, replicas = 0) dùng để kiểm **tính đúng** và so sánh tương đối; số capacity
 để ký duyệt hiệu năng phải đo trên cluster nhiều node giống production (bảng 12.1).
 
+Chỉ cần chạy server để code client/GM (không Couchbase): `tools/local/run-local.ps1` (flavor `Local`). Flavor, biến môi trường,
+setting Couchbase, quyền RBAC và lệnh `--provision`: `docs/guides/environments-and-local-run.md`.
+
 ## 1. Chuẩn bị (một lần)
 
 1. Couchbase Server Enterprise 7.6.x (bản dev/test miễn phí; Windows 10/11 hoặc Linux/WSL2). Bật service **Data, Query,
@@ -13,7 +16,11 @@ Số đo trên một node localhost (RTT < 1 ms, replicas = 0) dùng để kiể
 2. Hai bucket, **replicas = 0** (một node không đáp ứng được `Majority` khi replicas ≥ 1):
    `gameserver-it` (integration test, mỗi lần chạy tạo scope riêng rồi xoá) và `gameserver-dev` (SampleHost).
 3. Mật khẩu Administrator đặt trong biến môi trường **user** `COUCHBASE_PW` — không ghi vào appsettings hay script
-   (OPS-08; ngoài Development/Test host từ chối khởi động nếu secret nằm trong file cấu hình).
+   (OPS-08; ngoài Development/Test host từ chối khởi động nếu secret nằm trong file cấu hình). Flavor `Dev` (launch profile
+   `dev-couchbase`) đọc mật khẩu từ biến môi trường user `Couchbase__Password`.
+4. Schema của `gameserver-dev`: flavor `Dev` tự tạo khi khởi động (Development provision theo mặc định). Muốn tạo trước, hoặc
+   bổ sung phần còn thiếu sau khi đổi phiên bản (in từng mục rồi thoát 0/1/2, chạy lại an toàn):
+   `dotnet run --project samples/SampleHost --launch-profile dev-couchbase -- --provision`.
 
 ## 2. Integration test và TST-04
 
@@ -25,6 +32,24 @@ $env:COUCHBASE_PASSWORD=[Environment]::GetEnvironmentVariable('COUCHBASE_PW','Us
 
 Chép các dòng `[TST-04 …]` vào `docs/pcr/platform.md` mục 11 khi đổi phiên bản SDK hoặc Server.
 
+Mỗi class test tạo scope riêng `g_it…` / `g_prov…` (và user RBAC tạm `gs-it-…`) trong `gameserver-it` rồi xoá khi xong. Cả bộ
+Couchbase mất ~16 phút; index service xếp hàng các lần build index nên test provisioning đặt timeout 1800 s.
+
+**Dọn scope sót lại.** Lần chạy bị dừng giữa chừng (Ctrl+C, kill, ổ đầy) để lại scope test; Couchbase lưu dữ liệu trên ổ cài đặt
+(thường là C:) nên vài scope sót có thể làm đầy ổ (đã gặp: 7 scope ≈ 9,6 GB), và ổ đầy lại làm lần chạy sau chết tiếp. Liệt kê
+rồi xoá qua REST (không in mật khẩu):
+
+```powershell
+$pw = [Environment]::GetEnvironmentVariable('COUCHBASE_PW','User')
+$auth = @{ Authorization = 'Basic ' + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("Administrator:$pw")) }
+$base = 'http://localhost:8091/pools/default/buckets/gameserver-it/scopes'
+$left = (Invoke-RestMethod -Headers $auth -Uri $base).scopes.name | Where-Object { $_ -like 'g_it*' -or $_ -like 'g_prov*' }
+$left | ForEach-Object { Invoke-RestMethod -Headers $auth -Method Delete -Uri "$base/$_" }
+```
+
+User tạm sót lại: `GET http://localhost:8091/settings/rbac/users` rồi `DELETE /settings/rbac/users/local/<tên gs-it-…>`. Chỉ
+chạy khi không có lần test nào đang chạy (scope của lần chạy đang dở cũng khớp mẫu).
+
 ## 3. Chạy nhiều instance trên Couchbase
 
 ```powershell
@@ -32,6 +57,8 @@ Chép các dòng `[TST-04 …]` vào `docs/pcr/platform.md` mục 11 khi đổi 
 ./tools/local/stop-hosts.ps1
 ```
 
+- Mỗi host chạy flavor `Dev` (script đặt `ASPNETCORE_ENVIRONMENT=Dev` rồi khôi phục giá trị cũ khi xong); các biến
+  `GameServer__Store`, `Couchbase__*` và `--urls` của script vẫn ghi đè `appsettings.Dev.json`.
 - Host chạy từ bản copy trong `%TEMP%\gameserver-local\app` nên vẫn build/test được khi host đang chạy; PID và
   stdout/stderr cũng ở thư mục đó. Log ứng dụng: `samples/SampleHost/logs/sample-{a|b}-yyyyMMdd.log`.
 - `-Otlp http://localhost:4317` gửi trace/metrics tới collector (vd. Jaeger v2 bản Windows, nhận OTLP ở 4317).

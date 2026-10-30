@@ -335,7 +335,7 @@ public sealed class AccountDeletionTests : IAsyncLifetime
         ["mappingKey"] = GuestCredentials.MappingKey(localId),
         ["playerId"] = playerId,
         ["gameId"] = "test",
-        ["environmentId"] = "dev",
+        ["environmentId"] = "test",
         ["linkedAtUtc"] = AggregateDocumentSerializer.FormatTime(_a.Clock.UtcNow),
         ["providerAttributes"] = new JsonObject
         {
