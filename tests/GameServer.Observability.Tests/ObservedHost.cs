@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using GameServer.Modules.Gm;
 using GameServer.Platform.Observability;
+using GameServer.Platform.Web.Hosting;
 using GameServer.Platform.Web.Routing;
 using GameServer.Tests.Shared;
 using Microsoft.AspNetCore.Builder;
@@ -45,7 +46,8 @@ public sealed class ObservedHost : IAsyncDisposable
     public static async Task<ObservedHost> StartAsync(
         string? logDirectory = null,
         Action<Dictionary<string, string?>>? settings = null,
-        Action<WebApplication>? beforeUseGameServer = null)
+        Action<WebApplication>? beforeUseGameServer = null,
+        Action<GameServerBuilder>? extra = null)
     {
         var owned = logDirectory is null ? new TempLogDirectory() : null;
         logDirectory ??= owned!.Path;
@@ -54,7 +56,7 @@ public sealed class ObservedHost : IAsyncDisposable
         TestHost host;
         try
         {
-            host = await StartHostAsync(logDirectory, settings, beforeUseGameServer, activities, metrics);
+            host = await StartHostAsync(logDirectory, settings, beforeUseGameServer, activities, metrics, extra);
         }
         catch
         {
@@ -70,12 +72,14 @@ public sealed class ObservedHost : IAsyncDisposable
         Action<Dictionary<string, string?>>? settings,
         Action<WebApplication>? beforeUseGameServer,
         List<Activity> activities,
-        List<MetricSnapshot> metrics) =>
+        List<MetricSnapshot> metrics,
+        Action<GameServerBuilder>? extra) =>
         TestHost.StartAsync(
             b =>
             {
                 GameHttp.FullGame(b.AddModule<GmModule>());
                 b.AddObservability();
+                extra?.Invoke(b);
             },
             values =>
             {

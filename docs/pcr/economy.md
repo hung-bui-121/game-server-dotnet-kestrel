@@ -21,7 +21,20 @@ Số dư 0 không được lưu (key bị xoá).
 | --- | --- | --- |
 | `EconomyOperations.Grant` | quantity > 0, id trong catalog, không tràn int64, ≤ `maxQuantity` | `INVALID_QUANTITY`, `UNKNOWN_ITEM`, `QUANTITY_LIMIT_EXCEEDED` |
 | `EconomyOperations.Debit` | như trên, số dư ≥ quantity | `INSUFFICIENT_FUNDS` |
-| `TryClaimExternalAsync` | claim `extref::{sourceType}::{externalReference}` trong `extref_claims` | `ALREADY_GRANTED` (do caller trả) |
+| `TryClaimExternalAsync` | claim `ExternalClaimKey(sourceType, externalReference)` trong `extref_claims` (dưới) | `ALREADY_GRANTED` (do caller trả) |
+
+### Claim key (ECO-08; review slice 012 T066)
+
+`EconomyOperations.ExternalClaimKey`: `extref::{sourceType}::{externalReference}` khi key ≤ `MaxClaimKeyBytes` = **246 byte
+UTF-8**, ngược lại `extrefh::{sourceType}::{SHA-256 hex chữ thường của UTF-8(externalReference)}` (85 byte với `iap_google`).
+Một reference luôn ra cùng một key; hai prefix không bao giờ trùng nhau. 246 = giới hạn key **đo được** trên Couchbase EE
+7.6.12 (collection có tên, insert trong transaction lẫn KV thường, 2026-10-31): 246 byte được nhận, 247–248 bị server từ chối
+(`InvalidArgumentException`), từ 249 SDK 3.10 từ chối phía client ("251 bytes including the collection ID prefix, and the
+maximum is 250"); không phụ thuộc collection (đo trên hai collection, uid 4515 và 4528); ký tự nhiều byte tính theo byte. Mọi
+key trước đây chạy được trên Couchbase giữ nguyên dạng. Store in-memory và file nhận key dài bất kỳ (file store tự băm tên file
+dài, MAX_PATH Windows) nên trước bản sửa một reference dài chỉ lỗi `INTERNAL` trên Couchbase (người chơi đã trả tiền); dữ liệu
+local cũ (file store) có claim dạng `extref::` dài sẽ không chặn lần cấp lại của cùng reference — chỉ ảnh hưởng dữ liệu dev.
+`sourceType` là hằng số ngắn của code (ví dụ `iap_google`). Ledger giữ `externalReference` nguyên văn (field, không phải key).
 
 Mọi thay đổi chạy trong transaction của command gọi (command phải khai `wallet`/`inventory` trong Touches); mỗi delta
 sinh outbox `ledger` → projection `ledger::{entryId}` trong collection `ledger`

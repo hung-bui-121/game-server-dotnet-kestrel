@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json.Nodes;
 using GameServer.Modules.Gm;
 using GameServer.Platform.Web.Auth;
 using GameServer.Protocol.Core.V1;
@@ -22,6 +23,12 @@ public sealed class SampleHostSmokeTests : IDisposable
 
     private readonly string _folder = Path.Combine(Path.GetTempPath(), "gs-smoke-" + Guid.NewGuid().ToString("N"));
 
+    /// <summary>Slice 012: one instance id per test class instance, so parallel factories never share an analytics lock.</summary>
+    private readonly string _instanceId = "smoke-" + Guid.NewGuid().ToString("N")[..8];
+
+    /// <summary>Analytics files of the local flavor go to the temporary folder, never into the sample's content root.</summary>
+    private string AnalyticsFolder => Path.Combine(_folder, "analytics");
+
     public void Dispose() => TestStores.DeleteFolder(_folder);
 
     /// <summary>
@@ -34,7 +41,9 @@ public sealed class SampleHostSmokeTests : IDisposable
             .UseSetting("FileStore:Folder", _folder)
             .UseSetting("GameServer:Outbox:SweeperEnabled", outboxSweeper ? "true" : "false")
             .UseSetting("GameServer:Jobs:Enabled", "false")
-            .UseSetting("GameServer:Hosting:DrainDelaySeconds", "0"));
+            .UseSetting("GameServer:Hosting:DrainDelaySeconds", "0")
+            .UseSetting("GameServer:Analytics:Directory", AnalyticsFolder)
+            .UseSetting("Observability:InstanceId", _instanceId));
 
     [Fact]
     public async Task Sample_host_serves_time_command_and_snapshot_on_the_local_flavor()
@@ -92,6 +101,87 @@ public sealed class SampleHostSmokeTests : IDisposable
         await using var second = LocalFlavor();
         var browser = second.Server.Browser(cookies);
         (await browser.GetAsync(GmModule.MeRoute)).StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    /// <summary>
+    /// Slice 012 T050 (US5-1, SC-006, FR-035): with no game code beyond the sample, a login and two fake purchases end up in the
+    /// login and payment files of the analytics folder, with the documented keys and no credential, token or payload in them.
+    /// </summary>
+    [Fact]
+    public async Task The_local_flavor_writes_login_and_payment_files_without_any_secret()
+    {
+        var localId = IdentityHttp.NewLocalId();
+        var secret = IdentityHttp.NewSecret();
+        var validToken = "smoke-token-" + Guid.NewGuid().ToString("N");
+        var noOrderToken = "smoke-noorder-" + Guid.NewGuid().ToString("N");
+        string sessionToken;
+        await using (var factory = LocalFlavor())
+        {
+            var login = await factory.CreateClient().LoginAsync(localId, secret);
+            sessionToken = login.SessionToken;
+            var player = new GamePlayer(Bearer(factory, sessionToken), login.PlayerId);
+            (await player.IapAsync("google", "gems_100", "valid:" + validToken)).Code.ShouldBe("OK");
+            (await player.IapAsync("google", "gems_100", "noorder:" + noOrderToken)).Code.ShouldBe("OK");
+        }
+
+        var files = Directory.GetFiles(AnalyticsFolder, "*.jsonl");
+        var day = files.Select(Path.GetFileNameWithoutExtension).Select(n => n![^8..]).Distinct().ShouldHaveSingleItem();
+        var loginLines = File.ReadAllLines(Path.Combine(AnalyticsFolder, $"sample-{_instanceId}-login-{day}.jsonl"));
+        var paymentLines = File.ReadAllLines(Path.Combine(AnalyticsFolder, $"sample-{_instanceId}-payment-{day}.jsonl"));
+        files.Length.ShouldBe(2);
+        File.Exists(Path.Combine(AnalyticsFolder, $".sample-{_instanceId}.lock")).ShouldBeTrue();
+
+        var loginRecord = JsonNode.Parse(loginLines.ShouldHaveSingleItem())!.AsObject();
+        loginRecord.Select(p => p.Key).ShouldBe(
+            ["event", "schemaVersion", "eventId", "gameId", "environmentId", "userID", "activeTime", "activeTimeUtc", "timeZone", "utcOffset", "source", "provider", "isNewUser"]);
+        loginRecord["environmentId"]!.GetValue<string>().ShouldBe("local");
+        loginRecord["timeZone"]!.GetValue<string>().ShouldBe("Asia/Ho_Chi_Minh");
+        paymentLines.Length.ShouldBe(2);
+        foreach (var line in paymentLines)
+        {
+            var payment = JsonNode.Parse(line)!.AsObject();
+            payment["isTest"]!.GetValue<bool>().ShouldBeTrue();
+            payment.Select(p => p.Key).Take(11).ShouldBe(
+                ["event", "schemaVersion", "eventId", "gameId", "environmentId", "userID", "chargeTime", "chargeTimeUtc", "timeZone", "utcOffset", "receiptId"]);
+        }
+
+        // SC-006: no session token, guest secret, purchase token or receipt payload anywhere in the files. The fake verifier
+        // derives the order id of a valid: purchase from its reference (GPA.{ref}), so that reference appears as the order id by
+        // construction; the token-only path is the noorder: purchase (digest, never the token).
+        string[] secrets =
+        [
+            sessionToken, Convert.ToBase64String(secret), Convert.ToHexString(secret), Convert.ToHexStringLower(secret), localId,
+            noOrderToken, "noorder:" + noOrderToken, "valid:" + validToken,
+        ];
+        foreach (var file in files)
+        {
+            var text = File.ReadAllText(file);
+            secrets.ShouldAllBe(s => !text.Contains(s, StringComparison.Ordinal));
+        }
+    }
+
+    [Fact]
+    public async Task Disabled_analytics_creates_no_folder_and_relays_purchase_receipts()
+    {
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b => b
+            .UseEnvironment("Local")
+            .UseSetting("FileStore:Folder", _folder)
+            .UseSetting("GameServer:Outbox:SweeperEnabled", "false")
+            .UseSetting("GameServer:Jobs:Enabled", "false")
+            .UseSetting("GameServer:Hosting:DrainDelaySeconds", "0")
+            .UseSetting("GameServer:Analytics:Directory", AnalyticsFolder)
+            .UseSetting("GameServer:Analytics:Enabled", "false"));
+        var login = await factory.CreateClient().LoginAsync(IdentityHttp.NewLocalId(), IdentityHttp.NewSecret());
+        var player = new GamePlayer(Bearer(factory, login.SessionToken), login.PlayerId);
+
+        var purchase = await player.IapAsync("google", "gems_100", "valid:" + Guid.NewGuid().ToString("N"));
+
+        purchase.Code.ShouldBe("OK");
+        Directory.Exists(AnalyticsFolder).ShouldBeFalse();
+        var receipt = Directory.GetFiles(Path.Combine(_folder, "g_sample", "receipts"))
+            .Select(f => JsonNode.Parse(File.ReadAllText(f))!)
+            .Single(r => r.ToJsonString().Contains(purchase.ReceiptId, StringComparison.Ordinal));
+        receipt.ToJsonString().ShouldContain("\"outboxPending\":false");
     }
 
     private static HttpClient Bearer(WebApplicationFactory<Program> factory, string token)

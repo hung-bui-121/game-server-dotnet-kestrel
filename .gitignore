@@ -9,6 +9,8 @@ obj/
 .vs/
 TestResults/
 logs/
+# Local flavor analytics files (anchored: an unanchored "analytics/" would also hide src/**/Analytics/ with core.ignorecase)
+/samples/SampleHost/analytics/
 
 # IDE
 .idea/

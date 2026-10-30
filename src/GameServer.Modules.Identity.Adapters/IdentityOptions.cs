@@ -90,6 +90,7 @@ public sealed class IdentityMetrics : IDisposable
     private readonly Counter<long> _sessionReplaced;
     private readonly Counter<long> _deletionRequests;
     private readonly Counter<long> _deletionCancellations;
+    private readonly Counter<long> _resumeTrackerResets;
 
     public IdentityMetrics()
     {
@@ -98,6 +99,7 @@ public sealed class IdentityMetrics : IDisposable
         _sessionReplaced = _meter.CreateCounter<long>("session_replaced_total");
         _deletionRequests = _meter.CreateCounter<long>("account_deletion_requests_total");
         _deletionCancellations = _meter.CreateCounter<long>("account_deletion_cancellations_total");
+        _resumeTrackerResets = _meter.CreateCounter<long>("login_resume_tracker_resets_total", description: "Resume trackers cleared at GameServer:Analytics:ResumeTrackerCapacity");
     }
 
     public void Login(string result) => _logins.Add(1, new KeyValuePair<string, object?>("result", result));
@@ -109,6 +111,8 @@ public sealed class IdentityMetrics : IDisposable
     public void DeletionRequested() => _deletionRequests.Add(1);
 
     public void DeletionCancelled() => _deletionCancellations.Add(1);
+
+    public void ResumeTrackerReset() => _resumeTrackerResets.Add(1);
 
     public void Dispose() => _meter.Dispose();
 }

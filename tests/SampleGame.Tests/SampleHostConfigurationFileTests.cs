@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using GameServer.Platform;
+using GameServer.Platform.Analytics;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -69,6 +70,24 @@ public sealed class SampleHostConfigurationFileTests
             configuration[key].ShouldBeNullOrEmpty($"{file} sets the secret {key}: it must come from the environment (OPS-08).");
         }
     }
+
+    /// <summary>Slice 012 T049 (FR-032, FR-034, US5-1): analytics on in every standard flavor with a resolvable IANA zone.</summary>
+    [Theory]
+    [MemberData(nameof(StandardFlavorFiles))]
+    public void Every_standard_flavor_enables_analytics_with_a_resolvable_zone(string file, string environmentId)
+    {
+        var configuration = Load(file);
+
+        bool.TryParse(configuration["GameServer:Analytics:Enabled"], out var enabled).ShouldBeTrue($"{file} must set GameServer:Analytics:Enabled.");
+        enabled.ShouldBeTrue($"{file} ({environmentId}) must enable analytics.");
+        var zone = configuration["GameServer:Analytics:TimeZone"];
+        AnalyticsTimeZone.TryResolve(zone, out _, out var error).ShouldBeTrue($"{file}: {error}");
+        new GameServerOptions().SecretKeys.ShouldNotContain(key => key.StartsWith("GameServer:Analytics", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void The_base_file_has_no_analytics_section() =>
+        Load(BaseFile).GetSection("GameServer:Analytics").Exists().ShouldBeFalse($"{BaseFile} must not set analytics (FR-032).");
 
     [Fact]
     public void The_base_file_holds_no_flavor_value()
@@ -166,7 +185,7 @@ public sealed class SampleHostConfigurationFileTests
     {
         var error = await ConsoleErrorCapture.RunAsync(async () =>
         {
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b => b.UseEnvironment("Production"));
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b => b.UseEnvironment("Production").UseSetting("GameServer:Analytics:Enabled", "false"));
 
             // The entry point returns 1 before running the host; the factory then reports a host that never started.
             Should.Throw<InvalidOperationException>(() => factory.CreateClient());

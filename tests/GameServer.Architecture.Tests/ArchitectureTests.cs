@@ -7,6 +7,7 @@ using GameServer.Modules.Identity;
 using GameServer.Platform.Commands;
 using GameServer.Platform.Couchbase;
 using GameServer.Platform.Observability;
+using GameServer.Platform.Observability.Analytics;
 using GameServer.Platform.Persistence;
 using GameServer.Platform.Testing;
 using GameServer.Platform.Web.Hosting;
@@ -160,6 +161,20 @@ public sealed class ArchitectureTests
             ShouldPass(
                 Types.InAssembly(assembly).ShouldNot().HaveDependencyOn(typeof(FileDocumentStore).FullName!),
                 $"{assembly.GetName().Name} must not depend on the development-only file store (FR-007)");
+        }
+    }
+
+    [Fact]
+    public void Only_observability_knows_the_analytics_file_sink()
+    {
+        // Slice 012 D19: hosts choose the file sink (AddAnalyticsFiles); framework and module code only see IAnalyticsSink.
+        Types.InAssembly(PlatformObservability).That().HaveDependencyOn(typeof(AnalyticsFileSink).FullName!).GetTypes()
+            .ShouldContain(typeof(AnalyticsFileExtensions), "rule must see a real dependency");
+        foreach (var assembly in AllFrameworkAndModules.Where(a => a != PlatformObservability))
+        {
+            ShouldPass(
+                Types.InAssembly(assembly).ShouldNot().HaveDependencyOn(typeof(AnalyticsFileSink).FullName!),
+                $"{assembly.GetName().Name} must not depend on the analytics file sink (FR-005, D19)");
         }
     }
 

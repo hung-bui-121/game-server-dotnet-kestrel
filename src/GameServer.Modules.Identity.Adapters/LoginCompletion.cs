@@ -65,6 +65,7 @@ public sealed class LoginCompletion(
     SessionService sessions,
     IClock clock,
     IdentityMetrics metrics,
+    LoginAnalytics analytics,
     ILogger<LoginCompletion> logger)
 {
     /// <summary>
@@ -96,6 +97,9 @@ public sealed class LoginCompletion(
         var sections = await snapshots.ReadAsync(playerId, null, cancellationToken);
         metrics.Login("ok");
         logger.LogInformation("Login of player {PlayerId} with {Provider} (epoch {Epoch}).", playerId, ProviderIdentities.ProviderOf(mappingKey), updated.SessionEpoch);
+
+        // Last step that can fail is done: one login record (FR-015); refused or failed logins threw earlier (FR-016).
+        analytics.LoggedIn(playerId, ProviderIdentities.ProviderOf(mappingKey), createdPlayer: profile is null);
         return new LoginResult(token, playerId, expiresAt, sections);
     }
 

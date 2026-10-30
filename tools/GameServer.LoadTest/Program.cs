@@ -12,6 +12,8 @@ if (args.Length == 0 || args[0] is "-h" or "--help")
                       --cooldown-s 30 --window-s 5 --p95-target-ms 300 --max-dropped 0 --retries 0 --out samples.json
                       --verify-players 20 --verify-wait-s 90   (ledger = wallet/inventory after the run)
                       --ready-file <path>                       (written when setup is done; used by couchbase-outage.ps1)
+                      --purchase-every 0                        (n > 0: every n-th action of a player is an IAP purchase,
+                                                                 fake verifier, Development hosts; reported as op "purchase")
           contention: --rounds 20 --parallel 5 --retries 0
           both:       --gm-staff admin; GM password from env GM_DEV_PASSWORD (default: the Development seed)
         """);
@@ -22,7 +24,7 @@ string[] common = ["urls", "retries", "gm-staff"];
 string[]? allowed = args[0] switch
 {
     "burst" => [.. common, "players", "command-rps", "login-rps", "burst-factor", "warmup-s", "burst-s", "cooldown-s", "window-s",
-        "p95-target-ms", "max-dropped", "out", "verify-players", "verify-wait-s", "ready-file"],
+        "p95-target-ms", "max-dropped", "out", "verify-players", "verify-wait-s", "ready-file", "purchase-every"],
     "contention" => [.. common, "rounds", "parallel"],
     _ => null,
 };

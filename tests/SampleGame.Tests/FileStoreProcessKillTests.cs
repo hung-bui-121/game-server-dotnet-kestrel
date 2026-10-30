@@ -143,6 +143,9 @@ public sealed class FileStoreProcessKillTests : IDisposable
         start.ArgumentList.Add($"--FileStore:Folder={Folder}");
         start.ArgumentList.Add($"--Observability:Logging:Directory={Path.Combine(_root, "logs")}");
         start.ArgumentList.Add("--GameServer:Hosting:DrainDelaySeconds=0");
+
+        // Slice 012: analytics files beside the test's folders, never in the test output (content root).
+        start.ArgumentList.Add($"--GameServer:Analytics:Directory={Path.Combine(_root, "analytics")}");
         start.Environment["ASPNETCORE_ENVIRONMENT"] = "Local";
         start.Environment.Remove("DOTNET_ENVIRONMENT");
 

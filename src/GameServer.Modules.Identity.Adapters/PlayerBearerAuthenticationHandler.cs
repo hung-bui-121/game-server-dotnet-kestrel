@@ -21,7 +21,8 @@ public sealed class PlayerBearerAuthenticationHandler(
     SessionService sessions,
     ProfileCache profiles,
     IClock clock,
-    IdentityMetrics metrics) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
+    IdentityMetrics metrics,
+    LoginAnalytics analytics) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
     public const string SchemeName = "PlayerBearer";
     public const string SessionClaim = "gs:session";
@@ -65,6 +66,9 @@ public sealed class PlayerBearerAuthenticationHandler(
         }
 
         await sessions.TouchIfDueAsync(session, Context.RequestAborted);
+
+        // Every check passed: the first such request of the local day is a resume (FR-017; counted even if refused later, SD8).
+        analytics.Authenticated(session.PlayerId);
 
         var identity = new ClaimsIdentity(
             [

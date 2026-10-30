@@ -9,6 +9,7 @@ using GameServer.Modules.Gm;
 using GameServer.Modules.Identity;
 using GameServer.Modules.Identity.Protocol.V1;
 using GameServer.Platform.Aggregates;
+using GameServer.Platform.Analytics;
 using GameServer.Platform.Commands;
 using GameServer.Platform.Diagnostics;
 using GameServer.Platform.Jobs;
@@ -261,6 +262,45 @@ public abstract class AccountPurgeTests
         var provider = await ProviderLoginAsync(host, leaver.Pgs);
         provider.StatusCode.ShouldBe(HttpStatusCode.OK);
         (await provider.ReadProtobufAsync<LoginResponse>()).PlayerId.ShouldNotBeOneOf(leaver.PlayerId, guest.PlayerId);
+    }
+
+    /// <summary>
+    /// Slice 012 T028 (FR-012, FR-036): a payment record whose delivery failed is delivered by the purge's relay of the
+    /// rewritten receipt and carries the anonymous id with the event id computed before the purge; a record written before
+    /// the purge keeps the raw id (written files are never rewritten).
+    /// </summary>
+    [Fact]
+    public async Task A_pending_payment_record_is_delivered_by_the_purge_with_the_anonymous_id()
+    {
+        await using var host = await StartAsync();
+        var (player, token) = await host.NewPlayerAsync();
+        (await player.IapAsync("google", "gems_100", "valid:" + Guid.NewGuid().ToString("N"))).Code.ShouldBe("OK");
+        host.Analytics.FailWrites = true;
+        var pending = await player.IapAsync("apple", "gems_100", "valid:" + Guid.NewGuid().ToString("N"));
+        host.Analytics.FailWrites = false;
+        pending.Code.ShouldBe("OK");
+        var receiptKey = ReceiptDocument.KeyFor(pending.ReceiptId);
+        var receipt = host.Store.Peek(receiptKey)!;
+        receipt["outboxPending"]!.GetValue<bool>().ShouldBeTrue();
+        var expectedEventId = AnalyticsEventIds.ForOutboxEntry(receipt["outbox"]!.AsArray().Last()!["entryId"]!.GetValue<string>(), receipt["committedAtUtc"]!.GetValue<string>());
+        (await RequestDeletionAsync(host, token)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        host.Clock.Advance(Grace + TimeSpan.FromSeconds(1));
+
+        (await RunPurgeAsync(host)).ShouldBe(JobRunResult.Completed);
+
+        var anonymousId = host.Store.Peek(receiptKey)!["playerId"]!.GetValue<string>();
+        anonymousId.ShouldMatch(AnonymousIdPattern);
+        host.Store.Peek(receiptKey)!["outboxPending"]!.GetValue<bool>().ShouldBeFalse();
+        var payments = host.Analytics.OfEvent("payment");
+        payments.Count.ShouldBe(2);
+        payments[0]["userID"]!.GetValue<string>().ShouldBe(player.PlayerId);
+        payments[1]["userID"]!.GetValue<string>().ShouldBe(anonymousId);
+        payments[1]["eventId"]!.GetValue<string>().ShouldBe(expectedEventId);
+        payments[1]["receiptId"]!.GetValue<string>().ShouldBe(pending.ReceiptId);
+        foreach (var collection in host.Services.GetRequiredService<ModuleRegistry>().RequiredCollections().Where(c => c != PlatformCollections.AccountDeletions))
+        {
+            host.Store.All(collection).ShouldAllBe(d => !d.Content.ToJsonString().Contains(player.PlayerId, StringComparison.Ordinal));
+        }
     }
 
     [Fact]

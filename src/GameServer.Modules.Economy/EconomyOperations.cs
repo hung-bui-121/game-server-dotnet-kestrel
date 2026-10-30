@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using GameServer.Commands;
 using GameServer.Errors;
 
@@ -15,6 +17,15 @@ public static class EconomyOperations
     public const string LedgerCollection = "ledger";
     public const string ClaimCollection = "extref_claims";
 
+    /// <summary>
+    /// Longest claim key kept readable, in UTF-8 bytes: the Couchbase document key limit in a named collection (PCR economy,
+    /// "Claim key"); the in-memory and file stores accept any length.
+    /// </summary>
+    public const int MaxClaimKeyBytes = 246;
+
+    private const string RawClaimPrefix = "extref::";
+    private const string HashedClaimPrefix = "extrefh::";
+
     public static ErrorCode? Grant(ICommandContext context, ResourceCatalog catalog, string resource, long quantity, LedgerSource source) =>
         quantity <= 0 ? EconomyErrors.InvalidQuantity : Apply(context, catalog, resource, quantity, source);
 
@@ -31,11 +42,28 @@ public static class EconomyOperations
         };
 
     /// <summary>
-    /// Reserves the one-time claim of an external grant (ECO-08): <c>extref::{sourceType}::{externalReference}</c> inserted in
-    /// the same transaction. False means it was already granted.
+    /// Reserves the one-time claim of an external grant (ECO-08): <see cref="ExternalClaimKey"/> inserted in the same
+    /// transaction. False means it was already granted.
     /// </summary>
     public static ValueTask<bool> TryClaimExternalAsync(ICommandContext context, string sourceType, string externalReference) =>
-        context.TryClaimAsync(ClaimCollection, $"extref::{sourceType}::{externalReference}");
+        context.TryClaimAsync(ClaimCollection, ExternalClaimKey(sourceType, externalReference));
+
+    /// <summary>
+    /// Claim key of an external reference: <c>extref::{sourceType}::{externalReference}</c> while it fits
+    /// <see cref="MaxClaimKeyBytes"/> UTF-8 bytes (every key that worked before keeps its form), otherwise
+    /// <c>extrefh::{sourceType}::{lowercase hex SHA-256 of the UTF-8 reference}</c>. One reference always maps to the same
+    /// key, and the two prefixes never collide. <paramref name="sourceType"/> is a short code constant (e.g. <c>iap_google</c>).
+    /// </summary>
+    public static string ExternalClaimKey(string sourceType, string externalReference)
+    {
+        var raw = $"{RawClaimPrefix}{sourceType}::{externalReference}";
+        if (Encoding.UTF8.GetByteCount(raw) <= MaxClaimKeyBytes)
+        {
+            return raw;
+        }
+
+        return $"{HashedClaimPrefix}{sourceType}::{Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(externalReference)))}";
+    }
 
     private static ErrorCode? Apply(ICommandContext context, ResourceCatalog catalog, string resource, long delta, LedgerSource source)
     {

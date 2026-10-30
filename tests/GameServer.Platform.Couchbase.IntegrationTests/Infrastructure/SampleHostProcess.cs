@@ -48,6 +48,10 @@ internal static class SampleHostProcess
         }
 
         start.Environment["ASPNETCORE_ENVIRONMENT"] = flavor;
+
+        // Slice 012: analytics files would go to the test output with the machine name as instance id (parallel runs share
+        // that lock); off unless a test sets them.
+        start.Environment["GameServer__Analytics__Enabled"] = "false";
         foreach (var (key, value) in settings)
         {
             start.Environment[key.Replace(":", "__", StringComparison.Ordinal)] = value;

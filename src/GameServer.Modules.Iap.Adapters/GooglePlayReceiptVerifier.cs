@@ -26,6 +26,9 @@ public sealed class GooglePlayReceiptVerifier(
     public const string HttpClientName = "iap-google";
     private const string Scope = "https://www.googleapis.com/auth/androidpublisher";
 
+    /// <summary>9999-12-31T23:59:59.999Z, the last instant DateTimeOffset can hold.</summary>
+    private const long MaxUnixMilliseconds = 253_402_300_799_999;
+
     private readonly GoogleOptions _options = options.Value.Google;
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
     private (string Token, DateTimeOffset ExpiresAt)? _accessToken;
@@ -76,7 +79,9 @@ public sealed class GooglePlayReceiptVerifier(
             using var json = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
             var purchase = json.RootElement;
             var state = purchase.TryGetProperty("purchaseState", out var s) ? s.GetInt32() : -1;
-            var isTest = purchase.TryGetProperty("purchaseType", out var type) && type.GetInt32() == 0;
+            // purchaseType is only set outside the standard billing flow: 0 test, 1 promo, 2 rewarded ([VERIFY] V5).
+            int? purchaseType = purchase.TryGetProperty("purchaseType", out var type) && type.ValueKind == JsonValueKind.Number ? type.GetInt32() : null;
+            var isTest = purchaseType == 0;
             if (state != 0 || (isTest && gameServer.IsProduction))
             {
                 logger.LogInformation("Google purchase rejected: state {State}, test {IsTest}.", state, isTest);
@@ -84,8 +89,33 @@ public sealed class GooglePlayReceiptVerifier(
             }
 
             var orderId = purchase.TryGetProperty("orderId", out var order) ? order.GetString() : null;
-            return new VerifiedPurchase(true, StoreName, productId, receiptPayload, orderId, null);
+            return new VerifiedPurchase(true, StoreName, productId, receiptPayload, orderId, null)
+            {
+                IsTest = isTest,
+                PurchaseCategory = purchaseType switch { 0 => "test", 1 => "promo", 2 => "rewarded", _ => null },
+                PurchasedAt = PurchaseTime(purchase),
+            };
         }
+    }
+
+    /// <summary><c>purchaseTimeMillis</c> is an int64 encoded as a string; missing or unparsable → unknown.</summary>
+    private static DateTimeOffset? PurchaseTime(JsonElement purchase)
+    {
+        if (!purchase.TryGetProperty("purchaseTimeMillis", out var value))
+        {
+            return null;
+        }
+
+        var text = value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString(),
+            JsonValueKind.Number => value.GetRawText(),
+            _ => null,
+        };
+        return long.TryParse(text, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var millis)
+               && millis is >= 0 and <= MaxUnixMilliseconds
+            ? DateTimeOffset.FromUnixTimeMilliseconds(millis)
+            : null;
     }
 
     private async Task<string> GetAccessTokenAsync(CancellationToken cancellationToken)

@@ -62,6 +62,7 @@ name configured, offset computed per event, parallel UTC copy).
 - SD4 → edge case "dead-lettered receipt", FR-038: no re-drive tool exists; the guide documents a manual re-drive query;
   a tool is deferred to the ops-readiness slice.
 - SD5 → FR-021, US3-3/US3-4: the zone is required only when analytics is **active** (enabled and a sink registered).
+  Review T066 (2026-10-31): enabled **without** a sink fails startup in Staging/Production; Development/Test only warn.
 - SD6 → SC-006, FR-035: an end-to-end scan test (records byte-identical to file lines) plus a scan of the files written
   by the sample-host smoke test replace "every file of the full suite" (test hosts write no files).
 - SD7 → FR-031: still one section `GameServer:Analytics`, validated when serving, not in `--provision`.
@@ -72,6 +73,10 @@ name configured, offset computed per event, parallel UTC copy).
 - SD12 → FR-013: inline delivery bound = 500 ms (configurable 50..5 000 ms), also used by sweeper deliveries.
 - SD13 → new FR-039: `Enabled` must be uniform across the instances of a deployment. Plan D20 → new FR-040: outbox kind
   `analytics` is reserved.
+- 2026-10-31 (review T066, orchestrator decision) → SC-004: a batch holding a payment record is flushed to disk before the
+  payment is acknowledged (node-crash durability of revenue data). The purchase overhead target becomes ≤ 100 ms p95 on the
+  reference development machine (was ≤ 5 ms); the login target (≤ 1 ms) is unchanged. A real purchase already includes the
+  store verification round-trip (hundreds of ms) and the payment rate is low.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -416,7 +421,9 @@ the docs exists in the options.
   (enabled **and** at least one sink registered), an unresolvable or non-IANA name (e.g. a Windows zone id) fails startup
   naming the setting, the value and the fix (time zone data / ICU in the image); a missing value fails startup in Staging
   and Production and defaults to UTC with a startup warning in Development and Test. With analytics inactive the zone is
-  not required (a host that registers no sink starts as before, with one warning when analytics is enabled).
+  not required. Analytics enabled with no sink registered fails startup in Staging and Production (payment entries would be
+  acknowledged without a record), naming the fix (`AddAnalyticsFiles()` or `GameServer:Analytics:Enabled=false`); in
+  Development and Test such a host starts with one warning (review T066).
 
 **File sink (owner Q8; LOG-01, LOG-03, LOG-06, OBS-01, OBS-03, OPS-03)**
 
@@ -513,10 +520,13 @@ the docs exists in the options.
   for refused logins; exactly one resume record per player, local day and instance in the resume test.
 - **SC-003**: 100% of records carry UTC, local-with-offset and zone name that denote the same instant; offsets are correct
   for `Asia/Ho_Chi_Minh`, `Asia/Taipei` and `Europe/London` on both sides of each daylight-saving change.
-- **SC-004**: With analytics on, login p95 latency increases by at most 1 ms and purchase p95 latency by at most 5 ms
-  compared with analytics off, measured by an opt-in in-process comparison and by the load tool (which gains a purchase
-  step with the fake verifier) on the local flavor; with the analytics directory unwritable, 100% of logins and
-  purchases still succeed.
+- **SC-004** (amended 2026-10-31, review T066): With analytics on, login p95 latency increases by at most 1 ms compared
+  with analytics off. Purchase p95 latency increases by at most 100 ms on the reference development machine (local SSD):
+  the payment record is acknowledged only after one durable flush (`fsync`) of its batch, measured there at 40 ms p50 /
+  53 ms p95 for a raw flush (Windows, data drive) and 92 ms p50 under Linux in Docker Desktop; production SSD and block
+  volumes are expected to be faster. The increase always stays well inside the inline bound `DeliveryTimeoutMs` (500 ms,
+  FR-013). Measured by an opt-in in-process comparison and by the load tool (which gains a purchase step with the fake
+  verifier) on the local flavor; with the analytics directory unwritable, 100% of logins and purchases still succeed.
 - **SC-005**: Files roll at 00:00 UTC regardless of the machine time zone; no record is written into a file whose UTC date
   differs from the server clock's UTC date at write time.
 - **SC-006**: An end-to-end scan test over every emitting flow (records byte-identical to the file lines) and a scan of

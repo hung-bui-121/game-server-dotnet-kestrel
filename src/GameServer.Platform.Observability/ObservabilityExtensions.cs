@@ -173,7 +173,8 @@ public static class ObservabilityExtensions
         }
     }
 
-    private static string Sanitize(string value) =>
+    /// <summary>File-name part: letters, digits, <c>-</c>, <c>_</c>, <c>.</c>; anything else becomes <c>_</c> (log and analytics files).</summary>
+    internal static string Sanitize(string value) =>
         string.Concat(value.Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' or '.' ? c : '_'));
 
     private sealed class PlatformMetricsWarmup(PlatformMetrics metrics) : IHostedService

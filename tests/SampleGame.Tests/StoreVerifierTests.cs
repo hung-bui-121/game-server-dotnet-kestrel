@@ -232,4 +232,88 @@ public sealed class StoreVerifierTests
 
         await Should.ThrowAsync<StoreUnavailableException>(() => verifier.VerifyAsync("gems_100", "t", CancellationToken.None));
     }
+
+    [Theory]
+    [InlineData(0, true, "test")]
+    [InlineData(1, false, "promo")]
+    [InlineData(2, false, "rewarded")]
+    [InlineData(null, false, null)]
+    public async Task Google_purchase_type_sets_test_flag_and_category(int? purchaseType, bool isTest, string? category)
+    {
+        object body = purchaseType is { } type
+            ? new { purchaseState = 0, purchaseType = type, orderId = "GPA.1", purchaseTimeMillis = "1793369101000" }
+            : new { purchaseState = 0, orderId = "GPA.1", purchaseTimeMillis = "1793369101000" };
+        using var http = new StubHttp(Play(HttpStatusCode.OK, body));
+        using var verifier = Google(http);
+
+        var result = await verifier.VerifyAsync("gems_100", "t", CancellationToken.None);
+
+        result.Valid.ShouldBeTrue();
+        result.IsTest.ShouldBe(isTest);
+        result.PurchaseCategory.ShouldBe(category);
+        result.PurchasedAt.ShouldBe(DateTimeOffset.FromUnixTimeMilliseconds(1_793_369_101_000));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("not-a-number")]
+    [InlineData("-5")]
+    public async Task Google_missing_or_unparsable_purchase_time_and_order_id_are_unknown(string? millis)
+    {
+        object body = millis is null ? new { purchaseState = 0 } : new { purchaseState = 0, purchaseTimeMillis = millis };
+        using var http = new StubHttp(Play(HttpStatusCode.OK, body));
+        using var verifier = Google(http);
+
+        var result = await verifier.VerifyAsync("gems_100", "t", CancellationToken.None);
+
+        result.Valid.ShouldBeTrue();
+        result.PurchasedAt.ShouldBeNull();
+        result.OrderId.ShouldBeNull();
+        result.IsTest.ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData("Sandbox", true)]
+    [InlineData("Xcode", true)]
+    [InlineData("LocalTesting", true)]
+    [InlineData("Production", false)]
+    public async Task Apple_environment_sets_the_test_flag_and_purchase_date_the_store_time(string environment, bool isTest)
+    {
+        using var chain = new AppleChain();
+        var jws = chain.Sign(new { transactionId = "2000000123", bundleId = BundleId, productId = "gems_100", environment, purchaseDate = 1_793_369_101_123L });
+
+        var result = await Apple(chain.RootBase64).VerifyAsync("gems_100", jws, CancellationToken.None);
+
+        result.Valid.ShouldBeTrue();
+        result.IsTest.ShouldBe(isTest);
+        result.PurchaseCategory.ShouldBeNull();
+        result.PurchasedAt.ShouldBe(DateTimeOffset.FromUnixTimeMilliseconds(1_793_369_101_123));
+    }
+
+    [Fact]
+    public async Task Apple_without_purchase_date_has_no_store_time()
+    {
+        using var chain = new AppleChain();
+
+        var result = await Apple(chain.RootBase64).VerifyAsync("gems_100", chain.Sign(Transaction()), CancellationToken.None);
+
+        result.PurchasedAt.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Fake_verifier_marks_every_purchase_as_test_and_supports_no_order_purchases()
+    {
+        var fake = new FakeStoreReceiptVerifier("google");
+
+        var valid = await fake.VerifyAsync("gems_100", "valid:abc", CancellationToken.None);
+        var noOrder = await fake.VerifyAsync("gems_100", "noorder:xyz", CancellationToken.None);
+
+        valid.ShouldBe(new VerifiedPurchase(true, "google", "gems_100", "abc", "GPA.abc", null) { IsTest = true });
+        valid.PurchasedAt.ShouldBeNull();
+        noOrder.Valid.ShouldBeTrue();
+        noOrder.ExternalReference.ShouldBe("xyz");
+        noOrder.OrderId.ShouldBeNull();
+        noOrder.IsTest.ShouldBeTrue();
+        (await fake.VerifyAsync("gems_100", "noorder:", CancellationToken.None)).Valid.ShouldBeFalse();
+    }
 }

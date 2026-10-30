@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using GameServer.Modules.Identity;
+using GameServer.Platform.Analytics;
 using GameServer.Platform.Testing;
 using GameServer.Platform.Web.Auth;
 using GameServer.Platform.Web.Hosting;
@@ -46,6 +47,16 @@ public sealed class TestHost : IAsyncDisposable
 
     public IServiceProvider Services => App.Services;
 
+    /// <summary>
+    /// The in-memory analytics sink every test host registers (slice 012); throws when a test removed it through the
+    /// <c>services</c> hook.
+    /// </summary>
+    public InMemoryAnalyticsSink Analytics =>
+        Services.GetService<InMemoryAnalyticsSink>() ?? throw new InvalidOperationException("This test host has no InMemoryAnalyticsSink.");
+
+    /// <summary>Waits until every analytics record queued so far reached the sinks.</summary>
+    public Task FlushAnalyticsAsync() => Services.GetRequiredService<AnalyticsPipeline>().FlushAsync(CancellationToken.None);
+
     public static Dictionary<string, string?> DefaultSettings() => new()
     {
         ["GameServer:GameId"] = "test",
@@ -58,6 +69,8 @@ public sealed class TestHost : IAsyncDisposable
         ["GameServer:Jobs:Enabled"] = "false",
         ["Identity:CacheSeconds"] = "0",
         ["GameServer:Hosting:DrainDelaySeconds"] = "0",
+        // Analytics is active in every test host (in-memory sink): a zone keeps Staging/Production starts valid.
+        ["GameServer:Analytics:TimeZone"] = "UTC",
     };
 
     /// <summary>Default modules: Identity + Sample.Counter.</summary>
@@ -157,6 +170,9 @@ public sealed class TestHost : IAsyncDisposable
         }
         builder.Services.RemoveAll<IClock>();
         builder.Services.AddSingleton<IClock>(clock);
+        var analytics = new InMemoryAnalyticsSink();
+        builder.Services.AddSingleton(analytics);
+        builder.Services.AddSingleton<IAnalyticsSink>(analytics);
         if (testAuthentication)
         {
             gameServer.UseTestAuthentication();

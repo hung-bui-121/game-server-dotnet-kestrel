@@ -22,7 +22,10 @@ public sealed class SampleHostEntryPointTests
     {
         var error = await ConsoleErrorCapture.RunAsync(async () =>
         {
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b => b.UseEnvironment(flavor).UseSetting(key, "abc"));
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b => b
+                .UseEnvironment(flavor)
+                .UseSetting(key, "abc")
+                .UseSetting("GameServer:Analytics:Enabled", "false"));
 
             // The entry point returns 1 before running the host; the factory then reports a host that never started.
             Should.Throw<InvalidOperationException>(() => factory.CreateClient());

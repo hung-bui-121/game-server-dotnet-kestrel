@@ -80,6 +80,7 @@ public sealed partial class IdentityModule : IGameModule, IPlayerApiModule, IGmA
         services.AddSingleton<ProfileCache>();
         services.AddSingleton<SessionService>();
         services.AddSingleton<LoginRateLimits>();
+        services.AddSingleton<LoginAnalytics>();
         services.AddSingleton<LoginCompletion>();
         services.AddSingleton<GuestLoginService>();
         services.AddOptions<IdentityProviderOptions>().BindConfiguration(IdentityProviderOptions.SectionName).ValidateOnStart();

@@ -1,3 +1,4 @@
+using GameServer.Analytics;
 using GameServer.Commands;
 using GameServer.Config;
 using GameServer.Errors;
@@ -14,6 +15,18 @@ namespace GameServer.Modules.Iap;
 /// <param name="Reason">Why the purchase is invalid (logs only).</param>
 public sealed record VerifiedPurchase(bool Valid, string Store, string ProductId, string ExternalReference, string? OrderId, string? Reason)
 {
+    /// <summary>
+    /// Store test or sandbox purchase (Google <c>purchaseType</c> 0; Apple Sandbox/Xcode/LocalTesting; every fake
+    /// verification). A custom verifier that does not set it reports real purchases.
+    /// </summary>
+    public bool IsTest { get; init; }
+
+    /// <summary>Purchase time reported by the store (Google <c>purchaseTimeMillis</c>, Apple <c>purchaseDate</c>), when known.</summary>
+    public DateTimeOffset? PurchasedAt { get; init; }
+
+    /// <summary>Store purchase category when reported: <c>test</c>, <c>promo</c>, <c>rewarded</c> (Google <c>purchaseType</c> 0/1/2).</summary>
+    public string? PurchaseCategory { get; init; }
+
     public static VerifiedPurchase Invalid(string store, string productId, string reason) => new(false, store, productId, string.Empty, null, reason);
 }
 
@@ -95,6 +108,8 @@ public sealed class IapPurchaseHandler(IapCatalog catalog, ResourceCatalog resou
             }
         }
 
+        // Entry index = number of grants (ledger entries come first): deterministic across transaction attempts.
+        context.AddAnalyticsEvent(IapAnalytics.Payment, IapAnalytics.Fields(purchase));
         return CommandOutcome<IapPurchaseResult>.Ok(new IapPurchaseResult(grants));
     }
 }

@@ -1,6 +1,6 @@
 # PCR — identity
 
-Module framework `identity` (slice 002; version 0.10.0 sau slice 010). Nguồn: IDN-01..12, BAN-01, SEC-02, SEC-13, PRIV-01.
+Module framework `identity` (slice 002; version 0.10.0 sau slice 010; slice 012: event analytics `login`). Nguồn: IDN-01..12, BAN-01, SEC-02, SEC-13, PRIV-01.
 
 ## Aggregate
 
@@ -127,3 +127,27 @@ Permission: `player.ban`. `Identity:CacheSeconds` 0–60 (PERF-08).
 | Sau purge | credential guest/provider cũ tạo **player mới** (mapping đã xoá) |
 | Cửa sổ còn lại trong purge (review T054, minor 2) | các step Remove (`sessions`, `identities`, …) chạy **cuối**, ngay trước transaction cuối (xoá `pa_profile` + record `purged`): trong suốt purge, credential cũ vẫn bị từ chối `ACCOUNT_DELETED` cho tới khi `remove:identities` commit. Từ đó tới transaction cuối, login guest/provider bằng credential cũ không còn mapping nên **tạo player mới** — cùng kết quả như sau purge; purge tiếp tục không chạm player mới (Remove chỉ xoá document có player field = id cũ). Cửa sổ bình thường vài ms; kéo dài tới run sau nếu transaction cuối lỗi (backoff) — kiểm bằng test |
 | Cache profile (review T054, M1) | profile thiếu **không** được cache (đọc lại mỗi lần): login đầu tiên đọc profile trước khi tạo, nếu login đó lỗi và retry thành công ở instance khác, instance đầu không được trả `ACCOUNT_DELETED` cho player mới. Chi phí: player đã purge còn session trong cache session (≤ 60 s) đọc store mỗi request |
+
+## Event analytics `login` (slice 012 — ANA-01, FR-015..FR-019, owner Q10)
+
+Hợp đồng record và file: PCR platform mục 18 và `docs/guides/analytics.md`. `LoginAnalytics` (singleton của module):
+
+| `source` | Khi | Field |
+| --- | --- | --- |
+| `login` | cuối `LoginCompletion.CompleteAsync` (sau khi đọc snapshot thành công): guest, provider, switch đã xác nhận | `provider` (`guest`, `pgs`, `gamecenter`, provider của game), `isNewUser` = login này tạo player |
+| `resume` | handler `PlayerBearer` ngay trước `Success` (session, profile, quyền truy cập, epoch đều hợp lệ): request **đầu tiên** của player trong **ngày local của deployment** trên **instance này** | `isNewUser = false`, không `provider` |
+
+Quy tắc (semantic):
+
+- Không record nào cho: login bị từ chối (đang xoá, đã purge, bị ban login, sai guest secret, bằng chứng provider sai, rate limit,
+  `SWITCH_ACCOUNT` chưa xác nhận), link identity (là command), scheme Test (Development), cookie GM, endpoint Public. Login
+  đánh dấu player "đã thấy hôm nay", nên request cùng ngày sau login không sinh `resume`.
+- Request đã qua xác thực bearer nhưng bị từ chối sau đó (gate, quyền, body) **vẫn** tính `resume` (SD8: player đã hoạt động).
+- "Ngày" = ngày local theo `GameServer:Analytics:TimeZone` (ranh giới là nửa đêm local, không phải 00:00 UTC). Nhiều instance,
+  restart hoặc login lại → nhiều record một ngày là bình thường: data team đếm **ngày phân biệt**, không đếm record.
+- Bộ nhớ: tập player đã thấy của ngày hiện tại ≤ `GameServer:Analytics:ResumeTrackerCapacity` (200 000 ≈ 25 MB); đầy → xoá sạch và
+  tăng `login_resume_tracker_resets_total` (meter `GameServer.Identity`) — mỗi lần xoá cho tối đa một `resume` thừa mỗi player
+  đang hoạt động; restart cũng vậy. Analytics inactive → không cấp bộ nhớ, không record.
+- **JOB-02 — mất được chấp nhận:** record login/resume đi qua hàng đợi trong bộ nhớ (best effort): hàng đợi đầy, sink lỗi, dừng
+  quá ngân sách drain hoặc crash làm mất record (đếm ở `analytics_events_dropped_total{event="login"}`, trừ crash). Login
+  không bao giờ chờ hay thất bại vì analytics.

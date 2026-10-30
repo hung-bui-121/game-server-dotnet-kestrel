@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Text.RegularExpressions;
 using GameServer.Platform;
+using GameServer.Platform.Analytics;
 using GameServer.Platform.Couchbase;
 using GameServer.Platform.Testing;
 using Shouldly;
@@ -9,9 +10,10 @@ namespace SampleGame.Tests;
 
 /// <summary>
 /// Slice 011 SC-008: every configuration key the operator docs name exists. The back-ticked keys of the environments guide,
-/// PCR platform §17 and the README that start with <c>GameServer:</c>, <c>Couchbase:</c> or <c>FileStore:</c> must each resolve,
-/// by reflection, to a bound (publicly settable) property of <see cref="GameServerOptions"/>, <see cref="CouchbaseOptions"/> or
-/// <see cref="FileStoreOptions"/>. A key of a <c>GameServer</c> subsection written without its <c>GameServer:</c> prefix
+/// PCR platform §17 and §18, the analytics guide and the README that start with <c>GameServer:</c>, <c>Couchbase:</c> or
+/// <c>FileStore:</c> must each resolve, by reflection, to a bound (publicly settable) property of <see cref="GameServerOptions"/>,
+/// <see cref="CouchbaseOptions"/>, <see cref="FileStoreOptions"/> or (slice 012, its own section bound separately)
+/// <see cref="AnalyticsOptions"/>; a key resolves against the <b>longest</b> matching section. A key of a <c>GameServer</c> subsection written without its <c>GameServer:</c> prefix
 /// (<c>Limits:…</c>, data-model §4) is refused too.
 /// </summary>
 public sealed partial class DocumentedConfigurationKeysTests
@@ -19,6 +21,8 @@ public sealed partial class DocumentedConfigurationKeysTests
     private const string Guide = "docs/guides/environments-and-local-run.md";
     private const string Pcr = "docs/pcr/platform.md";
     private const string PcrSection = "## 17.";
+    private const string AnalyticsPcrSection = "## 18.";
+    private const string AnalyticsGuide = "docs/guides/analytics.md";
     private const string Readme = "README.md";
     private const int MinimumKeysPerDocument = 10;
 
@@ -41,11 +45,12 @@ public sealed partial class DocumentedConfigurationKeysTests
         [GameServerOptions.SectionName] = typeof(GameServerOptions),
         [CouchbaseOptions.SectionName] = typeof(CouchbaseOptions),
         [FileStoreOptions.SectionName] = typeof(FileStoreOptions),
+        [AnalyticsOptions.SectionName] = typeof(AnalyticsOptions),
     };
 
     private static readonly string Root = RepositoryRoot();
 
-    public static TheoryData<string> Documents() => new(Guide, Pcr + " " + PcrSection, Readme);
+    public static TheoryData<string> Documents() => new(Guide, Pcr + " " + PcrSection, Pcr + " " + AnalyticsPcrSection, AnalyticsGuide, Readme);
 
     [Theory]
     [MemberData(nameof(Documents))]
@@ -93,6 +98,22 @@ public sealed partial class DocumentedConfigurationKeysTests
         missing.ShouldBeEmpty($"{document} does not document: {string.Join(", ", missing)} (data-model §4, §5).");
     }
 
+    /// <summary>Slice 012 T061 (SC-009): the operator docs name every bound analytics setting.</summary>
+    [Theory]
+    [InlineData(Guide)]
+    [InlineData(Pcr + " " + AnalyticsPcrSection)]
+    public void The_operator_docs_name_every_analytics_key(string document)
+    {
+        var documented = DocumentedKeys(document).ToHashSet(StringComparer.Ordinal);
+
+        var missing = Bound(typeof(AnalyticsOptions))
+            .Select(p => AnalyticsOptions.SectionName + ":" + p.Name)
+            .Where(key => !documented.Contains(key))
+            .ToList();
+
+        missing.ShouldBeEmpty($"{document} does not document: {string.Join(", ", missing)} (data-model §1).");
+    }
+
     [Fact]
     public void The_excluded_keys_really_bind_to_nothing()
     {
@@ -128,13 +149,23 @@ public sealed partial class DocumentedConfigurationKeysTests
     /// <summary>Walks the key like the configuration binder: case-insensitive names, dictionary keys, list indexes.</summary>
     private static bool Resolves(string key)
     {
-        var segments = key.Split(':');
-        if (!Sections.TryGetValue(segments[0], out var type))
+        if (Sections.ContainsKey(key))
+        {
+            return true;
+        }
+
+        // Longest section first: GameServer:Analytics:* binds to AnalyticsOptions, not to a GameServerOptions property.
+        var section = Sections.Keys
+            .Where(name => key.StartsWith(name + ":", StringComparison.Ordinal))
+            .MaxBy(name => name.Length);
+        if (section is null)
         {
             return false;
         }
 
-        for (var i = 1; i < segments.Length; i++)
+        var type = Sections[section];
+        var segments = key[(section.Length + 1)..].Split(':');
+        for (var i = 0; i < segments.Length; i++)
         {
             var element = ElementType(type);
             if (DictionaryValueType(type) is { } value)

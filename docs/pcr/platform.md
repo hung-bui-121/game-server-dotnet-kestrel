@@ -3,9 +3,9 @@
 Published Contract Register của nền tảng (PCR-01). Thay đổi mục **semantic** là breaking change (ARC-08);
 thay đổi mục **vận hành** chỉ cần ghi changelog. Nguồn yêu cầu: `Requirements/Game_Server_System_Requirements_v1.2.md` rev 4.
 
-Phiên bản: 0.6.0 (slice 001 + sửa sau review + slice 002 identity + slice 004 GM + slice 005 observability, 2026-10-26;
+Phiên bản: 0.7.0 (slice 001 + sửa sau review + slice 002 identity + slice 004 GM + slice 005 observability, 2026-10-26;
 slice 010 lease job và xoá tài khoản, 2026-10-30 — mục 16; slice 011 môi trường theo flavor, file store, setting Couchbase,
-`--provision`, 2026-10-30 — mục 17).
+`--provision`, 2026-10-30 — mục 17; slice 012 analytics login và payment, 2026-10-31 — mục 18).
 
 ## 1. Limits và timeout theo nhóm endpoint (vận hành — API-06, PERF-04)
 
@@ -658,3 +658,185 @@ macOS/Linux, IDE, điện thoại thật qua `-Lan`, Unity E2E trên 5080.
 | Overlay config theo `EnvironmentId` | beta/uat dùng chung `config/env/Staging` (owner) |
 | Kiểm index khi khởi động | cần quyền catalog; báo cáo provisioning là nguồn đúng |
 | CI chạy integration Couchbase | CI-01 còn mở; chạy local với EE 7.6.12 trước merge |
+
+## 18. Analytics: login và payment (slice 012 — ANA-01, JOB-02, LOG-01/03/05/06, OBS-01..03, TIME-01, PRIV-01)
+
+Hướng dẫn cho data team và game team: `docs/guides/analytics.md`; vận hành (volume, shipper, tzdata, rollback):
+`docs/guides/environments-and-local-run.md` mục 7. Đổi tên/kiểu/ý nghĩa một field, ngữ nghĩa thời gian, quy tắc dedupe,
+tên file, key, metric hay health check dưới đây là breaking change (PCR-01, ARC-08).
+
+### Event và envelope (semantic với data team)
+
+| `event` | Sự kiện | Giao | Dedupe |
+| --- | --- | --- | --- |
+| `payment` | purchase được store xác minh và server cấp (`iap.purchase`) | **at-least-once**: outbox entry kind `analytics` commit cùng grant, inline relay + sweeper | `transactionID` |
+| `login` | `source=login`: login cấp session mới (guest, provider, switch đã xác nhận); `source=resume`: request đầu tiên của player trong một ngày local trên một instance, xác thực bằng `PlayerBearer` | **best effort** (hàng đợi trong bộ nhớ) — mất được chấp nhận (JOB-02), xem dưới | `eventId` (hiếm khi cần) |
+
+Không bao giờ ghi: login bị từ chối/thất bại, link identity, request mua bị replay (cùng request id), purchase bị từ chối
+(`ALREADY_GRANTED`, `INVALID_RECEIPT`, sản phẩm lạ), xác minh store thất bại.
+
+Mỗi record là **một** object JSON trên một dòng (UTF-8, không BOM, `\n` kết thúc), key theo thứ tự cố định:
+
+| # | Field | Kiểu | Ý nghĩa |
+| --- | --- | --- | --- |
+| 1 | `event` | string | `^[a-z][a-z0-9_]{0,31}$` |
+| 2 | `schemaVersion` | number | ≥ 1, theo từng event (v1 cho cả hai) |
+| 3 | `eventId` | string | 32 hex thường. Payment: SHA-256 của `{entryId}\|{committedAtUtc}` (32 hex đầu) — giống nhau ở mọi bản sao; login: GUID ngẫu nhiên |
+| 4 | `gameId` | string | key `GameServer:GameId` |
+| 5 | `environmentId` | string | key `GameServer:EnvironmentId` (`local`, `dev`, `beta`, `uat`, `live`, …) — **lọc `live` khi tính doanh thu** |
+| 6 | `userID` | string | id player nội bộ (thô); payment giao trễ sau khi tài khoản bị purge mang id ẩn danh `anon_…` |
+| 7 | `{time}` | string | giờ local của deployment kèm offset của **thời điểm đó**: `yyyy-MM-ddTHH:mm:ss.fff±hh:mm` |
+| 8 | `{time}Utc` | string | cùng thời điểm, `yyyy-MM-ddTHH:mm:ss.fffZ` (cắt tới millisecond **trước** khi đổi múi giờ) |
+| 9 | `timeZone` | string | tên IANA của deployment (`UTC` chỉ khi mặc định ở Development/Test) |
+| 10 | `utcOffset` | string | `±hh:mm` tại thời điểm đó (`+00:00` cho UTC, không bao giờ `Z`) |
+| 11 | `receiptId` | string | chỉ event qua outbox (payment) |
+| 12.. | field theo type | — | null không ghi; field trùng tên envelope bị bỏ (log lỗi một lần mỗi type) |
+
+`{time}` là `chargeTime` (payment) và `activeTime` (login). `log_month`/`log_date` = 7/10 ký tự đầu của `{time}` (lịch local
+của deployment, theo yêu cầu owner); muốn lịch UTC dùng `{time}Utc`. Một deployment = một múi giờ (không theo player).
+
+### Schema v1
+
+`payment` (owner: `userID`, `transactionID`, `chargeTime`):
+
+| Field | Kiểu | Bắt buộc | Ý nghĩa |
+| --- | --- | --- | --- |
+| `chargeTime`, `chargeTimeUtc` | string | có | **giờ cấp của server** = `committedAtUtc` của receipt (giờ server của lần chạy transaction đã commit, ≤ 10 s trước commit), không phải giờ store. Xác minh 23:59:59 và cấp 00:00:01 thuộc ngày/tháng sau |
+| `receiptId` | string | có | receipt của command mua |
+| `transactionID` | string | có | `apple:{transactionId}` · `google:{orderId}` · `google:h:{32 hex}` = SHA-256 của purchase token khi Google không trả `orderId` (license tester, một số promo). **Không bao giờ là purchase token** (LOG-05) |
+| `store` | string | có | `google`, `apple` |
+| `productId` | string | có | ≤ 128 ký tự; giá và tiền tệ **không** có trong record |
+| `orderId` | string | không | order id của store khi có |
+| `isTest` | bool | có | purchase test/sandbox của store hoặc verifier giả; luôn `false` trên `live` (purchase test bị từ chối ở Production) |
+| `purchaseCategory` | string | không | Google `purchaseType`: `test`, `promo` (grant hợp lệ **không có doanh thu**), `rewarded` |
+| `storePurchaseTimeUtc` | string | không | giờ mua store báo, UTC |
+
+`login` (owner: `userID`, `activeTime`): `activeTime`/`activeTimeUtc` (giờ login thành công hoặc request được xác thực),
+`source` (`login` | `resume`), `provider` (chỉ `source=login`: `guest`, `pgs`, `gamecenter` hoặc provider của game),
+`isNewUser` (login tạo player; luôn `false` với `resume`).
+
+Phiên bản: `schemaVersion` theo từng event. Thêm field tuỳ chọn → giữ version (reader bỏ qua field lạ). Bỏ/đổi tên/đổi kiểu,
+định dạng hoặc ý nghĩa field → version mới, công bố ở PCR trước release; giai đoạn chuyển tiếp hai version có thể cùng
+xuất hiện (lọc theo `schemaVersion`).
+
+### File (semantic với data team và vận hành)
+
+- Tên `{gameId}-{instanceId}-{event}-{yyyyMMdd}.jsonl` trong thư mục `GameServer:Analytics:Directory`; `gameId`, `instanceId`
+  làm sạch như tên file log (chữ, số, `-`, `_`, `.`; khác → `_`); parse từ phải (`event` không có `-`, instance id có thể có).
+- Ngày = ngày **UTC** của đồng hồ server (`IClock`) **lúc ghi**, đơn điệu trong một process (đồng hồ lùi qua 00:00 UTC không
+  mở lại ngày đã đóng). File của ngày UTC trước hôm nay là hoàn chỉnh, không bao giờ được ghi thêm.
+- Append; ghi và flush mỗi batch: batch có record payment (giao outbox, ack receipt) flush **xuống đĩa** (sống qua crash node
+  / mất điện; một `fsync` nằm trên đường ack inline của purchase — SC-004 sửa 2026-10-31), batch chỉ có login flush xuống OS
+  (sống qua process chết, không qua mất điện — như file store 011). Khi mở lại file
+  không rỗng mà byte cuối không phải `\n`, sink ghi `\n` trước: dòng bị cắt do crash thành **một dòng không parse được**,
+  có thể nằm giữa file. **Reader bỏ qua mọi dòng không phải JSON hợp lệ** (SD2); dòng đó chưa từng được ack (payment trong
+  đó sẽ được giao lại ở dòng sau; login trong đó mất).
+- **Không suy ra ngày nghiệp vụ từ tên file**: payment có thể được instance khác ghi muộn, vào ngày UTC sau `chargeTime`.
+- Một writer cho mỗi (game, instance, thư mục): lock `.{gameId}-{instanceId}.lock` (`FileShare.None`) lấy trong
+  `StartingAsync` (trước khi server nghe — [VERIFY] V3 đã kiểm trên Windows và Linux); bận → exit 1, thông báo nêu
+  `Observability:InstanceId`. Lock không đáng tin trên NFS/SMB: chỉ volume local/block.
+- **Kubernetes**: Deployment + instance id mặc định `HOSTNAME` → tên pod đổi mỗi lần restart → file mới mỗi lần, và
+  `RetainLocalDays` chỉ dọn file của **chính** instance id hiện tại (file của pod cũ ở lại). Dùng StatefulSet (tên pod ổn
+  định) hoặc đặt `Observability:InstanceId` rõ ràng. `Directory` mặc định `analytics` nằm trong filesystem của container (mất
+  khi container bị thay): mount volume bền và trỏ `GameServer:Analytics:Directory` vào đó lúc deploy (ví dụ
+  `GameServer__Analytics__Directory=/var/lib/gameserver/analytics`); flavor mẫu không đặt đường dẫn tuyệt đối.
+- Ghi file là I/O đồng bộ dưới một lock, không theo cancellation: đĩa treo (I/O stall) chặn dispatcher và **ngân sách drain
+  lúc dừng không giới hạn được** trường hợp này (process chờ tới khi orchestrator kill). Payment vẫn an toàn (receipt chờ
+  sweeper); login còn trong hàng đợi mất.
+- Server không xoá file analytics trừ khi đặt `GameServer:Analytics:RetainLocalDays` (chỉ file của chính instance cũ hơn N ngày UTC).
+
+### Cấu hình (vận hành; section `GameServer:Analytics`, kiểu `AnalyticsOptions`, `ValidateOnStart`)
+
+| Key | Mặc định | Hợp lệ | Ghi chú |
+| --- | --- | --- | --- |
+| `GameServer:Analytics:Enabled` | `true` | — | **phải giống nhau trên mọi instance của deployment** (instance tắt sẽ ack entry payment của instance bật mà không ghi — FR-039) |
+| `GameServer:Analytics:TimeZone` | (không) | IANA, `HasIanaId`; Windows id bị từ chối ([VERIFY] V1) | **bắt buộc** ở Staging/Production khi analytics active; Development/Test mặc định `UTC` + một warning |
+| `GameServer:Analytics:Directory` | `analytics` | không rỗng; tương đối → content root | phải tạo được và ghi được (lỗi → exit 1 nêu key và đường dẫn) |
+| `GameServer:Analytics:QueueCapacity` | `10000` | 100..1 000 000 | hàng đợi chung (payment và login) |
+| `GameServer:Analytics:DeliveryTimeoutMs` | `500` | 50..5 000 | chặn trên thời gian chờ inline của một payment (FR-013) |
+| `GameServer:Analytics:ResumeTrackerCapacity` | `200000` | 1 000..10 000 000 | player nhớ cho quy tắc resume mỗi ngày local mỗi instance |
+| `GameServer:Analytics:LowDiskBytes` | `1073741824` | ≥ 0 | ngưỡng Degraded |
+| `GameServer:Analytics:ErrorWindowSeconds` | `300` | 10..86 400 | Degraded sau lỗi sink |
+| `GameServer:Analytics:RetainLocalDays` | (không = không xoá) | ≥ 1 | |
+
+"Active" = `Enabled` **và** có ít nhất một `IAnalyticsSink` đăng ký (SD5). Không key nào là secret (không thêm vào
+`GameServer:SecretKeys`). `--provision` không đọc setting analytics, không tạo thư mục/lock/file. Flavor mẫu: cả năm flavor
+`Enabled=true`, `TimeZone=Asia/Ho_Chi_Minh`; file chung không có key analytics. Instance id không phải key analytics:
+`Observability:InstanceId` → `HOSTNAME` → tên máy (như log, LOG-03).
+
+### Giao và chặn trên (semantic)
+
+- **Payment**: handler `iap.purchase` thêm entry kind `analytics` (index = số grant) trong transaction của grant; payload
+  `{event, schemaVersion, timeField, fields}` **không chứa player id** (userID, giờ, receiptId, eventId lấy từ receipt lúc giao →
+  purge 010 ẩn danh hoá cả record giao trễ). Consumer chỉ ack khi **mọi** sink đã ghi và flush dòng; inactive → ack, không ghi.
+  Hết hàng đợi / quá `DeliveryTimeoutMs` / sink lỗi / đang dừng / payload hỏng → ném → relay ghi một attempt, backoff
+  30 s → 1 h, dead letter sau `GameServer:Outbox:MaxRelayAttempts` (10, ≈ 3 h). Bản giao inline đã hết giờ nhưng dispatcher
+  đã lấy vẫn có thể được ghi → bản sao trùng mọi field định danh, dedupe loại.
+- **Chặn trên inline (FR-013, SD12)**: response mua chờ record payment tối đa `DeliveryTimeoutMs` = **500 ms** (ngoài relay
+  outbox sẵn có); bình thường < 1 ms. Hết giờ: mua vẫn thành công, sweeper giao record sau.
+- **Login/resume (JOB-02, mất được chấp nhận)**: `TryEmit` không bao giờ chờ hay ném. Mất khi: hàng đợi đầy, sink lỗi, dừng
+  quá ngân sách drain, crash (record còn trong hàng đợi). Tín hiệu: `analytics_events_dropped_total{event="login"}`. Lý do
+  chấp nhận: UL tính từ payment; active days đếm ngày local phân biệt, một login/resume khác trong ngày bù lại.
+- Dừng êm: readiness 503 → Kestrel drain → sweeper dừng → pipeline drain hàng đợi tới hết `GameServer:Hosting:ShutdownTimeoutSeconds`
+  (phần còn lại đếm `dropped{reason=shutdown}`, delivery còn chờ thất bại `stopped`) → sink đóng file và nhả lock.
+
+### Kind outbox `analytics` được giữ chỗ (semantic với module)
+
+Framework đăng ký consumer kind `analytics` trong `AddGameServer` (luôn luôn). Game đăng ký projection hoặc `IOutboxConsumer`
+cùng kind → lỗi khởi động `[outbox] two consumers handle kind 'analytics'`.
+
+### Điểm mở rộng (extension point, **preview**)
+
+| Điểm | Cách dùng |
+| --- | --- |
+| Sink mới (P1: Couchbase, Kafka, HTTP) | đăng ký thêm `IAnalyticsSink` (`GameServer.Platform.Analytics`); nhận đúng các byte của file sink; payment chỉ ack khi **mọi** sink thành công |
+| Event at-least-once từ command | `ctx.AddAnalyticsEvent(new AnalyticsEventType(name, version, timeField), fields)` (Core, `GameServer.Analytics`); file riêng theo `name`. **Preview**: field của event game chưa phải hợp đồng công bố |
+| Event best effort từ adapter | `IAnalyticsEmitter.TryEmit(type, userId, occurredAtUtc, fields)` |
+| Host | `gameServer.AddAnalyticsFiles()` (`GameServer.Platform.Observability.Analytics`) — host mẫu gọi sau `AddObservability()`; idempotent (gọi hai lần = một lần). `Enabled=true` mà không có sink nào: Staging/Production **lỗi khởi động** (exit 1, nêu cách sửa `AddAnalyticsFiles()` hoặc `GameServer:Analytics:Enabled=false`); Development/Test → inactive + một warning, entry payment được ack mà không ghi |
+
+### Metric và health (vận hành)
+
+Meter `GameServer.Analytics` (một instance mỗi host): `analytics_events_written_total{event,sink}`,
+`analytics_events_dropped_total{event,reason=queue_full|sink_error|shutdown}`, `analytics_sink_errors_total{sink}`,
+`analytics_delivery_failures_total{reason=queue_full|timeout|sink_error|stopped|malformed}`, `analytics_queue_entries`,
+`analytics_dir_free_bytes`; meter `GameServer.Identity`: `login_resume_tracker_resets_total`. Payment không bao giờ bị
+"dropped" ở đây (nằm trong outbox, đếm ở `analytics_delivery_failures_total` và `outbox_relay_inline_failures_total{kind="analytics"}`).
+Tag không bao giờ chứa player id, event id hay transaction id (OBS-02). Inactive → không metric nào.
+
+Readiness check `analytics` (tag `ready`, đăng ký bởi `AddAnalyticsFiles()`): **Degraded** khi thư mục còn ít hơn
+`GameServer:Analytics:LowDiskBytes` hoặc có lỗi sink trong `GameServer:Analytics:ErrorWindowSeconds` (đồng hồ server);
+**không bao giờ Unhealthy**; trạng thái theo host (không static như `LogSinkMonitor`). `/health/ready` công khai chỉ trả chữ
+trạng thái; chi tiết GM (`ops.read`): `sinkErrors`, `dropped`, `queue`, `freeBytes`, `lastError` (≤ 500 ký tự).
+
+### Quyền riêng tư (owner Q11, PRIV-01)
+
+`userID` là id thô (không băm) — dữ liệu cá nhân theo privacy policy của game. Dữ liệu đã ship giữ **25 tháng** (chính sách
+kho dữ liệu, server không cưỡng chế). Xoá tài khoản **không** ghi lại file đã ghi/đã ship; payment giao sau purge mang id ẩn
+danh. Record không bao giờ chứa session token, mật khẩu, guest secret, token/auth code provider, subject id provider, purchase
+token Google, payload/JWS receipt, IP client, body request (kiểm bằng test quét, SC-006).
+
+### Hiệu năng (đo 2026-10-31, Windows 11, .NET 10.0.403)
+
+| Đo | Kết quả |
+| --- | --- |
+| p95 trong process (`TestHost`, 400 mẫu, file sink trên ổ dữ liệu) — tắt / bật | trước review T066 (flush xuống OS): login 0,16 / 0,15 ms; purchase 0,34 / 0,45 ms → chênh login ≈ 0, purchase +0,11 ms (SC-004: ≤ 1 ms / ≤ 5 ms). **Sau review T066 (batch có payment flush xuống đĩa)**: login 0,11 / 0,32 ms; purchase 0,17 / 58,5 ms → chênh login +0,21 ms, purchase +58 ms, đạt **SC-004 sửa 2026-10-31** (login ≤ 1 ms; purchase ≤ 100 ms trên máy dev, luôn < `DeliveryTimeoutMs` 500 ms). fsync thô một dòng 300 byte: D: (Windows) p50 40 ms / p95 53 ms; Linux trong Docker Desktop p50 92 ms; SSD/block volume production dự kiến nhanh hơn |
+| Burst 180 login/s × 60 s, hàng đợi mặc định | 10 800 login, hàng đợi tối đa 23, **0 dropped** (SC-008) |
+| Sink bị chặn, 200 000 emit | hàng đợi giữ 10 000, 189 986 dropped (đã đếm), heap tăng ~2 MiB |
+| Load tool `burst --purchase-every 5` trên flavor Local (file store), 10/5 rps × 2 | p95 bị file store chi phối (50–1 000 ms, dao động lớn giữa các lần chạy); chênh bật/tắt nằm trong nhiễu, không quy được cho analytics; ở 50/20 rps × 3 file store bão hoà (p95 vài giây) cả khi tắt |
+
+### Breaking (so với slice 011)
+
+| Mục | Thay đổi | Ai bị ảnh hưởng |
+| --- | --- | --- |
+| Kind outbox `analytics` | được giữ chỗ (consumer của framework) | game có consumer/projection tên `analytics` → lỗi khởi động |
+| Receipt `iap.purchase` | thêm một entry outbox (≤ 512 B) | ngân sách 4 KiB của receipt; build trước 012 relay receipt này sẽ dead-letter (rollback) |
+| Lỗi khởi động mới khi analytics active | thiếu zone ở Staging/Production, zone lạ/Windows id, thư mục không ghi được, trùng instance id trên một thư mục | deployment gọi `AddAnalyticsFiles()` phải đặt `GameServer:Analytics:TimeZone` và instance id riêng |
+| Lỗi khởi động mới khi enabled mà không có sink (review T066) | Staging/Production: `GameServer:Analytics:Enabled=true` (mặc định) mà không có `IAnalyticsSink` nào → exit 1 | host không gọi `AddAnalyticsFiles()`: gọi nó hoặc đặt `GameServer:Analytics:Enabled=false` |
+| Lỗi khởi động của consumer outbox (review T066) | consumer đọc options có `.Validate()` (không `ValidateOnStart`) bị sai → lỗi khởi động thay vì mọi command trả `INTERNAL` | game có consumer như vậy |
+| `IAnalyticsSink` (preview) | `AnalyticsRecord.Guaranteed` (init-only, record giao outbox) | sink tự viết nên làm batch có record này bền trước khi trả về |
+| Claim key `extref` dài (review T066) | key > 246 byte UTF-8 → `extrefh::{sourceType}::{sha256 hex}` (PCR economy) | key cũ ≤ 246 byte không đổi; trước đây key dài hơn lỗi `INTERNAL` trên Couchbase |
+| `VerifiedPurchase` | thêm init-only `IsTest`, `PurchasedAt`, `PurchaseCategory` | tương thích source/binary; equality của record gồm chúng; verifier tự viết không đặt `IsTest` → báo purchase thật |
+| Verifier giả | mọi purchase là test; quy ước mới `noorder:{ref}` | test/công cụ dùng verifier giả |
+| Hợp đồng ngữ nghĩa mới | JSONL schema v1, tên file, thời gian, dedupe | pipeline dữ liệu |
+| Hạ tầng test | `TestHost` đăng ký `InMemoryAnalyticsSink` (`TestHost.Analytics`) và `GameServer:Analytics:TimeZone` = `UTC`; `WebApplicationFactory<Program>` của host mẫu phải đặt `GameServer:Analytics:Directory` (+ instance id) riêng hoặc tắt analytics | test của game dựng trên host mẫu |
+| API bị cấm | `TimeZoneInfo.Local`, `DateTime.Today` trong code framework/module | tác giả module (lỗi biên dịch) |

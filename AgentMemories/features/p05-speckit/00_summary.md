@@ -21,13 +21,13 @@ P0 is merged into `main` and pushed (fda9f00). The real-environment test tools f
 | 009 identity-providers | `009-identity-providers` | DONE: 18/18 tasks, review (0 Blocker, 4 Major, 9 Minor) fixed before commit. ACC-03/29 with real devices still manual |
 | 010 jobs-account-deletion | `010-jobs-account-deletion` | DONE: 55/55 tasks. `5c88392` feat (review 1 Blocker, 1 Major, 12 Minor; 2 Minor open in PCR platform §16) |
 | 011 local-env (batch 2026-10-30 tasks 1+2) | `011-local-env` | DONE: 57/57 tasks + T048a. Flavors, file store, `--provision`, run-local scripts. Review CONDITIONAL (0 Blocker, 4 Major, 9 Minor, all fixed) |
-| (batch 2026-10-30) analytics, HTML docs | — | Owner tasks `tasks/task_30102026.txt`, plan + owner decisions `AgentMemories/features/task-30102026/00_plan.md`. Next: analytics Login/Payment (task 3, own slice before iap-notifications), then HTML docs (task 5). Packaging (task 4) skipped, separate later |
-| 012 giftcode (was 011) | — | GFT-01..06, GM-04 API, reaper (ACC-08, 22, 23). Number may shift if analytics takes 012 |
-| 013 iap-notifications (was 012) | — | IAP-03 S2S: Google RTDN, Apple v2, refund/revoke |
-| 014 ops-readiness (was 013) | — | Secret scan in CI, PERF-05 budgets, load test report (TST-03), Linux/container guide, runbooks, deploy/rollback, restore drill (ACC-16, 19, 48; ACC-19 blocked on TBD-09), finish deploy guide (task 5c), TLS release gate |
+| 012 analytics-audit (batch task 3, ANA-01 part 1) | `012-analytics-audit` | DONE: 68/68 tasks. Login/Payment JSONL audit log. Review CONDITIONAL (0 Blocker, 4 Major, 8 Minor; all fixed except Minor 8 = owner policy) |
+| (batch 2026-10-30) HTML docs | — | Task 5 of `tasks/task_30102026.txt` (plan `AgentMemories/features/task-30102026/00_plan.md` §5): 5a intro/architecture, 5b add-a-command walkthrough, 5c deploy guide + checklist (drafted now, finished in ops-readiness). Packaging (task 4) skipped, separate later |
+| 013 giftcode | — | GFT-01..06, GM-04 API, reaper (ACC-08, 22, 23) |
+| 014 iap-notifications | — | IAP-03 S2S: Google RTDN, Apple v2, refund/revoke; add refund analytics event on the 012 seam |
+| 015 ops-readiness | — | Secret scan in CI, PERF-05 budgets, load test report (TST-03), Linux/container guide, runbooks, deploy/rollback, restore drill (ACC-16, 19, 48; ACC-19 blocked on TBD-09), finish deploy guide (task 5c), TLS release gate, analytics re-drive tool |
 
-Slice numbers are "next free number" (owner Q18): the analytics slice takes the next number when it starts and the
-rows below it shift.
+Slice numbers are "next free number" (owner Q18). HTML docs (task 5) is docs-only and may not take a slice number.
 
 After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02, GFT-07, MSG-01, ANA-01.
 
@@ -141,19 +141,43 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
 - Breaking changes listed in PCR platform §17.
 - Tests: 930 (926 pass + 4 skipped: kill, perf, 2 TLS) incl. Couchbase ~19 min; in-memory/File ~35 s each.
 
-## Current state (2026-10-30)
+## Technical notes from 012
+
+- Seam: Core `AnalyticsEvents` + `ctx.AddAnalyticsEvent` (outbox kind `analytics`, reserved); Platform
+  `src/GameServer.Platform/Analytics/*` (options `GameServer:Analytics` Enabled/Directory/TimeZone/DeliveryTimeoutMs,
+  `AnalyticsPipeline` bounded queue 10k + batches 512, `AnalyticsOutboxConsumer`, formatter, time zone, metrics);
+  Observability `Analytics/*` file sink + `.lock` per game+instance + readiness `analytics` (Degraded only);
+  `AddAnalyticsFiles()` explicit + idempotent; `TestHost` uses `InMemoryAnalyticsSink` (zone UTC).
+- Payment: outbox entry in the grant transaction; userID/chargeTime/receiptId/eventId taken from the receipt at delivery
+  (010 purge covers it). Ack only after every sink wrote + **fsync** (SC-004 amended: purchase p95 +≤100 ms, measured
+  +58 ms dev; revert = `flushToDisk: false`). 500 ms inline bound, else sweeper/backoff/dead-letter. eventId =
+  SHA-256(`{entryId}|{committedAtUtc}`). transactionID `apple:{id}` / `google:{orderId}` / `google:h:{sha256[0..32]}`.
+  `VerifiedPurchase` + `IsTest`, `PurchasedAt`, `PurchaseCategory`; fake verifier = test purchases.
+- Login: best effort after session (`LoginCompletion`); resume event in `PlayerBearerAuthenticationHandler`, ≤1 per
+  player/local day/instance, `DailyPlayerSet` lock-free fast path, cap 200k.
+- Startup fails (when analytics active): bad/missing zone in Staging/Production, Windows zone id, unwritable dir,
+  duplicate instance id, **Enabled with no sink outside dev**. `--provision` needs no analytics settings.
+  `UseGameServer` reports options-validation failures from relay construction (no longer swallowed).
+- Economy claim key: `extref::{type}::{ref}` up to **246 bytes** (measured Couchbase 7.6 named-collection limit, not
+  250), longer → `extrefh::{type}::{sha256 hex}`.
+- Banned: `TimeZoneInfo.Local`, `DateTime.Today`. JSON formatter uses `UnsafeRelaxedJsonEscaping` (safe for JSONL).
+- Docs: PCR platform §18, PCR iap/identity, `docs/guides/analytics.md`, environments guide §7.
+- Tests: 1174 (in-memory 1089 pass + 85 skip); Couchbase ~23–25 min.
+
+## Current state (2026-10-31)
 
 - 007–009 fast-forwarded into `main` and pushed (9c93705) on 2026-10-30 at owner request.
 - `010-jobs-account-deletion` (from main): docs `003cebf`, feat `5c88392`, pushed to origin; **not merged into main yet**.
-- `011-local-env` (from 010): docs `ed78fff` + feat commit, pushed; **not merged into main yet**.
-- `.specify/feature.json` (gitignored) points to `specs/011-local-env`; next slice must repoint it.
+- `011-local-env` (from 010): docs `ed78fff`, feat `ab17cc0`, pushed; **not merged into main yet**.
+- `012-analytics-audit` (from 011): docs `69d8f60` + feat commit, pushed; **not merged into main yet**.
+- `.specify/feature.json` (gitignored) points to `specs/012-analytics-audit`; next slice must repoint it.
 - Review summaries are at the end of each `specs/0NN-*/tasks.md`.
-- Next work: analytics Login/Payment slice (batch task 3), see `AgentMemories/features/task-30102026/00_plan.md`.
+- Next work: HTML docs (batch task 5), see `AgentMemories/features/task-30102026/00_plan.md` §5.
 
 ## How to resume
 
-1. Read this file, then `specs/011-local-env/{spec,plan,tasks}.md` as the latest template for slice docs.
-2. Branch the next slice from `011-local-env` (or main once 010 + 011 are merged).
+1. Read this file, then `specs/012-analytics-audit/{spec,plan,tasks}.md` as the latest template for slice docs.
+2. Branch the next slice from `012-analytics-audit` (or main once 010–012 are merged).
 3. Per slice: spec + plan + tasks (commit `docs: add spec, plan and tasks for 0NN …`) → implement → full tests incl.
    Couchbase → tech-lead-reviewer → fix → `feat:` commit → update this file (`docs: update P0.5 resume after 0NN`).
    No stop for owner review (the single gate was after 007 spec+plan). Owner runs slices autonomously.
@@ -189,6 +213,13 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
   graceful stop); not run on macOS/Linux or PowerShell 7. Unity E2E against port 5080 not run. Index `error`/timeout
   paths have no automated test. Ctrl+C before ready reports exit 6. Restricted-user provisioning test adds ~3.7 min.
 
-**Next:** analytics Login/Payment (batch task 3, own slice, before iap-notifications) → HTML docs (task 5; 5c drafted,
-finished in ops-readiness). Then giftcode → iap-notifications → ops-readiness. Packaging (task 4) is a separate later
-effort.
+- 012 open: **owner policy** — Apple verifier accepts only Production receipts in Production; App Store review buys
+  with sandbox against prod → rejected (common app-review rejection). Accepting Sandbox there would mark them
+  `isTest=true`. Not changed. Manual analyst walkthrough (T062) not done; lock (V4) not run on Linux; re-drive tool
+  deferred to ops-readiness (manual N1QL documented); `google:h:` purchases won't match refund records carrying an
+  orderId (iap-notifications); deploy manifests not in repo (analytics dir must be a durable mount; K8s: StatefulSet or
+  fixed `Observability:InstanceId`); container image needs tzdata (aspnet:10.0 Ubuntu OK, Alpine/chiseled not;
+  chiseled-extra OK).
+
+**Next:** HTML docs (task 5; 5c drafted, finished in ops-readiness). Then giftcode → iap-notifications →
+ops-readiness. Packaging (task 4) is a separate later effort.

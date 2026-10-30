@@ -27,6 +27,22 @@
           "quantity": 1
         }
       ]
+    },
+    "google:analytics_size_probe_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": {
+      "grants": [
+        {
+          "resource": "gem",
+          "quantity": 100
+        },
+        {
+          "resource": "gold",
+          "quantity": 500
+        },
+        {
+          "resource": "sword",
+          "quantity": 1
+        }
+      ]
     }
   }
 }

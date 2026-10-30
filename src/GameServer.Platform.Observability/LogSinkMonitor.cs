@@ -76,36 +76,7 @@ public sealed class LogSinkMonitor : IAsyncLogEventSinkMonitor
     }
 
     /// <summary>Free bytes of the drive holding the log directory; null when unknown.</summary>
-    public long? FreeBytes()
-    {
-        var directory = _directory;
-        if (directory is null)
-        {
-            return null;
-        }
-
-        try
-        {
-            // The mount holding the directory (longest matching root), not the root filesystem: on Linux the log
-            // directory is usually a separate volume (LOG-03).
-            var full = Path.GetFullPath(directory);
-            var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-            var drive = DriveInfo.GetDrives()
-                .Where(d => d.IsReady && IsUnder(full, d.RootDirectory.FullName, comparison))
-                .MaxBy(d => d.RootDirectory.FullName.Length);
-            return drive?.AvailableFreeSpace;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
-        {
-            return null;
-        }
-    }
-
-    private static bool IsUnder(string path, string root, StringComparison comparison)
-    {
-        var normalized = root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;
-        return path.StartsWith(normalized, comparison) || string.Equals(path, root.TrimEnd(Path.DirectorySeparatorChar), comparison);
-    }
+    public long? FreeBytes() => _directory is { } directory ? DiskSpace.FreeBytes(directory) : null;
 
     public void StartMonitoring(IAsyncLogEventSinkInspector inspector) => _inspectors.TryAdd(inspector, 0);
 

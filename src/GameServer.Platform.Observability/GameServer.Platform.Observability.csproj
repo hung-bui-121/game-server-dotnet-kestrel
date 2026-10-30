@@ -16,4 +16,7 @@
     <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="GameServer.Observability.Tests" />
+  </ItemGroup>
 </Project>

@@ -40,7 +40,7 @@ append-only JSONL files per instance in `GameServer:Analytics:Directory`
 
 **Project Type**: web-service framework + sample host
 
-**Performance Goals**: login p95 +≤ 1 ms, purchase p95 +≤ 5 ms (SC-004); 0 login drops at 60 logins/s with the default
+**Performance Goals**: login p95 +≤ 1 ms, purchase p95 +≤ 100 ms on the dev machine (SC-004 as amended 2026-10-31: one fsync per payment batch; was +≤ 5 ms); 0 login drops at 60 logins/s with the default
 queue (SC-008); inline payment wait ≤ `DeliveryTimeoutMs` (500 ms) worst case
 
 **Constraints**: ANA-01, JOB-02 (at-least-once for payment; in-memory loss recorded in PCR for login), LOG-01/03/05/06,
@@ -127,7 +127,7 @@ Re-check after design: unchanged.
 | D14 | Metrics (meter `GameServer.Analytics`) + readiness check `analytics` Degraded on low disk / recent sink error, never Unhealthy; `DiskSpace` helper extracted from `LogSinkMonitor` | R10 |
 | D15 | Login emitted at the end of `LoginCompletion.CompleteAsync` (after snapshot read) with `provider` and `isNewUser = profile was null` | R11 |
 | D16 | Resume emitted in `PlayerBearerAuthenticationHandler` just before `Success`; `DailyPlayerSet` per deployment-local day, bounded (200 000), cleared when full (+counter) | R11 |
-| D17 | `AddGameServer` always registers the core (pipeline before `OutboxSweeper`); `AddAnalyticsFiles()` explicit; `TestHost` registers `InMemoryAnalyticsSink` and zone `UTC`; "enabled but no sink" = inactive + warning | R13 |
+| D17 | `AddGameServer` always registers the core (pipeline before `OutboxSweeper`); `AddAnalyticsFiles()` explicit; `TestHost` registers `InMemoryAnalyticsSink` and zone `UTC`; "enabled but no sink" = inactive + warning in Development/Test, startup error in Staging/Production (review T066) | R13 |
 | D18 | Sample host: `AddAnalyticsFiles()`, flavor files `Enabled=true`, `TimeZone=Asia/Ho_Chi_Minh`; anchored `.gitignore` `/samples/SampleHost/analytics/`; smoke test uses a temp directory | R13 |
 | D19 | Arch rule: only Platform.Observability depends on `AnalyticsFileSink`; banned `TimeZoneInfo.Local`, `DateTime.Today` | R14 |
 | D20 | Rollback/dead letter: documented manual re-drive; `Enabled` uniform per deployment; outbox kind `analytics` reserved | R4 |
@@ -161,7 +161,7 @@ for SD13 and FR-040 for the reserved kind of D20).
 | SD2 | FR-024 "Consumers skip an incomplete last line" | Contract: skip **any** unparseable line | After a crash the sink writes `\n` before appending, so the torn line ends up in the middle of the file |
 | SD3 | Edge case: full rollback "leaves such receipts pending until roll-forward" | Old builds count attempts and dead-letter after `MaxRelayAttempts` (~3 h); dead letters are never swept again; manual re-drive documented | `OutboxRelay` records a failed attempt for an unknown kind; `QueryPendingOutboxAsync` excludes dead letters |
 | SD4 | Edge case: dead letter "until operations re-drives the receipt" | No re-drive tool exists; ops guide gives the manual query; GM/ops endpoint deferred to ops-readiness | Out of scope for an analytics slice; re-drive concerns every outbox kind |
-| SD5 | FR-021 zone required "with analytics enabled" | Required when analytics is **active** (enabled **and** a sink registered) | Core is registered in every host; a game that registers no sink would otherwise fail Staging/Production starts for nothing |
+| SD5 | FR-021 zone required "with analytics enabled" | Required when analytics is **active** (enabled **and** a sink registered). Review T066: enabled **without** a sink fails Staging/Production starts (`AnalyticsOptionsValidator`, message names `AddAnalyticsFiles()` / `Enabled=false`); Development/Test warn only | Core is registered in every host; the zone check must not fire without a sink, but an enabled host without a sink on a shared environment acknowledges payments without records |
 | SD6 | SC-006 "scan of every analytics file produced by the full test suite" | E2E scan test over all flows (identical bytes to files) + smoke test scanning its real files | `TestHost` uses the in-memory sink (no files) to avoid lock contention across parallel hosts |
 | SD7 | FR-031 "one section `GameServer:Analytics`" | Same section, bound as its own `AnalyticsOptions` type, not a `GameServerOptions` property | Needs `ValidateOnStart` (merged in serve, skipped in `--provision`, FR-030) |
 | SD8 | FR-017 resume = "request authenticated by the player bearer scheme" | Any request whose PlayerBearer authentication succeeded, even if later refused (gate, permission, body limit) | The player was demonstrably active; checking final outcomes would need a second hook after the pipeline |

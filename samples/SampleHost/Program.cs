@@ -5,6 +5,7 @@ using GameServer.Modules.Identity;
 using GameServer.Platform;
 using GameServer.Platform.Couchbase;
 using GameServer.Platform.Observability;
+using GameServer.Platform.Observability.Analytics;
 using GameServer.Platform.Testing;
 using GameServer.Platform.Web.Hosting;
 using Sample.Counter.Adapters;
@@ -24,6 +25,9 @@ try
 
     // File logs per instance, OpenTelemetry (OTLP when Observability:Otlp:Endpoint is set), /health/live and /health/ready.
     gameServer.AddObservability();
+
+    // Analytics JSONL files (login, payment) under GameServer:Analytics:Directory + readiness check "analytics" (slice 012).
+    gameServer.AddAnalyticsFiles();
     switch (gameServer.Options.Store)
     {
         case StoreKind.Couchbase:

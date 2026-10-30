@@ -2,11 +2,13 @@ using System.Collections.Concurrent;
 using GameServer.Aggregates;
 using GameServer.Modules;
 using GameServer.Modules.Identity;
+using GameServer.Platform.Outbox;
 using GameServer.Platform.Web.Routing;
 using GameServer.Tests.Shared;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Sample.Counter;
 using Sample.Counter.Adapters;
 using Shouldly;
@@ -177,7 +179,44 @@ public sealed class StartupValidationTests
         ex.Violations.ShouldContain("[test] probe options are invalid");
     }
 
+    [Fact]
+    public async Task A_consumer_reading_options_validated_without_ValidateOnStart_fails_startup_with_their_message()
+    {
+        // Without ValidateOnStart only building the outbox relay reads these options: the start must fail with the message
+        // instead of serving and answering every command INTERNAL.
+        var ex = await StartupFails(modules: b =>
+        {
+            TestHost.DefaultModules(b);
+            b.Services.AddOptions<ProbeOptions>().Validate(_ => false, "[test] consumer options are invalid");
+            b.Services.AddSingleton<IOutboxConsumer>(sp => new OptionsConsumer(sp.GetRequiredService<IOptions<ProbeOptions>>().Value));
+        });
+
+        ex.Violations.Count(v => v == "[test] consumer options are invalid").ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Options_validated_on_start_and_read_by_a_consumer_are_reported_once()
+    {
+        var ex = await StartupFails(modules: b =>
+        {
+            TestHost.DefaultModules(b);
+            b.Services.AddOptions<ProbeOptions>().Validate(_ => false, "[test] consumer options are invalid").ValidateOnStart();
+            b.Services.AddSingleton<IOutboxConsumer>(sp => new OptionsConsumer(sp.GetRequiredService<IOptions<ProbeOptions>>().Value));
+        });
+
+        ex.Violations.Count(v => v == "[test] consumer options are invalid").ShouldBe(1);
+    }
+
     private sealed class ProbeOptions;
+
+    private sealed class OptionsConsumer(ProbeOptions options) : IOutboxConsumer
+    {
+        public ProbeOptions Options { get; } = options;
+
+        public string Kind => "probe_options";
+
+        public Task HandleAsync(OutboxDelivery delivery, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
 
     private sealed class FixedCheck(string? error = null, string? warning = null) : IStartupCheck
     {

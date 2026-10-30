@@ -2,6 +2,7 @@ using GameServer.Modules.Economy;
 using GameServer.Modules.Gm;
 using GameServer.Modules.Iap;
 using GameServer.Modules.Identity;
+using GameServer.Platform.Observability.Analytics;
 using GameServer.Platform.Persistence;
 using GameServer.Platform.Web.Hosting;
 using GameServer.Tests.Shared;
@@ -155,6 +156,28 @@ public sealed class GameServerCommandLineTests
         code.ShouldBe(HostExitCodes.Ok, error);
         output.ShouldContain("environment test (Production)");
         provisioner.Calls.ShouldBe(1);
+    }
+
+    /// <summary>Slice 012 T043 (US4-8, FR-030): provisioning reads no analytics setting and creates no directory or lock.</summary>
+    [Fact]
+    public async Task Production_provisioning_with_analytics_files_needs_no_zone_and_creates_no_file()
+    {
+        var provisioner = new FakeProvisioner(new ProvisioningItem("scope", "g_test", ProvisioningOutcome.Created, TimeSpan.Zero));
+        var directory = Path.Combine(Path.GetTempPath(), "gs-analytics-" + Guid.NewGuid().ToString("N"));
+
+        var (code, _, error) = await ProvisionAsync(
+            provisioner,
+            s =>
+            {
+                s["GameServer:DeploymentEnvironment"] = "Production";
+                s.Remove("GameServer:Analytics:TimeZone");
+                s["GameServer:Analytics:Directory"] = directory;
+            },
+            modules: b => b.AddModule<IdentityModule>().AddAnalyticsFiles());
+
+        code.ShouldBe(HostExitCodes.Ok, error);
+        provisioner.Calls.ShouldBe(1);
+        Directory.Exists(directory).ShouldBeFalse();
     }
 
     /// <summary>T055 m5: the provisioning credential is a secret; a JSON file holding it is refused outside Development/Test (OPS-08).</summary>

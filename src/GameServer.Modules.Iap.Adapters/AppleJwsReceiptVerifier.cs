@@ -21,6 +21,9 @@ public sealed class AppleJwsReceiptVerifier : IStoreReceiptVerifier
     private const string LeafOid = "1.2.840.113635.100.6.11.1";
     private const string IntermediateOid = "1.2.840.113635.100.6.2.1";
 
+    /// <summary>9999-12-31T23:59:59.999Z, the last instant DateTimeOffset can hold.</summary>
+    private const long MaxUnixMilliseconds = 253_402_300_799_999;
+
     private readonly AppleOptions _options;
     private readonly GameServerOptions _gameServer;
     private readonly IClock _clock;
@@ -110,7 +113,16 @@ public sealed class AppleJwsReceiptVerifier : IStoreReceiptVerifier
         }
 
         var transactionId = transaction.GetProperty("transactionId").GetString()!;
-        return new VerifiedPurchase(true, StoreName, productId, transactionId, transactionId, null);
+        // purchaseDate is a timestamp in UNIX milliseconds ([VERIFY] V6); every environment but Production is a test purchase.
+        DateTimeOffset? purchasedAt = transaction.TryGetProperty("purchaseDate", out var date) && date.ValueKind == JsonValueKind.Number
+            && date.TryGetInt64(out var millis) && millis is >= 0 and <= MaxUnixMilliseconds
+            ? DateTimeOffset.FromUnixTimeMilliseconds(millis)
+            : null;
+        return new VerifiedPurchase(true, StoreName, productId, transactionId, transactionId, null)
+        {
+            IsTest = environment != "Production",
+            PurchasedAt = purchasedAt,
+        };
     }
 
     private bool ChainIsTrusted(X509Certificate2[] certificates)

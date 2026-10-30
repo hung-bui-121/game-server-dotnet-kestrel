@@ -53,7 +53,8 @@ Flavor file fragment (each of `appsettings.{Local,Dev,Beta,Uat,Live}.json`):
 | numeric ranges, non-empty `Directory` | `AnalyticsOptionsValidator` | key, allowed range |
 | directory creatable and writable | `AnalyticsFileSink.StartingAsync` → `GameServerStartupException` → exit 1 | `GameServer:Analytics:Directory`, absolute path |
 | single writer per (game, instance, directory) | `AnalyticsFileSink.StartingAsync` (lock) → exit 1 | `Observability:InstanceId`, resolved id, directory |
-| enabled but no sink | pipeline start — **warning** only | "analytics enabled but no sink registered (AddAnalyticsFiles)" |
+| enabled but no sink, Staging/Production | `AnalyticsOptionsValidator` → exit 1 (review T066) | `GameServer:Analytics:Enabled`, deployment environment, fix (`AddAnalyticsFiles()` or `Enabled=false`) |
+| enabled but no sink, Development/Test | pipeline start — **warning** only | "analytics enabled but no sink registered (AddAnalyticsFiles)" |
 | zone defaulted to UTC | pipeline start — **warning** (Development/Test) | key |
 
 ## 3. Record envelope v1 (every event type)

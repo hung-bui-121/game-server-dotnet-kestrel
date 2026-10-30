@@ -23,8 +23,9 @@ gameServer.AddObservability();      // logs, OTel, /health
 gameServer.AddAnalyticsFiles();     // JSONL analytics files + readiness check "analytics" (sample host default)
 ```
 
-Without `AddAnalyticsFiles()` (and no other sink) analytics is inactive: one startup warning, nothing written, payment
-outbox entries acknowledged.
+Without `AddAnalyticsFiles()` (and no other sink) and with `Enabled=true`: Staging/Production fail startup (exit 1) naming
+the fix (`AddAnalyticsFiles()` or `GameServer:Analytics:Enabled=false`); Development/Test start with analytics inactive, one
+startup warning, nothing written, payment outbox entries acknowledged (review T066).
 
 ## 3. Volume and shipping (LOG-03 policy)
 
@@ -32,6 +33,12 @@ outbox entries acknowledged.
   with ≤ 60 s lag. Local or block volumes only (the single-writer lock is not reliable on NFS/SMB).
 - Ship files of past UTC dates as complete; the current day's file may be tailed (lines are appended whole and flushed
   per batch). A shipper must tolerate and skip an unparseable line.
+- The default `Directory` (`analytics`, relative) lives in the container filesystem: point it at the durable mount at deploy
+  time (e.g. `GameServer__Analytics__Directory=/var/lib/gameserver/analytics`). Kubernetes Deployment pods get a new
+  `HOSTNAME` (instance id) per restart, so new files each time and `RetainLocalDays` never cleans the old pods' files: use a
+  StatefulSet or an explicit stable `Observability:InstanceId` (review T066).
+- Writes are synchronous file I/O without cancellation: a hung disk blocks the dispatcher and the shutdown drain budget does
+  not bound it (the orchestrator's kill does). Payments stay safe in the outbox; queued logins are lost.
 - Size: ≈ 0.4 GB per million logins per day uncompressed; payments are negligible in comparison.
 - The server never deletes analytics files unless `RetainLocalDays` is set (then only its own files older than N UTC
   days). Shipped data: 25 months (data store policy).

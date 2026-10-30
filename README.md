@@ -68,6 +68,11 @@ dotnet test --solution GameServer.slnx -c Release # unit + HTTP + arch; integrat
 Log ghi ở `samples/SampleHost/logs/` (compact JSON); health: `/health/live`, `/health/ready`. Gửi trace/metrics tới
 collector: đặt `Observability__Otlp__Endpoint=http://localhost:4317`.
 
+Analytics (slice 012): host mẫu ghi một file JSONL cho mỗi instance, loại event (`login`, `payment`) và ngày UTC — flavor
+`Local` ghi vào `samples/SampleHost/analytics/` (git bỏ qua). Field, thời gian, dedupe và truy vấn mẫu cho data team:
+`docs/guides/analytics.md`; setting theo flavor (`GameServer:Analytics:TimeZone`, `GameServer:Analytics:Enabled`, …) và checklist
+deploy: `docs/guides/environments-and-local-run.md` mục 7.
+
 ## Môi trường thật: Couchbase, nhiều instance
 
 Flavor `Dev` chạy SampleHost trên Couchbase local (bucket `gameserver-dev`, mật khẩu trong biến môi trường user

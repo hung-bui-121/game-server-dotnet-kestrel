@@ -2,7 +2,8 @@
 
 Một bản build chạy ở mọi môi trường; môi trường được chọn bằng **flavor** = tên môi trường của host. Hướng dẫn này gồm:
 chọn flavor, biến môi trường bắt buộc, chạy local một lệnh, file store, cấu hình Couchbase, TLS, quyền RBAC và lệnh
-provisioning. Hợp đồng vận hành (switch, exit code, tiền tố output): `docs/pcr/platform.md` mục 17. Nhiều instance, tải và
+provisioning, file analytics (mục 7). Hợp đồng vận hành (switch, exit code, tiền tố output): `docs/pcr/platform.md` mục 17
+(analytics: mục 18). Nhiều instance, tải và
 drill sự cố trên Couchbase thật: `docs/guides/local-real-env-testing.md`.
 
 ## 1. Flavor
@@ -380,3 +381,79 @@ báo cáo provisioning là nguồn đúng. Flavor `Dev` (Development) vẫn tự
 Code 1 in ra stderr `Game server startup validation failed:` rồi mỗi lỗi một dòng ` - <lỗi>`, ví dụ thiếu flavor:
 `dotnet SampleHost.dll` không đặt `ASPNETCORE_ENVIRONMENT` (tên môi trường mặc định của .NET là Production) → lỗi
 `GameServer:EnvironmentId`, store in-memory, master key, pepper và SSO GM cùng lúc, không bao giờ chạy như Development.
+
+## 7. Analytics (slice 012)
+
+Host mẫu ghi file analytics JSONL (login, payment) bằng `gameServer.AddAnalyticsFiles()`. Hợp đồng record: PCR platform mục 18;
+hướng dẫn cho data team: `docs/guides/analytics.md`.
+
+### 7.1 Cấu hình theo flavor
+
+| Flavor | `GameServer:Analytics:Enabled` | `GameServer:Analytics:TimeZone` | Thư mục (`GameServer:Analytics:Directory`, mặc định `analytics` dưới content root) |
+| --- | --- | --- | --- |
+| `Local` | `true` | `Asia/Ho_Chi_Minh` | `samples/SampleHost/analytics` (git bỏ qua) |
+| `Dev` | `true` | `Asia/Ho_Chi_Minh` | `analytics` dưới content root |
+| `Beta`, `Uat`, `Live` | `true` | `Asia/Ho_Chi_Minh` | `analytics` dưới content root = **trong filesystem của container**: đặt lúc deploy vào volume bền (mục 7.2) |
+
+Key còn lại (mặc định thường đủ): `GameServer:Analytics:QueueCapacity` (10 000), `GameServer:Analytics:DeliveryTimeoutMs`
+(500), `GameServer:Analytics:ResumeTrackerCapacity` (200 000), `GameServer:Analytics:LowDiskBytes` (1 GiB),
+`GameServer:Analytics:ErrorWindowSeconds` (300), `GameServer:Analytics:RetainLocalDays` (không đặt = server không xoá file).
+Biến môi trường: `GameServer__Analytics__<Key>`. Không key nào là secret.
+
+### 7.2 Checklist deploy
+
+- **Múi giờ**: `GameServer:Analytics:TimeZone` (tên IANA, ví dụ `Asia/Ho_Chi_Minh`) bắt buộc ở beta/uat/live; tên lạ hoặc id
+  Windows (`SE Asia Standard Time`) → exit 1 nêu key và cách sửa.
+- **Dữ liệu múi giờ trong image** ([VERIFY] V2, kiểm 2026-10-31 bằng Docker): `mcr.microsoft.com/dotnet/aspnet:10.0` (Ubuntu
+  24.04 từ .NET 10, không còn Debian) có `tzdata` → được. `aspnet:10.0-alpine` và `aspnet:10.0-noble-chiseled` **không có**
+  dữ liệu múi giờ (mọi tên trừ `UTC` báo không tìm thấy → exit 1); dùng `aspnet:10.0-noble-chiseled-extra` hoặc cài `tzdata`.
+  Không chạy `InvariantGlobalization` trên Windows.
+- **Sink bắt buộc**: `GameServer:Analytics:Enabled=true` mà host không đăng ký sink nào (không gọi `AddAnalyticsFiles()`) →
+  beta/uat/live exit 1 với thông báo nêu cách sửa (`AddAnalyticsFiles()` hoặc `GameServer:Analytics:Enabled=false`).
+- **Volume**: thư mục analytics trên persistent volume riêng mỗi pod, hoặc shipper (Vector, Fluent Bit, Filebeat) trễ ≤ 60 s
+  theo chính sách LOG-03. Chỉ volume local/block: lock một-writer không đáng tin trên NFS/SMB. Shipper coi file của ngày UTC
+  trước là hoàn chỉnh, có thể tail file hôm nay, phải bỏ qua dòng không parse được. `Directory` mặc định (`analytics`, tương
+  đối) nằm **trong filesystem của container** và mất khi container bị thay: mount volume bền rồi trỏ thư mục vào đó lúc deploy,
+  ví dụ `GameServer__Analytics__Directory=/var/lib/gameserver/analytics` + `volumeMounts.mountPath: /var/lib/gameserver/analytics`.
+  Flavor mẫu cố ý không đặt đường dẫn tuyệt đối (giống thư mục log `Observability:Logging:Directory`): đường mount thuộc
+  manifest deploy.
+- **Instance id**: hai process dùng chung thư mục phải có `Observability:InstanceId` khác nhau (mặc định `HOSTNAME` → tên máy);
+  trùng → process thứ hai exit 1 nêu `Observability:InstanceId`. Kubernetes **Deployment**: `HOSTNAME` = tên pod, đổi mỗi lần
+  restart → mỗi lần một bộ file mới, và `GameServer:Analytics:RetainLocalDays` chỉ dọn file của **chính** instance id hiện tại
+  (file của pod cũ không bao giờ bị dọn trên volume dùng lại). Dùng **StatefulSet** (tên pod ổn định, volume theo pod) hoặc
+  đặt `Observability:InstanceId` rõ ràng, ổn định cho mỗi volume.
+- **Đĩa treo**: sink ghi file đồng bộ, không theo cancellation; I/O bị treo chặn dispatcher và ngân sách drain lúc dừng
+  (`GameServer:Hosting:ShutdownTimeoutSeconds`) **không giới hạn** được trường hợp này — process dừng khi orchestrator kill
+  (`terminationGracePeriodSeconds`). Payment vẫn an toàn (receipt chờ sweeper của instance khác); login trong hàng đợi mất.
+- **`Enabled` giống nhau trên mọi instance** của một deployment (instance tắt ack entry payment do instance bật commit mà
+  không ghi record).
+- **Dung lượng**: ≈ 0,4 GB mỗi triệu login mỗi ngày (chưa nén); payment không đáng kể. Readiness `analytics` Degraded khi còn
+  dưới `GameServer:Analytics:LowDiskBytes`.
+- **Metric cần cảnh báo**: `analytics_sink_errors_total` > 0, `analytics_events_dropped_total{event="login"}` kéo dài > 5 phút,
+  `analytics_delivery_failures_total` kéo dài, `analytics_queue_entries` > 50 % capacity, `outbox_dead_letter_total` > 0.
+- `--provision` không cần setting analytics, không tạo thư mục, lock hay file.
+
+### 7.3 Rolling deploy, rollback, dead letter
+
+- **Rolling deploy** (từ build trước 012): an toàn. Receipt mới mang entry outbox kind `analytics`; instance cũ quét phải
+  receipt đó ghi "No outbox consumer for kind analytics", tính một attempt và backoff; instance mới giao.
+- **Rollback toàn bộ về build trước 012**: receipt còn chờ lúc đó (relay inline vừa lỗi) bị build cũ thử lại và **dead-letter sau
+  `GameServer:Outbox:MaxRelayAttempts` (10, ≈ 3 h)**. Sau khi roll-forward, re-drive (dưới). Receipt đã relay không bị ảnh hưởng.
+- **Receipt dead-letter (mọi nguyên nhân)**: record payment thiếu cho tới khi re-drive. Chưa có công cụ (endpoint GM/ops hoãn
+  sang slice ops-readiness); re-drive thủ công trên Couchbase (đã chạy thử trong integration test, 2026-10-31):
+
+  ```sql
+  UPDATE `<bucket>`.`g_<gameId>`.`receipts` r
+  SET r.outboxDeadLetter = false, r.outboxAttempts = 0
+  UNSET r.outboxNextAttemptAtUtc
+  WHERE r.outboxPending = true AND r.outboxDeadLetter = true
+    AND ANY e IN r.outbox SATISFIES e.kind = "analytics" END;
+  ```
+
+  Sweeper sau đó relay chúng; entry ledger idempotent, bản sao analytics bị dedupe ở downstream. Câu lệnh chỉ chạm các field
+  bookkeeping mà relay tự cập nhật ngoài transaction, và chỉ trên receipt dead-letter (không command nào ghi chúng nữa).
+
+### 7.4 Chạy local
+
+Flavor `Local` ghi vào `samples/SampleHost/analytics/` (git bỏ qua). Instance id = tên máy, nên hai host local dùng chung thư
+mục cần `--Observability:InstanceId=...` khác nhau. Test chạy host mẫu (`WebApplicationFactory<Program>`) đặt thư mục tạm riêng.

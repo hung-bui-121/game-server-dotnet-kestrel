@@ -2,6 +2,7 @@ using GameServer.Config;
 using GameServer.Errors;
 using GameServer.Modules;
 using GameServer.Platform.Aggregates;
+using GameServer.Platform.Analytics;
 using GameServer.Platform.Commands;
 using GameServer.Platform.Config;
 using GameServer.Platform.Diagnostics;
@@ -26,6 +27,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace GameServer.Platform.Web.Hosting;
 
@@ -134,6 +137,7 @@ public static class GameServerBuilderExtensions
         services.AddSingleton<PerPlayerCommandLimiter>();
         services.AddSingleton<ICommandRunner, CommandRunner>();
         services.AddSingleton<IOutboxRelay, OutboxRelay>();
+        AddAnalytics(services);
         services.AddSingleton<OutboxSweeper>();
         services.AddHostedService(sp => sp.GetRequiredService<OutboxSweeper>());
         services.AddSingleton<LeaseStore>();
@@ -184,6 +188,31 @@ public static class GameServerBuilderExtensions
 
         AddLimits(builder, options);
         return new GameServerBuilder(builder, options, registry);
+    }
+
+    /// <summary>
+    /// Analytics core (R13): options validated on start (serve only, FR-030), pipeline registered before the outbox sweeper
+    /// so it stops after it, and the consumer of the reserved outbox kind <c>analytics</c> (FR-040). Sinks are registered by
+    /// the host (<c>AddAnalyticsFiles()</c>, tests); without one analytics is inactive.
+    /// </summary>
+    private static void AddAnalytics(IServiceCollection services)
+    {
+        services.AddOptions<AnalyticsOptions>().BindConfiguration(AnalyticsOptions.SectionName).ValidateOnStart();
+        services.AddSingleton<IValidateOptions<AnalyticsOptions>, AnalyticsOptionsValidator>();
+
+        // Counted from the final registrations when first resolved (after Build), so sinks added later still count and
+        // deciding "active" never constructs a sink.
+        services.AddSingleton(_ => new AnalyticsActivation(services.Count(d => d.ServiceType == typeof(IAnalyticsSink))));
+        services.AddSingleton(sp => new AnalyticsTimeZone(sp.GetRequiredService<IOptions<AnalyticsOptions>>().Value.TimeZone));
+        services.AddSingleton<AnalyticsMetrics>();
+        services.AddSingleton<AnalyticsRecordFormatter>();
+        services.AddSingleton<AnalyticsPipeline>();
+        services.AddSingleton<IAnalyticsEmitter>(sp => sp.GetRequiredService<AnalyticsPipeline>());
+        services.AddHostedService(sp => sp.GetRequiredService<AnalyticsPipeline>());
+        services.AddSingleton<IOutboxConsumer>(sp => new AnalyticsOutboxConsumer(
+            new Lazy<AnalyticsPipeline>(sp.GetRequiredService<AnalyticsPipeline>),
+            sp.GetRequiredService<AnalyticsMetrics>(),
+            sp.GetRequiredService<ILogger<AnalyticsOutboxConsumer>>()));
     }
 
     private static void AddLimits(WebApplicationBuilder builder, GameServerOptions options)

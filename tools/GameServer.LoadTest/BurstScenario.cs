@@ -28,6 +28,11 @@ public sealed class BurstScenario(Options options)
         var cooldown = options.Number("cooldown-s", 30);
         var window = options.Number("window-s", 5);
         var target = options.Number("p95-target-ms", 300);
+        var purchaseEvery = options.Count("purchase-every", 0);
+        if (purchaseEvery < 0)
+        {
+            throw new ArgumentException("--purchase-every must be 0 (off) or a positive number of actions");
+        }
 
         Console.WriteLine($"setup: logging in {players} players across {urls.Count} instance(s)...");
         var idle = new ConcurrentQueue<VirtualPlayer>();
@@ -38,7 +43,7 @@ public sealed class BurstScenario(Options options)
                 await gate.WaitAsync();
                 try
                 {
-                    idle.Enqueue(await VirtualPlayer.LoginAsync(factory, urls[i % urls.Count], gold: 1_000_000));
+                    idle.Enqueue(await VirtualPlayer.LoginAsync(factory, urls[i % urls.Count], gold: 1_000_000, purchaseEvery));
                 }
                 catch (Exception ex)
                 {

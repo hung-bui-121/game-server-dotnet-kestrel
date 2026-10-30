@@ -95,7 +95,7 @@ public static class GameServerApplicationExtensions
             {
                 // A module reading its own options while mapping (GM SSO routes) hits the failure ValidateModuleOptions
                 // already reported: keep one line per failure and go on, so the report stays complete (FR-009).
-                errors.AddRange(ex.Failures.Where(failure => !errors.Contains(failure)));
+                AddNew(errors, ex.Failures);
             }
         }
 
@@ -191,11 +191,23 @@ public static class GameServerApplicationExtensions
         }
         catch (OptionsValidationException ex)
         {
-            errors.AddRange(ex.Failures);
+            AddNew(errors, ex.Failures);
         }
         catch (AggregateException ex) when (ex.InnerExceptions.All(inner => inner is OptionsValidationException))
         {
-            errors.AddRange(ex.InnerExceptions.Cast<OptionsValidationException>().SelectMany(inner => inner.Failures));
+            AddNew(errors, ex.InnerExceptions.Cast<OptionsValidationException>().SelectMany(inner => inner.Failures));
+        }
+    }
+
+    /// <summary>One line per failure: options read while services are built may already have reported the same failure.</summary>
+    private static void AddNew(List<string> errors, IEnumerable<string> failures)
+    {
+        foreach (var failure in failures)
+        {
+            if (!errors.Contains(failure))
+            {
+                errors.Add(failure);
+            }
         }
     }
 
@@ -236,6 +248,15 @@ public static class GameServerApplicationExtensions
         catch (GameServerStartupException ex)
         {
             errors.AddRange(ex.Violations);
+        }
+        catch (OptionsValidationException ex)
+        {
+            // A game consumer reading its own validated options while the relay is built. Options validated on start are
+            // reported again by ValidateModuleOptions (kept once); options with Validate() but no ValidateOnStart are
+            // reported only here, so the start fails instead of every command returning INTERNAL (FR-009). The framework's
+            // analytics consumer reads no options here, so the duplicate-kind check (FR-040) still runs when only the
+            // analytics settings are invalid.
+            AddNew(errors, ex.Failures);
         }
 
         if (options.Hosting.MapPlayerApi)

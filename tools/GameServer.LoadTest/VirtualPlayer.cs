@@ -2,6 +2,7 @@ using System.Net;
 using System.Security.Cryptography;
 using GameServer.Client;
 using GameServer.Modules.Economy.Protocol.V1;
+using GameServer.Modules.Iap.Protocol.V1;
 using SampleGame.Protocol.V1;
 
 namespace GameServer.LoadTest;
@@ -13,6 +14,7 @@ public sealed class ClientFactory(int maxRetries) : IDisposable
     public const string StartBattleRoute = "api/v1/battle/start";
     public const string EndBattleRoute = "api/v1/battle/end";
     public const string BuyRoute = "api/v1/shop/buy";
+    public const string PurchaseRoute = "api/v1/iap/purchase";
 
     private readonly HttpClient _http = new(new SocketsHttpHandler
     {
@@ -33,18 +35,25 @@ public sealed class ClientFactory(int maxRetries) : IDisposable
     public void Dispose() => _http.Dispose();
 }
 
-/// <summary>A logged-in player that plays StartBattle → EndBattle, buying a potion pack every third cycle.</summary>
+/// <summary>
+/// A logged-in player that plays StartBattle → EndBattle, buying a potion pack every third cycle; with
+/// <see cref="PurchaseEvery"/> = n it also sends an IAP purchase (fake verifier, unique <c>valid:</c> receipt) every n-th action.
+/// </summary>
 public sealed class VirtualPlayer(GameServerClient client, InMemorySessionStore? session = null)
 {
     private string? _battleId;
     private int _cycle;
+    private int _actions;
 
     public GameServerClient Client => client;
+
+    /// <summary>0 = never; n = every n-th action is an IAP purchase (slice 012, SC-004 measurement).</summary>
+    public int PurchaseEvery { get; init; }
 
     /// <summary>The session, so another client (another instance) can act for the same player.</summary>
     public InMemorySessionStore Session { get; } = session ?? new InMemorySessionStore();
 
-    public static async Task<VirtualPlayer> LoginAsync(ClientFactory factory, Uri baseUrl, long gold)
+    public static async Task<VirtualPlayer> LoginAsync(ClientFactory factory, Uri baseUrl, long gold, int purchaseEvery = 0)
     {
         var session = new InMemorySessionStore();
         var client = factory.Create(baseUrl, session);
@@ -55,7 +64,7 @@ public sealed class VirtualPlayer(GameServerClient client, InMemorySessionStore?
             await GrantAsync(client, "gold", gold);
         }
 
-        return new VirtualPlayer(client, session);
+        return new VirtualPlayer(client, session) { PurchaseEvery = purchaseEvery };
     }
 
     /// <summary>Dev cheat grant (setup only); anything but OK aborts, or the run would be a stream of INSUFFICIENT_FUNDS.</summary>
@@ -68,12 +77,25 @@ public sealed class VirtualPlayer(GameServerClient client, InMemorySessionStore?
         }
     }
 
+    /// <summary>Google purchase through the fake verifier (Development hosts only); every receipt is new, so every one grants.</summary>
+    public static async Task<string> PurchaseAsync(GameServerClient client) =>
+        (await client.SendCommandAsync(
+            ClientFactory.PurchaseRoute,
+            new IapPurchaseRequest { Store = "google", ProductId = "gems_100", ReceiptPayload = "valid:lt-" + Guid.NewGuid().ToString("N") },
+            IapPurchaseResult.Parser)).Code;
+
     public static async Task<string> BuyAsync(GameServerClient client) =>
         (await client.SendCommandAsync(ClientFactory.BuyRoute, new BuyItemRequest { ShopItemId = "potion_pack", Quantity = 1 }, BuyItemResult.Parser)).Code;
 
     /// <summary>Runs the next step; latency counts from <paramref name="intendedAt"/>, the scheduled arrival.</summary>
     public async Task StepAsync(Recorder recorder, double intendedAt)
     {
+        if (PurchaseEvery > 0 && ++_actions % PurchaseEvery == 0)
+        {
+            await recorder.TimeAsync("purchase", () => PurchaseAsync(client), intendedAt);
+            return;
+        }
+
         if (_battleId is { } battleId)
         {
             _battleId = null;
