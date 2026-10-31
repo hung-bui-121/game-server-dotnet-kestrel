@@ -179,20 +179,22 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
 
 ## Current state (2026-10-31)
 
-- 007–009 fast-forwarded into `main` and pushed (9c93705) on 2026-10-30 at owner request.
-- `010-jobs-account-deletion` (from main): docs `003cebf`, feat `5c88392`, pushed to origin; **not merged into main yet**.
-- `011-local-env` (from 010): docs `ed78fff`, feat `ab17cc0`, pushed; **not merged into main yet**.
-- `012-analytics-audit` (from 011): docs `69d8f60` + feat commit, pushed; **not merged into main yet**.
+- **PAUSED 2026-10-31 at owner request.** `main` fast-forwarded to `13c043a` (010 + 011 + 012 + docs-html-guides)
+  and pushed. Last full suite incl. Couchbase: 1190 tests, 0 fail, 7 skip.
+- Merged into main: `010-jobs-account-deletion` (5c88392), `011-local-env` (ab17cc0), `012-analytics-audit`
+  (175df65), `docs-html-guides` (2ea064f, 8c586b3, 13c043a). Branches still exist on origin.
 - `.specify/feature.json` (gitignored) points to `specs/012-analytics-audit`; next slice must repoint it.
 - Review summaries are at the end of each `specs/0NN-*/tasks.md`.
-- `docs-html-guides` (from 012): HTML docs + startup-validation fixes, pushed; **not merged into main yet**.
 - Owner batch 2026-10-30 done except task 4 (packaging, deferred by owner).
-- Next work: 013 giftcode (branch from `docs-html-guides` or main after merges).
+- Owner has NOT answered yet: start 013 giftcode? Apple sandbox receipts on live? Live Couchbase replica count and
+  deploy-checklist sign-off roles? Orchestrator decisions awaiting owner override: payment fsync before ack
+  (SC-004 +≤100 ms), analytics Enabled without sink outside dev fails startup, economy claim key fixed inside 012.
+- Next work (only when owner says so): 013 giftcode, branched from main.
 
 ## How to resume
 
 1. Read this file, then `specs/012-analytics-audit/{spec,plan,tasks}.md` as the latest template for slice docs.
-2. Branch the next slice from `docs-html-guides` (or main once 010–012 + docs are merged).
+2. Branch the next slice from `main` (010–012 + docs merged 2026-10-31).
 3. Per slice: spec + plan + tasks (commit `docs: add spec, plan and tasks for 0NN …`) → implement → full tests incl.
    Couchbase → tech-lead-reviewer → fix → `feat:` commit → update this file (`docs: update P0.5 resume after 0NN`).
    No stop for owner review (the single gate was after 007 spec+plan). Owner runs slices autonomously.
@@ -217,12 +219,10 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
 - TBD-21 (GM frontend) open; another developer owns it.
 - Possible flaky `TelemetryTests.A_command_is_one_trace...` under full-suite load.
 - Game Center pins: gc-prod-12 expires 2027-05-27; Apple chain change → `PROVIDER_UNAVAILABLE` + LogError, update pins.
-- Merge 010 into main: owner has not asked yet (007–009 merged 2026-10-30).
 - 010 open (PCR platform §16): OpenAPI body/response schema for `deletion/cancel` and the `deletion` view field
   (generator limitation); no supported way to scrub a purged id from *other* players' `pa_*` (needed for P1 MSG-01);
   backup restore before a purge resurrects data (013 runbook must re-run purges); Couchbase tombstones keep keys ~3 days.
 - `AccountPurgeService.cs` ~300 lines, split later.
-- Merge 011 into main: not asked yet.
 - 011 open: **TLS release gate** (`CouchbaseSettingsIntegrationTests.Tls_…`, opt-in) never run — no TLS cluster locally;
   mandatory before any Live cutover. `run-local.sh` 35 s kill fallback needs bash ≥ 4.4 (stock macOS bash 3.2 only
   graceful stop); not run on macOS/Linux or PowerShell 7. Unity E2E against port 5080 not run. Index `error`/timeout
