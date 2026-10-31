@@ -22,7 +22,7 @@ P0 is merged into `main` and pushed (fda9f00). The real-environment test tools f
 | 010 jobs-account-deletion | `010-jobs-account-deletion` | DONE: 55/55 tasks. `5c88392` feat (review 1 Blocker, 1 Major, 12 Minor; 2 Minor open in PCR platform §16) |
 | 011 local-env (batch 2026-10-30 tasks 1+2) | `011-local-env` | DONE: 57/57 tasks + T048a. Flavors, file store, `--provision`, run-local scripts. Review CONDITIONAL (0 Blocker, 4 Major, 9 Minor, all fixed) |
 | 012 analytics-audit (batch task 3, ANA-01 part 1) | `012-analytics-audit` | DONE: 68/68 tasks. Login/Payment JSONL audit log. Review CONDITIONAL (0 Blocker, 4 Major, 8 Minor; all fixed except Minor 8 = owner policy) |
-| (batch 2026-10-30) HTML docs | — | Task 5 of `tasks/task_30102026.txt` (plan `AgentMemories/features/task-30102026/00_plan.md` §5): 5a intro/architecture, 5b add-a-command walkthrough, 5c deploy guide + checklist (drafted now, finished in ops-readiness). Packaging (task 4) skipped, separate later |
+| (batch 2026-10-30) HTML docs | `docs-html-guides` | DONE: task 5 → `docs/html/{index,01-gioi-thieu,02-them-command,03-deploy}.html` (self-contained, drafts in `AgentMemories/features/task-30102026/docs-draft-5{a,b,c}-*.md`; HTML is now hand-maintained, drafts are historical). Accuracy review: reviewer followed 02 to add `counter.reset`, build + tests green. Also startup-validation fixes D1–D4 + m5/m6 (see notes). 5c checklist finished in ops-readiness. Packaging (task 4) skipped, separate later |
 | 013 giftcode | — | GFT-01..06, GM-04 API, reaper (ACC-08, 22, 23) |
 | 014 iap-notifications | — | IAP-03 S2S: Google RTDN, Apple v2, refund/revoke; add refund analytics event on the 012 seam |
 | 015 ops-readiness | — | Secret scan in CI, PERF-05 budgets, load test report (TST-03), Linux/container guide, runbooks, deploy/rollback, restore drill (ACC-16, 19, 48; ACC-19 blocked on TBD-09), finish deploy guide (task 5c), TLS release gate, analytics re-drive tool |
@@ -164,6 +164,19 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
 - Docs: PCR platform §18, PCR iap/identity, `docs/guides/analytics.md`, environments guide §7.
 - Tests: 1174 (in-memory 1089 pass + 85 skip); Couchbase ~23–25 min.
 
+## Technical notes from docs-html-guides (2026-10-31)
+
+- Command routes carry `CommandOperationMetadata`; `CommandRouteValidator` (Platform.Web/Validation) fails startup for:
+  operation no module registers (ARC-07), route profile ≠ command profile (SEC-08), GM route permission ≠ command
+  permission (SEC-07). Routes mapped after `UseGameServer` are not checked. Command without route is allowed.
+- `CommandRunner.EnsureCommittableCode`: `Commit(result, code)` needs the catalogued instance (core or any AddModule'd
+  module) with HTTP 200, else 500 INTERNAL and nothing written (**breaking**, PCR platform §8/§12). Old receipts with
+  uncatalogued code replay OK + Warning. `Reject` unchecked.
+- `ErrorCodeSet` rejects null entries (ErrorCode fields declared below `All`).
+- `docs/guides/module-authoring.md` fixed (Deletion treatment, used error ranges incl. identity 14000).
+- HTML docs: footer "Đúng với commit 175df65 + sửa sau review"; DoD for later slices: update `docs/html` when the
+  pipeline, hosting or deploy changes.
+
 ## Current state (2026-10-31)
 
 - 007–009 fast-forwarded into `main` and pushed (9c93705) on 2026-10-30 at owner request.
@@ -172,12 +185,14 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
 - `012-analytics-audit` (from 011): docs `69d8f60` + feat commit, pushed; **not merged into main yet**.
 - `.specify/feature.json` (gitignored) points to `specs/012-analytics-audit`; next slice must repoint it.
 - Review summaries are at the end of each `specs/0NN-*/tasks.md`.
-- Next work: HTML docs (batch task 5), see `AgentMemories/features/task-30102026/00_plan.md` §5.
+- `docs-html-guides` (from 012): HTML docs + startup-validation fixes, pushed; **not merged into main yet**.
+- Owner batch 2026-10-30 done except task 4 (packaging, deferred by owner).
+- Next work: 013 giftcode (branch from `docs-html-guides` or main after merges).
 
 ## How to resume
 
 1. Read this file, then `specs/012-analytics-audit/{spec,plan,tasks}.md` as the latest template for slice docs.
-2. Branch the next slice from `012-analytics-audit` (or main once 010–012 are merged).
+2. Branch the next slice from `docs-html-guides` (or main once 010–012 + docs are merged).
 3. Per slice: spec + plan + tasks (commit `docs: add spec, plan and tasks for 0NN …`) → implement → full tests incl.
    Couchbase → tech-lead-reviewer → fix → `feat:` commit → update this file (`docs: update P0.5 resume after 0NN`).
    No stop for owner review (the single gate was after 007 spec+plan). Owner runs slices autonomously.
@@ -221,5 +236,9 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
   fixed `Observability:InstanceId`); container image needs tzdata (aspnet:10.0 Ubuntu OK, Alpine/chiseled not;
   chiseled-extra OK).
 
-**Next:** HTML docs (task 5; 5c drafted, finished in ops-readiness). Then giftcode → iap-notifications →
-ops-readiness. Packaging (task 4) is a separate later effort.
+- docs open: 5c checklist sign-off roles and Live replica count need owner/DBA confirmation; VERIFY tags
+  (`--contentRoot`, CleanupWindow SDK default, container port/user); Firefox/Safari not tested; `txn_cleanup_lost_total`
+  metric expected by requirements but missing.
+
+**Next:** 013 giftcode → 014 iap-notifications → 015 ops-readiness (finishes 5c checklist). Packaging (task 4) is a
+separate later effort.
