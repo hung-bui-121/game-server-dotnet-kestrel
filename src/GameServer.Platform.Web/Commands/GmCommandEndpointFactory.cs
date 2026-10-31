@@ -141,6 +141,7 @@ public static class GmCommandEndpointFactory
 
                 return Results.Json(BuildResponse(execution, services.GetRequiredService<IClock>()), GameServerJson.Options);
             })
+            .WithMetadata(new CommandOperationMetadata(operation))
             .AsGmEndpoint(permission);
     }
 

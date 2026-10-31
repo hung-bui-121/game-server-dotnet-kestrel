@@ -106,12 +106,13 @@ public static class GameServerApplicationExtensions
             platformPublic.Add(GameServer.Platform.Web.OpenApi.GmOpenApi.Route);
         }
 
-        var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints);
+        var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints).ToArray();
         errors.AddRange(EndpointSecurityValidator.Validate(
             endpoints,
             options,
             registry.Modules.SelectMany(m => m.Descriptor.PublicEndpoints).Concat(platformPublic),
             registry.Modules.SelectMany(m => m.Descriptor.Permissions)));
+        errors.AddRange(CommandRouteValidator.Validate(endpoints, registry.Commands));
         if (errors.Count > 0)
         {
             throw new GameServerStartupException(errors);

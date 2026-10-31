@@ -41,6 +41,7 @@ public static class TestModules
             Command.Define<int, Unit>(BigResultHandler.Descriptor).HandledBy<BigResultHandler>(),
             Command.Define<long, Unit>(GmAddHandler.Descriptor).HandledBy<GmAddHandler>(),
             Command.Define<Unit, Unit>(ForgeAuditHandler.Descriptor).HandledBy<ForgeAuditHandler>(),
+            Command.Define<ErrorCode, Unit>(CommitCodeHandler.Descriptor).HandledBy<CommitCodeHandler>(),
         ],
         Permissions = [GmAddHandler.Permission],
         ErrorCodes = ProbeErrors.All,
@@ -71,6 +72,9 @@ public static class ProbeAggregates
 public static class ProbeErrors
 {
     public static readonly ErrorCode AlreadyClaimed = new(20001, "PROBE_ALREADY_CLAIMED", 200, false, "Already claimed.");
+
+    /// <summary>In the probe range but deliberately not listed in <see cref="All"/> (API-11).</summary>
+    public static readonly ErrorCode NotListed = new(20002, "PROBE_NOT_LISTED", 200, false, "Not listed.");
 
     public static ErrorCodeSet All { get; } = new(20000, 20099, AlreadyClaimed);
 }
@@ -217,4 +221,26 @@ public sealed class BigResultHandler : ICommandHandler<int, Unit>
 
     public ValueTask<CommandOutcome<Unit>> HandleAsync(int request, ICommandContext context) =>
         ValueTask.FromResult(CommandOutcome<Unit>.Ok(Unit.Value));
+}
+
+/// <summary>
+/// Commits with the code it is given (API-11): a code missing from the catalog, differing from the catalogued one or with
+/// HTTP != 200 is a module bug (INTERNAL, nothing committed); a catalogued business code commits.
+/// </summary>
+public sealed class CommitCodeHandler : ICommandHandler<ErrorCode, Unit>
+{
+    public static CommandDescriptor Descriptor { get; } = new("probe.commit_code", touches: [ProbeAggregates.Probe]);
+
+    public ValueTask<CommandOutcome<Unit>> HandleAsync(ErrorCode request, ICommandContext context)
+    {
+        context.Set(ProbeAggregates.Probe, new ProbeState { Blob = "committed:" + request.Name });
+        return ValueTask.FromResult(CommandOutcome<Unit>.Commit(Unit.Value, request));
+    }
+}
+
+/// <summary>Game replacement of <see cref="CommitCodeHandler"/> (EXT-02), same behaviour.</summary>
+public sealed class GameCommitCodeHandler : ICommandHandler<ErrorCode, Unit>
+{
+    public ValueTask<CommandOutcome<Unit>> HandleAsync(ErrorCode request, ICommandContext context) =>
+        new CommitCodeHandler().HandleAsync(request, context);
 }

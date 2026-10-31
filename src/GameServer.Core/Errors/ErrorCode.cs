@@ -21,6 +21,17 @@ public sealed class ErrorCodeSet
             throw new ArgumentOutOfRangeException(nameof(rangeEnd), "rangeEnd must be >= rangeStart.");
         }
 
+        ArgumentNullException.ThrowIfNull(codes);
+        var missing = Array.FindIndex(codes, code => code is null);
+        if (missing >= 0)
+        {
+            // Static fields initialize in declaration order: a set built before the ErrorCode fields it lists sees null.
+            throw new ArgumentException(
+                $"ErrorCodeSet {rangeStart}-{rangeEnd}: entry {missing} (0-based) is null. " +
+                "Fix: declare ErrorCode fields above the ErrorCodeSet that lists them (static fields initialize in declaration order).",
+                nameof(codes));
+        }
+
         RangeStart = rangeStart;
         RangeEnd = rangeEnd;
         Codes = codes;

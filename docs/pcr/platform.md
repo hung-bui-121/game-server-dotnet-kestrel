@@ -68,7 +68,7 @@ Budget tổng = giá trị × số instance.
 | Receipt / resultCompact | ≤ 4 KiB / ≤ 512 B; vượt = lỗi lập trình (500) |
 | Lookup | `GET /api/v1/player/receipts/{receiptId}` — chỉ actor sở hữu; actor khác nhận 404 |
 | Guard (`ICommandGuard`, ví dụ ban theo nhóm command) | chỉ chặn lần thực thi mới; retry của command đã commit vẫn replay |
-| Commit kèm mã nghiệp vụ | `CommandOutcome.Commit(result, code)`: state + receipt được ghi, `resultCode = code`, HTTP 200; replay trả lại đúng mã |
+| Commit kèm mã nghiệp vụ | `CommandOutcome.Commit(result, code)`: `code` phải có trong catalog (core hoặc ErrorCodeSet của một module đã đăng ký, đúng instance đã khai) và có HTTP 200; state + receipt được ghi, `resultCode = code`, HTTP 200; replay trả lại đúng mã. Mã ngoài catalog, mã trùng tên nhưng khác mã đã khai, hoặc mã có HTTP ≠ 200 = lỗi lập trình: 500 `INTERNAL`, không ghi gì (API-11). Receipt cũ có mã ngoài catalog: replay trả `OK` + log Warning |
 | Id xác định | `ctx.NewId(purpose)` / `ctx.NewSeed(purpose)` = SHA-256(receiptId|purpose) — ổn định qua attempt và retry |
 | Command có bước xác minh async (`MapPlayerCommand(..., toDomainAsync, ...)`: IAP, `identity.link`) | receipt đã commit trong window được replay **trước** `toDomainAsync` (`ICommandRunner.TryReplayAsync`): retry không gọi lại store/provider (mã dùng một lần); khác body → 409 trước khi gọi ra ngoài |
 
@@ -126,6 +126,14 @@ Dải: core 0–999; module khai `ErrorCodeSet(rangeStart, rangeEnd)`; trùng t�
 Player nhận `ErrorEnvelope` (Protobuf, kể cả lỗi middleware); GM nhận Problem Details JSON với `code`,
 `codeNumber`, `requestId`, `retryable`, `retryAfterMs`. Cả hai có `details` (map chuỗi an toàn, ví dụ `until` của
 `ACCOUNT_SUSPENDED`; field 9 của `ErrorEnvelope`, thêm ở 0.3.0, không breaking).
+
+`ErrorCodeSet` có phần tử null (field `ErrorCode` khai dưới set liệt kê nó) → `ArgumentException` nêu cách sửa ngay khi
+khởi tạo set (trước đây: `NullReferenceException` trong startup validation).
+
+**Breaking (sau slice 012):** `CommandOutcome.Commit(result, code)` với mã ngoài catalog, mã trùng tên nhưng khác mã đã
+khai, hoặc mã có HTTP ≠ 200 trước đây commit (client nhận `OK` hoặc mã sai); giờ trả 500 `INTERNAL` và không ghi gì. Kiểm
+handler của game trước khi nâng cấp. Route command mà operation chưa đăng ký, hoặc sai profile/permission so với command,
+giờ làm startup fail (mục 12).
 
 Xác thực theo profile (SEC-02): endpoint Player chỉ thử scheme Player (`PlayerBearer`, + scheme thử nghiệm ở
 Development/Test), endpoint GM chỉ thử scheme GM. Scheme thử nghiệm header (`X-Test-*`) và store in-memory bị
@@ -189,6 +197,10 @@ Health endpoints (`/health/live`, `/health/ready`) do module `platform.observabi
 - `GateHeaders` (slice 006): `X-Client-Version`, `X-Platform`, `X-Build-Id` — SDK gửi trên mọi request (GATE-02); server so
   `minClientVersion` ở P0.5.
 - Startup validator: endpoint GM phải có permission trong catalog của các module đã đăng ký (SEC-08).
+- Startup validator (route command — `MapPlayerCommand`/`MapDevCommand`/`MapGmCommand` gắn `CommandOperationMetadata`):
+  operation không module nào đăng ký → startup fail (ARC-07); profile của route ≠ profile của command → startup fail
+  (SEC-08); route GM có permission ≠ `CommandDescriptor.Permission` → startup fail (SEC-07). Command đã đăng ký mà không có
+  route thì không bị báo (host chỉ GM, module `ServiceOnly`, code game gọi `ICommandRunner` trực tiếp).
 
 ## 11. TST-04 — kết quả thực nghiệm
 

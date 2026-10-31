@@ -298,6 +298,101 @@ public sealed class CommandRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Commit_with_an_uncatalogued_code_is_a_programming_error_and_rolls_back()
+    {
+        var ex = await Should.ThrowAsync<InvalidOperationException>(() => _h.RunAsync(CommitCodeHandler.Descriptor.Operation, ProbeErrors.NotListed));
+
+        ex.Message.ShouldBe(
+            "Command 'probe.commit_code' (module 'probe') committed with error code PROBE_NOT_LISTED(20002), which is not in the error-code catalog; " +
+            "the client would receive OK. Fix: list the code in the module's ErrorCodeSet (ModuleDescriptor.ErrorCodes) (API-11).");
+        _h.Store.Count("pa_probe").ShouldBe(0);
+        _h.Store.Count("receipts").ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task Commit_with_a_code_differing_from_the_catalogued_one_of_that_name_is_a_programming_error()
+    {
+        var lookalike = ProbeErrors.AlreadyClaimed with { Number = 20009 };
+
+        var ex = await Should.ThrowAsync<InvalidOperationException>(() => _h.RunAsync(CommitCodeHandler.Descriptor.Operation, lookalike));
+
+        ex.Message.ShouldBe(
+            "Command 'probe.commit_code' (module 'probe') committed with error code PROBE_ALREADY_CLAIMED(20009), which has the name of the " +
+            "catalogued PROBE_ALREADY_CLAIMED(20001) but differs from it (number, HTTP status, retryable flag or message). " +
+            "Fix: commit with the catalogued ErrorCode instance from the module's ErrorCodeSet (API-11).");
+        _h.Store.Count("pa_probe").ShouldBe(0);
+        _h.Store.Count("receipts").ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task Commit_with_a_non_200_code_is_a_programming_error()
+    {
+        var ex = await Should.ThrowAsync<InvalidOperationException>(() => _h.RunAsync(CommitCodeHandler.Descriptor.Operation, CoreErrorCodes.ConcurrentUpdate));
+
+        ex.Message.ShouldBe(
+            "Command 'probe.commit_code' (module 'probe') committed with error code CONCURRENT_UPDATE(12), whose HTTP status is 409; " +
+            "a commit always answers HTTP 200. Fix: use CommandOutcome.Reject for non-200 codes (nothing is committed) (API-11).");
+        _h.Store.Count("pa_probe").ShouldBe(0);
+        _h.Store.Count("receipts").ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task Commit_error_names_the_replacing_handler()
+    {
+        _h.Registry.ReplaceHandler(CommitCodeHandler.Descriptor.Operation, typeof(GameCommitCodeHandler));
+
+        var ex = await Should.ThrowAsync<InvalidOperationException>(() => _h.RunAsync(CommitCodeHandler.Descriptor.Operation, ProbeErrors.NotListed));
+
+        ex.Message.ShouldStartWith(
+            "Command 'probe.commit_code' (module 'probe', handler replaced by GameCommitCodeHandler through ReplaceHandler) " +
+            "committed with error code PROBE_NOT_LISTED(20002), which is not in the error-code catalog;");
+    }
+
+    [Fact]
+    public async Task Commit_with_a_catalogued_code_commits_and_returns_it()
+    {
+        var execution = await _h.RunAsync(CommitCodeHandler.Descriptor.Operation, ProbeErrors.AlreadyClaimed);
+
+        execution.Code.ShouldBe(ProbeErrors.AlreadyClaimed);
+        execution.Updates.ShouldHaveSingleItem().AggregateId.ShouldBe(ProbeAggregates.Probe);
+        _h.Store.Peek(ReceiptDocument.KeyFor(execution.ReceiptId!))!["resultCode"]!.GetValue<string>().ShouldBe("PROBE_ALREADY_CLAIMED");
+    }
+
+    [Fact]
+    public async Task Commit_with_a_core_or_other_module_business_code_commits_and_replays_it()
+    {
+        var requestId = Guid.NewGuid().ToString("D");
+        var core = await _h.RunAsync(CommitCodeHandler.Descriptor.Operation, CoreErrorCodes.AggregateTooLarge);
+        var other = await _h.RunAsync(CommitCodeHandler.Descriptor.Operation, CounterErrors.LimitExceeded, requestId: requestId);
+        var replay = await _h.RunAsync(CommitCodeHandler.Descriptor.Operation, CounterErrors.LimitExceeded, requestId: requestId);
+
+        core.Code.ShouldBe(CoreErrorCodes.AggregateTooLarge);
+        other.Code.ShouldBe(CounterErrors.LimitExceeded);
+        replay.Replayed.ShouldBeTrue();
+        replay.Code.ShouldBe(CounterErrors.LimitExceeded);
+        _h.Store.Count("receipts").ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task Replay_of_a_receipt_with_an_uncatalogued_code_answers_ok_and_logs_a_warning()
+    {
+        var requestId = Guid.NewGuid().ToString("D");
+        var first = await _h.RunAsync("probe.grow", new GrowRequest(10, 0, 0), requestId: requestId);
+        var key = ReceiptDocument.KeyFor(first.ReceiptId!);
+        var receipt = _h.Store.Peek(key)!;
+        receipt["resultCode"] = "PROBE_REMOVED_SINCE";
+        _h.Store.Seed(key, receipt);
+
+        var replay = await _h.RunAsync("probe.grow", new GrowRequest(10, 0, 0), requestId: requestId);
+
+        replay.Replayed.ShouldBeTrue();
+        replay.Code.ShouldBe(CoreErrorCodes.Ok);
+        _h.RunnerLogs.ShouldContain(log =>
+            log.StartsWith("Warning: Replay of probe.grow receipt ", StringComparison.Ordinal) &&
+            log.Contains("committed error code 'PROBE_REMOVED_SINCE' is not in the error-code catalog; replying OK.", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Conflicts_until_expiration_return_concurrent_update()
     {
         using var h = new RunnerHarness(o => o.Transactions.ExpirationSeconds = 0);

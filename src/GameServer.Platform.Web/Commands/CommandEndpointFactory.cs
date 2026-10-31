@@ -127,7 +127,8 @@ public static class CommandEndpointFactory
 
                 var response = BuildResponse(execution, services.GetRequiredService<AggregateWireMapperRegistry>(), services.GetRequiredService<IClock>());
                 await ProtobufBinding.WriteAsync(http, response);
-            });
+            })
+            .WithMetadata(new CommandOperationMetadata(operation));
 
     internal static CommandResponse BuildResponse(CommandExecution execution, AggregateWireMapperRegistry mappers, IClock clock)
     {

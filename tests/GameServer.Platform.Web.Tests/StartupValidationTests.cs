@@ -3,15 +3,18 @@ using GameServer.Aggregates;
 using GameServer.Modules;
 using GameServer.Modules.Identity;
 using GameServer.Platform.Outbox;
+using GameServer.Platform.Web.Commands;
 using GameServer.Platform.Web.Routing;
 using GameServer.Tests.Shared;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Sample.Counter;
 using Sample.Counter.Adapters;
 using Shouldly;
+using Wire = Sample.Counter.Protocol.V1;
 
 namespace GameServer.Platform.Web.Tests;
 
@@ -135,6 +138,80 @@ public sealed class StartupValidationTests
     }
 
     [Fact]
+    public async Task Player_command_route_for_an_unregistered_operation_fails()
+    {
+        var ex = await StartupFails(app => app.MapPlayerCommand<Wire.IncrementRequest, IncrementCommand, IncrementResult>(
+            "/api/v1/counter/ghost",
+            "counter.ghost",
+            request => new IncrementCommand(request.By, null),
+            result => new Wire.IncrementResult { Value = result.Value }));
+
+        ex.Violations.ShouldContain(
+            "[endpoint POST /api/v1/counter/ghost] runs command 'counter.ghost' which no registered module declares. " +
+            "Fix: add the command to its module's ModuleDescriptor.Commands and AddModule that module, " +
+            "or pass the registered operation name to MapPlayerCommand/MapDevCommand/MapGmCommand (ARC-07).");
+    }
+
+    [Fact]
+    public async Task Gm_command_route_for_an_unregistered_operation_fails()
+    {
+        var ex = await StartupFails(app => app.MapGmCommand<GhostBody, IncrementCommand, IncrementResult>(
+            "/gm/v1/players/{playerId}/ghost",
+            "counter.gm_ghost",
+            CounterModuleDefinition.ReadPermission,
+            _ => new IncrementCommand(1, null)));
+
+        ex.Violations.ShouldHaveSingleItem().ShouldStartWith(
+            "[endpoint POST /gm/v1/players/{playerId}/ghost] runs command 'counter.gm_ghost' which no registered module declares.");
+    }
+
+    [Fact]
+    public async Task Command_route_with_another_profile_than_its_command_fails()
+    {
+        // A Dev route accepts any actor (OPS-09): mapping a Player command there would be its only guard.
+        var ex = await StartupFails(app => app.MapDevCommand<Wire.IncrementRequest, IncrementCommand, IncrementResult>(
+            "/api/v1/counter/dev-increment",
+            IncrementHandler.Operation,
+            request => new IncrementCommand(request.By, null),
+            result => new Wire.IncrementResult { Value = result.Value }));
+
+        ex.Violations.ShouldHaveSingleItem().ShouldBe(
+            "[endpoint POST /api/v1/counter/dev-increment] has profile Dev but runs command 'counter.increment' declared with profile Player. " +
+            "Fix: map Player commands with MapPlayerCommand, Dev commands with MapDevCommand and GM commands with MapGmCommand, " +
+            "or correct the profile in the CommandDescriptor (SEC-08).");
+    }
+
+    [Fact]
+    public async Task Gm_command_route_with_another_permission_than_its_command_fails()
+    {
+        var ex = await StartupFails(app => app.MapGmCommand<GhostBody, BanPlayerCommand, BanResult>(
+            "/gm/v1/players/{playerId}/ban-with-read",
+            "identity.ban",
+            CounterModuleDefinition.ReadPermission,
+            body => new BanPlayerCommand(body.Reason!, null, [])));
+
+        ex.Violations.ShouldHaveSingleItem().ShouldBe(
+            "[endpoint POST /gm/v1/players/{playerId}/ban-with-read] requires permission 'counter.read' but runs GM command 'identity.ban' " +
+            "which requires 'player.ban'. Fix: pass the command's permission (CommandDescriptor.Permission) to MapGmCommand (SEC-07).");
+    }
+
+    [Fact]
+    public async Task Command_routes_of_the_default_host_carry_their_registered_operations()
+    {
+        await using var host = await TestHost.StartAsync();
+
+        var operations = ((IEndpointRouteBuilder)host.App).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Select(endpoint => endpoint.Metadata.GetMetadata<CommandOperationMetadata>()?.Operation)
+            .OfType<string>()
+            .ToArray();
+        operations.ShouldContain(IncrementHandler.Operation);
+        operations.ShouldContain("identity.ban");
+        var registry = host.Services.GetRequiredService<Registry.ModuleRegistry>();
+        operations.ShouldAllBe(operation => registry.Commands.ContainsKey(operation));
+    }
+
+    [Fact]
     public async Task Valid_host_starts()
     {
         await using var host = await TestHost.StartAsync();
@@ -206,6 +283,8 @@ public sealed class StartupValidationTests
 
         ex.Violations.Count(v => v == "[test] consumer options are invalid").ShouldBe(1);
     }
+
+    private sealed record GhostBody(string? Reason) : IGmCommandBody;
 
     private sealed class ProbeOptions;
 

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 using GameServer.Actors;
@@ -12,6 +13,7 @@ using GameServer.Platform.Registry;
 using GameServer.Platform.Testing;
 using GameServer.Time;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace GameServer.Platform.Tests.Infrastructure;
@@ -83,9 +85,12 @@ public sealed class RunnerHarness : IDisposable
 
     public List<ICommandGuard> Guards { get; } = [];
 
+    /// <summary>Messages logged by every runner of this harness, as "Level: message".</summary>
+    public ConcurrentQueue<string> RunnerLogs { get; } = new();
+
     /// <summary>A runner with its own per-player limiter, as on a second instance sharing the store.</summary>
     public CommandRunner CreateRunner() =>
-        new(Registry, TransactionalStore, Serializer, Config, Clock, Options, new PerPlayerCommandLimiter(Options), Relay, Metrics, Guards, Services);
+        new(Registry, TransactionalStore, Serializer, Config, Clock, Options, new PerPlayerCommandLimiter(Options), Relay, Metrics, Guards, Services, new QueueLogger(RunnerLogs));
 
     public static ActorContext Player(string playerId) =>
         new(playerId, ActorType.Player, playerId, "test", "dev", new HashSet<string>(), "corr-" + playerId);
@@ -114,5 +119,16 @@ public sealed class RunnerHarness : IDisposable
     {
         Services.Dispose();
         Metrics.Dispose();
+    }
+
+    private sealed class QueueLogger(ConcurrentQueue<string> logs) : ILogger<CommandRunner>
+    {
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            logs.Enqueue($"{logLevel}: {formatter(state, exception)}");
     }
 }

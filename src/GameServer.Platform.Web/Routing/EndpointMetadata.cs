@@ -19,3 +19,9 @@ public sealed class ProtobufEndpointMetadata
 {
     public static ProtobufEndpointMetadata Instance { get; } = new();
 }
+
+/// <summary>
+/// Operation run by a command endpoint (MapPlayerCommand, MapDevCommand, MapGmCommand). Startup checks it against the commands
+/// the modules registered, so a route for an unknown operation fails the start instead of answering NOT_FOUND (ARC-07).
+/// </summary>
+public sealed record CommandOperationMetadata(string Operation);

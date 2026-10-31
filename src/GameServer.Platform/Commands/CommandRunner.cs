@@ -11,6 +11,7 @@ using GameServer.Platform.Persistence;
 using GameServer.Platform.Registry;
 using GameServer.Time;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace GameServer.Platform.Commands;
 
@@ -30,7 +31,8 @@ public sealed class CommandRunner(
     IOutboxRelay relay,
     PlatformMetrics metrics,
     IEnumerable<ICommandGuard> guards,
-    IServiceProvider services) : ICommandRunner
+    IServiceProvider services,
+    ILogger<CommandRunner> logger) : ICommandRunner
 {
     public async Task<CommandExecution> ExecuteAsync(CommandInvocation invocation, CancellationToken requestAborted)
     {
@@ -279,6 +281,7 @@ public sealed class CommandRunner(
             throw new CommandRejectedException(outcome.Error ?? CoreErrorCodes.Internal, outcome.Details);
         }
 
+        EnsureCommittableCode(registration, outcome.Error);
         var resultBytes = invocation.EncodeResult(outcome.Result!);
         if (resultBytes.Length > options.Commands.ResultCompactMaxBytes)
         {
@@ -362,6 +365,57 @@ public sealed class CommandRunner(
         }
     }
 
+    /// <summary>
+    /// API-11: a committed receipt stores the code by name and a response resolves it through the catalog, so the code of a
+    /// commit must be the catalogued instance (else the client gets OK or another code's number) and a business code (HTTP 200:
+    /// a commit always answers 200). A violation is a module bug (INTERNAL, nothing commits).
+    /// </summary>
+    private void EnsureCommittableCode(GameServer.Commands.CommandRegistration registration, ErrorCode? code)
+    {
+        if (code is null)
+        {
+            return;
+        }
+
+        var catalogued = registry.Errors.FindByName(code.Name);
+        string problem;
+        string fix;
+        if (catalogued is null)
+        {
+            problem = "which is not in the error-code catalog; the client would receive OK";
+            fix = "list the code in the module's ErrorCodeSet (ModuleDescriptor.ErrorCodes)";
+        }
+        else if (catalogued != code)
+        {
+            problem = $"which has the name of the catalogued {catalogued} but differs from it (number, HTTP status, retryable flag or message)";
+            fix = "commit with the catalogued ErrorCode instance from the module's ErrorCodeSet";
+        }
+        else if (code.HttpStatus != 200)
+        {
+            problem = $"whose HTTP status is {code.HttpStatus}; a commit always answers HTTP 200";
+            fix = "use CommandOutcome.Reject for non-200 codes (nothing is committed)";
+        }
+        else
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Command '{registration.Descriptor.Operation}' ({DescribeOwner(registration)}) committed with error code {code}, {problem}. Fix: {fix} (API-11).");
+    }
+
+    /// <summary>Owning module of a command, and the replacing handler when <c>ReplaceHandler</c> swapped it (EXT-02).</summary>
+    private string DescribeOwner(GameServer.Commands.CommandRegistration registration)
+    {
+        var operation = registration.Descriptor.Operation;
+        var (module, declared) = registry.Modules
+            .SelectMany(m => m.Descriptor.Commands.Select(c => (Module: m.Descriptor.Name, Registration: c)))
+            .FirstOrDefault(x => x.Registration.Descriptor.Operation == operation);
+        return declared is not null && declared.HandlerType != registration.HandlerType
+            ? $"module '{module}', handler replaced by {registration.HandlerType.Name} through ReplaceHandler"
+            : $"module '{module}'";
+    }
+
     private ReceiptDocument BuildReceipt(
         CommandInvocation invocation,
         string operation,
@@ -430,7 +484,20 @@ public sealed class CommandRunner(
             })
             .ToArray();
 
-        var code = registry.Errors.FindByName(receipt.ResultCode) ?? CoreErrorCodes.Ok;
+        var code = registry.Errors.FindByName(receipt.ResultCode);
+        if (code is null)
+        {
+            // A receipt committed before the catalog check (or a code since removed from its module): the commit stands, so
+            // the replay still answers, with OK as before.
+            logger.LogWarning(
+                "Replay of {Operation} receipt {ReceiptId}: committed error code '{ResultCode}' is not in the error-code catalog; replying OK. " +
+                "Fix: keep the code in its module's ErrorCodeSet (API-11).",
+                receipt.Operation,
+                receipt.ReceiptId,
+                receipt.ResultCode);
+            code = CoreErrorCodes.Ok;
+        }
+
         return new CommandExecution(code, receipt.ReceiptId, updates, Convert.FromBase64String(receipt.ResultCompact), true, config.ConfigVersion);
     }
 
