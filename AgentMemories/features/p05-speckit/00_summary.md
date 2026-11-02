@@ -177,8 +177,12 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
 - HTML docs: footer "Đúng với commit 175df65 + sửa sau review"; DoD for later slices: update `docs/html` when the
   pipeline, hosting or deploy changes.
 
-## Current state (2026-10-31)
+## Current state (2026-11-02) — SESSION ENDED, framework work PAUSED
 
+- **Owner ended the framework session on 2026-11-02.** Framework work restarts only when the owner brings
+  improvements from the zh-pvp-server pilot. `main` = `cd7ff0b` (docs only after tag `v0.6.0` = `2ba963f`), pushed,
+  working tree clean (only the owner's untracked `tasks/`). No slice in progress, no untagged code change.
+- **Restart procedure for improvements** (see "How to resume" step 0).
 - **PAUSED 2026-10-31 at owner request.** `main` fast-forwarded to `13c043a` (010 + 011 + 012 + docs-html-guides)
   and pushed. Last full suite incl. Couchbase: 1190 tests, 0 fail, 7 skip.
 - Merged into main: `010-jobs-account-deletion` (5c88392), `011-local-env` (ab17cc0), `012-analytics-audit`
@@ -205,6 +209,21 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
 
 ## How to resume
 
+0. **Improvement round from a consumer game** (the expected way this session restarts):
+   - Read the game's friction log `E:\ProjGits\zh-pvp-server\docs\framework-feedback\FRICTION_LOG.md` (status
+     `framework-candidate` / open entries, triage notes, metrics) and its `docs/framework-feedback/UPGRADE.md`.
+     Do not edit the game repo from here; the game session owns it.
+   - Confirm with the owner which FG entries to take. Suggested first slice "consumer-readiness": FG-010 (HIGH
+     security, refuse Dev profile whenever `!AllowsDevelopmentTools`), FG-001/FG-006 (reusable sample-free test
+     helpers + public fake `ICommandContext`), FG-003 (empty root `Directory.Build.targets`), FG-004 (relative
+     `IsTestProject` check), FG-002 (run-local `-HostProject`/`-LaunchProfile`), FG-007 (version stamping),
+     FG-011 (reserve a game error band in module-authoring), FG-012 (02-them-command for external consumers).
+     FG-005/FG-008/FG-009 belong with task 4 (packaging/NuGet).
+   - Run it as a normal slice (step 3), then: merge main, annotated tag `v0.6.x`/`v0.7.0` with release notes naming
+     the FG ids fixed, push the tag, and update the UPM URL tag in docs if the Unity SDK changed.
+   - Tell the owner the new tag; the zh-pvp-server session bumps its submodule (`chore: bump framework to <tag>`),
+     removes the matching `FRAMEWORK-GAP` workarounds and marks the entries `fixed-in-<tag>`.
+   - Other pending owner decisions (013 giftcode, Apple sandbox, replicas/sign-off roles) are listed above.
 1. Read this file, then `specs/012-analytics-audit/{spec,plan,tasks}.md` as the latest template for slice docs.
 2. Branch the next slice from `main` (010–012 + docs merged 2026-10-31).
 3. Per slice: spec + plan + tasks (commit `docs: add spec, plan and tasks for 0NN …`) → implement → full tests incl.
