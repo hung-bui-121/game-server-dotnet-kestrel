@@ -190,6 +190,18 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
   deploy-checklist sign-off roles? Orchestrator decisions awaiting owner override: payment fsync before ack
   (SC-004 +≤100 ms), analytics Enabled without sink outside dev fails startup, economy claim key fixed inside 012.
 - Next work (only when owner says so): 013 giftcode, branched from main.
+- **2026-11-02: first tag + first consumer.** Annotated tag `v0.6.0` on `2ba963f` pushed (release notes list the
+  not-ready-for-Live items). First consumer: game repo `E:\ProjGits\zh-pvp-server` (company GitLab, no remote yet)
+  uses this repo as submodule `framework/` pinned to the tag. Its friction log
+  `docs/framework-feedback/FRICTION_LOG.md` (FG-001..FG-012) is the input for future framework slices. Most
+  important: **FG-010 (HIGH, security)** Dev-profile (cheat) endpoints are refused only in Production
+  (`EndpointSecurityValidator.cs:86`), accepted in Staging with a player bearer (`ProfileEnforcementMiddleware`
+  default branch, `CommandRunner.cs:154` Dev => true). Others: test helpers not reusable outside (FG-001), run-local
+  hardcoded to SampleHost (FG-002), no root `Directory.Build.targets` seal (FG-003), path-based `IsTestProject`
+  (FG-004), File/InMemory stores in Platform.Testing (FG-005), no `ICommandContext` fake (FG-006), no version
+  stamping (FG-007), consumer build settings (FG-008), host composition copied (FG-009), no error band for games
+  (FG-011), `02-them-command.html` written for in-repo modules (FG-012). Framework changes go through a slice here,
+  then a new tag; the game bumps the submodule.
 
 ## How to resume
 
