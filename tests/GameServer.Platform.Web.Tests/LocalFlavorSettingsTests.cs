@@ -8,8 +8,8 @@ namespace GameServer.Platform.Web.Tests;
 
 /// <summary>
 /// Slice 013 T028 (FR-012): every key of <see cref="LocalFlavorSettings.Keys"/> binds to an option property (walked like the
-/// configuration binder: case-insensitive names, the longest matching section), and <see cref="LocalFlavorSettings.For"/> sets
-/// exactly that list.
+/// configuration binder: case-insensitive names, the longest matching section), is named in the consumer guide (T070), and
+/// <see cref="LocalFlavorSettings.For"/> sets exactly that list.
 /// </summary>
 public sealed class LocalFlavorSettingsTests
 {
@@ -30,6 +30,16 @@ public sealed class LocalFlavorSettingsTests
         var unresolved = LocalFlavorSettings.Keys.Where(key => !Resolves(key)).ToList();
 
         unresolved.ShouldBeEmpty($"LocalFlavorSettings.Keys names keys that bind to no option property: {string.Join(", ", unresolved)}.");
+    }
+
+    [Fact]
+    public void Every_key_is_named_in_the_consumer_guide()
+    {
+        var guide = File.ReadAllText(Path.Combine(RepositoryRoot(), "docs", "guides", "consumer-guide.md"));
+
+        var missing = LocalFlavorSettings.Keys.Where(key => !guide.Contains($"`{key}`", StringComparison.Ordinal)).ToList();
+
+        missing.ShouldBeEmpty($"docs/guides/consumer-guide.md does not name these LocalFlavorSettings keys: {string.Join(", ", missing)}.");
     }
 
     [Theory]
@@ -66,6 +76,19 @@ public sealed class LocalFlavorSettingsTests
 
         on["GameServer:Outbox:SweeperEnabled"].ShouldBe("true");
         on.Where(p => p.Key != "GameServer:Outbox:SweeperEnabled").ShouldBe(off.Where(p => p.Key != "GameServer:Outbox:SweeperEnabled"), ignoreOrder: true);
+    }
+
+    private static string RepositoryRoot()
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "GameServer.slnx")))
+            {
+                return directory.FullName;
+            }
+        }
+
+        throw new InvalidOperationException("GameServer.slnx not found above " + AppContext.BaseDirectory);
     }
 
     private static bool Resolves(string key)

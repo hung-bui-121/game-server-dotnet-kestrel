@@ -1,6 +1,11 @@
+using System.Diagnostics;
+using GameServer.Platform;
 using GameServer.Tests.Shared;
 using Microsoft.Extensions.DependencyInjection;
+using OpenTelemetry;
 using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using Shouldly;
 
 namespace GameServer.Observability.Tests;
@@ -56,6 +61,35 @@ public sealed class TelemetryTests
         }
     }
 
+    /// <summary>Slice 013 T063 (FR-053, US6-4): exported spans and metrics carry the game and framework versions on the resource.</summary>
+    [Fact]
+    public async Task Exported_spans_and_metrics_carry_service_version_and_the_framework_version()
+    {
+        var spans = new ResourceCapture<Activity>();
+        var metrics = new ResourceCapture<Metric>();
+        await using var observed = await ObservedHost.StartAsync(services: s =>
+        {
+            s.ConfigureOpenTelemetryTracerProvider(t => t.AddProcessor(new SimpleActivityExportProcessor(spans)));
+            s.ConfigureOpenTelemetryMeterProvider(m => m.AddReader(new BaseExportingMetricReader(metrics)));
+        });
+        var runtime = observed.Host.Services.GetRequiredService<GameServerRuntimeInfo>();
+        await observed.Host.Client().LoginAsync(IdentityHttp.NewLocalId(), IdentityHttp.NewSecret());
+        observed.Host.Services.GetRequiredService<MeterProvider>().ForceFlush().ShouldBeTrue();
+
+        foreach (var resource in new[] { spans.Resource, metrics.Resource })
+        {
+            resource.ShouldNotBeNull("nothing was exported");
+            var attributes = resource.Attributes.ToDictionary(a => a.Key, a => a.Value);
+            attributes["service.name"].ShouldBe("game-server-" + runtime.GameId);
+            attributes["service.instance.id"].ShouldBe("it-1");
+            attributes["service.version"].ShouldBe(runtime.GameVersion);
+            attributes["gameserver.framework.version"].ShouldBe(GameServerVersion.FrameworkInformational);
+            attributes["deployment.environment.name"].ShouldBe(runtime.EnvironmentId);
+        }
+
+        runtime.GameVersion.ShouldNotBe("unknown");
+    }
+
     private static IEnumerable<KeyValuePair<string, object?>> Tags(MetricPoint point)
     {
         foreach (var tag in point.Tags)
@@ -66,4 +100,21 @@ public sealed class TelemetryTests
 
     private static string? Tag(MetricPoint point, string key) =>
         Tags(point).FirstOrDefault(t => t.Key == key).Value?.ToString();
+
+    /// <summary>Remembers the resource of the provider that exported a batch, as the OTLP exporter reads it.</summary>
+    private sealed class ResourceCapture<T> : BaseExporter<T>
+        where T : class
+    {
+        public Resource? Resource { get; private set; }
+
+        public override ExportResult Export(in Batch<T> batch)
+        {
+            if (batch.Count > 0)
+            {
+                Resource = ParentProvider?.GetResource();
+            }
+
+            return ExportResult.Success;
+        }
+    }
 }

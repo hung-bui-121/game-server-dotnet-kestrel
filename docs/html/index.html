@@ -496,7 +496,7 @@ details.dg-text[open] > summary { border-bottom: 1px solid var(--border); margin
 <p class="eyebrow">Tài liệu</p>
 <h1>Game Server Framework (.NET 10 / Kestrel)</h1>
 <p class="lead">Backend dùng chung cho nhiều game mobile Unity — server-authoritative, mỗi command là một transaction Couchbase.</p>
-<p class="meta">Đúng với commit <code>175df65</code>. Ba trang dưới đây được dựng từ nội dung đã đối chiếu với code ở commit này.</p>
+<p class="meta">Đúng với framework v0.7.0 (chưa phát hành; cập nhật 2026-11-03). Ba trang dưới đây được dựng từ nội dung đã đối chiếu với code.</p>
 </header>
 
 <section class="doc-section" aria-labelledby="ba-trang">
@@ -505,19 +505,19 @@ details.dg-text[open] > summary { border-bottom: 1px solid var(--border); margin
 <article class="card">
 <p class="audience">Trang 1 · Mọi người, dev mới vào dự án</p>
 <h2><a href="01-gioi-thieu.html">Giới thiệu framework</a></h2>
-<p>Backend dùng chung cho nhiều game mobile Unity: server là nguồn sự thật, client gửi <em>hành động</em> chứ không gửi kết quả; giao tiếp HTTP request–response (Protobuf cho game, JSON cho GM). Trang trình bày phạm vi P0 / P0.5 / P1 và trạng thái tại commit 175df65, cấu trúc repo, kiến trúc (sơ đồ khối, phân tầng project và luật phụ thuộc do test kiến trúc kiểm), mô hình module 2 project, mô hình “một command = một transaction” với receipt/replay và outbox, security profile, gate và giới hạn tải, lưu trữ, flavor, quan sát, Unity SDK — cùng bảng điểm mạnh kèm bằng chứng và các giới hạn hiện tại.</p>
+<p>Backend dùng chung cho nhiều game mobile Unity: server là nguồn sự thật, client gửi <em>hành động</em> chứ không gửi kết quả; giao tiếp HTTP request–response (Protobuf cho game, JSON cho GM). Trang trình bày phạm vi P0 / P0.5 / P1 và trạng thái (framework v0.7.0, chưa phát hành), cấu trúc repo, kiến trúc (sơ đồ khối, phân tầng project và luật phụ thuộc do test kiến trúc kiểm), mô hình module 2 project, mô hình “một command = một transaction” với receipt/replay và outbox, security profile, gate và giới hạn tải, lưu trữ, flavor, quan sát (request log, version), test kit cho repo game, Unity SDK — cùng bảng điểm mạnh kèm bằng chứng và các giới hạn hiện tại.</p>
 <a class="card-cta" href="01-gioi-thieu.html">Đọc trang giới thiệu →</a>
 </article>
 <article class="card">
 <p class="audience">Trang 2 · Dev backend viết module của game</p>
 <h2><a href="02-them-command.html">Thêm, bỏ, thay command</a></h2>
-<p>Ý quan trọng nhất: handler <strong>không</strong> đọc hay ghi database — <code>CommandRunner</code> đọc trước các aggregate khai trong <code>Touches</code>/<code>Reads</code>, rồi ghi với <code>rev + 1</code> cùng receipt trong một transaction. Trang có bảng đối chiếu từng bước với code, sơ đồ sequence một command, đường đi chi tiết qua middleware và runner, walkthrough code thật của <code>Sample.Counter</code>, ví dụ thêm <code>counter.reset</code>, checklist thêm command, cách bỏ/tắt command, thay handler/policy, command GM và các lỗi thường gặp.</p>
+<p>Ý quan trọng nhất: handler <strong>không</strong> đọc hay ghi database — <code>CommandRunner</code> đọc trước các aggregate khai trong <code>Touches</code>/<code>Reads</code>, rồi ghi với <code>rev + 1</code> cùng receipt trong một transaction. Trang có bảng đối chiếu từng bước với code, sơ đồ sequence một command, đường đi chi tiết qua middleware và runner, walkthrough code thật của <code>Sample.Counter</code> (mỗi bước đăng ký host và test có hai biến thể: trong repo framework và trong repo game với test kit, <code>CommandContextDouble</code>), dải error code của game 50000–89999, ví dụ thêm <code>counter.reset</code>, checklist thêm command, cách bỏ/tắt command, thay handler/policy, command GM và các lỗi thường gặp.</p>
 <a class="card-cta" href="02-them-command.html">Đọc hướng dẫn command →</a>
 </article>
 <article class="card">
 <p class="audience">Trang 3 · DevOps / SRE, DBA Couchbase, security</p>
 <h2><a href="03-deploy.html">Deploy cho DevOps</a></h2>
-<p>Artifact <code>dotnet publish</code> và content root, flavor và biến môi trường, secret, Couchbase (bucket, replica, TLS, hai identity RBAC, <code>--provision</code> với exit code 0/1/2), reverse proxy và <code>ForwardedHeaders</code>, health probe và graceful shutdown, log/analytics trên đĩa, OTLP và cảnh báo, Data Protection, GM SSO/CORS, IAP, job/lease, NTP, luồng deploy và rollback. Phần chưa có công cụ hay drill được đánh dấu → ops-readiness (015); checklist 63 mục in được để ký.</p>
+<p>Artifact <code>dotnet publish</code> và content root, flavor và biến môi trường, secret, Couchbase (bucket, replica, TLS, hai identity RBAC, <code>--provision</code> với exit code 0/1/2), reverse proxy và <code>ForwardedHeaders</code>, health probe và graceful shutdown, log/analytics trên đĩa (request log và console theo flavor, dung lượng), OTLP, version và cảnh báo, Data Protection, GM SSO/CORS, IAP, job/lease, NTP, luồng deploy và rollback. Phần chưa có công cụ hay drill được đánh dấu → ops-readiness (015); checklist 63 mục in được để ký.</p>
 <a class="card-cta" href="03-deploy.html">Đọc hướng dẫn deploy →</a>
 </article>
 </div>
@@ -535,6 +535,7 @@ details.dg-text[open] > summary { border-bottom: 1px solid var(--border); margin
 <h2 id="tai-lieu-repo">Tài liệu Markdown liên quan trong repo <a class="anchor" href="#tai-lieu-repo" aria-label="Liên kết tới mục này">#</a></h2>
 <ul>
 <li><a class="path" href="../../README.md"><code>README.<wbr>md</code></a></li>
+<li><a class="path" href="../../docs/guides/consumer-guide.md"><code>docs/<wbr>guides/<wbr>consumer-guide.<wbr>md</code></a> (repo game dùng framework làm submodule, tiếng Anh)</li>
 <li><a class="path" href="../../docs/guides/module-authoring.md"><code>docs/<wbr>guides/<wbr>module-authoring.<wbr>md</code></a></li>
 <li><a class="path" href="../../docs/guides/environments-and-local-run.md"><code>docs/<wbr>guides/<wbr>environments-and-local-run.<wbr>md</code></a></li>
 <li><a class="path" href="../../docs/guides/local-real-env-testing.md"><code>docs/<wbr>guides/<wbr>local-real-env-testing.<wbr>md</code></a></li>
@@ -548,7 +549,7 @@ details.dg-text[open] > summary { border-bottom: 1px solid var(--border); margin
 <nav class="pager" aria-label="Chuyển trang"><a class="next" href="01-gioi-thieu.html" rel="next"><span class="dir">Trang sau →</span><span class="ttl">Giới thiệu framework</span></a></nav>
 </main>
 </div>
-<footer class="site-footer"><p>Đúng với commit <code>175df65</code> + sửa sau review (2026-10-31) — cập nhật khi đổi pipeline, hosting hoặc deploy.</p></footer>
+<footer class="site-footer"><p>Đúng với framework v0.7.0 (chưa phát hành), cập nhật 2026-11-03 — cập nhật khi đổi pipeline, hosting hoặc deploy.</p></footer>
 <script>
 /* Progressive enhancement only — every page reads fine without this script. */
 (function () {

@@ -1,8 +1,10 @@
 # Môi trường (flavor) và chạy local
 
+> Đúng với framework v0.7.0 (chưa phát hành).
+
 Một bản build chạy ở mọi môi trường; môi trường được chọn bằng **flavor** = tên môi trường của host. Hướng dẫn này gồm:
 chọn flavor, biến môi trường bắt buộc, chạy local một lệnh, file store, cấu hình Couchbase, TLS, quyền RBAC và lệnh
-provisioning, file analytics (mục 7), request log và console (mục 8). Hợp đồng vận hành (switch, exit code, tiền tố output): `docs/pcr/platform.md` mục 17
+provisioning, file analytics (mục 7), request log và console (mục 8), phiên bản đang chạy (mục 9). Hợp đồng vận hành (switch, exit code, tiền tố output): `docs/pcr/platform.md` mục 17
 (analytics: mục 18). Nhiều instance, tải và
 drill sự cố trên Couchbase thật: `docs/guides/local-real-env-testing.md`.
 
@@ -555,3 +557,21 @@ dung lượng volume log), hoặc ship file log ra ngoài; cân nhắc `LevelOve
 `req=` là 8 ký tự đầu của `X-Request-Id` (tìm cùng request trong file log bằng `RequestId`). Game muốn hành vi riêng theo request
 (metric, cảnh báo) dựng trên `HttpContext.RequestOutcome()` trong middleware đặt trước `UseGameServer` (PCR mục 13), không parse
 body response.
+
+## 9. Phiên bản đang chạy (slice 013)
+
+Framework khai một version SemVer duy nhất (`GameServerFrameworkVersion` trong `Directory.Build.props`, bằng `version` của
+package Unity `sdk/unity/com.gameserver.client/package.json`), đóng vào mọi assembly của framework: assembly và file version
+`0.7.0.0`, informational version `0.7.0+{git sha}`. Version của game là `<Version>` của project host (entry assembly). Đọc ở ba
+chỗ:
+
+| Ở đâu | Nội dung |
+| --- | --- |
+| Dòng log khi start (Information, category `GameServer.Startup`, sau khi validation qua; không có ở `--provision`) | `Starting sample 0.7.0+9c1e… on framework 0.7.0+9c1e…: environment local (Development), instance host-1.` |
+| OpenTelemetry resource | `service.version` = version game, `gameserver.framework.version` = version framework, `service.instance.id` = instance id (như tên file log) |
+| GM `GET /gm/v1/ops/version` (permission `ops.read`) | `gameId`, `environmentId`, `instanceId`, `gameVersion`, `frameworkVersion` của instance trả lời; sau load balancer gọi lại để thấy instance khác (`docs/pcr/gm.md`) |
+
+Endpoint Public và health probe (`/health/live`, `/health/ready`, `/v1/time`) không bao giờ lộ version. Trong code:
+`GameServerVersion.Framework` / `FrameworkInformational`, `GameServerRuntimeInfo` (singleton, cũng là
+`GameServerBuilder.Runtime`). Phát hành: annotated tag `v{GameServerFrameworkVersion}` (ví dụ `v0.7.0`); props và
+`package.json` tăng cùng lúc (`VersionTests` fail nếu lệch).

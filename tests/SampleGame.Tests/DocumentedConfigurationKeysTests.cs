@@ -10,7 +10,7 @@ namespace SampleGame.Tests;
 
 /// <summary>
 /// Slice 011 SC-008: every configuration key the operator docs name exists. The back-ticked keys of the environments guide,
-/// PCR platform §13, §17 and §18, the analytics guide and the README that start with <c>GameServer:</c>, <c>Couchbase:</c> or
+/// PCR platform §13, §17, §18 and §19, the analytics guide, the consumer guide and the README that start with <c>GameServer:</c>, <c>Couchbase:</c> or
 /// <c>FileStore:</c> must each resolve, by reflection, to a bound (publicly settable) property of <see cref="GameServerOptions"/>,
 /// <see cref="CouchbaseOptions"/>, <see cref="FileStoreOptions"/> or (slice 012, its own section bound separately)
 /// <see cref="AnalyticsOptions"/>; a key resolves against the <b>longest</b> matching section. A key of a <c>GameServer</c> subsection written without its <c>GameServer:</c> prefix
@@ -23,6 +23,8 @@ public sealed partial class DocumentedConfigurationKeysTests
     private const string PcrSection = "## 17.";
     private const string ObservabilityPcrSection = "## 13.";
     private const string AnalyticsPcrSection = "## 18.";
+    private const string ConsumerPcrSection = "## 19.";
+    private const string ConsumerGuide = "docs/guides/consumer-guide.md";
     private const string AnalyticsGuide = "docs/guides/analytics.md";
     private const string Readme = "README.md";
     private const int MinimumKeysPerDocument = 10;
@@ -52,7 +54,7 @@ public sealed partial class DocumentedConfigurationKeysTests
     private static readonly string Root = RepositoryRoot();
 
     public static TheoryData<string> Documents() =>
-        new(Guide, Pcr + " " + PcrSection, Pcr + " " + AnalyticsPcrSection, Pcr + " " + ObservabilityPcrSection, AnalyticsGuide, Readme);
+        new(Guide, Pcr + " " + PcrSection, Pcr + " " + AnalyticsPcrSection, Pcr + " " + ObservabilityPcrSection, Pcr + " " + ConsumerPcrSection, AnalyticsGuide, ConsumerGuide, Readme);
 
     [Theory]
     [MemberData(nameof(Documents))]

@@ -1,6 +1,9 @@
 # Viết module cho Game Server Framework
 
-Hướng dẫn này dùng `modules/Sample.Counter` làm ví dụ đầy đủ. Template rỗng ở `templates/module/`.
+> Đúng với framework v0.7.0 (chưa phát hành).
+
+Hướng dẫn này dùng `modules/Sample.Counter` làm ví dụ đầy đủ. Template rỗng ở `templates/module/`. Module viết trong repo
+game (framework là submodule): xem thêm [consumer-guide.md](consumer-guide.md).
 
 ## 1. Hai project
 
@@ -55,9 +58,10 @@ command trả `INTERNAL` và không commit gì (receipt lưu code theo tên). M�
 public static class MyErrors
 {
     // Khai ErrorCode TRƯỚC ErrorCodeSet liệt kê nó: static field khởi tạo theo thứ tự khai báo.
-    public static readonly ErrorCode NotAllowed = new(50001, "MYTHING_NOT_ALLOWED", 200, false, "Not allowed.");
+    // Ví dụ dùng dải của template (90000–90099). Module của game chọn dải trong 50000–89999 (ErrorCodeBands).
+    public static readonly ErrorCode NotAllowed = new(90001, "MYTHING_NOT_ALLOWED", 200, false, "Not allowed.");
 
-    public static ErrorCodeSet All { get; } = new(50000, 50099, NotAllowed);
+    public static ErrorCodeSet All { get; } = new(90000, 90099, NotAllowed);
 }
 
 public ModuleDescriptor Describe() => new()
@@ -74,9 +78,23 @@ public ModuleDescriptor Describe() => new()
 };
 ```
 
-- Dải error code không được chồng nhau: core 0–999; đã dùng: `sample.counter` 10000–10099, `economy` 11000–11099,
-  `iap` 12000–12099, `gm` 13000–13099, `identity` 14000–14099, `sample.game` 40000–40099, template (`template.module`)
-  90000–90099. Chồng dải, trùng tên/số → startup fail. `ErrorCodeSet` có phần tử null (khai `ErrorCode` dưới set) →
+- Dải error code không được chồng nhau:
+
+  | Dải | Chủ |
+  | --- | --- |
+  | 0–999 | core |
+  | 10000–10099 | `sample.counter` |
+  | 11000–11099 | `economy` |
+  | 12000–12099 | `iap` |
+  | 13000–13099 | `gm` |
+  | 14000–14099 | `identity` |
+  | 40000–40099 | `sample.game` |
+  | **50000–89999** | **module của game** (`ErrorCodeBands.GameStart`–`GameEnd`); mỗi module game chọn một dải con |
+  | 90000–90099 | template (`template.module`), ví dụ trong tài liệu |
+  | 90000–99999 | framework giữ chỗ (`ErrorCodeBands.FrameworkReservedStart`–`FrameworkReservedEnd`) |
+
+  Module của framework (core, built-in, sample, template) không bao giờ dùng dải game: `ErrorCodeBandTests` fail, nêu tên
+  module và dải. Chồng dải, trùng tên/số → startup fail. `ErrorCodeSet` có phần tử null (khai `ErrorCode` dưới set) →
   `AddModule` ném `TypeInitializationException`, bên trong là `ArgumentException` nêu cách sửa.
 - Mọi collection trong `Collections` và mọi collection đích của `OutboxProjections` phải có đúng một `Deletion`
   (`NoPlayerData`, `Anonymize`, `Remove`, `ModuleStep` + `DeletionSteps`), nếu không startup fail; `pa_*` do platform xoá
@@ -120,7 +138,51 @@ transaction).
 
 ## 8. Test
 
-- Unit: `GameServer.Platform.Testing` (`InMemoryDocumentStore`, `FakeClock`, `StoreFaultInjector`).
-- HTTP: xem `tests/Shared/TestHost.cs`; `GAMESERVER_TEST_STORE=File` chạy cùng test trên file store (slice 011).
-- Cập nhật PCR của module (`docs/pcr/<module>.md`): aggregate, bảng command → Touches/Reads, error codes,
-  capability thay được.
+Test kit của framework là project `src/GameServer.TestKit` (namespace `GameServer.TestKit`): `TestHost`,
+`LocalFlavorFactory<TEntryPoint>`, `CommandContextDouble`, `TestGameConfig`, `ProtobufHttp`, `IdentityHttp`,
+`TestStores`, `GmBrowser`. Store và clock giả nằm trong `GameServer.Platform.Testing` (`InMemoryDocumentStore`,
+`FakeClock`, `StoreFaultInjector`). `GAMESERVER_TEST_STORE=File` chạy cùng test trên file store (slice 011).
+
+**Trong repo framework** (module ở `modules/` hoặc `samples/`, test trong `GameServer.slnx`): test project dưới `tests/`
+link `tests/Shared/*.cs` và gọi `SampleTestHost.StartAsync(...)` (mặc định Identity + `Sample.Counter`, config mẫu)
+— xem `tests/Sample.Counter.Tests`.
+
+**Trong repo game** (framework là submodule, xem [consumer-guide.md](consumer-guide.md) mục 5): test project tham chiếu
+kit, không link file nào của `tests/Shared`:
+
+```xml
+<ProjectReference Include="$(GameServerRoot)src/GameServer.TestKit/GameServer.TestKit.csproj" />
+<ProjectReference Include="../../src/Fixture.Game/Fixture.Game.csproj" />
+<ProjectReference Include="../../src/Fixture.Host/Fixture.Host.csproj" />
+```
+
+Handler test với `CommandContextDouble` (không host, store, DI; cùng luật truy cập với runner; ví dụ copy từ
+`tests/ConsumerFixture/tests/Fixture.Tests/SaveNoteHandlerTests.cs`):
+
+```csharp
+private static CommandContextDouble Context() =>
+    CommandContextDouble.Create(SaveNoteHandler.Operation, new IdentityModule(), new FixtureModule()).AsPlayer("p_1").WithConfig(Rules);
+
+[Fact]
+public async Task Save_replaces_the_note_and_the_runner_would_commit_it()
+{
+    var context = Context().Seed(FixtureModuleDefinition.NotesAggregate, new NotesState { Text = "old", Saves = 1 });
+
+    var outcome = await new SaveNoteHandler().HandleAsync(new SaveNote("new"), context);
+
+    context.CheckCommit(outcome).ShouldBeEmpty();
+    outcome.Result.ShouldBe(new SaveNoteResult("new", 2));
+    context.Written<NotesState>(FixtureModuleDefinition.NotesAggregate).ShouldBe(new NotesState { Text = "new", Saves = 2 });
+}
+```
+
+- `Create(operation, modules…)`: truyền mọi module có aggregate mà command `Touches`/`Reads` (ví dụ `new IdentityModule()`
+  cho `profile`). Cấu hình (`AsPlayer`, `AsGm`, `At`, `WithConfig`, `Seed`, `SeedClaim`) trước lần gọi handler đầu tiên.
+- `CheckCommit(outcome)` trả các lỗi mà runner sẽ báo khi commit (code không có trong catalog, code commit ≠ HTTP 200,
+  thiếu audit GM); rỗng = runner sẽ commit.
+- Host test: `TestHost.StartAsync(modules: b => b.AddModule<IdentityModule>().AddModule<MyModule>())` (mặc định chỉ
+  Identity, config rỗng); flavor thật của host game: `new LocalFlavorFactory<Program>()` (thư mục tạm riêng, xoá khi
+  dispose).
+
+Cập nhật PCR của module (`docs/pcr/<module>.md`): aggregate, bảng command → Touches/Reads, error codes, capability
+thay được.

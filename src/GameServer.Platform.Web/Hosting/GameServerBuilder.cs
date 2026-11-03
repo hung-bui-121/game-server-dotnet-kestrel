@@ -1,3 +1,4 @@
+using System.Reflection;
 using GameServer.Config;
 using GameServer.Errors;
 using GameServer.Modules;
@@ -48,11 +49,12 @@ public sealed class ModuleRegistrationOptions
 /// <summary>Composition root API of the framework (ARC-03): one call per module.</summary>
 public sealed class GameServerBuilder
 {
-    internal GameServerBuilder(WebApplicationBuilder host, GameServerOptions options, ModuleRegistry registry)
+    internal GameServerBuilder(WebApplicationBuilder host, GameServerOptions options, ModuleRegistry registry, GameServerRuntimeInfo runtime)
     {
         Host = host;
         Options = options;
         Registry = registry;
+        Runtime = runtime;
     }
 
     public WebApplicationBuilder Host { get; }
@@ -62,6 +64,9 @@ public sealed class GameServerBuilder
     public GameServerOptions Options { get; }
 
     public ModuleRegistry Registry { get; }
+
+    /// <summary>Identity and versions of this host, resolved by <c>AddGameServer</c> (also registered in DI).</summary>
+    public GameServerRuntimeInfo Runtime { get; }
 
     public GameServerBuilder AddModule<TModule>(Action<ModuleRegistrationOptions>? configure = null)
         where TModule : IGameModule, new() =>
@@ -114,6 +119,11 @@ internal sealed class TestAuthenticationMarker;
 
 public static class GameServerBuilderExtensions
 {
+    private const string UnknownGame = "unknown";
+
+    /// <summary>Instance id key (section <c>Observability</c>), read here so every channel of the host shares one value.</summary>
+    private const string InstanceIdKey = "Observability:InstanceId";
+
     /// <summary>Registers the framework services and binds <see cref="GameServerOptions"/> from <c>GameServer</c>.</summary>
     public static GameServerBuilder AddGameServer(this WebApplicationBuilder builder)
     {
@@ -126,9 +136,11 @@ public static class GameServerBuilderExtensions
 
         var registry = new ModuleRegistry();
         var services = builder.Services;
+        var runtime = ResolveRuntime(builder, options);
 
         services.AddSingleton(options);
         services.AddSingleton(deployment);
+        services.AddSingleton(runtime);
         services.AddSingleton<IStartupCheck, DeploymentIdentityCheck>();
         services.AddSingleton(registry);
         services.TryAddSingleton<IClock, GameServer.Time.SystemClock>();
@@ -187,7 +199,42 @@ public static class GameServerBuilderExtensions
         services.AddHostedService<DrainDelayService>();
 
         AddLimits(builder, options);
-        return new GameServerBuilder(builder, options, registry);
+        return new GameServerBuilder(builder, options, registry, runtime);
+    }
+
+    /// <summary>
+    /// FR-052 (research R14): the game is the entry point's assembly, named by <see cref="IHostEnvironment.ApplicationName"/> (also
+    /// under <c>WebApplicationFactory&lt;TEntryPoint&gt;</c>, where the process entry assembly is the test runner).
+    /// </summary>
+    private static GameServerRuntimeInfo ResolveRuntime(WebApplicationBuilder builder, GameServerOptions options)
+    {
+        var game = GameAssembly(builder.Environment.ApplicationName);
+        return new GameServerRuntimeInfo(
+            options.GameId,
+            options.EnvironmentId,
+            options.DeploymentEnvironment,
+            GameServerRuntimeInfo.ResolveInstanceId(builder.Configuration[InstanceIdKey]),
+            game?.GetName().Name ?? UnknownGame,
+            game is null ? UnknownGame : GameServerVersion.InformationalOf(game),
+            GameServerVersion.FrameworkInformational);
+    }
+
+    /// <summary>The assembly named <paramref name="applicationName"/>, else the process entry assembly, else null.</summary>
+    private static Assembly? GameAssembly(string? applicationName)
+    {
+        if (!string.IsNullOrEmpty(applicationName))
+        {
+            try
+            {
+                return Assembly.Load(new AssemblyName(applicationName));
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or FileLoadException or BadImageFormatException or ArgumentException)
+            {
+                // A custom ApplicationName that names no loadable assembly: fall back to the entry assembly.
+            }
+        }
+
+        return Assembly.GetEntryAssembly();
     }
 
     /// <summary>

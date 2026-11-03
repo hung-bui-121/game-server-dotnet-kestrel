@@ -20,9 +20,14 @@ public static class GmTestHost
         Action<Dictionary<string, string?>>? settings = null,
         GameServer.Platform.Testing.InMemoryDocumentStore? store = null,
         GameServer.Platform.Testing.FakeClock? clock = null,
-        Action<Microsoft.Extensions.DependencyInjection.IServiceCollection>? services = null) =>
+        Action<Microsoft.Extensions.DependencyInjection.IServiceCollection>? services = null,
+        Action<GameServer.Platform.Web.Hosting.GameServerBuilder>? extra = null) =>
         SampleTestHost.StartAsync(
-            b => GameHttp.FullGame(b.AddModule<GmModule>()),
+            b =>
+            {
+                GameHttp.FullGame(b.AddModule<GmModule>());
+                extra?.Invoke(b);
+            },
             values =>
             {
                 Seed(values, 0, "support", ["Support"]);

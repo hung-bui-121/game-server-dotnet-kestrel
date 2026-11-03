@@ -9,7 +9,7 @@ namespace GameServer.Architecture.Tests;
 /// Slice 013 T051 (FR-030..FR-032, US4): framework projects evaluate the same inside a consumer repository. The framework's
 /// build inputs and project files are copied below a parent folder named <c>tests</c> that holds a hostile
 /// <c>Directory.Build.props</c> and <c>Directory.Build.targets</c>; every project must see neither, and the test-project
-/// rule must follow the framework root, not the absolute path.
+/// rule must follow the framework root, not the absolute path; every project keeps the declared framework version (FR-050).
 /// </summary>
 public sealed class BuildSealingTests : IDisposable
 {
@@ -53,12 +53,14 @@ public sealed class BuildSealingTests : IDisposable
             new ParallelOptions { MaxDegreeOfParallelism = MaxParallelEvaluations, CancellationToken = TestContext.Current.CancellationToken },
             async (project, _) => results[project] = await EvaluateAsync(dotnet!, project));
 
+        var declaredVersion = RepositoryTooling.DeclaredFrameworkVersion();
         var bannedSymbols = Path.Combine(Framework, "BannedSymbols.txt");
         foreach (var project in projects)
         {
             var evaluation = results[project];
             evaluation.Get(HostileTargets).ShouldBeEmpty($"{project}: a Directory.Build.targets above the framework root leaked into it (FR-030)");
             evaluation.Get(HostileProps).ShouldBeEmpty($"{project}: a Directory.Build.props above the framework root leaked into it");
+            evaluation.Get("Version").ShouldBe(declaredVersion, $"{project} carries the declared framework version (FR-050)");
             if (project.StartsWith("tests/", StringComparison.Ordinal))
             {
                 evaluation.Get("IsTestProject").ShouldBe("true", $"{project} is under the framework's tests/ folder (FR-031)");
@@ -109,7 +111,7 @@ public sealed class BuildSealingTests : IDisposable
         string[] arguments =
         [
             "msbuild", project, "-nologo", "-nodeReuse:false",
-            "-getProperty:IsTestProject", "-getProperty:IsFrameworkCode", $"-getProperty:{HostileTargets}", $"-getProperty:{HostileProps}",
+            "-getProperty:IsTestProject", "-getProperty:IsFrameworkCode", "-getProperty:Version", $"-getProperty:{HostileTargets}", $"-getProperty:{HostileProps}",
             "-getItem:AdditionalFiles",
         ];
         var result = await RepositoryTooling.RunAsync(dotnet, arguments, Framework, EvaluationTimeout);

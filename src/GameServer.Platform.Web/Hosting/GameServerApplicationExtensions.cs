@@ -20,7 +20,7 @@ namespace GameServer.Platform.Web.Hosting;
 
 public static class GameServerApplicationExtensions
 {
-    /// <summary>Logger category of the startup warnings (R4).</summary>
+    /// <summary>Logger category of the startup warnings (R4) and the startup version line (FR-054).</summary>
     public const string StartupLogCategory = "GameServer.Startup";
 
     /// <summary>
@@ -122,7 +122,22 @@ public static class GameServerApplicationExtensions
             throw new GameServerStartupException(errors);
         }
 
+        LogStartup(services);
         return app;
+    }
+
+    /// <summary>FR-054: one line naming what starts, logged only after the validation succeeded (provision mode never gets here).</summary>
+    private static void LogStartup(IServiceProvider services)
+    {
+        var runtime = services.GetRequiredService<GameServerRuntimeInfo>();
+        services.GetRequiredService<ILoggerFactory>().CreateLogger(StartupLogCategory).LogInformation(
+            "Starting {GameId} {GameVersion} on framework {FrameworkVersion}: environment {EnvironmentId} ({DeploymentEnvironment}), instance {InstanceId}.",
+            runtime.GameId,
+            runtime.GameVersion,
+            runtime.FrameworkVersion,
+            runtime.EnvironmentId,
+            runtime.DeploymentEnvironment,
+            runtime.InstanceId);
     }
 
     private static void MapModule(WebApplication app, GameServerOptions options, GameServer.Modules.IGameModule module)

@@ -1,7 +1,6 @@
 using GameServer.Platform.Analytics;
 using GameServer.Platform.Web.Hosting;
 using GameServer.Time;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -28,8 +27,7 @@ public static class AnalyticsFileExtensions
         }
 
         var host = gameServer.Host;
-        var observability = host.Configuration.GetSection(ObservabilityOptions.SectionName).Get<ObservabilityOptions>() ?? new ObservabilityOptions();
-        var instanceId = observability.ResolveInstanceId();
+        var instanceId = gameServer.Runtime.InstanceId;
         var contentRoot = host.Environment.ContentRootPath;
         var gameId = gameServer.Options.GameId;
         var services = gameServer.Services;

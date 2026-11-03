@@ -39,6 +39,9 @@ public sealed record GmMeResponse(string StaffId, string DisplayName, string Gam
 
 public sealed record GmRotateResponse(string? KeyId, string? ActivatesAtUtc, bool Replayed);
 
+/// <summary>Answer of <see cref="GmModule.VersionRoute"/> (FR-055): the instance that served the request.</summary>
+public sealed record GmVersionResponse(string GameId, string EnvironmentId, string InstanceId, string GameVersion, string FrameworkVersion);
+
 /// <summary>
 /// Framework GM module: staff and grants, <c>GmCookie</c> scheme (protected cookie + server-side ticket), SSO (OIDC),
 /// Development local login, CSRF, staff management, player lookup, audit projection and the static GM page
@@ -55,6 +58,7 @@ public sealed class GmModule : IGameModule, IGmApiModule
     public const string UiRoute = "/gm/v1/ui";
     public const string HealthRoute = "/gm/v1/health";
     public const string RotateKeysRoute = "/gm/v1/ops/dataprotection/rotate";
+    public const string VersionRoute = "/gm/v1/ops/version";
 
     public ModuleDescriptor Describe() => new()
     {
@@ -136,6 +140,7 @@ public sealed class GmModule : IGameModule, IGmApiModule
         routes.MapGet(MeRoute, (HttpContext http) => GmHttp.Json(Me(http))).Produces<GmMeResponse>().AsGmEndpoint(GmPermissions.Access);
         routes.MapGet(UiRoute, GmUi.Serve).ExcludeFromDescription().AsPublicEndpoint(protobuf: false);
         routes.MapGet(HealthRoute, (Func<HttpContext, Task<IResult>>)HealthAsync).Produces<GmHealthReport>().AsGmEndpoint(GmPermissions.OpsRead);
+        routes.MapGet(VersionRoute, (Func<HttpContext, IResult>)VersionOf).Produces<GmVersionResponse>().AsGmEndpoint(GmPermissions.OpsRead);
         routes.MapPost(RotateKeysRoute, (Func<HttpContext, Task<IResult>>)RotateKeysAsync)
             .Accepts<StaffReasonBody>(GmHttp.JsonContentType)
             .Produces<GmRotateResponse>()
@@ -245,6 +250,13 @@ public sealed class GmModule : IGameModule, IGmApiModule
                 e.Value.Duration.TotalMilliseconds,
                 e.Value.Tags.ToArray(),
                 e.Value.Data.ToDictionary(d => d.Key, d => d.Value?.ToString()))).ToArray()));
+    }
+
+    /// <summary>Versions and identity of this instance (FR-055); never on a Public endpoint (OBS-03).</summary>
+    private static IResult VersionOf(HttpContext http)
+    {
+        var runtime = http.RequestServices.GetRequiredService<GameServerRuntimeInfo>();
+        return GmHttp.Json(new GmVersionResponse(runtime.GameId, runtime.EnvironmentId, runtime.InstanceId, runtime.GameVersion, runtime.FrameworkVersion));
     }
 
     private static GmMeResponse Me(HttpContext http)

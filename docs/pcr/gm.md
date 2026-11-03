@@ -14,7 +14,7 @@ catalog → startup fail (SEC-08).
 | `gm.access` | gm | `/gm/v1/me`, logout |
 | `player.read` | gm, economy (tên dùng chung; catalog là hợp của các module) | lookup, search, receipts, audit, ledger |
 | `player.read.pii` | gm | hiện `identities` (mapping key) trong lookup |
-| `ops.read` | gm | `GET /gm/v1/health` (chi tiết health, slice 005) |
+| `ops.read` | gm | `GET /gm/v1/health` (chi tiết health, slice 005), `GET /gm/v1/ops/gate`, `GET /gm/v1/ops/version` (slice 013) |
 | `staff.read` | gm | xem danh sách/chi tiết/audit staff |
 | `staff.manage` | gm | tạo staff, đổi grant, khoá/mở, thu hồi phiên của người khác |
 | `ops.maintenance` | gm | bật/tắt bảo trì, đặt `minClientVersion` (GATE-01/02) |
@@ -110,6 +110,7 @@ Module cũng khai index
 | `POST /gm/v1/staff/{staffId}/sessions/revoke` `{reason}` | `gm.access` (chính mình) / `staff.manage` (người khác) | `sessionEpoch++` |
 | `POST /gm/v1/ops/dataprotection/rotate` `{reason}` | `ops.keys.rotate` | `{keyId, activatesAtUtc, replayed}` |
 | `GET /gm/v1/ops/gate` | `ops.read` | `{maintenance, minClientVersions, rev}` |
+| `GET /gm/v1/ops/version` | `ops.read` | (slice 013, FR-055) `{gameId, environmentId, instanceId, gameVersion, frameworkVersion}` của instance trả lời: version informational của entry assembly của host (`unknown` nếu không đọc được) và của framework (`0.7.0+{sha}`); instance id như tên file log và `service.instance.id`. Không audit. Endpoint Public và health probe không lộ version (OBS-03) |
 | `PUT /gm/v1/ops/gate/maintenance` `{enabled, message?, expectedEndUtc?, reason}` | `ops.maintenance` | audit `ops.gate.maintenance` (before/after) |
 | `PUT /gm/v1/ops/gate/min-client-version` `{platform, minVersion? (null = bỏ), updateUrl? (https), reason}` | `ops.maintenance` | audit `ops.gate.min_client_version` |
 | `POST /gm/v1/players/{playerId}/ban` `{reason, untilUtc?, scope[]?}` | `player.ban` | (module identity) command `identity.ban`; không `untilUtc` = vĩnh viễn, không scope = `login` |

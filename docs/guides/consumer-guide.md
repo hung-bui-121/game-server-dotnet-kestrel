@@ -1,0 +1,520 @@
+# Consumer guide — building a game on the framework
+
+> Matches framework 0.7.0 (unreleased). Once tagged: `v0.7.0`.
+
+This guide is for a **game repository** that uses this framework as a git submodule (the first consumer is
+`zh-pvp-server`). Every code sample below is taken from `tests/ConsumerFixture`, a consumer-shaped repository inside the
+framework that is built and tested on every framework build; only the path to the framework changes (the fixture
+finds it two folders up, a game finds it in `framework/`). When this guide and the fixture differ, the fixture is right
+and this guide has a bug. One known difference is by design: the fixture sits inside the framework tree and inherits
+`framework/.editorconfig`; a game repository copies it (section 2).
+
+Vietnamese pages on the same topics: `docs/guides/module-authoring.md` (writing a module),
+`docs/guides/environments-and-local-run.md` (flavors, run-local, request log, versions), `docs/html/02-them-command.html`
+(adding a command, with in-repo and consumer-repo variants).
+
+## 1. Repository layout and submodule
+
+```text
+<game>/
+  framework/                  # this repository, git submodule pinned to an annotated tag
+  src/<Game>/                 # game modules (business + adapters)
+  src/<Game>.Host/            # the game's host (entry point)
+  tests/<Game>.Tests/         # game tests on the framework test kit
+  Directory.Build.props       # the game's build settings (section 2)
+  Directory.Packages.props    # imports the framework's package versions (section 2)
+  global.json                 # copy of framework/global.json (section 2)
+  .editorconfig               # copy of framework/.editorconfig (section 2)
+  <Game>.slnx
+```
+
+```powershell
+git submodule add https://github.com/hung-bui-121/game-server-dotnet-kestrel.git framework
+git -C framework checkout v0.7.0
+git -C framework describe --tags --exact-match      # must print v0.7.0
+git add .gitmodules framework
+```
+
+Rules:
+
+- Pin an **annotated tag** (`vX.Y.Z`). Never a branch: no `branch =` line in `.gitmodules`, never
+  `git submodule update --remote`. A bare commit only while testing an unreleased framework change locally.
+- Never edit or commit files inside `framework/`; framework changes go through the framework repository and a new tag.
+- After every `git pull` of the game: `git submodule update --init` (or `git pull --recurse-submodules`).
+- A game may live below a folder named `tests`: framework test projects are detected relative to the framework root
+  (FG-004 fixed in 0.7.0).
+
+## 2. Build files
+
+**Sealed** (the framework's own files govern framework projects; nothing of the game reaches them):
+
+| File | Why it is sealed |
+| --- | --- |
+| `framework/Directory.Build.props` | MSBuild stops at the first `Directory.Build.props` found upward |
+| `framework/Directory.Build.targets` | exists (behaviour-free) so a game's root `Directory.Build.targets` is never imported by framework projects (FG-003 fixed in 0.7.0) — the game may have its own |
+| `framework/Directory.Packages.props` | nearest one for framework projects |
+| `framework/.editorconfig` | `root = true` |
+
+**Still taken from the game side** (keep them in step by hand on every bump, FG-008):
+
+| File | Rule |
+| --- | --- |
+| `global.json` | `dotnet` reads the `global.json` of the folder it runs in and above, so the game's copy decides the SDK for framework projects too. Copy `framework/global.json` |
+| `nuget.config` | the NuGet configuration hierarchy of the folder `dotnet` runs in; the framework has none (nuget.org only) |
+| `.editorconfig` | the framework's `.editorconfig` covers only files below `framework/`. Copy it to the game root so game code and tests get the same analyzer severities; without it, rules the framework turns off fail the game build under warnings-as-errors (for example `xUnit1051` on every `client.GetAsync(...)` in a test, `CA1716` on a type named `Step`). Add game-only rules below the copied lines |
+| `Directory.Build.props` of the game | the game's own projects mirror the framework settings (target framework, nullable, warnings as errors, central package management, analyzers, banned APIs) |
+
+The game's `Directory.Build.props` (from `tests/ConsumerFixture/Directory.Build.props`; `GameServerRoot` points at the
+submodule):
+
+```xml
+<Project>
+  <PropertyGroup>
+    <GameServerRoot>$(MSBuildThisFileDirectory)framework/</GameServerRoot>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Deterministic>true</Deterministic>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- By name, not by path: a game repository may itself sit under a folder named "tests". -->
+    <IsTestProject Condition="$(MSBuildProjectName.EndsWith('.Tests'))">true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(IsTestProject)' == 'true'">
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <!-- Game code: the framework's analyzers and banned APIs (PERF-01, TIME-01). -->
+  <PropertyGroup Condition="'$(IsTestProject)' != 'true'">
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(IsTestProject)' != 'true'">
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="$(GameServerRoot)BannedSymbols.txt" />
+  </ItemGroup>
+</Project>
+```
+
+The game's `Directory.Packages.props` imports the framework's versions, so game and framework projects always resolve
+the same packages:
+
+```xml
+<Project>
+  <!-- Package versions of the framework: game and framework projects always resolve the same versions. -->
+  <Import Project="$(MSBuildThisFileDirectory)framework/Directory.Packages.props" />
+</Project>
+```
+
+Game-only packages are added below the import with `<PackageVersion Include="…" Version="…" />`. Never `Include` a
+package the framework already pins (NU1506); if a game really must override one, use `<PackageVersion Update="…" />` and
+record why.
+
+## 3. Project references
+
+Reference framework projects by path through `$(GameServerRoot)`. A game module (from
+`tests/ConsumerFixture/src/Fixture.Game/Fixture.Game.csproj`; a two-project module references `GameServer.Core` from its
+business project and `GameServer.Platform.Web` from its adapter, see `templates/module/README.md`):
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(GameServerRoot)src/GameServer.Platform.Web/GameServer.Platform.Web.csproj" />
+  </ItemGroup>
+</Project>
+```
+
+The host (from `tests/ConsumerFixture/src/Fixture.Host/Fixture.Host.csproj`); `<Version>` is the **game version**
+(section 7):
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <Version>1.2.3</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(GameServerRoot)src/GameServer.Platform.Web/GameServer.Platform.Web.csproj" />
+    <ProjectReference Include="$(GameServerRoot)src/GameServer.Platform.Testing/GameServer.Platform.Testing.csproj" />
+    <ProjectReference Include="$(GameServerRoot)src/GameServer.Platform.Couchbase/GameServer.Platform.Couchbase.csproj" />
+    <ProjectReference Include="$(GameServerRoot)src/GameServer.Platform.Observability/GameServer.Platform.Observability.csproj" />
+    <ProjectReference Include="$(GameServerRoot)src/GameServer.Modules.Identity.Adapters/GameServer.Modules.Identity.Adapters.csproj" />
+    <ProjectReference Include="../Fixture.Game/Fixture.Game.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Update="config\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
+```
+
+Add `GameServer.Modules.Economy.Adapters`, `GameServer.Modules.Iap.Adapters` or `GameServer.Modules.Gm.Adapters` when the
+host registers those modules. Framework projects keep the framework's build settings and version stamp when built
+as project references from the game.
+
+## 4. Host composition
+
+The host's `Program.cs` is a copy of the framework's `samples/SampleHost/Program.cs` with the game's modules (a reusable
+composition host is deferred, FG-009). From `tests/ConsumerFixture/src/Fixture.Host/Program.cs`:
+
+```csharp
+using Fixture.Game;
+using Fixture.Host;
+using GameServer.Modules.Identity;
+using GameServer.Platform;
+using GameServer.Platform.Couchbase;
+using GameServer.Platform.Observability;
+using GameServer.Platform.Observability.Analytics;
+using GameServer.Platform.Testing;
+using GameServer.Platform.Web.Hosting;
+using GameServer.Platform.Web.Requests;
+
+HostMode mode;
+WebApplication app;
+try
+{
+    var commandLine = GameServerCommandLine.Parse(args);
+    mode = commandLine.Mode;
+    var builder = WebApplication.CreateBuilder(commandLine.HostArgs);
+    var gameServer = builder.AddGameServer();
+    gameServer.AddObservability();
+    gameServer.AddAnalyticsFiles();
+    switch (gameServer.Options.Store)
+    {
+        case StoreKind.Couchbase:
+            var couchbase = builder.Configuration.GetSettings<CouchbaseOptions>(CouchbaseOptions.SectionName);
+            builder.Services.AddCouchbaseDocumentStore(couchbase);
+            break;
+        case StoreKind.File:
+            builder.Services.AddFileDocumentStore(builder.Configuration, builder.Environment);
+            break;
+        default:
+            builder.Services.AddInMemoryDocumentStore();
+            break;
+    }
+
+    if (gameServer.Options.AllowsDevelopmentTools)
+    {
+        gameServer.UseTestAuthentication();
+    }
+
+    gameServer
+        .AddModule<IdentityModule>()
+        .AddModule<FixtureModule>();
+    builder.Services.AddSingleton<OutcomeCounts>();
+
+    app = builder.Build();
+
+    // As a game would: per-request behaviour on the framework's outcome, outside the framework pipeline (FR-084).
+    var outcomes = app.Services.GetRequiredService<OutcomeCounts>();
+    app.Use(async (HttpContext context, RequestDelegate next) =>
+    {
+        await next(context);
+        outcomes.Add(context.RequestOutcome().ResultCode!);
+    });
+}
+catch (GameServerStartupException ex)
+{
+    await Console.Error.WriteLineAsync(ex.Message);
+    return HostExitCodes.InvalidConfiguration;
+}
+
+return await app.RunGameServerAsync(mode);
+
+/// <summary>Entry point type, exposed for WebApplicationFactory.</summary>
+public partial class Program;
+```
+
+- **Dev (cheat) modules only when development tools are allowed.** Register them inside
+  `if (gameServer.Options.AllowsDevelopmentTools)` (as SampleHost does with `CheatModule`). Since 0.7.0 a Dev endpoint or
+  Dev command anywhere else (beta, uat, live) fails startup with one report line each; a Dev route mapped after
+  `UseGameServer` answers 403 `FORBIDDEN` and the runner refuses Dev commands (FG-010).
+- Flavor files: `appsettings.json` (shared: `GameServer:GameId`, `GameServer:ConfigPath`) plus one
+  `appsettings.{Flavor}.json` per flavor (`Local`, `Dev`, `Beta`, `Uat`, `Live`) with `GameServer:DeploymentEnvironment`,
+  `GameServer:EnvironmentId` and `GameServer:Store`. The fixture's `appsettings.Local.json` uses the file store
+  (`FileStore:Folder`) and turns the console on (section 8). Details: `docs/guides/environments-and-local-run.md`.
+- Game config: the host loads `config/base/*.json` (overlaid by `config/env/{DeploymentEnvironment}/`) from its content
+  root (`GameServer:ConfigPath`, default `config`); `config/base/manifest.json` is required even without config files,
+  else startup fails with `[config] '…/config/base/manifest.json' not found`. The fixture's
+  `config/base/manifest.json` (one file, `notes.json`, which the fixture module lists in `RequiredConfigFiles`):
+
+  ```json
+  {
+    "label": "fixture-1",
+    "files": [
+      "notes.json"
+    ],
+    "clientVisible": []
+  }
+  ```
+
+  The host project copies the folder to its output (`<Content Update="config\**\*" CopyToOutputDirectory="PreserveNewest" />`,
+  section 3), so `LocalFlavorFactory` and `run-local` find it.
+- `Properties/launchSettings.json` with a `local` profile: `applicationUrl` (first `http://` URL = port) and
+  `environmentVariables.ASPNETCORE_ENVIRONMENT` (= flavor). run-local needs both (section 6).
+- A game middleware that needs the request result is registered on `app` before `RunGameServerAsync` (so it wraps the
+  framework pipeline) and reads `HttpContext.RequestOutcome()` after `await next(context)`; never parse response bodies.
+
+## 5. Tests
+
+The test project references the framework **test kit** (`src/GameServer.TestKit`, namespace `GameServer.TestKit`) and the
+game projects, and links no file of the framework's `tests/` folder. From
+`tests/ConsumerFixture/tests/Fixture.Tests/Fixture.Tests.csproj`:
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Shouldly" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The consumer test kit is the only framework reference; Microsoft.AspNetCore.Mvc.Testing flows through it (V4). -->
+    <ProjectReference Include="$(GameServerRoot)src/GameServer.TestKit/GameServer.TestKit.csproj" />
+    <ProjectReference Include="../../src/Fixture.Game/Fixture.Game.csproj" />
+    <ProjectReference Include="../../src/Fixture.Host/Fixture.Host.csproj" />
+  </ItemGroup>
+</Project>
+```
+
+A direct `Microsoft.AspNetCore.Mvc.Testing` reference is not needed (its build targets flow through the kit) but does no
+harm. The kit has no test framework dependency; the samples use xUnit v3 and Shouldly.
+
+### 5.1 Handler unit test — `CommandContextDouble`
+
+`CommandContextDouble.Create(operation, modules…)` is an `ICommandContext` without host, store or DI. It wraps the
+runner's own context, so every access rule (Touches/Reads, state type, claim limit, duplicate claims) throws exactly what
+the runner throws. Pass every module whose aggregates the command touches or reads (`new IdentityModule()` for
+`profile`). Configure (`AsPlayer`, `AsGm`, `WithActor`, `At`, `WithConfig`, `WithRequestId`/`WithReceiptId`, `Seed`,
+`SeedClaim`) before the handler runs; read `Writes`/`Written<T>`, `Outbox`, `Claims` afterwards. `CheckCommit(outcome)`
+returns what the runner would refuse at commit (uncatalogued or non-200 commit code, GM audit rules); empty = the runner
+commits. From `tests/ConsumerFixture/tests/Fixture.Tests/SaveNoteHandlerTests.cs`:
+
+```csharp
+using Fixture.Game;
+using GameServer.Config;
+using GameServer.Modules.Identity;
+using GameServer.TestKit;
+using Shouldly;
+
+private static readonly IGameConfig Rules =
+    TestGameConfig.FromJson(new Dictionary<string, string> { [FixtureModuleDefinition.RulesFile] = "{\"maxLength\":10}" }, "fixture-test");
+
+private static CommandContextDouble Context() =>
+    CommandContextDouble.Create(SaveNoteHandler.Operation, new IdentityModule(), new FixtureModule()).AsPlayer("p_1").WithConfig(Rules);
+
+[Fact]
+public async Task Save_replaces_the_note_and_the_runner_would_commit_it()
+{
+    var context = Context().Seed(FixtureModuleDefinition.NotesAggregate, new NotesState { Text = "old", Saves = 1 });
+
+    var outcome = await new SaveNoteHandler().HandleAsync(new SaveNote("new"), context);
+
+    context.CheckCommit(outcome).ShouldBeEmpty();
+    outcome.Result.ShouldBe(new SaveNoteResult("new", 2));
+    context.Written<NotesState>(FixtureModuleDefinition.NotesAggregate).ShouldBe(new NotesState { Text = "new", Saves = 2 });
+    context.Outbox.ShouldBeEmpty();
+}
+```
+
+`TestGameConfig`: `Empty`, `FromJson(files, label)` and `FromDirectory(configRoot, deploymentEnvironment)` (the host
+loader itself, same `ConfigVersion`).
+
+### 5.2 The game host on its real local flavor — `LocalFlavorFactory<Program>`
+
+`LocalFlavorFactory<TEntryPoint>` is a `WebApplicationFactory` that runs the host with its own `appsettings.Local.json`
+and redirects everything with side effects into one temporary root per factory (`Root` with `data/`, `analytics/`,
+`logs/`; deleted on dispose unless `LocalFlavorOptions.Folder` is given). From
+`tests/ConsumerFixture/tests/Fixture.Tests/FixtureHostSmokeTests.cs` (shortened; `Program` is the host's entry point type,
+`public partial class Program;`):
+
+```csharp
+using System.Net;
+using Fixture.Game;
+using GameServer.Protocol.Core.V1;
+using GameServer.TestKit;
+using Google.Protobuf.WellKnownTypes;
+
+await using (var factory = new LocalFlavorFactory<Program>())
+{
+    var client = factory.CreateClient();
+    (await client.GetAsync("/health/ready")).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+    var login = await client.LoginAsync(IdentityHttp.NewLocalId(), IdentityHttp.NewSecret());
+    var player = factory.CreateClient();
+    player.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", login.SessionToken);
+    var response = await player.PostProtobufAsync(FixtureModule.SaveRoute, new StringValue { Value = "hello" }, ProtobufHttp.NewRequestId());
+    var command = await response.ReadProtobufAsync<CommandResponse>();
+
+    command.Code.ShouldBe("OK");
+}
+```
+
+The settings the factory applies (`LocalFlavorSettings.Keys`; overrides through `LocalFlavorOptions.Settings`, services
+through `LocalFlavorOptions.Services`, the sweeper through `LocalFlavorOptions.OutboxSweeper`):
+
+| Key | Value |
+| --- | --- |
+| `FileStore:Folder` | `{Root}/data` (`factory.DataFolder`) |
+| `GameServer:Outbox:SweeperEnabled` | `false` |
+| `GameServer:Jobs:Enabled` | `false` |
+| `GameServer:Hosting:DrainDelaySeconds` | `0` |
+| `GameServer:Analytics:Directory` | `{Root}/analytics` (`factory.AnalyticsFolder`) |
+| `Observability:InstanceId` | `lf-{8 hex}`, unique per factory (`factory.InstanceId`) |
+| `Observability:Logging:Directory` | `{Root}/logs` (`factory.LogFolder`) |
+| `Observability:Logging:Console:Enabled` | `false` (tests do not print) |
+
+Rule: a framework setting that writes to disk, starts background work or writes to the console joins this list in the
+slice that introduces it, so a game never copies settings by hand. Game settings with side effects go into the game's own
+`LocalFlavorOptions.Settings`.
+
+### 5.3 In-process host with chosen modules — `TestHost`
+
+`TestHost.StartAsync(modules: …, settings: …, config: …)` builds a host on TestServer with the in-memory store, a fake clock
+(`host.Clock`), test authentication (`host.PlayerClient(id)`, `host.GmClient(staff, permissions…)`), an in-memory analytics
+sink (`host.Analytics`) and captured logs (`host.Logs`, structured `host.LogEntries`). Defaults: Identity only and an empty
+game config. `storeKind: TestStoreKind.File` (or `GAMESERVER_TEST_STORE=File`) runs on a temporary file store.
+
+### 5.4 The request outcome in tests
+
+The fixture's middleware (section 4) counts `HttpContext.RequestOutcome().ResultCode` per code; its smoke test reads the
+counts after each response returned (`OutcomeCounts`), e.g. `OK` for the save and `NOT_FOUND` for an unknown route — the
+codes the client received. In a `TestHost`, the request event itself is a `LogEntries` entry of category
+`GameServer.Requests` (event id 1) with `ResultCode`, `Status`, `Operation`, `Replayed`, `NotModified`.
+
+## 6. Local run
+
+Run the game host with the framework's script (no copy in the game):
+
+```powershell
+framework/tools/local/run-local.ps1 -HostProject src/ZhPvp.Host -LaunchProfile local -Name "ZhPvp"
+```
+
+```bash
+framework/tools/local/run-local.sh --host-project src/ZhPvp.Host --launch-profile local --name "ZhPvp"
+```
+
+- `-HostProject` / `--host-project`: the host project file or its folder (relative to the current directory). Default
+  without it: the framework's SampleHost.
+- `-LaunchProfile` / `--launch-profile` (default `local`): flavor = the profile's `ASPNETCORE_ENVIRONMENT`, port = its
+  first `http://` URL (none → 5080 with a note). `-Port`, `-Reset` (empties only the host's `FileStore:Folder` after
+  locking it), `-Lan` as for the sample.
+- `-Name` / `--name`: banner title (default: the project name).
+- The script reads the host's `Properties/launchSettings.json`, `appsettings.json` + `appsettings.{flavor}.json` and
+  environment variables (data and log folder) and the nearest `global.json`; it never writes into the game repository.
+- Exit codes: 0 graceful stop, 2 invalid argument or host input (message names the fix), 3 SDK, 4 port busy, 5 build,
+  6 host exited before ready, 7 not ready in time (tail of the newest log file). A game wrapper may add its own codes
+  (≥ 8) for game-only checks and must pass the framework codes through.
+
+Contract: `specs/013-consumer-readiness/contracts/run-local-cli.md`.
+
+## 7. Versions
+
+- Framework: `GameServerVersion.Framework` (`0.7.0`) and `GameServerVersion.FrameworkInformational` (`0.7.0+{git sha}`),
+  stamped into every framework assembly from the framework's `Directory.Build.props`, also when built as project
+  references from the game. The Unity package `com.gameserver.client` has the same version.
+- Game: the host's `<Version>`; read it with `GameServerVersion.InformationalOf(assembly)` or from
+  `GameServerRuntimeInfo.GameVersion`.
+- `GameServerRuntimeInfo` (DI singleton, also `GameServerBuilder.Runtime`): game id, environment id, deployment
+  environment, instance id, game assembly, game version, framework version.
+- The framework logs one Information line at startup (category `GameServer.Startup`):
+  `Starting fixture 1.2.3+… on framework 0.7.0+…: environment local (Development), instance lf-1a2b3c4d.` A game does not
+  log its own version line.
+- Telemetry resource: `service.version` = game version, `gameserver.framework.version` = framework version.
+- GM `GET /gm/v1/ops/version` (permission `ops.read`) returns the five values of the instance; public endpoints and health
+  probes never show a version.
+- A game that checks "checked-out framework tag = pinned tag" can compare its pinned tag with `v` +
+  `GameServerVersion.Framework`. The framework tags `v{GameServerFrameworkVersion}`.
+
+From `tests/ConsumerFixture/tests/Fixture.Tests/FixtureVersionTests.cs`:
+
+```csharp
+var runtime = factory.Services.GetRequiredService<GameServerRuntimeInfo>();
+
+runtime.GameAssembly.ShouldBe("Fixture.Host");
+runtime.GameVersion.ShouldStartWith("1.2.3");
+runtime.FrameworkVersion.ShouldBe(GameServerVersion.FrameworkInformational);
+```
+
+## 8. Request log and console
+
+The framework writes one structured event per HTTP request (category `GameServer.Requests`; never for `/health/live` and
+`/health/ready`): method, route template, profile, operation, actor, request id, trace id, status, result code (what the
+client received), replayed, not-modified, aborted, duration — never bodies, query strings, headers, cookies, tokens or IPs.
+
+| Flavor | Request event | Console |
+| --- | --- | --- |
+| Development (`local`, `dev`) and test hosts | on (`GameServer:RequestLog:Enabled` unset) | set `Observability:Logging:Console:Enabled: true` in the game's `appsettings.Local.json` (and `Dev`); `LocalFlavorSettings` forces it off in tests |
+| Staging (`beta`, `uat`), Production (`live`) | off unless `GameServer:RequestLog:Enabled=true` (startup Warning with the volume estimate) | off |
+
+- `GameServer:RequestLog:ExcludedPaths`: more paths never logged (segment prefix, case-insensitive).
+- `Observability:Logging:Console:MinimumLevel` (`Information`), `Observability:Logging:Console:BufferSize` (1 000): the
+  console has its own bounded queue that drops (counted in `log_dropped_total`) and never blocks a request.
+- Volume: ~300–400 B per event in the file (≈ 13–17 GB per instance per day at 500 requests/s); before enabling it in
+  Staging/Production raise the file limits or ship logs (`docs/guides/environments-and-local-run.md` §8).
+- `IRequestOutcomeFeature` (`HttpContext.RequestOutcome()`, namespace `GameServer.Platform.Web.Requests`): set by the
+  framework for every response it writes; after the framework pipeline (a middleware placed before `UseGameServer`, after
+  `await next()`) every member is final and `ResultCode` is never null (`OK`, business code at HTTP 200, error code,
+  `ABORTED`, `HTTP_{status}`). A game endpoint may set `ResultCode`/flags for its own responses.
+
+Contract: `docs/pcr/platform.md` §13.
+
+## 9. Error codes
+
+| Range | Owner |
+| --- | --- |
+| 0–999 | framework core |
+| 10000–10099, 11000–11099, 12000–12099, 13000–13099, 14000–14099, 40000–40099 | framework modules and samples (`sample.counter`, `economy`, `iap`, `gm`, `identity`, `sample.game`; `docs/pcr/platform.md` §8) |
+| **50000–89999** | **game modules** (`ErrorCodeBands.GameStart`–`GameEnd`) |
+| 90000–99999 | framework territory (`ErrorCodeBands.FrameworkReservedStart`–`FrameworkReservedEnd`; the module template's example 90000–90099) |
+
+Each game module picks its own sub-range inside 50000–89999 (the fixture: 50000–50099). The framework never puts a code
+in the game band (architecture test), so a framework bump cannot collide with game codes. Overlapping ranges or duplicate
+names/numbers between registered modules fail startup. From `tests/ConsumerFixture/src/Fixture.Game/FixtureModuleDefinition.cs`:
+
+```csharp
+/// <summary>Game error codes: the first block of the game band (50000–89999).</summary>
+public static class FixtureErrors
+{
+    public static readonly ErrorCode Unchanged = new(50001, "FIXTURE_UNCHANGED", 200, false, "The note is unchanged.");
+    public static readonly ErrorCode TooLong = new(50002, "FIXTURE_TOO_LONG", 200, false, "The note is too long.");
+
+    public static ErrorCodeSet All { get; } = new(50000, 50099, Unchanged, TooLong);
+}
+```
+
+## 10. Unity SDK
+
+Install the client SDK by UPM git URL pinned to the same tag as the submodule (`Packages/manifest.json` of the Unity
+project):
+
+```text
+https://github.com/hung-bui-121/game-server-dotnet-kestrel.git?path=sdk/unity/com.gameserver.client#v0.7.0
+```
+
+The package version equals the framework version (`0.7.0`). Code generation of the game's own `.proto` messages for Unity
+is **coming in slice 014**; until then generate them in the game repository as the sample client does
+(`samples/SampleGame/KestrelDemo`, `docs/pcr/unity-sdk.md`) and preserve their assembly in `link.xml`.
+
+## 11. Bump checklist
+
+1. Read the release notes of the new tag (annotated tag message): fixed FG ids, breaking changes with migration steps,
+   workarounds that become removable, new settings.
+2. Move the submodule: `git -C framework fetch --tags origin`, `git -C framework checkout vX.Y.Z`,
+   `git -C framework describe --tags --exact-match`.
+3. Diff the mirrored build files and copy what changed: `framework/global.json` → `global.json`, `framework/.editorconfig`
+   → `.editorconfig` (keep the game-only rules); the framework's `Directory.Build.props`, `BannedSymbols.txt`,
+   `Directory.Packages.props` (game props mirror them);
+   `samples/SampleHost/Program.cs` and its flavor files (the host is a copy until FG-009).
+4. Update every place that names the tag (game props, README, UPM URL `#vX.Y.Z` in the Unity project).
+5. Build Debug and Release (0 warnings) and run the full game test suite; run the host once with `run-local`.
+6. Remove the workarounds the release notes list as removable (code, `FRAMEWORK-GAP` markers, friction-log entries).
+7. Commit the gitlink, the copied files, the docs and the removed workarounds together (`chore: bump framework to vX.Y.Z`).

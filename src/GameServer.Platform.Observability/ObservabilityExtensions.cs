@@ -19,6 +19,9 @@ public static class ObservabilityExtensions
     /// <summary>Activity sources and meters of the framework and its modules.</summary>
     public const string InstrumentationPrefix = "GameServer.*";
 
+    /// <summary>Telemetry resource attribute with the framework version (FR-053); <c>service.version</c> is the game version.</summary>
+    private const string FrameworkVersionAttribute = "gameserver.framework.version";
+
     /// <summary>
     /// Adds structured file logging (LOG-01..06), OpenTelemetry traces and metrics (OBS-01, OBS-02, OBS-04) and the
     /// health endpoints (OBS-03). Configuration: section <c>Observability</c>.
@@ -31,9 +34,9 @@ public static class ObservabilityExtensions
         host.Services.Configure<ObservabilityOptions>(section);
 
         Validate(options);
-        var instanceId = options.ResolveInstanceId();
-        AddLogging(host.Services, host.Environment.ContentRootPath, gameServer.Options, options, instanceId);
-        AddTelemetry(host.Services, gameServer.Options, options, instanceId);
+        var runtime = gameServer.Runtime;
+        AddLogging(host.Services, host.Environment.ContentRootPath, gameServer.Options, options, runtime.InstanceId);
+        AddTelemetry(host.Services, gameServer.Options, options, runtime);
         return gameServer.AddModule<ObservabilityModule>();
     }
 
@@ -116,7 +119,7 @@ public static class ObservabilityExtensions
             monitor: LogSinkMonitor.Instance);
     }
 
-    private static void AddTelemetry(IServiceCollection services, GameServerOptions gameServer, ObservabilityOptions options, string instanceId)
+    private static void AddTelemetry(IServiceCollection services, GameServerOptions gameServer, ObservabilityOptions options, GameServerRuntimeInfo runtime)
     {
         var otlp = options.Otlp.Endpoint is { Length: > 0 } endpoint ? new Uri(endpoint) : null;
         var protocol = string.Equals(options.Otlp.Protocol, "http/protobuf", StringComparison.OrdinalIgnoreCase)
@@ -129,8 +132,12 @@ public static class ObservabilityExtensions
 
         services.AddOpenTelemetry()
             .ConfigureResource(resource => resource
-                .AddService(serviceName: "game-server-" + gameServer.GameId, serviceInstanceId: instanceId)
-                .AddAttributes([new("deployment.environment.name", gameServer.EnvironmentId)]))
+                .AddService(serviceName: "game-server-" + gameServer.GameId, serviceVersion: runtime.GameVersion, serviceInstanceId: runtime.InstanceId)
+                .AddAttributes(
+                [
+                    new("deployment.environment.name", gameServer.EnvironmentId),
+                    new(FrameworkVersionAttribute, runtime.FrameworkVersion),
+                ]))
             .WithTracing(tracing =>
             {
                 tracing

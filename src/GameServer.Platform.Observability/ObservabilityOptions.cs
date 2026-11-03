@@ -18,10 +18,8 @@ public sealed class ObservabilityOptions
     /// <summary>Readiness results are shared for this long (bounds store probes from the Public endpoint).</summary>
     public int ReadyCacheMilliseconds { get; set; } = 1000;
 
-    public string ResolveInstanceId() =>
-        !string.IsNullOrWhiteSpace(InstanceId) ? InstanceId
-        : Environment.GetEnvironmentVariable("HOSTNAME") is { Length: > 0 } host ? host
-        : Environment.MachineName;
+    /// <summary>The framework's instance-id rule (<see cref="GameServerRuntimeInfo.ResolveInstanceId(string?)"/>) applied to <see cref="InstanceId"/>.</summary>
+    public string ResolveInstanceId() => GameServerRuntimeInfo.ResolveInstanceId(InstanceId);
 }
 
 public sealed class LoggingSettings

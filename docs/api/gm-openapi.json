@@ -198,6 +198,33 @@
         "x-gm-csrf": false
       }
     },
+    "/gm/v1/ops/version": {
+      "get": {
+        "tags": [
+          "GmModule"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmVersionResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "ops.read",
+        "x-gm-csrf": false
+      }
+    },
     "/gm/v1/ops/dataprotection/rotate": {
       "post": {
         "tags": [
@@ -1263,6 +1290,33 @@
           },
           "replayed": {
             "type": "boolean"
+          }
+        }
+      },
+      "GmVersionResponse": {
+        "required": [
+          "gameId",
+          "environmentId",
+          "instanceId",
+          "gameVersion",
+          "frameworkVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "gameId": {
+            "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "instanceId": {
+            "type": "string"
+          },
+          "gameVersion": {
+            "type": "string"
+          },
+          "frameworkVersion": {
+            "type": "string"
           }
         }
       },

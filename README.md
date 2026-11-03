@@ -55,8 +55,20 @@ Ctrl+C dừng êm; chạy lại giữ nguyên dữ liệu. `-Port 5090` đổi c
 mạng kết nối (bash: `--port`, `--reset`, `--lan`). Từ IDE hoặc `dotnet run --project samples/SampleHost`: launch profile `local`
 cho cùng kết quả (không in URL).
 
+Host của một game (repo game có framework là submodule `framework/`) chạy bằng cùng script: `-HostProject <file hoặc thư mục
+.csproj>`, `-LaunchProfile <tên>` (mặc định `local`), `-Name <tiêu đề>` (bash: `--host-project`, `--launch-profile`, `--name`), ví dụ
+`framework/tools/local/run-local.ps1 -HostProject src/ZhPvp.Host -Name "ZhPvp"`.
+
 Flavor `Local`/`Dev`/`Beta`/`Uat`/`Live`, biến môi trường bắt buộc của từng flavor, file store, cấu hình Couchbase, TLS, quyền RBAC
 và lệnh `--provision`: `docs/guides/environments-and-local-run.md`.
+
+## Dùng framework từ repo game
+
+Submodule ghim annotated tag, file build (cái gì game chép, cái gì đã niêm phong), `ProjectReference` qua `$(GameServerRoot)`, host,
+test kit `src/GameServer.TestKit` (`TestHost`, `LocalFlavorFactory<Program>`, `CommandContextDouble`), `run-local` với host của game,
+version (`GameServerVersion`, dòng log khởi động, GM `GET /gm/v1/ops/version`), request log, dải error code của game 50000–89999, gói
+Unity theo tag và checklist khi nâng tag: `docs/guides/consumer-guide.md` (tiếng Anh). Framework version `0.7.0` (chưa phát hành) khai
+một lần trong `Directory.Build.props` (`GameServerFrameworkVersion`), bằng version của gói Unity; tag phát hành là `v0.7.0`.
 
 ## Build và test
 

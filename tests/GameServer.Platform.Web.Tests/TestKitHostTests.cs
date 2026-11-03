@@ -1,7 +1,9 @@
+using System.Collections.Concurrent;
 using System.Net;
 using GameServer.Config;
 using GameServer.Platform.Testing;
 using GameServer.Platform.Web.Endpoints;
+using GameServer.Platform.Web.Hosting;
 using GameServer.Protocol.Core.V1;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -91,6 +93,86 @@ public sealed class TestKitHostTests
         snapshot.StatusCode.ShouldBe(HttpStatusCode.OK);
         second.Clock.ShouldBeSameAs(first.Clock);
         second.Store.ShouldBeSameAs(first.Store);
+    }
+
+    /// <summary>T060 (FR-052): one record per host, the same through the builder and DI, with the configured instance id.</summary>
+    [Fact]
+    public async Task The_runtime_info_of_the_builder_is_the_registered_singleton()
+    {
+        GameServerRuntimeInfo? fromBuilder = null;
+        await using var host = await TestHost.StartAsync(
+            modules: b =>
+            {
+                fromBuilder = b.Runtime;
+                TestHost.DefaultModules(b);
+            },
+            settings: s => s["Observability:InstanceId"] = "host-1");
+
+        var runtime = host.Services.GetRequiredService<GameServerRuntimeInfo>();
+
+        runtime.ShouldBeSameAs(fromBuilder);
+        runtime.ShouldBe(new GameServerRuntimeInfo(
+            "test",
+            "test",
+            "Development",
+            "host-1",
+            typeof(TestKitHostTests).Assembly.GetName().Name!,
+            GameServerVersion.InformationalOf(typeof(TestKitHostTests).Assembly),
+            GameServerVersion.FrameworkInformational));
+    }
+
+    /// <summary>T062 (FR-054, US6-3): exactly one Information line after a successful validation, with the five identity values.</summary>
+    [Fact]
+    public async Task A_started_host_logs_one_startup_line_with_game_framework_environment_and_instance()
+    {
+        await using var host = await TestHost.StartAsync(settings: s => s["Observability:InstanceId"] = "host-1");
+        var runtime = host.Services.GetRequiredService<GameServerRuntimeInfo>();
+
+        var line = host.LogEntries.Single(e => e.Category == GameServerApplicationExtensions.StartupLogCategory && e.Level == LogLevel.Information);
+
+        line.Properties["{OriginalFormat}"].ShouldBe(
+            "Starting {GameId} {GameVersion} on framework {FrameworkVersion}: environment {EnvironmentId} ({DeploymentEnvironment}), instance {InstanceId}.");
+        line.Properties["GameId"].ShouldBe("test");
+        line.Properties["GameVersion"].ShouldBe(runtime.GameVersion);
+        line.Properties["FrameworkVersion"].ShouldBe(GameServerVersion.FrameworkInformational);
+        line.Properties["EnvironmentId"].ShouldBe("test");
+        line.Properties["DeploymentEnvironment"].ShouldBe("Development");
+        line.Properties["InstanceId"].ShouldBe("host-1");
+        line.Message.ShouldBe(
+            $"Starting test {runtime.GameVersion} on framework {GameServerVersion.FrameworkInformational}: environment test (Development), instance host-1.");
+    }
+
+    [Fact]
+    public async Task A_failed_validation_logs_no_startup_line()
+    {
+        var entries = new ConcurrentQueue<(string Category, string Message)>();
+        await using var app = TestHost.BuildApp(
+            settings: s => s["GameServer:Gate:CacheSeconds"] = "11",
+            services: s => s.AddSingleton<ILoggerProvider>(new RecordingLoggerProvider(entries)));
+
+        Should.Throw<GameServerStartupException>(() => app.UseGameServer());
+
+        entries.ShouldNotContain(e => e.Category == GameServerApplicationExtensions.StartupLogCategory && e.Message.StartsWith("Starting ", StringComparison.Ordinal));
+    }
+
+    private sealed class RecordingLoggerProvider(ConcurrentQueue<(string Category, string Message)> sink) : ILoggerProvider
+    {
+        public ILogger CreateLogger(string categoryName) => new RecordingLogger(categoryName, sink);
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class RecordingLogger(string category, ConcurrentQueue<(string Category, string Message)> sink) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            sink.Enqueue((category, formatter(state, exception)));
     }
 }
 

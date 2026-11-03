@@ -87,6 +87,10 @@ internal static class RepositoryTooling
         return new ProcessResult(process.ExitCode, await output, await error);
     }
 
+    /// <summary><c>GameServerFrameworkVersion</c> of the framework's <c>Directory.Build.props</c>, the only declaration (FR-050).</summary>
+    public static string DeclaredFrameworkVersion() =>
+        System.Xml.Linq.XDocument.Load(Path.Combine(Root, "Directory.Build.props")).Descendants("GameServerFrameworkVersion").Single().Value.Trim();
+
     private static string FindRoot()
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)

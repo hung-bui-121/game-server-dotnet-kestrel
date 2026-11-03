@@ -1,6 +1,7 @@
 # PCR — Unity client SDK
 
-Gói UPM `com.gameserver.client` (slice 006, version 0.6.0 — lockstep với contract `.proto` của server). Nguồn: SDK-01..04,
+Gói UPM `com.gameserver.client` (slice 006, version 0.7.0 — lockstep với contract `.proto` của server và với version framework
+`GameServerFrameworkVersion`, slice 013; `VersionTests` kiểm hai giá trị bằng nhau). Nguồn: SDK-01..04,
 API-09/10, IDN-10, GATE-02, TIME-01, CFG-03.
 
 ## Gói (semantic với client)

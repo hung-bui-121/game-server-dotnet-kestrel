@@ -5,7 +5,8 @@ thay đổi mục **vận hành** chỉ cần ghi changelog. Nguồn yêu cầu:
 
 Phiên bản: 0.7.0 (slice 001 + sửa sau review + slice 002 identity + slice 004 GM + slice 005 observability, 2026-10-26;
 slice 010 lease job và xoá tài khoản, 2026-10-30 — mục 16; slice 011 môi trường theo flavor, file store, setting Couchbase,
-`--provision`, 2026-10-30 — mục 17; slice 012 analytics login và payment, 2026-10-31 — mục 18).
+`--provision`, 2026-10-30 — mục 17; slice 012 analytics login và payment, 2026-10-31 — mục 18; slice 013 consumer
+readiness, 2026-11-03 — mục 19). Đúng với framework v0.7.0 (chưa phát hành).
 
 ## 1. Limits và timeout theo nhóm endpoint (vận hành — API-06, PERF-04)
 
@@ -123,6 +124,25 @@ idempotent theo `entryId`; projection mặc định Insert-if-absent `<kind>::<e
 | 20 | SWITCH_ACCOUNT | 409 | no |
 
 Dải: core 0–999; module khai `ErrorCodeSet(rangeStart, rangeEnd)`; trùng tên/số/chồng dải → startup fail.
+
+Dải đang dùng và dải giữ chỗ (slice 013, FG-011, FR-060; hằng số `GameServer.Errors.ErrorCodeBands`):
+
+| Dải | Chủ |
+| --- | --- |
+| 0–999 | core |
+| 10000–10099 | `sample.counter` |
+| 11000–11099 | `economy` |
+| 12000–12099 | `iap` |
+| 13000–13099 | `gm` |
+| 14000–14099 | `identity` |
+| 40000–40099 | `sample.game` |
+| **50000–89999** | **module của game (consumer)** — `ErrorCodeBands.GameStart`/`GameEnd`; game tự chia dải con (game đầu tiên: 50000–50999) |
+| 90000–90099 | template `template.module` (ví dụ của tài liệu) |
+| 90000–99999 | lãnh thổ framework — `ErrorCodeBands.FrameworkReservedStart`/`FrameworkReservedEnd` |
+
+Module của framework (core, built-in, sample, template) không bao giờ khai dải hay mã trong dải game:
+`ErrorCodeBandTests` (Architecture.Tests) fail và nêu module, dải hoặc mã. Framework không kiểm dải của game lúc chạy
+(game *được* dùng dải đó); luật trùng/chồng dải ở trên vẫn áp dụng cho mọi module.
 Player nhận `ErrorEnvelope` (Protobuf, kể cả lỗi middleware); GM nhận Problem Details JSON với `code`,
 `codeNumber`, `requestId`, `retryable`, `retryAfterMs`. Cả hai có `details` (map chuỗi an toàn, ví dụ `until` của
 `ACCOUNT_SUSPENDED`; field 9 của `ErrorEnvelope`, thêm ở 0.3.0, không breaking).
@@ -965,3 +985,92 @@ token Google, payload/JWS receipt, IP client, body request (kiểm bằng test q
 | Hợp đồng ngữ nghĩa mới | JSONL schema v1, tên file, thời gian, dedupe | pipeline dữ liệu |
 | Hạ tầng test | `TestHost` đăng ký `InMemoryAnalyticsSink` (`TestHost.Analytics`) và `GameServer:Analytics:TimeZone` = `UTC`; `WebApplicationFactory<Program>` của host mẫu phải đặt `GameServer:Analytics:Directory` (+ instance id) riêng hoặc tắt analytics | test của game dựng trên host mẫu |
 | API bị cấm | `TimeZoneInfo.Local`, `DateTime.Today` trong code framework/module | tác giả module (lỗi biên dịch) |
+
+## 19. Consumer readiness (slice 013 — FG-001/002/003/004/006/007/010/011/012/025, ARC-08, API-05, LOG-04)
+
+Dùng framework từ repo game (submodule pin vào annotated tag): `docs/guides/consumer-guide.md`. Mọi API trong mục này là
+API cho consumer; xoá hoặc đổi chữ ký sau `v0.7.0` là breaking (ARC-08). Đúng với framework v0.7.0 (chưa phát hành).
+
+### API công khai mới (semantic với code consumer)
+
+| API | Assembly / namespace | Hợp đồng |
+| --- | --- | --- |
+| `GameServerOptions.AllowsDevProfile` | Platform, `GameServer.Platform` | quyết định duy nhất cho profile Dev (= `AllowsDevelopmentTools`: Development/Test); xem "Luật Dev" dưới |
+| `GameServerOptions.RequestLog` (`RequestLogSettings`) | Platform | section `GameServer:RequestLog` (mục 13) |
+| `IRequestOutcomeFeature`, `HttpContext.RequestOutcome()`, `RequestResultCodes`, `RequestLog.Category`/`EventId` | Platform.Web, `GameServer.Platform.Web.Requests` | outcome của request (mục 13): framework đặt cho mọi response nó ghi; sau pipeline mọi thành viên là cuối cùng và `ResultCode` không bao giờ null; đọc không cần body |
+| `ConsoleLoggingSettings` (`Observability:Logging:Console`) | Platform.Observability | console sink tuỳ chọn (mục 13) |
+| `ErrorCodeBands` (`GameStart` 50000, `GameEnd` 89999, `FrameworkReservedStart` 90000, `FrameworkReservedEnd` 99999) | Core, `GameServer.Errors` | dải game (mục 8) |
+| `GameServerVersion` (`Framework`, `FrameworkInformational`, `Of(Assembly)`, `InformationalOf(Assembly)`) | Platform | version framework; `Of` = phần trước `+` của informational version, không có thì `AssemblyName.Version` 3 phần, không có nữa thì `unknown` |
+| `GameServerRuntimeInfo` (record: `GameId`, `EnvironmentId`, `DeploymentEnvironment`, `InstanceId`, `GameAssembly`, `GameVersion`, `FrameworkVersion`; `ResolveInstanceId(configured)`), `GameServerBuilder.Runtime` | Platform / Platform.Web | singleton mỗi host, dựng một lần trong `AddGameServer`; game assembly = `IHostEnvironment.ApplicationName` (entry assembly, cả dưới `WebApplicationFactory<TEntryPoint>`), không có thì entry assembly của process, không có nữa thì `unknown`. `ResolveInstanceId` = luật instance id duy nhất (`Observability:InstanceId` → `HOSTNAME` → tên máy) cho tên file log, `service.instance.id`, file analytics và GM |
+| `GmModule.VersionRoute`, `GmVersionResponse` | Gm.Adapters, `GameServer.Modules.Gm` | `GET /gm/v1/ops/version`, `ops.read` (PCR gm) |
+| Test kit `src/GameServer.TestKit` (`TestHost`, `CapturedLog`, `LocalFlavorFactory<TEntryPoint>`, `LocalFlavorOptions`, `LocalFlavorSettings`, `TestGameConfig`, `CommandContextDouble`, `RecordedWrite`, `RecordedClaim`, `ProtobufHttp`, `IdentityHttp`, `TestStores`/`TestStoreKind`, `GmBrowser`/`CookieJarHandler`) | TestKit, `GameServer.TestKit` | không phụ thuộc framework test nào, không `Sample.*`; xem luật dưới |
+
+**Luật của test kit:** thành viên chỉ được thêm (additive); tham số thêm sau luôn tuỳ chọn và đứng cuối (slice 014 thêm
+kiểm mapping FG-027 vào đây). `tests/Shared` (`SampleTestHost`, `GameHttp`, `FileStoreTestSupport`) không phải API
+consumer.
+
+**Luật `LocalFlavorSettings`:** setting của framework mà ghi đĩa, chạy việc nền hoặc ghi console được thêm vào
+`LocalFlavorSettings.Keys` trong chính slice đưa nó vào; `LocalFlavorSettingsTests` kiểm mỗi key có trên một kiểu options
+và được nêu trong consumer guide. Bộ hiện tại (8 key): `FileStore:Folder`, `GameServer:Outbox:SweeperEnabled`,
+`GameServer:Jobs:Enabled`, `GameServer:Hosting:DrainDelaySeconds`, `GameServer:Analytics:Directory`,
+`Observability:InstanceId`, `Observability:Logging:Directory`, `Observability:Logging:Console:Enabled` (= `false`).
+
+**`CommandContextDouble`:** bọc chính `CommandContext` của runner, nên mọi luật truy cập (Touches/Reads, kiểu state, giới
+hạn claim, claim `receipts`/`pa_*`, claim trùng hoặc có sẵn) ném đúng exception và thông báo của runner; `NewId`/`NewSeed`
+bằng của runner với cùng receipt id (test conformance). `CheckCommit(outcome)` trả đúng thông báo commit-rule của runner.
+
+### Luật Dev (semantic — FG-010, FR-001..FR-008)
+
+Một quyết định: `GameServerOptions.AllowsDevProfile` (Development/Test = flavor `local`, `dev` và host test; không có
+setting). Ba lớp độc lập dùng nó:
+
+1. startup validation: một dòng cho mỗi endpoint Dev và mỗi command Dev đã đăng ký (kể cả module `ServiceOnly()`,
+   `GameServer:Hosting:MapPlayerApi=false`, command không có route và `--provision`), exit 1;
+2. pipeline: route Dev lọt qua (map sau `UseGameServer`) trả 403 `FORBIDDEN` trước mọi scheme xác thực, một Warning; giá
+   trị profile lạ bị từ chối như vậy;
+3. runner: command Dev bị từ chối `FORBIDDEN` cho mọi actor ở `ExecuteAsync` và `TryReplayAsync`, trước limiter, đọc
+   receipt, guard và transaction.
+
+Chi tiết và thông báo: mục 17 ("Breaking (slice 013, FG-010)").
+
+### Request log và console (vận hành)
+
+| Key | Mặc định | Ghi chú |
+| --- | --- | --- |
+| `GameServer:RequestLog:Enabled` | không đặt = bật ở Development/Test, tắt ở Staging/Production | `true` ngoài Development/Test → một Warning khi start kèm ước lượng dung lượng |
+| `GameServer:RequestLog:ExcludedPaths` | `[]` | ≤ 50 mục, bắt đầu bằng `/`, ≤ 200 ký tự, không `?`; prefix theo segment |
+| `Observability:Logging:Console:Enabled` | `false` | flavor `Local`/`Dev` của host mẫu đặt `true`; `LocalFlavorSettings` ép `false` |
+| `Observability:Logging:Console:MinimumLevel` | `Information` | |
+| `Observability:Logging:Console:BufferSize` | `1000` | ≥ 1; đầy thì bỏ và đếm `log_dropped_total` |
+
+Thuộc tính của event, level và outcome feature: mục 13. Dung lượng: `docs/guides/environments-and-local-run.md` mục 8.
+
+### Version và phát hành (semantic — FG-007, FR-050..FR-055)
+
+- Một khai báo: `GameServerFrameworkVersion` trong `Directory.Build.props` của framework (`0.7.0`) → `Version` của mọi
+  project framework: assembly và file version `0.7.0.0`, informational `0.7.0+{40 hex sha}` (Source Link của SDK; không
+  có metadata git thì không có hậu tố). Áp dụng cả khi consumer build project framework qua `ProjectReference` (props
+  của framework được niêm phong, FG-003). `sdk/unity/com.gameserver.client/package.json` `version` bằng giá trị đó
+  (`VersionTests`, thông báo nêu cả hai giá trị).
+- Dòng khởi động (Information, category `GameServer.Startup`, cuối `UseGameServer` thành công; không có khi validation
+  fail hay `--provision`): `Starting {GameId} {GameVersion} on framework {FrameworkVersion}: environment {EnvironmentId} ({DeploymentEnvironment}), instance {InstanceId}.`
+- Telemetry resource: `service.name` `game-server-{gameId}` (không đổi), `service.version` = `GameVersion`,
+  `service.instance.id` = `InstanceId` (không đổi), `gameserver.framework.version` = `FrameworkVersion`,
+  `deployment.environment.name` (không đổi).
+- GM `GET /gm/v1/ops/version` (`ops.read`); endpoint Public và health probe không lộ version (OBS-03).
+- Phát hành: annotated tag `v{GameServerFrameworkVersion}` (`v0.7.0`); tăng props và `package.json` cùng một commit; giữa
+  hai tag các build phân biệt bằng sha. Release notes của slice 013–016 gộp thành message của tag.
+
+### Breaking (slice 013 — so với `v0.6.0`)
+
+| # | Thay đổi | Cách chuyển |
+| --- | --- | --- |
+| BC-1 | endpoint và command Dev làm startup fail ngoài Development/Test (trước: chỉ Production), một dòng mỗi endpoint/command | chỉ đăng ký module cheat/Dev trong `if (gameServer.Options.AllowsDevelopmentTools)`; chạy thử mọi flavor không phải development một lần (cả `--provision`) |
+| BC-2 | route Dev map sau `UseGameServer` trả 403 `FORBIDDEN` ngoài Development/Test; runner từ chối command Dev | như BC-1; job/luồng GM ở Staging dùng command không phải Dev |
+| BC-3 | text startup cho endpoint Dev đổi, thêm dòng cho command Dev (mục 17) | test so khớp nhãn `[endpoint POST …]` hoặc text mới |
+| BC-4 | `tests/Shared/{ProtobufHttp,IdentityHttp,TestStores,GmBrowser,TestHost}.cs` chuyển vào `src/GameServer.TestKit` (namespace `GameServer.TestKit`); `TestStores.CreateFileStore` không còn public; `TestHost` của kit mặc định chỉ Identity và config rỗng | bỏ link `Compile` tới `tests/Shared`, thêm `ProjectReference` tới kit, đổi `using`, dùng `LocalFlavorFactory<Program>` và `CommandContextDouble` |
+| BC-5 | `Directory.Build.targets` của consumer không còn tới project framework; `IsTestProject` theo đường dẫn tương đối với root framework | chuyển những gì từng chèn vào project framework sang project của game; bỏ target chặn thư mục `tests` (FG-004) |
+| BC-6 | assembly framework mang `0.7.0.0` / informational `0.7.0+sha` (trước: `1.0.0.0`); telemetry có `service.version` (= version game) và `gameserver.framework.version` | sửa dashboard theo `1.0.0.0` hoặc theo việc thiếu `service.version`; xoá stamp tag framework tự viết và dòng log version tự viết của game |
+| BC-7 | một request event mỗi request ở Development/Test (mặc định) và console tuỳ chọn; tăng dung lượng log nơi bật | Staging/Production không đổi trừ khi bật; xoá request log tự viết của game; bật console trong file flavor local của game |
+
+Bước chuyển đầy đủ: release notes `v0.7.0` (bản nháp `specs/013-consumer-readiness/release-notes-draft.md`).

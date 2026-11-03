@@ -923,7 +923,7 @@ Goal: version `0.7.0` declared once, stamped into assemblies (with the git sha),
 T038 (same `GameServerApplicationExtensions.cs`) for T062; T043 (same `ObservabilityExtensions.cs`/`ObservabilityOptions.cs`)
 for T060/T063.
 
-- [ ] T060 [US6] Runtime identity in a new file `src/GameServer.Platform/GameServerRuntimeInfo.cs` (research R14, D14,
+- [X] T060 [US6] Runtime identity in a new file `src/GameServer.Platform/GameServerRuntimeInfo.cs` (research R14, D14,
   data-model §4.2, public-api §2): `GameServerVersion` (`Framework`, `FrameworkInformational`, `Of(Assembly)`,
   `InformationalOf(Assembly)`) and `GameServerRuntimeInfo` record with `ResolveInstanceId(configured)` (configured →
   `HOSTNAME` → machine name) as the only implementation; `ObservabilityOptions.ResolveInstanceId()` delegates to it;
@@ -935,27 +935,48 @@ for T060/T063.
   (`Runtime` resolved from DI equals `GameServerBuilder.Runtime`).
   Done when: green; log file names, OTel instance id and the analytics file sink still use the same instance id
   (existing observability and analytics tests green). (FR-052)
-- [ ] T061 [US6] Declared version (after T050, T003 V1): `Directory.Build.props` →
+  Note: `src/GameServer.Platform/GameServerRuntimeInfo.cs` (`GameServerVersion`, `GameServerRuntimeInfo`; internal
+  `ResolveInstanceId(configured, environment)` overload for the order test). `AddGameServer` resolves the record once
+  (game assembly = `Assembly.Load(ApplicationName)`, fallback entry assembly, else `unknown`), registers it, exposes
+  `GameServerBuilder.Runtime`. `AddObservability` (log file name, OTel) and `AddAnalyticsFiles` now take
+  `gameServer.Runtime.InstanceId` (one resolved value) instead of re-reading the section;
+  `ObservabilityOptions.ResolveInstanceId()` delegates. Tests: `GameServerRuntimeInfoTests` (4, fake `Assembly`
+  subclass), `TestKitHostTests.The_runtime_info_of_the_builder_is_the_registered_singleton`. Observability/analytics
+  suites green.
+- [X] T061 [US6] Declared version (after T050, T003 V1): `Directory.Build.props` →
   `<GameServerFrameworkVersion>0.7.0</GameServerFrameworkVersion>` and `<Version>$(GameServerFrameworkVersion)</Version>`;
   if V1 failed for submodules, the `git rev-parse HEAD` fallback target in `Directory.Build.targets` (before
   `GetAssemblyVersion`, `ContinueOnError=true`, only when `SourceRevisionId` is empty); `sdk/unity/com.gameserver.client/package.json`
   `version` → `0.7.0`.
   Done when: Release build 0 warnings; `GameServer.Core.dll` has AssemblyVersion `0.7.0.0`, FileVersion `0.7.0.0`,
   InformationalVersion `0.7.0+{40 hex}` (recorded). (FR-050, FR-051, BC-6)
-- [ ] T062 [US6] Startup line in `src/GameServer.Platform.Web/Hosting/GameServerApplicationExtensions.cs` (after T038,
+  Note: props `GameServerFrameworkVersion` 0.7.0 + `Version`; no fallback target (V1). `package.json` 0.7.0. Release
+  build 0 warnings; `GameServer.Core.dll`: AssemblyVersion `0.7.0.0`, FileVersion `0.7.0.0`, InformationalVersion
+  `0.7.0+22cd65394ef0ee99723ccaca858b038388403eb3` (= HEAD). `BuildSealingTests` queries `-getProperty:Version` and
+  asserts it equals the declared version for every project below the hostile parent (declared version read by
+  `RepositoryTooling.DeclaredFrameworkVersion()`).
+- [X] T062 [US6] Startup line in `src/GameServer.Platform.Web/Hosting/GameServerApplicationExtensions.cs` (after T038,
   T060): at the end of a successful `UseGameServer`, category `GameServer.Startup`, Information:
   `Starting {GameId} {GameVersion} on framework {FrameworkVersion}: environment {EnvironmentId} ({DeploymentEnvironment}),
   instance {InstanceId}.` (not logged when validation fails, not in `--provision`).
   Test in `tests/GameServer.Platform.Web.Tests/TestKitHostTests.cs` (via `LogEntries`): exactly one such line with the
   five properties; none on a failed start.
   Done when: green. (FR-054, US6-3)
-- [ ] T063 [US6] Telemetry in `src/GameServer.Platform.Observability/ObservabilityExtensions.cs:101-104` (after T043,
+  Note: `GameServerApplicationExtensions.LogStartup` after the error check (provision never calls `UseGameServer`).
+  Tests: exactly one Information `GameServer.Startup` entry with the template and the six properties; none when
+  `GameServer:Gate:CacheSeconds=11` fails validation (recording `ILoggerProvider` on `TestHost.BuildApp`).
+- [X] T063 [US6] Telemetry in `src/GameServer.Platform.Observability/ObservabilityExtensions.cs:101-104` (after T043,
   T060): `AddService(serviceName, serviceVersion: runtime.GameVersion, serviceInstanceId)` + resource attribute
   `gameserver.framework.version` = `runtime.FrameworkVersion`.
   Test in `tests/GameServer.Observability.Tests/TelemetryTests.cs`: a span and a metric carry `service.version` and
   `gameserver.framework.version` with the expected values; `service.name`/`service.instance.id` unchanged.
   Done when: green. (FR-053, US6-4)
-- [ ] T064 [P] [US6] GM version read in `src/GameServer.Modules.Gm.Adapters/GmModule.cs` (after T060;
+  Note: `AddService(..., serviceVersion: runtime.GameVersion, serviceInstanceId: runtime.InstanceId)` + attribute
+  `gameserver.framework.version` (private const). Test
+  `TelemetryTests.Exported_spans_and_metrics_carry_service_version_and_the_framework_version`: an exporter on each
+  provider records `ParentProvider.GetResource()` of an exported batch (as OTLP does); `service.name`,
+  `service.instance.id` (`it-1`), `deployment.environment.name` unchanged.
+- [X] T064 [P] [US6] GM version read in `src/GameServer.Modules.Gm.Adapters/GmModule.cs` (after T060;
   contracts/gm-ops-version.md): `VersionRoute = "/gm/v1/ops/version"`, `GmVersionResponse(GameId, EnvironmentId,
   InstanceId, GameVersion, FrameworkVersion)` (namespace `GameServer.Modules.Gm`), `AsGmEndpoint(GmPermissions.OpsRead)`,
   `Produces<GmVersionResponse>()`; values from the `GameServerRuntimeInfo` singleton.
@@ -965,23 +986,43 @@ for T060/T063.
   `docs/api/gm-openapi.json` with `UPDATE_OPENAPI=1` while running `GameServer.Gm.Tests`, review the diff (only the new
   path and schema), commit it with the slice.
   Done when: `GmVersionEndpointTests` and `OpenApiTests` green without `UPDATE_OPENAPI`. (FR-055, US6-5, SD10)
-- [ ] T065 [US6] `tests/GameServer.Architecture.Tests/VersionTests.cs` (after T061; research R14): declared version
+  Note: route mapped with a method group (`(Func<HttpContext, IResult>)VersionOf`) so the OpenAPI tag is `GmModule`
+  (contract) like `/gm/v1/health`; a lambda gets the host app name as tag. `GmTestHost.StartAsync` got an optional
+  `extra` builder hook (observability for the health probes). `GmVersionEndpointTests` (3): 200 with exactly the five
+  camelCase fields; 401 `UNAUTHENTICATED` / 403 `FORBIDDEN` (`support`); `/health/live`, `/health/ready`, `/v1/time`,
+  guest login and `counter.increment` bodies and headers contain neither informational version nor `0.7.0`.
+  `UPDATE_OPENAPI=1` diff reviewed: only the new path and `GmVersionResponse` schema (+54 lines, LF kept).
+  `OpenApiTests` green without the variable.
+- [X] T065 [US6] `tests/GameServer.Architecture.Tests/VersionTests.cs` (after T061; research R14): declared version
   (read from `Directory.Build.props`) = `package.json` `version`, failure message names both values (a unit test of the
   comparison helper with a deliberate mismatch pins the message); every `GameServer.*` assembly and `SampleHost`
   carry `0.7.0` (assembly, file, informational core); informational version has `+` and 40 hex digits when the
   repository has `.git`; `GameServerVersion.Framework` = declared version.
   Done when: green; editing `package.json` to `0.7.1` (temporarily) fails naming both values (verified, reverted).
   (FR-050, FR-051, US6-1, US6-2, SC-006)
-- [ ] T066 [US6] Fixture version check in `tests/ConsumerFixture/tests/Fixture.Tests/` (after T033, T048 same folder,
+  Note: `VersionTests` (4): props = `package.json` (helper `Mismatch`, message pinned by a deliberate-mismatch unit
+  test); every `GameServer.*`, `Sample*`, `Template.*` dll of the test output (assembly via
+  `AssemblyName.GetAssemblyName`, file/informational via `FileVersionInfo`) is `0.7.0(.0)` with `+{40 hex}` when the
+  repo has `.git`; `GameServerVersion.Framework` = declared. Verified: `package.json` → `0.7.1` fails with "…
+  GameServerFrameworkVersion is '0.7.0', sdk/unity/com.gameserver.client/package.json version is '0.7.1' …"; reverted.
+- [X] T066 [US6] Fixture version check in `tests/ConsumerFixture/tests/Fixture.Tests/` (after T033, T048 same folder,
   T061): `GameServerVersion.Framework` = `0.7.0` through the consumer project reference; the fixture host's
   `GameServerRuntimeInfo.GameVersion` starts with `1.2.3`; the GM version read on the fixture host (if the fixture maps
   the GM API) or the startup line shows both.
   Done when: green. (FR-050, FR-052, US6-1 consumer part, SC-006)
-- [ ] T067 [US6] Docs and notes: `docs/pcr/gm.md` permission table and ops route table list `GET /gm/v1/ops/version`;
+  Note: `tests/ConsumerFixture/tests/Fixture.Tests/FixtureVersionTests.cs` (2): `GameServerVersion.Framework` = pinned
+  `0.7.0`; on `LocalFlavorFactory<Program>` the runtime info has `GameAssembly` `Fixture.Host`, `GameVersion`
+  `1.2.3+…`, framework = `FrameworkInformational`, instance id = `factory.InstanceId`; the startup line read from the
+  compact JSON log in `factory.LogFolder` (bounded wait, partial last line skipped) carries both versions. The fixture
+  maps no GM API, so the startup line is the check.
+- [X] T067 [US6] Docs and notes: `docs/pcr/gm.md` permission table and ops route table list `GET /gm/v1/ops/version`;
   `docs/guides/environments-and-local-run.md` — where to read the version (startup line, OTel, GM read); release notes:
   FG-007 in "Fixed", BC-6 with its steps, FG-007 row of "Consumer workarounds now removable", the release rule
   "annotated tag `v{GameServerFrameworkVersion}`; bump props and `package.json` together".
   Done when: present. (FR-051, FR-055, FR-090, BC-6)
+  Note: `docs/pcr/gm.md` permission row `ops.read` + route row `GET /gm/v1/ops/version`; environments guide new §9
+  (startup line, OTel, GM read, tag rule) + stamp; release notes: FG-007 in Fixed, BC-6 section with steps, FG-007 row
+  of the workaround table, release rule at the top.
 
 **Checkpoint**: framework version identical in assemblies, Unity package, startup log, telemetry and GM read.
 
@@ -993,7 +1034,7 @@ updated Vietnamese pages describe the shipped behaviour, each stamped with the f
 HTML DoD (resume file): `docs/html` is updated because this slice changes the pipeline (request log, Dev refusal),
 hosting (kit, version line) and the local run.
 
-- [ ] T068 [P] [US7] `ErrorCodeBands` in a new file `src/GameServer.Core/Errors/ErrorCodeBands.cs` (public-api §1;
+- [X] T068 [P] [US7] `ErrorCodeBands` in a new file `src/GameServer.Core/Errors/ErrorCodeBands.cs` (public-api §1;
   research R16) and `tests/GameServer.Architecture.Tests/ErrorCodeBandTests.cs` (+ ProjectReference
   `templates/module/Template.Module.Adapters/Template.Module.Adapters.csproj` in `GameServer.Architecture.Tests.csproj`):
   discover every `IGameModule` type with a parameterless constructor in the framework, built-in, sample and template
@@ -1001,7 +1042,13 @@ hosting (kit, version line) and the local run.
   ranges of data-model §5 (core, counter, economy, iap, gm, identity, sample.game, template).
   Done when: green; a temporary code 50001 in the template module fails the test naming `template` (verified,
   reverted). (FR-060, FR-062, US7-2)
-- [ ] T069 [US7] `docs/guides/module-authoring.md` (Vietnamese; after T017, same file): §4 ranges table + game band
+  Note: `ErrorCodeBands` (Core) + `ErrorCodeBandTests` (3) over every `IGameModule` with a parameterless ctor in the
+  `GameServer.*`/`Sample*`/`Template.*` dlls of the test output (test assemblies excluded) plus `CoreErrorCodes`;
+  checks ranges **and** code numbers; known ranges asserted (descriptor name of the template is `template.module`).
+  `Template.Module.Adapters` referenced from Architecture.Tests. Verified: template code 90001 → 50001 fails with
+  "[module template.module] error code TEMPLATE_NOT_ALLOWED(50001) is inside the game band 50000-89999 (FR-062)…";
+  reverted.
+- [X] T069 [US7] `docs/guides/module-authoring.md` (Vietnamese; after T017, same file): §4 ranges table + game band
   50000–89999, the example moves from 50000–50099 (`:60`) to the template's 90000–90099 with "a game module picks its
   range in 50000–89999" (SD11); §8 tests in two variants — in-repo (`GameServer.slnx`, `tests/Shared`,
   `SampleTestHost`) and consumer repo (`$(GameServerRoot)` references, kit `TestHost`, `CommandContextDouble` handler
@@ -1009,7 +1056,13 @@ hosting (kit, version line) and the local run.
   (the `../../../src` path), band.
   Done when: no example in `docs/` or `templates/` uses a range inside 50000–89999 (search recorded);
   `DocumentedConfigurationKeysTests` green. (FR-060, FR-061, FR-071)
-- [ ] T070 [US7] New `docs/guides/consumer-guide.md` (English; plan US7 section list): 1 repository layout, submodule
+  Note: module-authoring: stamp, consumer-guide link, §4 example 90000–90099 with the instruction, ranges table with
+  the game band, §8 in-repo (`SampleTestHost`, `tests/Shared`) and consumer variants (kit reference, double handler
+  test copied from the fixture, `TestHost`, `LocalFlavorFactory`). `templates/module/README.md`: stamp, in-repo
+  `../../../src` vs consumer `$(GameServerRoot)src/...`, band. Search `\b[5-8][0-9]{4}\b` over `docs`, `templates`:
+  only band documentation and the consumer guide's game example (fixture 50000–50099) — the game example is intended
+  band use (deviation from the literal Done-when, recorded). `DocumentedConfigurationKeysTests` green.
+- [X] T070 [US7] New `docs/guides/consumer-guide.md` (English; plan US7 section list): 1 repository layout, submodule
   pinned to an annotated tag (no branch, no `--remote`); 2 build files — what the game mirrors, what is sealed
   (`Directory.Build.props`, `Directory.Build.targets`, `Directory.Packages.props`, `.editorconfig` `root = true`) and
   what still comes from the consumer (`global.json` of the directory `dotnet` runs in, `nuget.config` hierarchy, manual
@@ -1025,14 +1078,23 @@ hosting (kit, version line) and the local run.
   "named in the consumer guide" assertion to `tests/GameServer.Platform.Web.Tests/LocalFlavorSettingsTests.cs` (T028).
   Done when: every FR-070 item has a section (checklist in a Note); `LocalFlavorSettingsTests` green; the page states
   "matches framework 0.7.0 (unreleased)". (FR-012, FR-033, FR-070, FR-072, US7-3)
-- [ ] T071 [US7] `docs/pcr/platform.md` (after T049, same file): §8 game band next to the used ranges; new **§19
+  Note: `docs/guides/consumer-guide.md` sections 1–11 (FR-070 checklist: submodule/tag §1, build files sealed vs
+  mirrored + CPM §2, project refs §3, host composition + Dev rule §4, kit/TestHost/LocalFlavorFactory + 8-key list +
+  rule/double/CheckCommit/outcome §5, run-local §6, versions §7, request log/console §8, band §9, Unity UPM `#v0.7.0`
+  + "coming in slice 014" §10, bump checklist §11); stamp "Matches framework 0.7.0 (unreleased)". New
+  `LocalFlavorSettingsTests.Every_key_is_named_in_the_consumer_guide`; green.
+- [X] T071 [US7] `docs/pcr/platform.md` (after T049, same file): §8 game band next to the used ranges; new **§19
   Consumer readiness (slice 013)** — consumer-facing public API of contracts/public-api.md (kit additive-only rule,
   `LocalFlavorSettings` rule, outcome feature, `ErrorCodeBands`, `GameServerVersion`/`GameServerRuntimeInfo`), Dev rule
   summary (three layers, one decision), request-log/console settings reference, version and release procedure (tag
   `v{version}`, props + `package.json` together), "Breaking" BC-1..BC-7; `tests/SampleGame.Tests/DocumentedConfigurationKeysTests.cs`
   adds `## 19.` and `docs/guides/consumer-guide.md` to `Documents()`.
   Done when: `DocumentedConfigurationKeysTests` green; §19 lists BC-1..BC-7. (FR-051, FR-060, FR-089)
-- [ ] T072 [US7] HTML pages (Vietnamese; after T017, T049, T059, T067; FR-071..FR-073): `docs/html/02-them-command.html`
+  Note: PCR platform §8 band table + test note; header line names §19 + stamp; new §19 (public API table, kit additive
+  rule, `LocalFlavorSettings` rule + 8 keys, double, Dev rule three layers/one decision, request-log/console keys,
+  version and release procedure, Breaking BC-1..BC-7). `DocumentedConfigurationKeysTests.Documents()` adds `## 19.`
+  and the consumer guide; green.
+- [X] T072 [US7] HTML pages (Vietnamese; after T017, T049, T059, T067; FR-071..FR-073): `docs/html/02-them-command.html`
   — §4.2 band, §4.6 host registration and §4.8 / §5 step 7 tests each in two variants (in-repo / consumer repo with the
   kit and a `CommandContextDouble` handler test), link to the consumer guide; `docs/html/01-gioi-thieu.html` — Dev rule,
   request log in the pipeline walkthrough, kit, Unity package version 0.6.0 → 0.7.0 (`:646`);
@@ -1045,17 +1107,35 @@ hosting (kit, version line) and the local run.
   checked); the guides touched by this slice (`docs/guides/module-authoring.md`, `environments-and-local-run.md`,
   `consumer-guide.md`) and `templates/module/README.md` carry the same "framework 0.7.0 (unreleased)" line (FR-072 covers
   guides, plan R18 names only the HTML stamps). (FR-008, FR-060, FR-071, FR-072, FR-073, US7-4)
-- [ ] T073 [P] [US7] `README.md` — pointer to `docs/guides/consumer-guide.md` and the run-local host parameters;
+  Note: all four pages: stamps → "Đúng với framework v0.7.0 (chưa phát hành)" (meta + footer; 01 table header; 03 ĐÃ
+  CHẠY legend reworded to the 2026-10-31 build). 01: status table (007–012 in `main`/v0.6.0, 013 row, later slices
+  unnumbered), TestKit row, fixture, consumer link, diagram A with `RequestLogMiddleware` first (row re-laid out, five
+  98-px boxes), §4.8 console line + `-HostProject`, §4.10 request log + version, SDK 0.7.0, test-kit links (dead
+  `tests/Shared/TestHost.cs` fixed), counts 1445/1352/93. 02: diagram C label + table #2, §3 step 2 request log, step
+  3 no longer "ngoài cùng", step 7 Dev refusal, step 9 Dev in `EnsureActorAllowed`, line ranges re-read, §4.2 band,
+  §4.6/§4.8/§5 step 7 in-repo + consumer variants (fixture excerpts, `CommandContextDouble` handler test), §5/§7
+  excerpts fixed to `SampleTestHost` (the kit `TestHost` defaults to Identity only), checklist row 3. 03: scope (013,
+  old "015" numbering explained), §8.1 request event per flavor + volume + console + startup line, §9 version on
+  telemetry/GM, `request_log_failures_total` alert row. index: summaries + consumer-guide link. Search: no `175df65`,
+  no Dev/Production-only statement; 456 relative links/anchors resolve (script check).
+- [X] T073 [P] [US7] `README.md` — pointer to `docs/guides/consumer-guide.md` and the run-local host parameters;
   `docs/pcr/unity-sdk.md:3` — package version 0.7.0 (lockstep with the framework version).
   Done when: present; `DocumentedConfigurationKeysTests` green (README is one of its documents). (FR-070, FR-051)
-- [ ] T074 [US7] Finalize `specs/013-consumer-readiness/release-notes-draft.md` (after T018, T034, T049, T053, T059,
+  Note: README: run-local host parameters + new section "Dùng framework từ repo game" (pointer, version rule);
+  `docs/pcr/unity-sdk.md:3` → 0.7.0 lockstep with `GameServerFrameworkVersion`. `DocumentedConfigurationKeysTests`
+  green.
+- [X] T074 [US7] Finalize `specs/013-consumer-readiness/release-notes-draft.md` (after T018, T034, T049, T053, T059,
   T067, T072): FG ids fixed (FG-010, 001, 006, 003, 004, 002, 007, 011, 012, 025); BC-1..BC-7 each with "what breaks /
   how it surfaces / fix" (spec table + plan migration steps); the consumer workaround table (spec "Consumer impact"),
   SC-010 statement (8 marker ids removable); "Docs not re-checked" = every page and guide not touched by this slice
   (FR-072); open manual checks (T075, T076); a note that slices 014–016 append their sections and the tag message is
   built from the merged notes; the tag is `v0.7.0` (FR-051).
   Done when: every BC and FG id appears with its fix; the not-re-checked list is explicit. (FR-072, FR-090)
-- [ ] T075 [US7] Consumer-guide walkthrough (manual, SC-009; after T070–T074): in a fresh temp folder outside the
+  Note: release notes: FG list + release rule + 014–016/tag note at the top; FG-007/011/012 in Fixed; BC-6 section
+  (BC-1..BC-7 all present); new-keys note (none for 013 US6/US7, new GM endpoint); FG-001 "Stays" cell fixed (console
+  sink shipped); FG-007/011/012 workaround rows + SC-010 statement (8 ids); "Docs not re-checked" list explicit;
+  manual-checks table (T075 done, T076/T080 open).
+- [X] T075 [US7] Consumer-guide walkthrough (manual, SC-009; after T070–T074): in a fresh temp folder outside the
   framework, create a game repo, add this repository as a submodule at the slice commit (local path), and — using only
   `docs/guides/consumer-guide.md` and the updated pages — add one module with one command and its error codes in
   50000–89999, one handler unit test with `CommandContextDouble`, one `LocalFlavorFactory` smoke test, and run the host
@@ -1063,6 +1143,20 @@ hosting (kit, version line) and the local run.
   (and the fixture if it differs) before the slice closes; delete the temp repo.
   Done when: a Note records who, date, steps, gaps found and their fixes; handler test, smoke test and host run green
   without reading framework source. (FR-070, FR-071, US7 independent test, SC-009)
+  Note: 2026-11-03, implementer agent. Steps: temp folder `%TEMP%/gs-walk-*`; framework = throwaway clone holding the
+  uncommitted 013 tree, committed and tagged `v0.7.0` in that clone only (nothing committed in this repository); game
+  repo `git submodule add` + `checkout v0.7.0` + `describe` = `v0.7.0`; files taken from the guide's code blocks
+  (props, packages, module/host/test csproj, Program.cs); module `walk` (one command `walk.step`, codes 51000–51099,
+  proto as the template); handler test (double) + `LocalFlavorFactory<Program>` smoke test; host via
+  `framework/tools/local/run-local.ps1 -HostProject src/Walk.Host -Name "Walk game"` on port 5291. Result: build 0
+  warnings, 3/3 tests green, ready banner, startup line `Starting walk 0.3.1 on framework 0.7.0+fdb074c…`, console
+  line `GET /v1/time … -> 200 OK`, `/health/ready` 200; host stopped by killing `Walk.Host.exe` (no console for Ctrl+C
+  in the agent shell; graceful stop is covered by `RunLocalScriptTests` opt-in). Gaps found and fixed in the guide:
+  (1) game build fails on rules the framework's `.editorconfig` turns off (`xUnit1051`, `CA1716`) — the fixture
+  inherits it by living inside the framework; guide now says copy `framework/.editorconfig` (§1, §2, §11, intro note);
+  (2) host needs `config/base/manifest.json` — §4 now shows the fixture's manifest and the copy rule; (3) C# samples
+  lacked `using` lines — added from the fixture files. Fixture unchanged (no difference in behaviour). Temp folder
+  deleted; no `gs-walk-*`, no process left.
 
 **Checkpoint**: docs describe the shipped behaviour; release notes complete.
 

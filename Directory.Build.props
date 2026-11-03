@@ -7,6 +7,11 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- Framework version (FR-050, FR-051): the only declaration; sdk/unity/com.gameserver.client/package.json carries the same
+         value (VersionTests) and the release tag is v$(GameServerFrameworkVersion). The SDK adds +{git sha} to the
+         informational version. -->
+    <GameServerFrameworkVersion>0.7.0</GameServerFrameworkVersion>
+    <Version>$(GameServerFrameworkVersion)</Version>
     <!-- Test project = under this repository's tests/ folder, by path relative to this file (FG-004): a checkout below a
          folder named "tests" keeps analyzers and banned APIs on every other framework project. -->
     <_GameServerRelativeDir>$([MSBuild]::MakeRelative('$(MSBuildThisFileDirectory)', '$(MSBuildProjectDirectory)').Replace('\', '/').ToLowerInvariant())</_GameServerRelativeDir>

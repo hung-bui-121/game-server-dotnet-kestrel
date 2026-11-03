@@ -1,7 +1,13 @@
 # Release notes draft — v0.7.0 (slice 013 consumer-readiness)
 
 Input of the `v0.7.0` annotated tag message (FR-090). Each user story appends its part; the final text is copied into the
-tag message when the slice closes.
+tag message when the slice closes. Slices 014–016 append their own sections to this file; the `v0.7.0` tag message is built
+from the merged notes of 013–016 (one tag for the round).
+
+FG ids fixed by slice 013: FG-010, FG-001, FG-006, FG-003, FG-004, FG-002, FG-007, FG-011, FG-012, FG-025. Breaking changes:
+BC-1 … BC-7. Release rule (FR-051): the annotated tag of declared version `X.Y.Z` is `vX.Y.Z`; `GameServerFrameworkVersion` in
+`Directory.Build.props` and `version` in `sdk/unity/com.gameserver.client/package.json` are bumped together in one commit
+(`VersionTests` fails on a mismatch, naming both values). This round: `0.7.0` → tag `v0.7.0`.
 
 ## Fixed (FG ids)
 
@@ -77,6 +83,33 @@ tag message when the slice closes.
   4. new counter `request_log_failures_total` (meter `GameServer.Platform`) for events that could not be built or written.
   Measured in process (Windows 11, Release, 2026-11-03): p95 of a command round trip 0.786 ms off vs 0.681 ms with event +
   console (noise); stalled console + saturated file queue: 2 000/2 000 requests OK in 0.23 s, drops counted.
+
+- **FG-007** — no version anywhere: framework assemblies said `1.0.0.0`, nothing logged or exported which framework or
+  game build ran, so the game stamped a framework tag into its own assembly and logged it by hand. Now:
+  1. one declaration `GameServerFrameworkVersion` = `0.7.0` in the framework's `Directory.Build.props` → every framework
+     assembly (also when built as a project reference from a game) has AssemblyVersion `0.7.0.0`, FileVersion `0.7.0.0`,
+     InformationalVersion `0.7.0+{40-hex git sha}` (verified in a clone and in a submodule checkout); the Unity package
+     `com.gameserver.client` is `0.7.0` too;
+  2. public API (`GameServer.Platform`): `GameServerVersion.Framework` (`0.7.0`), `FrameworkInformational`,
+     `Of(Assembly)`/`InformationalOf(Assembly)`, and the singleton record `GameServerRuntimeInfo` (game id, environment id,
+     deployment environment, instance id, game assembly = `IHostEnvironment.ApplicationName`, game version = its
+     informational version, framework version), also `GameServerBuilder.Runtime`; `GameServerRuntimeInfo.ResolveInstanceId`
+     is now the only implementation of the instance-id rule (log file names, `service.instance.id`, analytics files, GM);
+  3. startup line (Information, category `GameServer.Startup`, after a successful validation; never with `--provision`):
+     `Starting {GameId} {GameVersion} on framework {FrameworkVersion}: environment {EnvironmentId} ({DeploymentEnvironment}), instance {InstanceId}.`;
+  4. telemetry resource: `service.version` = game version, new attribute `gameserver.framework.version`;
+  5. GM `GET /gm/v1/ops/version` (`ops.read`): `{gameId, environmentId, instanceId, gameVersion, frameworkVersion}` of the
+     instance that answered (OpenAPI regenerated); public endpoints and health probes carry no version.
+- **FG-011** — no reserved range for game error codes: a framework release could take the range a game used. The band
+  **50000–89999** is reserved for game (consumer) modules (`GameServer.Errors.ErrorCodeBands.GameStart`/`GameEnd`;
+  `FrameworkReservedStart`/`End` = 90000–99999); `ErrorCodeBandTests` fails, naming module and range or code, if a framework,
+  sample or template module ever uses it. The module-authoring example moved from 50000–50099 to the template's 90000–90099.
+- **FG-012** — no consumer documentation: new English `docs/guides/consumer-guide.md` (submodule pinned to an annotated tag,
+  build files mirrored vs sealed, CPM import, project references, host composition, test kit, local run, versions, request
+  log and console, error band, Unity SDK by UPM URL `…#v0.7.0`, bump checklist), every sample copied from
+  `tests/ConsumerFixture`; `docs/guides/module-authoring.md` §8 and `docs/html/02-them-command.html` §4.6/§4.8/§5 step 7
+  give the in-repo and the consumer-repo variant (kit `TestHost`, `CommandContextDouble` handler test). Walked through on a
+  fresh game repository (two gaps found and fixed in the guide: copy `framework/.editorconfig`; `config/base/manifest.json`).
 
 ## Bug fixes
 
@@ -184,6 +217,23 @@ Migration:
    must not contain a `tests` folder" notes in README, CLAUDE.md, COMMANDS and known limitations.
 4. Nothing to do for a game that never had a root `Directory.Build.targets`; framework build output is unchanged.
 
+### BC-6 — framework version stamped; telemetry carries `service.version` and the framework version
+
+Was: framework assemblies `1.0.0.0` (file `1.0.0.0`, informational `1.0.0+{sha}`, the SDK default); telemetry resource without `service.version`.
+Now: `0.7.0.0` / `0.7.0.0` / `0.7.0+{sha}`; `service.version` = the host's (game's) informational version,
+`gameserver.framework.version` = the framework's; one startup Information line names both. Surfaces in dashboards,
+assembly-version checks and log queries.
+
+Migration:
+
+1. Update dashboards, alerts or tooling keyed on assembly version `1.0.0.0` or on the absence of `service.version`; group
+   by `service.version` (game) and `gameserver.framework.version` (framework).
+2. Delete hand-written framework-tag stamping and the hand-written startup version line (zh-pvp-server:
+   `src/ZhPvp.Host/BuildInfo.cs`, `AssemblyMetadata("FrameworkTag")` in `ZhPvp.Host.csproj`, the
+   `zhpvp {GameVersion} on framework {FrameworkTag}` log call in `Program.cs`).
+3. Keep the game's own `<Version>`: it becomes `service.version` and `gameVersion` of the GM read.
+4. A "checked-out framework tag = pinned tag" check can compare the pinned tag with `"v" + GameServerVersion.Framework`.
+
 ### BC-7 — one request event per request in Development/Test, optional console output
 
 Was: no per-request event, no console output from operational logs. Now: Development/Test hosts (flavors `local`, `dev`,
@@ -227,18 +277,55 @@ Migration:
 | `Observability:Logging:Console:MinimumLevel` | `Information` | Serilog level name |
 | `Observability:Logging:Console:BufferSize` | `1000` | ≥ 1 |
 
+No configuration key was added for versions (FR-050..FR-055) or the error band. New GM endpoint (additive):
+`GET /gm/v1/ops/version` (`ops.read`).
+
 ## Consumer workarounds now removable
 
 | FG | Workaround today (zh-pvp-server) | Removable after `v0.7.0` | Stays |
 | --- | --- | --- | --- |
 | FG-010 | `src/ZhPvp.Host/ZhPvpModules.cs` marker on the `AllowsDevelopmentTools` condition; `tests/ZhPvp.Tests/Host/CompositionTests.cs` marker (test as the only protection) | Both markers (framework refuses Dev in beta/uat itself) | The condition and the 5-flavor composition test may stay as game hygiene; CLAUDE.md rule 7 |
-| FG-001 | `tests/ZhPvp.Tests/ZhPvp.Tests.csproj` links `tests/Shared/{ProtobufHttp,IdentityHttp,TestStores}.cs`; `tests/ZhPvp.Tests/Support/LocalFlavorHost.cs` copies the factory settings of the framework smoke test | The three `Compile` links (→ kit `ProjectReference`); `LocalFlavorHost` (→ `LocalFlavorFactory<Program>`, `Documents(...)` reads `factory.DataFolder`) | Game-specific capture hooks (the console request-log sink) until US3 ships the framework console sink |
+| FG-001 | `tests/ZhPvp.Tests/ZhPvp.Tests.csproj` links `tests/Shared/{ProtobufHttp,IdentityHttp,TestStores}.cs`; `tests/ZhPvp.Tests/Support/LocalFlavorHost.cs` copies the factory settings of the framework smoke test | The three `Compile` links (→ kit `ProjectReference`); `LocalFlavorHost` (→ `LocalFlavorFactory<Program>`, `Documents(...)` reads `factory.DataFolder`) | Nothing: the framework console sink (`Observability:Logging:Console:Enabled`) replaces the game's console capture hook |
 | FG-025 | `src/ZhPvp.Host/RequestLog/*.cs` (middleware, body capture, envelope parsing, sink, startup filter, settings check; markers in `RequestLogMiddleware.cs`, `RequestOutcome.cs`, `RequestLogSink.cs`), registration in `ZhPvpModules.cs`, `ZhPvp:RequestLog:Enabled` in `appsettings.Local.json`, `tests/ZhPvp.Tests/Host/RequestLogTests.cs` | The whole folder, its registration, setting and tests (framework request event; `Observability:Logging:Console:Enabled: true` in the local flavor file) | Any game-specific per-request behaviour, rebuilt on `HttpContext.RequestOutcome()` |
 | FG-006 | `tests/ZhPvp.Tests/Support/FakeCommandContext.cs` (dictionary aggregates, throwing `Config`/claims/ids) | The whole file (→ `CommandContextDouble`; handler tests add `CheckCommit(outcome).ShouldBeEmpty()`) | — |
 | FG-003 | Root `Directory.Build.props` comment "never add a root `Directory.Build.targets`" + `FRAMEWORK-GAP FG-003` marker; CLAUDE.md rule on game build settings | The rule, the marker and the CLAUDE.md sentence (framework root has its own `Directory.Build.targets`) | Game build settings in the game's own files (now also a root `Directory.Build.targets` if wanted) |
 | FG-004 | `ZhPvpRefuseTestsAncestor` target + `FRAMEWORK-GAP FG-004` marker in `Directory.Build.props`; "no `tests` folder in the clone path" in README, CLAUDE.md, `docs/COMMANDS.md`, `docs/KNOWN_LIMITATIONS.md` | The guard target, the marker and the four notes | The game's own name-based `IsTestProject` rule (`*.Tests`) |
 | FG-002 | `tools/local/run-local.ps1` (251 lines) and `run-local.sh` (224 lines), adapted copies with `FRAMEWORK-GAP FG-002` headers; `docs/KNOWN_LIMITATIONS.md` row | Both copies (→ `framework/tools/local/run-local.* -HostProject src/ZhPvp.Host -Name "ZhPvp"`) and the limitation row | A thin wrapper for the submodule/tag check (exit 8) if the game keeps it |
+| FG-007 | `src/ZhPvp.Host/BuildInfo.cs` (marker), `AssemblyMetadata("FrameworkTag")` in `src/ZhPvp.Host/ZhPvp.Host.csproj`, the startup log line in `Program.cs` | All three (framework startup line, `GameServerVersion`, `GameServerRuntimeInfo`, telemetry, GM read) | The game's `<Version>`; `GameServerFrameworkTag` in props for the "checked-out tag = pinned tag" test, now comparable with `GameServerVersion.Framework` |
+| FG-011 | Band 50000–50999 recorded only in `CLAUDE.md` and `docs/pcr/placeholder.md` | Nothing to remove: the band lies inside the reserved game band; the notes can point to `docs/pcr/platform.md` §8 / `ErrorCodeBands` | The game's own sub-ranges per module |
+| FG-012 | No marker; consumer steps written in `docs/COMMANDS.md` and `docs/framework-feedback/UPGRADE.md` | Duplicated consumer steps can point to `framework/docs/guides/consumer-guide.md` (bump checklist §11) | Game-specific steps (friction log, game-only checks) |
+
+SC-010: after the bump to `v0.7.0` the markers of **8** of the 20 marker ids open on 2026-11-03 can be removed — FG-001,
+FG-002, FG-003, FG-004, FG-006, FG-007, FG-010, FG-025 — and the `UPGRADE.md` sync lines for `tests/Shared`, the smoke test
+and `tools/local` are no longer needed. Still open after 013: FG-005, FG-008, FG-009 (deferred packaging) and the ids owned
+by slices 014–016.
 
 ## Docs not re-checked
 
+Pages and guides **touched** by slice 013 carry "framework v0.7.0 (unreleased)" / "Đúng với framework v0.7.0 (chưa phát
+hành)": `README.md`, `docs/guides/consumer-guide.md` (new), `docs/guides/module-authoring.md`,
+`docs/guides/environments-and-local-run.md`, `docs/pcr/platform.md` (§8, §13, §17, §19), `docs/pcr/gm.md`,
+`docs/pcr/unity-sdk.md`, `templates/module/README.md`, `docs/html/index.html`, `docs/html/01-gioi-thieu.html`,
+`docs/html/02-them-command.html`, `docs/html/03-deploy.html` (all `175df65` stamps replaced), `docs/api/gm-openapi.json`
+(regenerated).
+
+**Not re-checked** against this release (FR-072; they keep their own stamp or none):
+
+- `docs/guides/analytics.md`
+- `docs/guides/local-real-env-testing.md`
+- `docs/adr/0001-runner-store-abstraction.md`
+- `docs/pcr/economy.md`, `docs/pcr/iap.md`, `docs/pcr/identity.md`, `docs/pcr/sample-counter.md`, `docs/pcr/sample-game.md`
+- `specs/011-local-env/contracts/operations-cli.md` (its §4 is superseded by `specs/013-consumer-readiness/contracts/run-local-cli.md`)
+- In `docs/html/03-deploy.html` the "→ 015" badges still name the old ops-readiness slice number (the page says so in its
+  scope line); the slice gets a new number after 013–016.
+
 ## Manual checks
+
+| Check | State |
+| --- | --- |
+| T075 consumer-guide walkthrough (SC-009) | **done** 2026-11-03 (implementer agent): fresh game repo in `%TEMP%`, framework as submodule of a throwaway clone holding the uncommitted 013 tree (tag `v0.7.0` in that clone only), one module (`walk.step`, codes 51000–51099), handler test with `CommandContextDouble`, `LocalFlavorFactory<Program>` smoke test, host via `framework/tools/local/run-local.ps1 -HostProject src/Walk.Host -Name "Walk game"` (port 5291): build 0 warnings, 3/3 tests green, ready banner + startup version line + console request line; gaps fixed in the guide (`.editorconfig` copy, `config/base/manifest.json`, `using` lines in samples); temp repo deleted |
+| T076 `GAMESERVER_SCRIPT_TESTS=1` `RunLocalScriptTests` (default + fixture host) | open (T076) |
+| T076 `GAMESERVER_PERF=1` `RequestLogPerformanceTests` (SC-008) | open (T076; the in-process figures above are from US3) |
+| T076 `tools/local/check-build-seal.ps1` (SC-004) | open (T076) |
+| `run-local.sh` on macOS/Linux | open (no machine; spec assumption) |
+| Full suite with Couchbase (T080) | open |
