@@ -108,6 +108,13 @@ internal sealed class DailyPlayerSet(int capacity, Action onReset)
 
             if (current.Count >= capacity)
             {
+                // The lookup above can miss a concurrent add of this player that is the one filling the set; an add is
+                // visible before its count, so a second lookup after reading the full count tells the two apart.
+                if (current.Players.ContainsKey(playerId))
+                {
+                    return false;
+                }
+
                 if (Interlocked.CompareExchange(ref _current, new Day(localDay), current) == current)
                 {
                     onReset();

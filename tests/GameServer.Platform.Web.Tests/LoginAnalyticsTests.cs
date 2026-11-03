@@ -378,6 +378,47 @@ public sealed class LoginAnalyticsTests
     }
 
     [Fact]
+    public void A_player_whose_concurrent_add_fills_the_set_is_seen_and_does_not_clear_it()
+    {
+        // B1: two threads offer one unseen player to a set one short of capacity. The loser's lookup can miss while the
+        // winner's add fills the set; the loser must then find the player instead of clearing the set and marking it again.
+        const int Rounds = 20_000;
+        var day = new DateOnly(2026, 10, 31);
+        var resets = 0;
+        var sets = new DailyPlayerSet[Rounds];
+        for (var i = 0; i < Rounds; i++)
+        {
+            sets[i] = new DailyPlayerSet(1, () => Interlocked.Increment(ref resets));
+        }
+
+        var marks = new int[Rounds];
+        using var barrier = new Barrier(2);
+        var threads = Enumerable.Range(0, 2).Select(_ => new Thread(() =>
+        {
+            for (var i = 0; i < Rounds; i++)
+            {
+                barrier.SignalAndWait();
+                if (sets[i].TryMark("p", day))
+                {
+                    Interlocked.Increment(ref marks[i]);
+                }
+            }
+        })).ToArray();
+        foreach (var thread in threads)
+        {
+            thread.Start();
+        }
+
+        foreach (var thread in threads)
+        {
+            thread.Join();
+        }
+
+        resets.ShouldBe(0);
+        marks.Count(m => m != 1).ShouldBe(0);
+    }
+
+    [Fact]
     public async Task The_tracker_reset_metric_is_exported_on_the_identity_meter()
     {
         await using var host = await StartAsync(s => s["GameServer:Analytics:ResumeTrackerCapacity"] = "1000");
