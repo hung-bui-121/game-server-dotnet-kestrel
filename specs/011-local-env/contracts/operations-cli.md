@@ -97,6 +97,10 @@ Indexes are not checked at startup (needs catalog rights); the provisioning repo
 
 ## 4. Local run scripts (FR-035..FR-037)
 
+> **Superseded by `specs/013-consumer-readiness/contracts/run-local-cli.md`** (slice 013, FG-002): the scripts gained host
+> parameters (`-HostProject`/`-LaunchProfile`/`-Name`) and read the host through `tools/GameServer.LocalRun`. Without them
+> they behave as described below; this section is kept as the slice 011 record.
+
 ```text
 tools/local/run-local.ps1 [-Port <int>] [-Reset] [-Lan]          # Windows PowerShell 5.1 / PowerShell 7
 tools/local/run-local.sh  [--port <int>] [--reset] [--lan]       # bash (macOS, Linux, Git Bash)

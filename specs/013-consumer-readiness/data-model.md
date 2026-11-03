@@ -220,7 +220,8 @@ requestId)`.
 | `flavor` | `Local` | profile `environmentVariables.ASPNETCORE_ENVIRONMENT` (required) |
 | `port` | `5180` | first `http://` URL of `applicationUrl`; none → `5080` |
 | `portNote` | `` / `no http URL in profile 'local'; using 5080` | banner note |
-| `dataFolder` | `E:/game/.local/data` | `FileStore:Folder` of base + flavor + env vars, relative to `projectDir` |
+| `dataFolder` | `E:/game/.local/data` | `FileStore:Folder` of base + flavor + env vars (profile variables last), relative to `projectDir`; empty when unset |
+| `dataFolderSetting` | `../../.local/data` | the configured value as written (the sample banner prints it, unchanged from slice 011); added in T054 |
 | `logFolder` | `E:/game/src/ZhPvp.Host/logs` | `Observability:Logging:Directory` (default `logs`), relative to `projectDir` |
 | `sdkVersion` | `10.0.403` | `sdk.version` of the nearest upward `global.json` |
 | `globalJson` | `E:/game/global.json` | that file |

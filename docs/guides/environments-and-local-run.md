@@ -115,8 +115,11 @@ tools/local/run-local.sh                       # bash: macOS, Linux, Git Bash
 tools/local/run-local.sh --port 5090 --reset
 ```
 
-Script build `samples/SampleHost` (Debug), chạy `dotnet run --no-build --launch-profile local -- --urls …` từ thư mục
-`samples/SampleHost`, chờ `GET /health/ready` = 200 (tối đa 60 s), in khối URL rồi tiếp tục hiện log của host:
+Không tham số, script chạy host mẫu `samples/SampleHost` với launch profile `local` (hành vi slice 011). Host do
+`tools/GameServer.LocalRun describe` đọc (launch profile, flavor, cổng, thư mục data/log, `global.json`; chỉ đọc, không ghi
+file nào của host); script in dòng `run-local: host project … (profile …, flavor …)`, build host (Debug), chạy
+`dotnet run --no-build --launch-profile <profile> -- --urls …` từ thư mục project, chờ `GET /health/ready` = 200 (tối đa
+60 s), in khối URL rồi tiếp tục hiện log của host. Host mẫu giữ nguyên khối URL của slice 011:
 
 ```text
 Local game server is ready (flavor Local, data ../_database/dbbase)
@@ -129,19 +132,22 @@ Press Ctrl+C to stop.
 
 | Tuỳ chọn PowerShell / bash | Mặc định | Tác dụng |
 | --- | --- | --- |
-| `-Port <n>` / `--port <n>` | 5080 | host nhận `--urls http://localhost:<n>` |
+| `-HostProject <path>` / `--host-project <path>` | `samples/SampleHost/SampleHost.csproj` của framework | file project của host, hoặc thư mục chứa đúng một `*.csproj`; đường dẫn tương đối tính từ thư mục hiện tại |
+| `-LaunchProfile <name>` / `--launch-profile <name>` | `local` | profile trong `Properties/launchSettings.json` của host: flavor (`ASPNETCORE_ENVIRONMENT`, bắt buộc) và cổng mặc định |
+| `-Name <text>` / `--name <text>` | `Local game server` (host mẫu), còn lại là tên project | tiêu đề của khối URL |
+| `-Port <n>` / `--port <n>` | cổng của URL `http://` đầu tiên trong profile; không có → 5080 kèm dòng `Note` | host nhận `--urls http://localhost:<n>` |
 | `-Reset` / `--reset` | tắt | host nhận `--FileStore:ResetOnStart=true`: **host** xoá nội dung thư mục store sau khi đã khoá nó (mục 4.3) |
 | `-Lan` / `--lan` | tắt | nghe mọi interface (`http://0.0.0.0:<n>`) để điện thoại cùng mạng kết nối; in cảnh báo đỏ và các địa chỉ IPv4 LAN |
 
 | Exit code | Ý nghĩa (thông báo nêu nguyên nhân và cách sửa) |
 | --- | --- |
 | 0 | dừng bằng Ctrl+C sau khi host dừng êm |
-| 2 | tham số sai |
-| 3 | không tìm thấy .NET SDK của `global.json` (tìm ở `PATH` rồi `~/.dotnet10`) |
-| 4 | cổng đang bận — nêu cổng và `-Port` / `--port` |
-| 5 | build lỗi |
-| 6 | host thoát trước khi sẵn sàng (thông báo của host in ngay phía trên: thư mục đang bị host khác khoá, file hỏng, …) |
-| 7 | quá 60 s chưa sẵn sàng — in 20 dòng cuối của file log mới nhất trong `samples/SampleHost/logs/`, dừng host |
+| 2 | tham số sai, hoặc host không hợp lệ: không có project / thư mục có 0 hay nhiều `*.csproj`, thiếu `Properties/launchSettings.json`, profile không tồn tại (liệt kê các profile có), profile thiếu `ASPNETCORE_ENVIRONMENT`, JSON hỏng (file, dòng, vị trí), không có `global.json` phía trên host |
+| 3 | không tìm thấy .NET SDK của `global.json` gần nhất phía trên host (tìm ở `PATH` rồi `~/.dotnet10`; version đọc từ file đó) |
+| 4 | cổng đang bận — nêu cổng và `-Port` / `--port` (kiểm trước khi build) |
+| 5 | build lỗi (host, hoặc tool `tools/GameServer.LocalRun`) |
+| 6 | host thoát trước khi sẵn sàng (thông báo của host in ngay phía trên: thư mục đang bị host khác khoá, file hỏng, cấu hình sai, …) — kèm 20 dòng cuối của file log mới nhất trong thư mục log của host |
+| 7 | quá 60 s chưa sẵn sàng — in 20 dòng cuối của file log mới nhất trong thư mục log của host (`Observability:Logging:Directory`, mặc định `logs`), dừng host |
 | khác | exit code của host sau khi đã sẵn sàng |
 
 Ghi chú:
@@ -158,6 +164,42 @@ Ghi chú:
   (host thứ hai từ chối trong ≤ 5 s sau khi khởi động).
 - Flavor `Local` và `Dev` in một dòng mỗi request (và mỗi log vận hành từ Information) lên console, ngoài file log (mục 8).
 - `run-local.sh` cần bit thực thi (`git add --chmod=+x`); không có thì chạy `bash tools/local/run-local.sh`.
+- Trên Windows, `bash` trong `C:\Windows\System32` là trình khởi động WSL; dùng Git Bash (`C:\Program Files\Git\bin\bash.exe`).
+- Kiểm lặp lại được: `RunLocalScriptTests` (exit 2 và 4, mỗi lần chạy test; khởi động/dừng host mẫu và host fixture khi
+  `GAMESERVER_SCRIPT_TESTS=1`, Windows) và `LocalRunDescribeTests` (quy tắc đọc host).
+
+#### 3.1.1 Chạy host của game (consumer)
+
+Từ repo game có framework là submodule `framework/`:
+
+```powershell
+framework/tools/local/run-local.ps1 -HostProject src/ZhPvp.Host -LaunchProfile local -Name "ZhPvp"
+```
+
+```bash
+framework/tools/local/run-local.sh --host-project src/ZhPvp.Host --launch-profile local --name "ZhPvp"
+```
+
+Script đọc của host (không bao giờ ghi): `Properties/launchSettings.json` (cho phép comment), `appsettings.json` +
+`appsettings.{flavor}.json` + biến môi trường (biến của profile thắng biến kế thừa, như `dotnet run --launch-profile`) để lấy
+`FileStore:Folder` (thư mục data: khối URL, `-Reset`) và `Observability:Logging:Directory` (thư mục log: tail khi lỗi), tính
+từ thư mục project; version SDK từ `global.json` gần nhất phía trên host. Output build của tool nằm trong
+`framework/tools/GameServer.LocalRun/bin|obj` (gitignore).
+
+Khối URL của host không phải host mẫu chỉ có các dòng không phụ thuộc host:
+
+```text
+ZhPvp is ready (flavor Local, data E:/game/.local/data)
+  Project      E:/game/src/ZhPvp.Host/ZhPvp.Host.csproj (profile local)
+  Base URL     http://localhost:5180/
+  Health       http://localhost:5180/health/ready
+Press Ctrl+C to stop.
+```
+
+Thêm dòng `Note` khi profile không có URL `http://`, `, started empty` với `-Reset`, khối cảnh báo LAN với `-Lan` ("the
+development tools of this host … are reachable from the network"). Exit code như bảng trên; wrapper của game dùng 8 trở lên
+cho kiểm tra riêng (ví dụ 8 = submodule chưa init) rồi gọi script của framework. Contract:
+`specs/013-consumer-readiness/contracts/run-local-cli.md`.
 
 ### 3.2 IDE và `dotnet run` (launch profile)
 

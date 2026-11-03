@@ -38,6 +38,26 @@ tag message when the slice closes.
   Configure actor (`AsPlayer`, `AsGm`, `WithActor`), `At`, `WithConfig`, `WithRequestId`/`WithReceiptId`, `Seed`,
   `SeedClaim`; read `Writes`/`Written<T>`, `Outbox` (audit and analytics entries included), `Claims`;
   `CheckCommit(outcome)` returns the runner's commit-rule messages (uncatalogued or non-200 commit code, GM audit count).
+- **FG-003** — a consumer's root `Directory.Build.targets` reached framework projects (the framework had none, so MSBuild
+  imported the nearest one above it). The framework root now has its own behaviour-free `Directory.Build.targets`, which
+  imports no parent; a game may add its own root `Directory.Build.targets` for its projects.
+- **FG-004** — a framework checkout below any folder named `tests` built every framework project as a test project (no
+  analyzers or banned APIs; `CS0246 'Xunit'`), because `IsTestProject` matched `\tests\` anywhere in the absolute path.
+  It is now decided by the path relative to the framework root: true exactly for projects under the framework's own
+  `tests/` folder. `BuildSealingTests` (every test run: framework projects evaluated below a hostile `tests/` parent with
+  its own `Directory.Build.props`/`.targets`) and `tools/local/check-build-seal.ps1` (full Release build in that layout:
+  0 errors, 0 warnings, no marker) check both fixes.
+- **FG-002** — `tools/local/run-local.ps1|.sh` hardcoded the sample host, its port, SDK version and log folder, so a game
+  kept ~200-line copies of both. New parameters `-HostProject`/`--host-project` (project file or its folder),
+  `-LaunchProfile`/`--launch-profile` (default `local`) and `-Name`/`--name`; the host is read (never written) by the new
+  framework tool `tools/GameServer.LocalRun` (`describe`): launch profile flavor and first `http://` port (none → 5080
+  with a note), `FileStore:Folder` and `Observability:Logging:Directory` of the flavor's settings (+ environment
+  variables, profile variables last), `sdk.version` of the nearest `global.json`. Invalid host input exits 2 naming the
+  cause and the fix; the banner of a non-sample host has only host-independent lines (name, project, base URL, health);
+  a failure before ready also tails the host's newest log file. Without the new parameters both scripts behave as in
+  `v0.6.0` (sample banner unchanged; new line `run-local: host project …`; LAN warning text is host-neutral).
+  Repeatable checks: `RunLocalScriptTests` (exit 2/4 every run; start/stop of the sample and the fixture host with
+  `GAMESERVER_SCRIPT_TESTS=1`) and `LocalRunDescribeTests`.
 - **FG-025** — per-request visibility: the framework wrote no event per request and its Serilog pipeline reached no
   console, so a game had to buffer and parse response bodies to log what clients received. Now:
   1. one structured event per HTTP request (category `GameServer.Requests`, event id `1`/`Request`, template
@@ -57,6 +77,15 @@ tag message when the slice closes.
   4. new counter `request_log_failures_total` (meter `GameServer.Platform`) for events that could not be built or written.
   Measured in process (Windows 11, Release, 2026-11-03): p95 of a command round trip 0.786 ms off vs 0.681 ms with event +
   console (noise); stalled console + saturated file queue: 2 000/2 000 requests OK in 0.23 s, drops counted.
+
+## Bug fixes
+
+- **Resume tracker spurious clear (slice 012 `DailyPlayerSet`)** — when two requests of the same not-yet-seen player
+  raced and the winner's add filled the per-day set to its capacity (`GameServer:Analytics:ResumeTrackerCapacity`,
+  default 200 000), the loser treated the full set as "new player at capacity": it cleared the day's set, counted a
+  `login_resume_tracker_resets_total` and emitted a second `source=resume` event for that player. The capacity path now
+  looks the player up again after reading the full count, so only a player that is really absent clears the set.
+  No configuration or contract change.
 
 ## Breaking changes and migration
 
@@ -135,6 +164,26 @@ Migration (game test projects):
 A game that called `TestHost.StartAsync()` from the linked file and relied on the Counter module or the sample config
 passes its own `modules:` and `config:`/`GameServer:ConfigPath` now.
 
+### BC-5 — consumer `Directory.Build.targets` no longer reaches framework projects; relative test-project rule
+
+Was: a `Directory.Build.targets` in the game repository (or any folder above the framework checkout) was imported by every
+framework project, and a framework project was a test project when its absolute path contained a `tests` folder. Now:
+the framework root's own `Directory.Build.targets` (empty) is the nearest one for framework projects, and
+`IsTestProject` is true exactly for projects under the framework's `tests/` folder (path relative to the framework root).
+Sealed for framework projects: `Directory.Build.props`, `Directory.Build.targets`, `Directory.Packages.props`,
+`.editorconfig` (`root = true`). Still taken from the consumer: the `global.json` of the folder `dotnet` runs in and the
+`nuget.config` hierarchy (manual sync, FG-008).
+
+Migration:
+
+1. Anything a game injected into framework projects through its root `Directory.Build.targets` (knowingly or not) moves
+   into the game's own projects or its `Directory.Build.props`; it no longer applies to framework projects.
+2. The game may now add its own root `Directory.Build.targets` for game projects (remove the "never add a root
+   `Directory.Build.targets`" rule and its `FRAMEWORK-GAP FG-003` marker).
+3. Remove the `tests`-ancestor guard target (`FRAMEWORK-GAP FG-004`, e.g. `ZhPvpRefuseTestsAncestor`) and the "path
+   must not contain a `tests` folder" notes in README, CLAUDE.md, COMMANDS and known limitations.
+4. Nothing to do for a game that never had a root `Directory.Build.targets`; framework build output is unchanged.
+
 ### BC-7 — one request event per request in Development/Test, optional console output
 
 Was: no per-request event, no console output from operational logs. Now: Development/Test hosts (flavors `local`, `dev`,
@@ -156,6 +205,18 @@ Migration:
 5. Tests that count every log entry of a test host: filter category `GameServer.Requests` out, or set
    `GameServer:RequestLog:Enabled=false` for that host.
 
+### Non-breaking but recommended — run the game host with the framework's run-local
+
+1. Call `framework/tools/local/run-local.ps1 -HostProject src/<Game>.Host -LaunchProfile local -Name "<Game>"` (bash:
+   `framework/tools/local/run-local.sh --host-project src/<Game>.Host --launch-profile local --name "<Game>"`) instead of
+   the copied scripts.
+2. Keep game-only pre-checks (for example the submodule check, exit 8) in a thin wrapper that calls the framework script
+   and passes its exit code through; the framework uses 0 and 2–7 only.
+3. The host needs `Properties/launchSettings.json` with the profile's `applicationUrl` (first `http://` URL = default
+   port) and `environmentVariables.ASPNETCORE_ENVIRONMENT`, and a `global.json` at or above it; data and log folders come
+   from its own flavor settings.
+4. Remove the `FRAMEWORK-GAP FG-002` notes and the "keep in step on every framework bump" rule.
+
 ### New configuration keys (slice 013)
 
 | Key | Default | Notes |
@@ -174,6 +235,9 @@ Migration:
 | FG-001 | `tests/ZhPvp.Tests/ZhPvp.Tests.csproj` links `tests/Shared/{ProtobufHttp,IdentityHttp,TestStores}.cs`; `tests/ZhPvp.Tests/Support/LocalFlavorHost.cs` copies the factory settings of the framework smoke test | The three `Compile` links (→ kit `ProjectReference`); `LocalFlavorHost` (→ `LocalFlavorFactory<Program>`, `Documents(...)` reads `factory.DataFolder`) | Game-specific capture hooks (the console request-log sink) until US3 ships the framework console sink |
 | FG-025 | `src/ZhPvp.Host/RequestLog/*.cs` (middleware, body capture, envelope parsing, sink, startup filter, settings check; markers in `RequestLogMiddleware.cs`, `RequestOutcome.cs`, `RequestLogSink.cs`), registration in `ZhPvpModules.cs`, `ZhPvp:RequestLog:Enabled` in `appsettings.Local.json`, `tests/ZhPvp.Tests/Host/RequestLogTests.cs` | The whole folder, its registration, setting and tests (framework request event; `Observability:Logging:Console:Enabled: true` in the local flavor file) | Any game-specific per-request behaviour, rebuilt on `HttpContext.RequestOutcome()` |
 | FG-006 | `tests/ZhPvp.Tests/Support/FakeCommandContext.cs` (dictionary aggregates, throwing `Config`/claims/ids) | The whole file (→ `CommandContextDouble`; handler tests add `CheckCommit(outcome).ShouldBeEmpty()`) | — |
+| FG-003 | Root `Directory.Build.props` comment "never add a root `Directory.Build.targets`" + `FRAMEWORK-GAP FG-003` marker; CLAUDE.md rule on game build settings | The rule, the marker and the CLAUDE.md sentence (framework root has its own `Directory.Build.targets`) | Game build settings in the game's own files (now also a root `Directory.Build.targets` if wanted) |
+| FG-004 | `ZhPvpRefuseTestsAncestor` target + `FRAMEWORK-GAP FG-004` marker in `Directory.Build.props`; "no `tests` folder in the clone path" in README, CLAUDE.md, `docs/COMMANDS.md`, `docs/KNOWN_LIMITATIONS.md` | The guard target, the marker and the four notes | The game's own name-based `IsTestProject` rule (`*.Tests`) |
+| FG-002 | `tools/local/run-local.ps1` (251 lines) and `run-local.sh` (224 lines), adapted copies with `FRAMEWORK-GAP FG-002` headers; `docs/KNOWN_LIMITATIONS.md` row | Both copies (→ `framework/tools/local/run-local.* -HostProject src/ZhPvp.Host -Name "ZhPvp"`) and the limitation row | A thin wrapper for the submodule/tag check (exit 8) if the game keeps it |
 
 ## Docs not re-checked
 

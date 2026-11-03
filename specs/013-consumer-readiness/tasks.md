@@ -748,14 +748,21 @@ full suite green in memory.
 Goal: a consumer's root `Directory.Build.targets` never reaches framework projects; `IsTestProject` comes from the path
 relative to the framework root. Independent test: T051 (+ T052 full build, run in T076). Depends on: T002 (V2, V3).
 
-- [ ] T050 [US4] Seal and relative test detection (research R13, D13): new root `Directory.Build.targets` = `<Project>`
+- [X] T050 [US4] Seal and relative test detection (research R13, D13): new root `Directory.Build.targets` = `<Project>`
   with only the comment "seals framework projects against Directory.Build.targets files above the framework root
   (FG-003); keep it free of behaviour" (T061 may add the V1 fallback target); in `Directory.Build.props:10` replace the
   `Contains('\tests\')` rule by `_GameServerRelativeDir` (`MakeRelative(MSBuildThisFileDirectory, MSBuildProjectDirectory)`,
   `/` separators, lower case) and `IsTestProject` = `StartsWith('tests/')` (V3 result or its fallback).
   Done when: Debug and Release build 0 warnings; for every project of `GameServer.slnx` except `tests/ConsumerFixture/**`
   (own props) `-getProperty:IsTestProject` is true exactly for `tests/*` (recorded as a Note). (FR-030, FR-031)
-- [ ] T051 [US4] `tests/GameServer.Architecture.Tests/BuildSealingTests.cs` (after T050, V2; research R13): copy the
+  Note: root `Directory.Build.targets` = `<Project>` + the sealing comment; `Directory.Build.props` defines
+  `_GameServerRelativeDir` (V3 expression) and `IsTestProject` from `StartsWith('tests/')`. Debug and Release build 0
+  warnings. `dotnet msbuild <proj> -getProperty:IsTestProject -getProperty:IsFrameworkCode` for all 37 projects of
+  `GameServer.slnx`: `IsTestProject=true`/`IsFrameworkCode` empty for the 9 `tests/*` projects; `IsTestProject` empty /
+  `IsFrameworkCode=true` for the other 25 (`modules/`, `samples/`, `sdk/`, `src/`, `templates/`, `tools/`); the 3
+  `tests/ConsumerFixture/**` projects keep their own name-based rule (`Fixture.Tests` true, the others empty, no
+  `IsFrameworkCode`).
+- [X] T051 [US4] `tests/GameServer.Architecture.Tests/BuildSealingTests.cs` (after T050, V2; research R13): copy the
   build inputs (`Directory.Build.props`, `Directory.Build.targets`, `Directory.Packages.props`, `global.json`,
   `BannedSymbols.txt`, `.editorconfig`) and every framework `*.csproj` listed in `GameServer.slnx` (excluding
   `tests/ConsumerFixture/**`) into `{temp}/gs-seal-{guid}/tests/consumer/framework/`; write a hostile
@@ -767,14 +774,32 @@ relative to the framework root. Independent test: T051 (+ T052 full build, run i
   `DOTNET_HOST_PATH` → `DOTNET_ROOT/dotnet` → PATH (skip with a message if none); temp folder deleted.
   Done when: green; removing the root `Directory.Build.targets` (temporarily) makes it fail naming the leaked property
   (verified, reverted). (FR-030, FR-031, FR-032, US4-1, US4-2, US4-3, edge case "tests above and inside")
-- [ ] T052 [P] [US4] New `tools/local/check-build-seal.ps1` (research R13, SD8): same hostile layout with the **whole**
+  Note: 34 framework projects evaluated in `{temp}/gs-seal-{guid}/tests/consumer/framework/` (≈ 6 s, ≤ 8 parallel,
+  JSON parsed per V2); the hostile `Directory.Build.props` also sets `IsTestProject=true` and `GameServerHostileProps`.
+  Shared process/root helper `tests/GameServer.Architecture.Tests/RepositoryTooling.cs` (MSBuild variables of the calling
+  `dotnet test` removed from the child). Verified, reverted: without copying the root `Directory.Build.targets` it fails
+  with `GameServerHostileTargets ... "leaked" ... a Directory.Build.targets above the framework root leaked into it`;
+  with the old absolute `\tests\` rule it fails with `IsTestProject ... "true" ... the parent folder named 'tests' must
+  not make it a test project`. `Version` is not queried yet: T061 adds `-getProperty:Version` and its assertion.
+- [X] T052 [P] [US4] New `tools/local/check-build-seal.ps1` (research R13, SD8): same hostile layout with the **whole**
   framework tree (git-tracked files, no `samples/**/Library`), then `dotnet build GameServer.slnx -c Release`; prints the
   error/warning counts and exits non-zero on any error, warning or hostile marker; header documents usage and that it is
   a manual/future-CI check.
   Done when: the script runs once with 0 errors, 0 warnings, no marker (run recorded in T076). (FR-032, SC-004)
-- [ ] T053 [US4] Release notes: FG-003, FG-004 in "Fixed"; BC-5 with its steps; FG-003/FG-004 rows of "Consumer
+  Note: copies `git ls-files --cached --others --exclude-standard` (768 files, never `samples/**/Library`) to
+  `%TEMP%\gs-seal-{8 hex}\tests\consumer\framework\`; both hostile files are `InitialTargets` errors with the marker
+  `GAMESERVER_HOSTILE_MARKER` (a leak names itself before compile errors it causes), and set `IsTestProject=true`;
+  `-Keep` keeps the layout; exit 0 / 1 / 3 (no SDK). Short folder name and a `\\?\`-prefixed delete: Windows PowerShell
+  5.1 `Remove-Item` failed on obj paths over 260 characters. Run 2026-11-03 (Windows PowerShell 5.1): `dotnet build
+  GameServer.slnx -c Release` 0 errors, 0 warnings, marker absent, 18.5 s, temp folder removed (for T076). Negative run
+  with the root `Directory.Build.targets` moved away: exit 1, `GAMESERVER_HOSTILE_MARKER: consumer Directory.Build.targets
+  reached Sample.Counter.Adapters` (restored).
+- [X] T053 [US4] Release notes: FG-003, FG-004 in "Fixed"; BC-5 with its steps; FG-003/FG-004 rows of "Consumer
   workarounds now removable" in `specs/013-consumer-readiness/release-notes-draft.md`.
   Done when: present. (FR-090, BC-5)
+  Note: "Fixed" FG-003 and FG-004 (after FG-006), section BC-5 (sealed vs consumer-provided inputs, 4 steps), FG-003
+  and FG-004 rows of "Consumer workarounds now removable" (zh-pvp-server props comment/markers, guard target
+  `ZhPvpRefuseTestsAncestor`, README/CLAUDE.md/COMMANDS/KNOWN_LIMITATIONS notes).
 
 **Checkpoint**: framework projects evaluate identically under a hostile `tests/` parent.
 
@@ -784,7 +809,7 @@ Goal: `run-local.ps1|.sh` gain `-HostProject/-LaunchProfile/-Name` (`--host-proj
 files read by `tools/GameServer.LocalRun`; the default invocation is the slice 011 contract. Independent test: T058
 (opt-in part with the fixture host). Depends on: nothing before it except T001; the opt-in part of T058 needs T033.
 
-- [ ] T054 [US5] Resolver tool `tools/GameServer.LocalRun/` (`GameServer.LocalRun.csproj` console app with
+- [X] T054 [US5] Resolver tool `tools/GameServer.LocalRun/` (`GameServer.LocalRun.csproj` console app with
   `FrameworkReference Microsoft.AspNetCore.App`, no package; `Program.cs`; `LocalHostDescription.cs`) (research R15,
   D15, data-model §7): `describe --host-project <p> --launch-profile <n>` → project file (file, or the folder's single
   `*.csproj`), `Properties/launchSettings.json` (comments allowed), first `http://` port (none → 5080 + `portNote`),
@@ -795,7 +820,16 @@ files read by `tools/GameServer.LocalRun`; the default invocation is the slice 0
   2. Add to `GameServer.slnx` under `/tools/`.
   Done when: Release build 0 warnings; `describe` on the sample host prints port 5080, flavor `Local`, the data folder
   of `appsettings.Local.json`, SDK `10.0.403`. (FR-042, FR-043, FR-044, FR-045)
-- [ ] T055 [US5] `tests/GameServer.Architecture.Tests/LocalRunDescribeTests.cs` (+ ProjectReference to the tool in
+  Note: `tools/GameServer.LocalRun/{GameServer.LocalRun.csproj, Program.cs, LocalHostDescription.cs}` (record +
+  `Describe(...)`, `LocalRunException`), in `GameServer.slnx` under `/tools/`. Deviation: one extra output key
+  `dataFolderSetting` (the configured value as written) so the sample banner stays byte-identical
+  (`data ../_database/dbbase`); data-model §7 updated. Profile `environmentVariables` are layered after the inherited
+  ones (as `dotnet run --launch-profile` sets them); both settings files are parsed with the launch-settings JSON options
+  first so every broken JSON reports file, line and position the same way. `describe` on the sample host: project
+  `.../samples/SampleHost/SampleHost.csproj`, `isSample=true`, flavor `Local`, port 5080, data
+  `.../samples/_database/dbbase` (`../_database/dbbase`), log `.../samples/SampleHost/logs`, SDK `10.0.403`; fixture:
+  port 5180, data `.../tests/ConsumerFixture/.local/data`. Release build 0 warnings.
+- [X] T055 [US5] `tests/GameServer.Architecture.Tests/LocalRunDescribeTests.cs` (+ ProjectReference to the tool in
   `GameServer.Architecture.Tests.csproj`; after T054): temp host layouts — project file vs folder, folder with 0 and 2
   projects, profile with one URL / no http URL / several URLs (first http), `https` only, comments in launch settings,
   flavor layering + environment-variable override, missing launch settings, unknown profile (message lists the defined
@@ -803,7 +837,14 @@ files read by `tools/GameServer.LocalRun`; the default invocation is the slice 0
   two `global.json` files.
   Done when: green; every error case exits 2 with its message. (FR-042, FR-043, FR-044, FR-045, edge cases "launch
   profile without port", "relative paths")
-- [ ] T056 [US5] `tools/local/run-local.ps1` (after T054; contracts/run-local-cli.md §1–§5): parameters `-HostProject`,
+  Note: 17 cases green (temp layouts under `%TEMP%\gs-local-{guid}`): file vs folder, relative path, 0/2 projects, missing
+  path, non-csproj file, first http URL of one/several (https first)/upper-case scheme, https only and no URL (5080 +
+  note), comments and trailing commas, flavor layering + inherited env var + profile env var override + defaults, missing
+  launch settings, unknown profile (`defined: local, other`), no `ASPNETCORE_ENVIRONMENT`, broken launch settings and
+  flavor file (file, line, position), nearest of two `global.json`, no `global.json` (skips when one exists above
+  `%TEMP%`) and one without `sdk.version`, the sample host, plus the built tool: 12 keys in order, exit 2 with one stderr
+  line (unknown profile, unknown option).
+- [X] T056 [US5] `tools/local/run-local.ps1` (after T054; contracts/run-local-cli.md §1–§5): parameters `-HostProject`,
   `-LaunchProfile` (default `local`), `-Name`; the hardcoded `samples\SampleHost`, `SampleHost.csproj`, `local`, `5080`,
   `10.0.403`, `samples/SampleHost/logs` and the data folder become values of `describe`; sequence of contract §3
   (arguments 2 → SDK 3 → describe 2/5 → port 4 → build 5 → run 6/7 → banner); prints the resolved project; banner of §4
@@ -813,12 +854,32 @@ files read by `tools/GameServer.LocalRun`; the default invocation is the slice 0
   Done when: without parameters the script output and exit codes match slice 011 (manual diff of the banner recorded as
   a Note); `-HostProject tests/ConsumerFixture/src/Fixture.Host -Name "Fixture game"` reaches ready on 5180 (manual,
   recorded). (FR-040, FR-041, FR-042, FR-043, FR-044, FR-045, FR-046, US5-1, US5-2, US5-4)
-- [ ] T057 [US5] `tools/local/run-local.sh` (after T054, T056 for identical semantics): `--host-project`,
+  Note: parameters `-HostProject` (default the framework sample), `-LaunchProfile` (`local`), `-Name`; `-Port` default
+  is the profile port. Sequence: arguments 2 → SDK 3 (`dotnet --version` in the host folder; version and path in the
+  message read from the nearest `global.json`) → resolver build (output captured, printed only on failure) 5 →
+  `describe` 2 (its message) / other 5 → `run-local: host project ... (profile ..., flavor ...)` → port 4 → build 5 →
+  run 6/7 (both tail the newest file of `logFolder`) → banner (sample: slice 011 lines; others: Project / Base URL /
+  Health; `Note` line for `portNote`; LAN warning host-neutral) → Ctrl+C. ASCII only. Default invocation compared with
+  slice 011: the sample banner lines are the same strings (asserted line by line by the opt-in `RunLocalScriptTests`);
+  output differences are the new `run-local: host project` line, the log tail on exit 6 and the host-neutral `-Lan`
+  warning line. Manual, 2026-11-03: `-HostProject tests/ConsumerFixture/src/Fixture.Host -Name "Fixture game"` reached
+  ready on **5181** (`-Port 5181`: 5180 is held on this machine by the owner's running `ZhPvp.Host`, which the script
+  correctly refused with exit 4), banner as contract §4, `/v1/time` 200, Ctrl+C → exit 0, no process left. Ctrl+Break
+  (`send-ctrl-c.ps1` default) is unusable against the script: Windows PowerShell 5.1 enters its debugger; the tests send
+  Ctrl+C (`-Signal C`).
+- [X] T057 [US5] `tools/local/run-local.sh` (after T054, T056 for identical semantics): `--host-project`,
   `--launch-profile`, `--name` (and `=value` forms); the `sed` JSON reading is replaced by `describe`; same sequence,
   banner and exit codes as T056; bash ≥ 4.4 note for the kill fallback unchanged.
   Done when: on Windows Git Bash the default and fixture invocations behave like T056 (recorded); `shellcheck` clean if
   available. (FR-040, FR-041, FR-045, FR-046)
-- [ ] T058 [US5] `tests/GameServer.Architecture.Tests/RunLocalScriptTests.cs` (after T056, T057; research R15,
+  Note: `--host-project`, `--launch-profile`, `--name`, `--port` (all with `=value`), `--reset`, `--lan`; `describe`
+  replaces the `sed` reading (stdout parsed as `key=value`, CR stripped); same sequence, banner, exit codes and log tail
+  as T056; bash ≥ 4.4 note kept. Windows Git Bash 5.2.15, 2026-11-03: exit 2 cases (unknown argument, missing host, unknown
+  profile, folder without project, bad/missing `--port` value) and the fixture run (`--port=5181`: ready, banner, console
+  line `GET /v1/time req=... -> 200 OK`, Ctrl+C → exit 0) as T056; default invocation through the opt-in test.
+  `shellcheck` not installed (not run). Not run: macOS/Linux (T076 open item). `bash.exe` on PATH can be the WSL launcher
+  (`C:\Windows\System32`): use Git Bash.
+- [X] T058 [US5] `tests/GameServer.Architecture.Tests/RunLocalScriptTests.cs` (after T056, T057; research R15,
   contracts §6): **always** — `powershell.exe -File run-local.ps1` (and `bash run-local.sh` when bash is found): unknown
   argument, missing host project, unknown profile, host without launch settings → exit 2 with the message; busy port
   (listener held by the test) → exit 4; all before any host build. **Opt-in** `GAMESERVER_SCRIPT_TESTS=1` (after T033):
@@ -829,11 +890,29 @@ files read by `tools/GameServer.LocalRun`; the default invocation is the slice 0
   `tests/ConsumerFixture/.local/`), a fixture setting that fails startup → exit 6 + log tail; no host process left.
   Done when: the always-part is green in the default suite; the opt-in part is run in T076. (FR-041, FR-045, SC-005,
   US3-5 console line)
-- [ ] T059 [US5] Docs and notes: "superseded by `specs/013-consumer-readiness/contracts/run-local-cli.md`" note in
+  Note: 10 cases (5 × PowerShell / Git Bash; bash found next to `git.exe`, never the System32 WSL launcher). Always (4,
+  ≈ 18 s): exit 2 — unknown argument, missing host project, unknown profile, host without launch settings; exit 4 — the
+  profile port held by a `TcpListener` of the test, host never built (no `obj/`). Opt-in (6, Windows): default invocation
+  (skips when 5080 is busy; never `-Reset`) → sample
+  banner lines, Ctrl+C → 0; fixture host (profile port 5180, or a free port when 5180 is busy — the case on this
+  machine) → `Fixture game` banner, `GET /v1/time` line on the console, Ctrl+C → 0, then `-Reset` removes a marker file
+  from `tests/ConsumerFixture/.local/data` and shows `, started empty`; `GameServer__Analytics__TimeZone=Not/AZone` →
+  exit 6 with the host's own validation message and the tail of the newest log file (a probe file the test writes:
+  a validation failure ends before the host's file log exists). The class removes the git-ignored run folders it
+  created (`samples/SampleHost/analytics/`, `tests/ConsumerFixture/.local/`): `FixtureHostSmokeTests` refuses an
+  existing `.local/` (found when a manual run had left one: the full suite failed once on it). The fixture's
+  `appsettings.Local.json` now turns the console sink on. Opt-in run 2026-11-03 (`GAMESERVER_SCRIPT_TESTS=1`, from a
+  clean `.local/`): 10/10 passed in 2 min 7 s, no host process, temp folder or run folder left (for T076).
+- [X] T059 [US5] Docs and notes: "superseded by `specs/013-consumer-readiness/contracts/run-local-cli.md`" note in
   `specs/011-local-env/contracts/operations-cli.md` §4; consumer invocation, parameters, banner and exit codes in
   `docs/guides/environments-and-local-run.md` (Vietnamese); release notes: FG-002 in "Fixed", the "non-breaking but
   recommended" run-local step, FG-002 row of "Consumer workarounds now removable".
   Done when: present; `DocumentedConfigurationKeysTests` green. (FR-046, FR-090)
+  Note: 011 operations contract §4 carries the "superseded by" note; environments guide §3.1 (parameters, exit codes 2–7
+  with host-input causes, Git Bash note, repeatable checks) and new §3.1.1 (consumer invocation, what is read, banner,
+  wrapper exit codes 8+); release notes: FG-002 in "Fixed", "Non-breaking but recommended — run the game host with the
+  framework's run-local" (4 steps), FG-002 row of "Consumer workarounds now removable". `DocumentedConfigurationKeysTests`
+  green (no new configuration key).
 
 **Checkpoint**: a second host runs with the framework script; the default invocation is unchanged.
 
@@ -1032,6 +1111,24 @@ hosting (kit, version line) and the local run.
   that needed fallbacks, `run-local.sh` on macOS/Linux, walkthrough gaps, review deferrals), and the next step (slice
   014).
   Done when: the file names 013 as the latest slice and the next step. (process)
+
+### Extra items found during the slice
+
+- [X] B1 DailyPlayerSet race (found during US2): `LoginAnalyticsTests.Parallel_adds_keep_the_count_exact_and_seen_players_never_reach_the_capacity_path`
+  failed once in a full File-store run (`marked` 88 923 instead of 80 000).
+  Done when: root cause named, reproduced by a test that fails without the fix, fixed in production code, release notes.
+  Note: production bug, not a test bug (the set is per test, the day is a constant, no clock or static state involved).
+  In `DailyPlayerSet.TryMark` the lock-free lookup can miss a player whose concurrent add is the one that fills the day to
+  `capacity`; the loser then reads `Count >= capacity`, clears the set (`onReset`) and adds the player to the new day,
+  so a seen player reaches the capacity path: one spurious reset, one extra resume event for that player, and every
+  duplicate still in flight after the clear is marked again (the 8 923 extra marks of the failed run; the test sizes the
+  capacity to exactly the number of distinct players, so the last add fills it). Fix
+  (`src/GameServer.Modules.Identity.Adapters/LoginAnalytics.cs`): in the capacity branch look the player up again before
+  clearing — an add is visible before its count (`TryAdd`, then `Interlocked.Increment`), so a full count that includes
+  this player's add implies the second lookup finds it; only a really absent player clears the set. Regression test
+  `LoginAnalyticsTests.A_player_whose_concurrent_add_fills_the_set_is_seen_and_does_not_clear_it` (two threads, one
+  `Barrier` per round, 20 000 sets of capacity 1 offered the same player, ~1.5 s): without the fix 5/5 runs failed
+  (≈ 445 spurious resets per run); with the fix the class passed 10/10 runs. Release notes: "Bug fixes".
 
 ## Dependencies
 

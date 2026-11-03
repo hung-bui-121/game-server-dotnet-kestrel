@@ -1,0 +1,6 @@
+<Project>
+  <!--
+    Seals framework projects against Directory.Build.targets files above the framework root (FG-003): MSBuild imports only
+    the nearest one, and this file imports no parent. Keep it free of behaviour.
+  -->
+</Project>

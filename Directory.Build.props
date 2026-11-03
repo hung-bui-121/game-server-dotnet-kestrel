@@ -7,7 +7,10 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-    <IsTestProject Condition="$(MSBuildProjectDirectory.Contains('\tests\')) Or $(MSBuildProjectDirectory.Contains('/tests/'))">true</IsTestProject>
+    <!-- Test project = under this repository's tests/ folder, by path relative to this file (FG-004): a checkout below a
+         folder named "tests" keeps analyzers and banned APIs on every other framework project. -->
+    <_GameServerRelativeDir>$([MSBuild]::MakeRelative('$(MSBuildThisFileDirectory)', '$(MSBuildProjectDirectory)').Replace('\', '/').ToLowerInvariant())</_GameServerRelativeDir>
+    <IsTestProject Condition="$(_GameServerRelativeDir.StartsWith('tests/'))">true</IsTestProject>
     <IsFrameworkCode Condition="'$(IsTestProject)' != 'true'">true</IsFrameworkCode>
   </PropertyGroup>
 

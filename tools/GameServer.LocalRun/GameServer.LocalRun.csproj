@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Host resolver of tools/local/run-local.ps1|.sh (slice 013 FG-002, contracts/run-local-cli.md section 2): reads a host
+    project's launch profile, flavor settings and governing global.json, never writes. Not part of the deployable server.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Configuration binding exactly like the host (JSON with comments, environment variables), no package. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+</Project>
