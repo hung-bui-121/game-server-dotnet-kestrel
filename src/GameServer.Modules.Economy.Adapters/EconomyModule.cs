@@ -48,13 +48,13 @@ public sealed class EconomyModule : IGameModule, IGmApiModule
     public void ConfigureServices(IServiceCollection services, ModuleContext context)
     {
         services.TryAddSingleton(sp => ResourceCatalog.Load(sp.GetRequiredService<IGameConfig>()));
-        services.AddAggregateWireMapper<WalletState>(EconomyAggregates.Wallet, state =>
+        services.AddAggregateWireMapper<WalletState, Wire.WalletState>(EconomyAggregates.Wallet, state =>
         {
             var wire = new Wire.WalletState();
             wire.Balances.Add(state.Balances.ToDictionary());
             return wire;
         });
-        services.AddAggregateWireMapper<InventoryState>(EconomyAggregates.Inventory, state =>
+        services.AddAggregateWireMapper<InventoryState, Wire.InventoryState>(EconomyAggregates.Inventory, state =>
         {
             var wire = new Wire.InventoryState();
             wire.Items.Add(state.Items.ToDictionary());

@@ -55,14 +55,16 @@ namespace GameServer.Client
     public sealed class GameServerClient
     {
         public const string ProtobufContentType = "application/x-protobuf";
-        public const string LoginRoute = "api/v1/identity/login/guest";
-        public const string ProviderLoginRoute = "api/v1/identity/login/provider";
-        public const string LinkRoute = "api/v1/identity/link";
-        public const string LogoutRoute = "api/v1/identity/logout";
-        public const string DeleteAccountRoute = "api/v1/identity/delete-account";
-        public const string SnapshotRoute = "api/v1/player/snapshot";
-        public const string ConfigRoute = "api/v1/config/get";
-        public const string TimeRoute = "v1/time";
+
+        // Route constants come from the server's route catalog (generated FrameworkRoutes, FG-026); values unchanged.
+        public const string LoginRoute = FrameworkRoutes.IdentityLoginGuest;
+        public const string ProviderLoginRoute = FrameworkRoutes.IdentityLoginProvider;
+        public const string LinkRoute = FrameworkRoutes.IdentityLink;
+        public const string LogoutRoute = FrameworkRoutes.IdentityLogout;
+        public const string DeleteAccountRoute = FrameworkRoutes.IdentityRequestDeletion;
+        public const string SnapshotRoute = FrameworkRoutes.PlatformSnapshot;
+        public const string ConfigRoute = FrameworkRoutes.PlatformConfig;
+        public const string TimeRoute = FrameworkRoutes.PlatformTime;
 
         public const string RequestIdHeader = "X-Request-Id";
         public const string ClientVersionHeader = "X-Client-Version";

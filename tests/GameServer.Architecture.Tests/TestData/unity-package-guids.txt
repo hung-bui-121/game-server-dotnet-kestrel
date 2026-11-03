@@ -1,0 +1,29 @@
+# Unity package .meta GUIDs recorded before slice 014 (T001, base 2999a20): they must never change (FR-034).
+# <guid> <path of the .meta relative to the repository root>
+2aeb59634a94c994c9ea32b0276b0647 sdk/unity/com.gameserver.client/Editor.meta
+69cbf6ebc07f3174bad9fd2760ad49ab sdk/unity/com.gameserver.client/Editor/GameServer.Client.Editor.asmdef.meta
+3ac2bcac5b4f4ee49ac3bd0d61bc01ce sdk/unity/com.gameserver.client/Editor/LinkXmlProvider.cs.meta
+5af28a07bd0bcd64cbe20db3c7acdae8 sdk/unity/com.gameserver.client/Runtime.meta
+52e65126aae03344da65e48a8e126df7 sdk/unity/com.gameserver.client/Runtime/Core.meta
+b434d5b890f952f419910e3e9685b951 sdk/unity/com.gameserver.client/Runtime/Core/Abstractions.cs.meta
+96579d2e25954cc4f97f8ee4d5bac198 sdk/unity/com.gameserver.client/Runtime/Core/GameServerClient.cs.meta
+f2bbb5aa160391e47a0b2ff482d5b768 sdk/unity/com.gameserver.client/Runtime/Core/GameServerClientOptions.cs.meta
+78b8fe44c590a38459f2f83344bb293d sdk/unity/com.gameserver.client/Runtime/Core/GameServerError.cs.meta
+4315f5218d5cf8343a5fc6a30ac43d55 sdk/unity/com.gameserver.client/Runtime/Core/SectionStore.cs.meta
+dd3a4938dd22fc940b11207a7c346bc1 sdk/unity/com.gameserver.client/Runtime/Core/Transport.cs.meta
+79459614dabb8274a8086d11f340f74e sdk/unity/com.gameserver.client/Runtime/GameServer.Client.asmdef.meta
+01a6b850337089441afca97f864e4dde sdk/unity/com.gameserver.client/Runtime/Generated.meta
+82a60971be712ac409243c4562f94dda sdk/unity/com.gameserver.client/Runtime/Generated/Economy.cs.meta
+0f5dd156de6c74544ad7c28ebb3faeb4 sdk/unity/com.gameserver.client/Runtime/Generated/Iap.cs.meta
+67fcf756246e239459a9e7ebcfeee162 sdk/unity/com.gameserver.client/Runtime/Generated/Identity.cs.meta
+30f49fc8c80aadf44b1b002f7160bdd4 sdk/unity/com.gameserver.client/Runtime/Generated/gameserver.meta
+19c8cc7762c852946bdfc871f32dd067 sdk/unity/com.gameserver.client/Runtime/Generated/gameserver/core.meta
+f2a031837e6af1549b11c6002202bc1c sdk/unity/com.gameserver.client/Runtime/Generated/gameserver/core/v1.meta
+8548101f8bc7a584f81497c003950504 sdk/unity/com.gameserver.client/Runtime/Generated/gameserver/core/v1/Core.cs.meta
+be2b2d63ef77c584082dd3b90d9534bf sdk/unity/com.gameserver.client/Runtime/Plugins.meta
+4aaebb920c695bc40a34a357013bfaae sdk/unity/com.gameserver.client/Runtime/Plugins/Google.Protobuf.dll.meta
+8b47a63a0f1373544ba76059234f57f0 sdk/unity/com.gameserver.client/Runtime/Plugins/System.Runtime.CompilerServices.Unsafe.dll.meta
+433205c8bec3f604ea7ad735e5aefa97 sdk/unity/com.gameserver.client/Runtime/Unity.meta
+94b0b1c99aec66547a8615e393d86a8f sdk/unity/com.gameserver.client/Runtime/Unity/UnityWebRequestTransport.cs.meta
+4b259acc8804455468e2e31ac594bba2 sdk/unity/com.gameserver.client/Runtime/link.xml.meta
+98bc876ee0d2ea3408c40072ac40fa6d sdk/unity/com.gameserver.client/package.json.meta

@@ -12,7 +12,8 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Shouldly" />
     <PackageReference Include="NetArchTest.Rules" />
-    <ProjectReference Include="../../samples/SampleHost/SampleHost.csproj" />
+    <!-- Alias: GameServer.LocalRun also exposes a top-level Program; samplehost::Program is the sample host entry point. -->
+    <ProjectReference Include="../../samples/SampleHost/SampleHost.csproj" Aliases="global,samplehost" />
     <ProjectReference Include="../../src/GameServer.TestKit/GameServer.TestKit.csproj" />
     <ProjectReference Include="../../tools/GameServer.LocalRun/GameServer.LocalRun.csproj" />
     <!-- VersionTests: the generator's baked Grpc.Tools pin equals CPM (FR-022). -->

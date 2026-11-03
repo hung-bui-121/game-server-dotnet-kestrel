@@ -30,7 +30,7 @@ public sealed class CounterModule : IGameModule, IPlayerApiModule, IGmApiModule
     {
         services.TryAddSingleton<ICounterLimitPolicy, DefaultCounterLimitPolicy>();
         services.TryAddSingleton<ICounterService, CounterService>();
-        services.AddAggregateWireMapper<CounterState>(CounterAggregates.Counter, ToWire);
+        services.AddAggregateWireMapper<CounterState, Wire.CounterState>(CounterAggregates.Counter, ToWire);
     }
 
     public void MapPlayerApi(IEndpointRouteBuilder routes)

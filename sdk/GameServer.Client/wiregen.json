@@ -1,0 +1,21 @@
+{
+  "format": "gameserver.wiregen/1",
+  "catalog": { "hostProject": "../../samples/SampleHost/SampleHost.csproj", "environment": "Local" },
+  "origin": "framework",
+  "protos": [
+    { "root": "../../proto", "files": ["gameserver/core/v1/core.proto"] },
+    { "root": "../../src/GameServer.Modules.Identity.Adapters/Protos", "files": ["identity.proto"] },
+    { "root": "../../src/GameServer.Modules.Economy.Adapters/Protos", "files": ["economy.proto"] },
+    { "root": "../../src/GameServer.Modules.Iap.Adapters/Protos", "files": ["iap.proto"] }
+  ],
+  "output": {
+    "root": "../unity/com.gameserver.client",
+    "marker": "package.json",
+    "directory": "Runtime/Generated",
+    "layout": "by-root",
+    "lineEndings": "lf"
+  },
+  "namespace": "GameServer.Client",
+  "routesClass": "FrameworkRoutes",
+  "sectionsClass": "FrameworkSections"
+}

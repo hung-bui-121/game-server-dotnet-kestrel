@@ -99,9 +99,11 @@ public sealed partial class IdentityModule : IGameModule, IPlayerApiModule, IGmA
             .AddScheme<AuthenticationSchemeOptions, PlayerBearerAuthenticationHandler>(PlayerBearerAuthenticationHandler.SchemeName, null);
         services.Configure<ActorSchemeOptions>(o => o.PlayerSchemes.Insert(0, PlayerBearerAuthenticationHandler.SchemeName));
 
-        services.AddAggregateWireMapper<ProfileState>(
+        // Ban details, the deletion request and the linked mapping keys stay on the server (GM and account flows read them; FG-027).
+        services.AddAggregateWireMapper<ProfileState, Wire.ProfileState>(
             IdentityAggregates.Profile,
-            state => new Wire.ProfileState { DisplayName = state.DisplayName, SessionEpoch = state.SessionEpoch });
+            state => new Wire.ProfileState { DisplayName = state.DisplayName, SessionEpoch = state.SessionEpoch },
+            o => o.Hidden(nameof(ProfileState.Ban), nameof(ProfileState.Deleted), nameof(ProfileState.Identities)));
     }
 
     public void MapPlayerApi(IEndpointRouteBuilder routes)

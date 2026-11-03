@@ -11,6 +11,8 @@
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <ProjectReference Include="../../samples/SampleHost/SampleHost.csproj" />
     <ProjectReference Include="../../src/GameServer.TestKit/GameServer.TestKit.csproj" />
+    <!-- The module template has no test project: its mapper is checked here (slice 014 T066). -->
+    <ProjectReference Include="../../templates/module/Template.Module.Adapters/Template.Module.Adapters.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="../Shared/*.cs" LinkBase="Shared" />

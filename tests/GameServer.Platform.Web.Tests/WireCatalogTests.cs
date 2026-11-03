@@ -40,6 +40,12 @@ public sealed class WireCatalogTests
         gs.DeclareRoutes(HostHook);
     }
 
+    private static void UntypedComposition(GameServerBuilder gs)
+    {
+        ProbeComposition(gs);
+        gs.AddModule(new UntypedMapperProbeModule());
+    }
+
     [Fact]
     public void Entries_carry_owner_origin_and_service_only_flag()
     {
@@ -98,10 +104,14 @@ public sealed class WireCatalogTests
     [Fact]
     public void A_section_of_an_untyped_mapper_has_no_message()
     {
-        var catalog = Catalog(ProbeComposition);
+        var catalog = Catalog(UntypedComposition);
+
+        catalog.TryGetSection(UntypedMapperProbeModule.Legacy, out var legacy).ShouldBeTrue();
+        legacy!.MessageFullName.ShouldBeNull();
+        legacy.Owner.ShouldBe(UntypedMapperProbeModule.Name);
 
         catalog.TryGetSection(CounterAggregates.Counter, out var counter).ShouldBeTrue();
-        counter!.MessageFullName.ShouldBeNull();
+        counter!.MessageFullName.ShouldBe("sample.counter.v1.CounterState");
         counter.Owner.ShouldBe("sample.counter");
         counter.Origin.ShouldBe(CatalogOrigin.Game);
 
@@ -322,13 +332,14 @@ public sealed class WireCatalogTests
     [Fact]
     public void An_untyped_mapper_is_a_warning_not_a_line()
     {
-        var catalog = Catalog(ProbeComposition);
+        var catalog = Catalog(UntypedComposition);
 
         catalog.Validate().ShouldBeEmpty();
-        catalog.ValidationWarnings.ShouldContain(
-            "[aggregate counter] wire mapper registered without its message type: the catalog has no message for this section and Unity gets no parser. " +
-            "Fix: AddAggregateWireMapper<TState, TWire>(…) (FG-028).");
-        catalog.ValidationWarnings.ShouldNotContain(w => w.StartsWith("[aggregate probe_card]", StringComparison.Ordinal));
+        catalog.ValidationWarnings.ShouldBe(
+        [
+            "[aggregate probe_legacy] wire mapper registered without its message type: the catalog has no message for this section and Unity gets no parser. " +
+            "Fix: AddAggregateWireMapper<TState, TWire>(…) (FG-028).",
+        ]);
     }
 
     // Export (T016, data-model §3, contracts/generated-files.md §1).
@@ -467,5 +478,36 @@ public sealed class WireCatalogTests
         first.ShouldNotContain(DateTime.UtcNow.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
         first.ShouldNotContain("\"environment");
         first.ShouldContain("\"hiddenMembers\": [\"Note\"]");
+    }
+
+    // T069 (FR-065, US4-7): the sample host's export and catalog list the hidden members declared next to the mappers (PCR source).
+    [Fact]
+    public async Task The_sample_host_export_lists_the_declared_hidden_members()
+    {
+        var options = new LocalFlavorOptions { Environment = "Local" };
+        options.Settings["Observability:Logging:Console:Enabled"] = "false";
+        await using var factory = new LocalFlavorFactory<Program>(options);
+        var catalog = factory.Services.GetRequiredService<WireCatalog>();
+
+        var declared = new Dictionary<string, string[]>
+        {
+            ["battle"] = ["ActiveBattle.ConfigVersion", "ActiveBattle.Drops", "ActiveBattle.Rewards", "ActiveBattle.Xp"],
+            ["counter"] = [],
+            ["inventory"] = [],
+            [IdentityAggregates.Profile] = ["Ban", "Deleted", "Identities"],
+            ["progression"] = [],
+            ["wallet"] = [],
+        };
+        catalog.Sections.Select(s => s.Id).ShouldBe(declared.Keys.Order(StringComparer.Ordinal));
+        var sections = System.Text.Json.Nodes.JsonNode.Parse(catalog.ToExportJson())!["sections"]!.AsArray();
+        foreach (var (id, hidden) in declared)
+        {
+            catalog.TryGetSection(id, out var section).ShouldBeTrue(id);
+            section!.HiddenMembers.ShouldBe(hidden, id);
+            section.MayStayDefaultFields.ShouldBeEmpty(id);
+            var exported = sections.Single(s => (string?)s!["id"] == id)!.AsObject();
+            (exported["hiddenMembers"]?.AsArray().Select(n => n!.GetValue<string>()).ToArray() ?? []).ShouldBe(hidden, id);
+            exported.ContainsKey("mayStayDefault").ShouldBeFalse(id);
+        }
     }
 }

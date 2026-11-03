@@ -930,21 +930,29 @@ SDK output verify).
 Depends on: US2 (tool, T050), T018. **Shared file order**: `sdk/GameServer.Client/GameServer.Client.csproj` and
 `Runtime/Generated` change only in T059; `Runtime/Core/SectionStore.cs` and `GameServerClient.cs` only in T060.
 
-- [ ] T055 [US3] Typed mappers — framework (after T012): `src/GameServer.Modules.Economy.Adapters/EconomyModule.cs`
+- [X] T055 [US3] Typed mappers — framework (after T012): `src/GameServer.Modules.Economy.Adapters/EconomyModule.cs`
   (`wallet`, `inventory`) and `src/GameServer.Modules.Identity.Adapters/IdentityModule.cs` (`profile`) switch to
   `AddAggregateWireMapper<TState, TWire>(id, map)`; mapper bodies unchanged (no `Hidden` yet: T066 decides).
   Done when: economy/identity snapshot and command tests green with unchanged payload bytes (an existing
   snapshot-bytes assertion or a new one comparing typed vs previous untyped payload for a fixed state); the SampleHost
   catalog lists `wallet` → `gameserver.economy.v1.WalletState`, `inventory`, `profile` with message names.
   (FR-050, FR-051 migration, US3-4)
-- [ ] T056 [P] [US3] Typed mappers — samples and template (after T012): `samples/SampleGame/SampleGame.Adapters/SampleGameModule.cs:35-38`
+  Note (2026-11-03): `wallet`, `inventory` (`EconomyModule`) and `profile` (`IdentityModule`) use the typed overload,
+  bodies unchanged; `WireMapperRegistrationTests.Framework_mappers_are_typed_and_keep_their_payload_bytes` compares the
+  payloads with hand-built wire messages for fixed states;
+  `Every_framework_sample_and_template_section_names_its_message` lists the message of every section
+  (`gameserver.economy.v1.WalletState`, `…InventoryState`, `gameserver.identity.v1.ProfileState`).
+- [X] T056 [P] [US3] Typed mappers — samples and template (after T012): `samples/SampleGame/SampleGame.Adapters/SampleGameModule.cs:35-38`
   (`progression`, `battle`), `modules/Sample.Counter/Sample.Counter.Adapters/CounterModule.cs:33` (`counter`),
   `templates/module/Template.Module.Adapters/TemplateModule.cs:21` (`template`).
   Done when: `tests/SampleGame.Tests`, `tests/Sample.Counter.Tests` green; catalog sections carry
   `samplegame.v1.ProgressionState`/`BattleState` (actual package names per the protos — record them; data-model §1.5
   says `TemplateState`, the real full name is `template.module.v1.TemplateState`), `sample.counter.v1.CounterState`.
   (FR-050, FR-051 migration)
-- [ ] T057 [US3] Untyped registration obsolete + startup Warning (after T055, T056, T051; research R15, data-model §2.1
+  Note (2026-11-03): real full names: `samplegame.v1.ProgressionState`, `samplegame.v1.BattleState`,
+  `sample.counter.v1.CounterState`, `template.module.v1.TemplateState` (data-model §1.5 wrote `TemplateState`).
+  `tests/GameServer.Platform.Web.Tests` now references `templates/module/Template.Module.Adapters` (also used by T066).
+- [X] T057 [US3] Untyped registration obsolete + startup Warning (after T055, T056, T051; research R15, data-model §2.1
   Warning): `[Obsolete("Use AddAggregateWireMapper<TState, TWire>(aggregateId, map) so the catalog and Unity know the
   section's message (FG-028). Kept through v0.7.x.")]` on the untyped overload; `UseGameServer` logs the catalog's
   untyped-section Warning once per untyped client-visible section under the startup category (same path as 011
@@ -956,7 +964,14 @@ Depends on: US2 (tool, T050), T018. **Shared file order**: `sdk/GameServer.Clien
   client-visible aggregate → catalog section without message, exactly one Warning with the data-model text, host still
   starts; typed → no Warning; export of an untyped section has no `message`.
   Done when: Debug and Release build 0 warnings; green. (FR-050, FR-051, BC-3)
-- [ ] T058 [US3] Duplicates and the replacement path (after T032, T057; research R15, BC-4):
+  Note (2026-11-03): `[Obsolete]` on the untyped extension (the `AggregateWireMapper<TState>` class itself stays
+  unmarked: only the registration is the consumer path). The only remaining call is the test probe
+  `tests/GameServer.Platform.Web.Tests/UntypedMapperProbeModule.cs` (aggregate `probe_legacy`, `#pragma warning disable
+  CS0618` with a comment); `EndpointCatalogCheckTests` switched to the typed overload. `UseGameServer` adds
+  `WireCatalog.ValidationWarnings` to the host warnings logged through the 011 startup-check path (category
+  `GameServer.Startup`). The "no wire mapper" startup line now names `AddAggregateWireMapper<TState, TWire>`.
+  `WireCatalogTests` untyped cases use the probe (counter is typed now).
+- [X] T058 [US3] Duplicates and the replacement path (after T032, T057; research R15, BC-4):
   `src/GameServer.Platform.Web/Hosting/ExtensionRegistry.cs` `ReplaceWireMapper<TState, TWire>(id, map, configure)`
   (removes earlier mapper registrations for the id, adds the typed one); registry keeps the first mapper and records
   duplicates (no last-wins left anywhere).
@@ -966,7 +981,12 @@ Depends on: US2 (tool, T050), T018. **Shared file order**: `sdk/GameServer.Clien
   snapshot carries the custom payload; replace for an id without an earlier mapper simply registers it (contract
   silent; documented in T077, Planning note 5).
   Done when: green. (FR-054, BC-4)
-- [ ] T059 [US3] Unity package generation and the SDK csproj switch — one change (after T050, T055, T005 V7; research
+  Note (2026-11-03): `ReplaceWireMapper` removes earlier instance registrations (what `AddAggregateWireMapper` registers)
+  for the id; a mapper registered by type or factory stays and is reported as a duplicate (documented on the method). The
+  registry keeps the **first** mapper per id. Tests: duplicate `wallet` → the BC-4 line; replace → snapshot carries the
+  custom payload and the catalog the new hidden list; replace without an earlier mapper registers it; replace leaves
+  `inventory` untouched.
+- [X] T059 [US3] Unity package generation and the SDK csproj switch — one change (after T050, T055, T005 V7; research
   R17, BC-6): new `sdk/GameServer.Client/wiregen.json` (data-model §4 row: origin `framework`, catalog
   `../../samples/SampleHost` Local, protos `proto: gameserver/core/v1/core.proto` + identity, economy, iap `Protos`
   roots, output `../unity/com.gameserver.client/Runtime/Generated`, `by-root`, lf, namespace `GameServer.Client`,
@@ -982,7 +1002,15 @@ Depends on: US2 (tool, T050), T018. **Shared file order**: `sdk/GameServer.Clien
   `FrameworkRoutes` lists exactly the player-facing framework routes of data-model §5.1 (incl. `CheatGrant`,
   `PlatformReceipt(string)`, `PlatformHealthLive` `*`) and no `gm.*`. (FR-031, FR-032, FR-034, FR-052, FR-055, BC-6,
   US3-1, US3-5, US5-1)
-- [ ] T060 [US3] SDK typed reader and route constants (after T059; research R14, contracts/public-api.md §5):
+  Note (2026-11-03): `sdk/GameServer.Client/wiregen.json` uses `output.root ../unity/com.gameserver.client`, marker
+  `package.json`, directory `Runtime/Generated` (same target as the data-model row, plus a client-root guard); catalog
+  `../../samples/SampleHost/SampleHost.csproj`. `generate`: 2 written (`FrameworkRoutes.cs`, `FrameworkSections.cs`), 4
+  unchanged — `Core.cs`, `Identity.cs`, `Economy.cs`, `Iap.cs` byte-identical to T001 (V7 holds, no fallback); no warning
+  (typed sections). `.meta` GUIDs: `FrameworkRoutes.cs.meta` bd61226bd3304be08b906085cc633b4e,
+  `FrameworkSections.cs.meta` a3b2b6d27b8d450fac078e2d5ef0d744. Two `--no-incremental` SDK builds changed nothing under
+  `sdk/unity/` or `KestrelDemo/Assets/SampleGame/` (`find -newer` marker; T001 hashes OK); `git diff --stat proto
+  src/*/Protos` empty. `FrameworkSections.cs` equals the golden of T048.
+- [X] T060 [US3] SDK typed reader and route constants (after T059; research R14, contracts/public-api.md §5):
   `sdk/unity/com.gameserver.client/Runtime/Core/SectionStore.cs`: `Register(SectionTable)` (same id + same message type
   idempotent, different type → `ArgumentException`), `IsKnown(id)`, `Get<T>(SectionKey<T>)` (null when absent),
   `TryRead(id, out IMessage? message)` (`Absent`/`Unknown`/`Parsed`; unknown ids never parsed), constructor registers
@@ -993,14 +1021,22 @@ Depends on: US2 (tool, T050), T018. **Shared file order**: `sdk/GameServer.Clien
   `Get(key)` (T052 note).
   Done when: Release build 0 warnings (SDK and `Fixture.Client`); existing `tests/GameServer.Client.Tests` green
   unchanged. (FR-033, FR-034, FR-053, US3-3, US3-6, US3-7)
-- [ ] T061 [US3] Typed accessor tests (after T060): `tests/GameServer.Client.Tests/SectionTableTests.cs` (host part, same
+  Note (2026-11-03): conflict = same id with another key runtime type (`SectionKey<T>` is sealed, so the runtime type
+  names the message type); a conflicting table registers none of its keys. `Clear()` drops sections, keeps tables.
+  `FixtureClientUsage.cs` now calls `Register`, `Get(key)` (game and framework key) and `TryRead`.
+- [X] T061 [US3] Typed accessor tests (after T060): `tests/GameServer.Client.Tests/SectionTableTests.cs` (host part, same
   file as T018 → after it) against SampleHost through the existing `SdkHarness`: after login snapshot and after a
   `SectionUpdate` (a command that changes the wallet), `Get(FrameworkSections.Wallet/Inventory/Profile)` equals
   `Get<T>(id, parser)` with the right parser; a game table (test-defined `SectionKey<T>` over a well-known type) after
   `Register`; `TryRead` → `Parsed` for known, `Absent` before receipt, `Unknown` for an id no table knows (raw bytes still
   in `All`/`TryGet`, never parsed); registering a conflicting table throws; `Get<T>(id, parser)` behaviour unchanged.
   Done when: green. (FR-053, SC-006, US3-6, US3-7)
-- [ ] T062 [US3] SDK route tests (after T060): new file `tests/GameServer.Client.Tests/SdkRouteTests.cs`: build the
+  Note (2026-11-03): host part in `SectionTableTests` (`IAsyncLifetime` over `SdkHarness`): profile after login,
+  wallet/inventory after `cheat.grant` + `shop.buy`; the SampleGame `battle` section arrives with the login snapshot
+  already, so `Unknown` is shown after login and after `battle.start` (rev grows), then `Parsed` after registering a test
+  table `SectionKey<SampleGame.Protocol.V1.BattleState>`; `Absent`, idempotent/conflicting registration and `Clear` as
+  store-level cases.
+- [X] T062 [US3] SDK route tests (after T060): new file `tests/GameServer.Client.Tests/SdkRouteTests.cs`: build the
   SampleHost Local catalog in-process (Client.Tests references SampleHost) → every player-facing framework route has a
   `FrameworkRoutes` member whose value (or helper output for sample arguments) equals the template without leading
   slash, and its `…Method`; no `gm.*` member; `GameServerClient.LoginRoute … TimeRoute` keep their exact former values
@@ -1009,7 +1045,12 @@ Depends on: US2 (tool, T050), T018. **Shared file order**: `sdk/GameServer.Clien
   pattern `"(api|gm|health|v[0-9]+)/…"` → 0 hits. (`SampleGameClient.cs` scan is added in T071.)
   Done when: green; a seeded literal in a temp copy of one file makes the scan fail (helper test). (FR-033, FR-035,
   SC-001 SDK part, SC-002 SDK part, US3-3)
-- [ ] T063 [P] [US3] Package guards and committed SDK output (after T059): new file
+  Note (2026-11-03): the catalog comes from `LocalFlavorFactory<Program>` (SampleHost Local); the selection mirrors
+  WireGen (framework origin, surface PlayerApi/Host, profile Player/Public/Dev, not service-only); the member set of
+  `FrameworkRoutes` must equal the selected names + `…Method` exactly. Literal scan = small lexer (comments and char
+  literals skipped, regular/verbatim/interpolated strings read); seeded copy test covers comment, block comment, verbatim
+  and `v2/` cases.
+- [X] T063 [P] [US3] Package guards and committed SDK output (after T059): new file
   `tests/GameServer.Architecture.Tests/UnityPackageMetaTests.cs`: every file and folder under
   `sdk/unity/com.gameserver.client/` (except `.meta` themselves) has a `.meta`; GUIDs of the files recorded in T001 are
   unchanged (commit the recorded list as `tests/GameServer.Architecture.Tests/TestData/unity-package-guids.txt`); every
@@ -1023,7 +1064,16 @@ Depends on: US2 (tool, T050), T018. **Shared file order**: `sdk/GameServer.Clien
   T052, which already exists). 
   Done when: green; each test fails on a seeded fault in a temp copy (missing `.meta`, changed GUID, removed public
   member, unregistered module, edited generated file). (FR-034, FR-035, SC-008, US5-1)
-- [ ] T064 [US3] Release notes + checkpoint: `specs/014-wire-contract/release-notes-draft.md` sections "FG-026 (2)" and
+  Note (2026-11-03): **deviation**: the SC-008 API test lives in `tests/GameServer.Client.Tests/SdkPublicApiTests.cs`
+  with `tests/GameServer.Client.Tests/TestData/sdk-public-api.txt` (T001 snapshot, 875 lines, same recording rule), not
+  in Architecture.Tests: Client.Tests already references the SDK under the `sdk` alias, while adding the SDK to
+  Architecture.Tests would put `GameServer.Client.dll` under its `GameServer.*.dll` version/module scans.
+  `UnityPackageMetaTests` (meta per entry, 27 recorded GUIDs in `TestData/unity-package-guids.txt` re-checked against
+  `git show 597030e`, unique GUIDs, package 0.7.0, asmdef names) and `FrameworkModuleCoverageTests` are in
+  Architecture.Tests (its SampleHost reference got `Aliases="global,samplehost"`: `GameServer.LocalRun` also exposes
+  `Program`). `CommittedOutputTests` verifies the SDK and fixture configs through the real host export (~8 s) and a copy
+  with an edited `FrameworkRoutes.cs` (exit 2, tree unchanged). Each rule has a seeded-fault test.
+- [X] T064 [US3] Release notes + checkpoint: `specs/014-wire-contract/release-notes-draft.md` sections "FG-026 (2)" and
   "FG-028": generated `FrameworkRoutes`/`FrameworkSections`, typed accessor (`Register`, `Get(key)`, `TryRead`), the
   untyped-section Warning, **BC-3** (zh-pvp: the 3 registrations in `src/ZhPvp.Game.Adapters/GameModule.cs:28-30` →
   `AddAggregateWireMapper<ProgressState, Wire.ProgressState>(GameAggregates.Progress, GameWireMapping.ToWire, …)` and the
@@ -1033,6 +1083,9 @@ Depends on: US2 (tool, T050), T018. **Shared file order**: `sdk/GameServer.Clien
   `client.Sections.Register(GameSections.Table)` + `Get(GameSections.X)` / `TryRead`. Then Debug and Release build;
   full suite in memory and File.
   Done when: sections present; 0 warnings, 0 failures; counts recorded. (FR-090, FR-091 partial)
+  Note (2026-11-03): sections "FG-026 (2), FG-028" (BC-3, BC-4 completed, BC-6, zh-pvp server + client steps) in
+  `release-notes-draft.md`; one run for both checkpoints, counts in the T069 Note (0 warnings, 0 failures besides the
+  known flaky telemetry test, green alone).
 
 **Checkpoint**: the Unity package is produced by the consumer step; SDK and server cannot drift (verify + catalog test);
 sections are read through typed keys.
@@ -1045,7 +1098,7 @@ Independent test: T066 (framework/sample/template pass), T067 (mutation set), T0
 Depends on: T013 (member tree), T055–T057 (typed mappers), T051 (fixture `card`). Independent of T059–T064 (can run in
 parallel with them after T057).
 
-- [ ] T065 [US4] `WireConformance` in the kit (after T013, T057; research R16, data-model §7, contracts/public-api.md
+- [X] T065 [US4] `WireConformance` in the kit (after T013, T057; research R16, data-model §7, contracts/public-api.md
   §4): new files `src/GameServer.TestKit/WireConformance.cs` (`Check`, `CheckModules` — modules' `ConfigureServices`
   against a bare `ServiceCollection`, only `IAggregateWireMapper` instances resolved — and `CheckAll(IServiceProvider)`),
   `WireConformanceOptions.cs` (`WithSampleState`, `WithMemberValue`), `WireConformanceReport.cs` (report, finding,
@@ -1059,7 +1112,15 @@ parallel with them after T057).
   `tests/GameServer.Architecture.Tests/TestKitArchitectureTests.cs` still green (only `StateMembers` internals used).
   Done when: Release build 0 warnings; `dotnet msbuild src/GameServer.TestKit -getItem:PackageReference` shows no test
   framework. (FR-061, FR-062, FR-063, FR-066)
-- [ ] T066 [US4] Conformance over the framework, sample and template mappers and their hidden declarations (after
+  Note (2026-11-03): files `WireConformance.cs`, `WireConformanceOptions.cs`, `WireConformanceReport.cs` (enum, finding,
+  report, exception), `SampleStates.cs`, plus internal `SampleDocument.cs` (sample JSON, walk, perturbation),
+  `ProtoDefaults.cs` (§7.3) and `AggregateConformance.cs` (the per-aggregate algorithm). Decisions: comparison of parsed
+  messages (`Equals`, map order irrelevant); a mapper that throws is `SampleNotSerializable`; a member missing, null or
+  empty in a supplied sample state is `MemberNotFillable`; `WithMemberValue` with an unknown path or `WithSampleState` of
+  another type throws `ArgumentException`; supplied-member notes appear in `ToString()` (internal `Notes`, no public
+  addition). Mappers are resolved from a provider built over the modules' registrations (only `IAggregateWireMapper` is
+  requested). TestKit csproj unchanged (no test framework); `TestKitArchitectureTests` green.
+- [X] T066 [US4] Conformance over the framework, sample and template mappers and their hidden declarations (after
   T065): new file `tests/GameServer.Platform.Web.Tests/WireConformanceTests.cs` (add a project reference to
   `templates/module/Template.Module.Adapters` in `tests/GameServer.Platform.Web.Tests/GameServer.Platform.Web.Tests.csproj`;
   the template has no test project): `WireConformance.CheckModules([Economy, Identity, SampleGame, Counter, Template])`.
@@ -1069,7 +1130,12 @@ parallel with them after T057).
   of the module PCRs, T079).
   Done when: the call passes with 0 findings; Notes list each `Hidden`/`MayStayDefault` with its reason; snapshot bytes
   of the framework sections unchanged (same check as T055). (FR-060, FR-064 pass part, SC-005, US4-1, US4-2, US4-3)
-- [ ] T067 [US4] Mutation set and kit behaviour (after T066): in `tests/GameServer.Platform.Web.Tests/WireConformanceTests.cs`
+  Note (2026-11-03): first run: 14 findings, none a mapper gap. Declared: `profile` → `Hidden("Ban", "Deleted",
+  "Identities")` (ban details, deletion request and linked mapping keys are server-only; GM/account flows read them);
+  `battle` → `Hidden("ActiveBattle.ConfigVersion", "ActiveBattle.Xp", "ActiveBattle.Rewards", "ActiveBattle.Drops")`
+  (rewards captured at start, PLY-05). No `MayStayDefault`. wallet, inventory, progression, counter, template pass
+  unchanged. Payload bytes unchanged (T055 test).
+- [X] T067 [US4] Mutation set and kit behaviour (after T066): in `tests/GameServer.Platform.Web.Tests/WireConformanceTests.cs`
   (same file → after T066) with test-only states/messages (well-known or a small test proto compiled in the test
   project): unmapped member → `MemberNotOnWire` naming it; unset proto field → `FieldAtDefault` naming it; nested
   unmapped member (`ActiveBattle.Seed`-shaped) → `MemberNotOnWire` with the nested path; stale hidden member (declared
@@ -1082,13 +1148,20 @@ parallel with them after T057).
   every line.
   Done when: green; each mutation reported by name exactly as data-model §7.4 maps it. (FR-060, FR-061, FR-062, FR-063,
   FR-064, SC-005, US4-1..US4-6)
-- [ ] T068 [US4] Fixture conformance (after T051, T065): new file
+  Note (2026-11-03): probes in `WireConformanceTests.cs` (`ConformanceProbeModule<TState, TWire>`, test records,
+  well-known types and the counter/economy/sample messages): every row of the mutation set plus a dropped dictionary key,
+  may-stay-default suppression, `Check` of one aggregate, `UntypedMapper`/`NoMapper`; unknown hidden path and unknown
+  may-stay-default field fail `UseGameServer` with the §2.1 lines.
+- [X] T068 [US4] Fixture conformance (after T051, T065): new file
   `tests/ConsumerFixture/tests/Fixture.Tests/FixtureConformanceTests.cs`: `WireConformance.CheckModules([new
   IdentityModule(), new FixtureModule()]).ThrowIfFailed()` passes for `card` (nested record, map, list, nullable,
   `DateTimeOffset` → UTC ms, hidden `InternalNote`); a test-local copy of the mapper that drops one member fails naming
   it. Public API only (no IVT to the fixture).
   Done when: green. (FR-061, FR-062, FR-063, FR-066, US4 independent test)
-- [ ] T069 [US4] Catalog/export lists hidden members + release notes + checkpoint (after T066): export test in
+  Note (2026-11-03): `CheckModules([new IdentityModule(), new FixtureModule()])` passes (`card`, `profile`); the
+  test-local mapper copy without `UnlockEndUtc` yields `FieldAtDefault slots.unlock_end_utc_ms` + `MemberNotOnWire
+  Slots.UnlockEndUtc`.
+- [X] T069 [US4] Catalog/export lists hidden members + release notes + checkpoint (after T066): export test in
   `tests/GameServer.Platform.Web.Tests/WireCatalogTests.cs` (after T016) that the SampleHost export lists each section's
   `hiddenMembers`/`mayStayDefault` as declared in T066 and that `WireCatalog.Sections` exposes them (PCR source);
   `specs/014-wire-contract/release-notes-draft.md` "FG-027" section: kit `WireConformance`, `Hidden`/`MayStayDefault`;
@@ -1098,6 +1171,12 @@ parallel with them after T057).
   …]).ThrowIfFailed()` in `tests/ZhPvp.Tests`, `docs/pcr/game.md` hidden list from the catalog. Then Debug and Release
   build; full suite in memory and File.
   Done when: green; counts recorded. (FR-065, FR-090, US4-7, FR-091 partial)
+  Note (2026-11-03): `WireCatalogTests.The_sample_host_export_lists_the_declared_hidden_members` (SampleHost Local through
+  `LocalFlavorFactory<Program>`: catalog and export list `profile` Ban/Deleted/Identities, `battle` the four ActiveBattle
+  members, no `mayStayDefault`); "FG-027" section in `release-notes-draft.md`. Debug and Release 0 warnings, 0 errors. In
+  memory: **1824 total, 1727 passed, 96 skipped, 1 failed** (the known flaky `TelemetryTests.A_command_is_one_trace…`,
+  passed alone); `GAMESERVER_TEST_STORE=File`: **1824 total, 1728 passed, 96 skipped, 0 failed** (T054: 1771 / 1675 / 96;
+  +53 tests from US3/US4). `git status` shows no file created by the runs.
 
 **Checkpoint**: every framework/sample/template mapper passes conformance; hidden members are code, not comments.
 

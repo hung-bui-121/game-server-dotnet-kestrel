@@ -166,7 +166,7 @@ public sealed class EndpointCatalogCheckTests
     [Fact]
     public async Task Two_wire_mappers_for_one_aggregate_are_one_line()
     {
-        (await Violations(services: s => s.AddAggregateWireMapper<CounterState>(CounterAggregates.Counter, state => new Wire.CounterState { Value = state.Value })))
+        (await Violations(services: s => s.AddAggregateWireMapper<CounterState, Wire.CounterState>(CounterAggregates.Counter, state => new Wire.CounterState { Value = state.Value })))
             .ShouldBe(
             [
                 "[aggregate counter] has 2 wire mappers. Fix: register one mapper per aggregate; replace a framework mapper with " +

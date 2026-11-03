@@ -47,7 +47,8 @@ public static class GameServerApplicationExtensions
         }
 
         errors.AddRange(registry.Validate(options, config));
-        errors.AddRange(services.GetRequiredService<WireCatalog>().Validate());
+        var catalog = services.GetRequiredService<WireCatalog>();
+        errors.AddRange(catalog.Validate());
         ValidateServices(services, options, registry, errors);
 
         DeploymentChecks.ValidateSecretSources(app.Configuration, options, errors);
@@ -59,7 +60,7 @@ public static class GameServerApplicationExtensions
         }
 
         errors.AddRange(options.RequestLog.Validate());
-        RunStartupChecks(services, errors, RequestLogVolumeWarning(options));
+        RunStartupChecks(services, errors, HostWarnings(catalog, options));
         ValidateModuleOptions(services, errors);
         var forwarded = DeploymentChecks.BuildForwardedHeaders(options, errors);
 
@@ -170,14 +171,15 @@ public static class GameServerApplicationExtensions
               "Observability:Logging:LevelOverrides:GameServer.Requests=Warning keeps only failures (FR-086)."
             : null;
 
+    /// <summary>Warnings of the host itself: untyped wire mappers (FG-028, one per section) and the request-log volume (FR-086).</summary>
+    private static IEnumerable<string> HostWarnings(WireCatalog catalog, GameServerOptions options) =>
+        RequestLogVolumeWarning(options) is { } volume ? [.. catalog.ValidationWarnings, volume] : catalog.ValidationWarnings;
+
     /// <summary>Checks contributed by the host and the store packages (R4): errors join the report, warnings are logged once.</summary>
-    private static void RunStartupChecks(IServiceProvider services, List<string> errors, string? hostWarning)
+    private static void RunStartupChecks(IServiceProvider services, List<string> errors, IEnumerable<string> hostWarnings)
     {
         var result = CheckAll(services);
-        if (hostWarning is not null)
-        {
-            result.Warnings.Add(hostWarning);
-        }
+        result.Warnings.AddRange(hostWarnings);
 
         errors.AddRange(result.Errors);
         if (result.Warnings.Count > 0)
@@ -303,7 +305,7 @@ public static class GameServerApplicationExtensions
             {
                 errors.Add(
                     $"[aggregate {aggregate.AggregateId}] is client-visible but has no wire mapper. " +
-                    "Fix: services.AddAggregateWireMapper<TState>(id, map) in the module adapter (API-10).");
+                    "Fix: services.AddAggregateWireMapper<TState, TWire>(id, map) in the module adapter (API-10).");
             }
         }
     }

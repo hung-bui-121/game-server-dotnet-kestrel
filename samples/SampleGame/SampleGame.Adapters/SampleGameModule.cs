@@ -32,10 +32,14 @@ public sealed class SampleGameModule : IGameModule, IPlayerApiModule, IGmApiModu
         services.TryAddSingleton<IBattleStartPolicy, ReplaceActiveBattlePolicy>();
         services.TryAddSingleton<IBattleResultPolicy, EligibilityOnlyResultPolicy>();
 
-        services.AddAggregateWireMapper<ProgressionState>(
+        services.AddAggregateWireMapper<ProgressionState, Wire.ProgressionState>(
             SampleGameAggregates.Progression,
             s => new Wire.ProgressionState { Level = s.Level, Xp = s.Xp, Stage = s.Stage });
-        services.AddAggregateWireMapper<BattleState>(SampleGameAggregates.Battle, ToWire);
+        // The rewards captured at battle start (PLY-05) and their config version stay on the server until the battle ends (FG-027).
+        services.AddAggregateWireMapper<BattleState, Wire.BattleState>(
+            SampleGameAggregates.Battle,
+            ToWire,
+            o => o.Hidden("ActiveBattle.ConfigVersion", "ActiveBattle.Xp", "ActiveBattle.Rewards", "ActiveBattle.Drops"));
     }
 
     public void MapGmApi(IEndpointRouteBuilder routes) =>

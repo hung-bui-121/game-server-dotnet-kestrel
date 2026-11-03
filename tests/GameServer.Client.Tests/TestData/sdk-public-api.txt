@@ -1,0 +1,875 @@
+  GameServer.Client.CommandResult`1 :: .ctor(GameServer.Protocol.Core.V1.CommandResponse response, TResult result, System.Boolean sectionsStale, System.Boolean resultUnreadable)
+  GameServer.Client.CommandResult`1 :: prop GameServer.Protocol.Core.V1.CommandResponse Response {get;}
+  GameServer.Client.CommandResult`1 :: prop System.Boolean IsOk {get;}
+  GameServer.Client.CommandResult`1 :: prop System.Boolean Replayed {get;}
+  GameServer.Client.CommandResult`1 :: prop System.Boolean ResultUnreadable {get;}
+  GameServer.Client.CommandResult`1 :: prop System.Boolean SectionsStale {get;}
+  GameServer.Client.CommandResult`1 :: prop System.String Code {get;}
+  GameServer.Client.CommandResult`1 :: prop System.String ReceiptId {get;}
+  GameServer.Client.CommandResult`1 :: prop TResult Result {get;}
+  GameServer.Client.ErrorCodes :: field static const System.String AccountDeleted = ACCOUNT_DELETED
+  GameServer.Client.ErrorCodes :: field static const System.String AccountSuspended = ACCOUNT_SUSPENDED
+  GameServer.Client.ErrorCodes :: field static const System.String BadRequest = BAD_REQUEST
+  GameServer.Client.ErrorCodes :: field static const System.String CommitUnknownRetry = COMMIT_UNKNOWN_RETRY
+  GameServer.Client.ErrorCodes :: field static const System.String ConcurrentUpdate = CONCURRENT_UPDATE
+  GameServer.Client.ErrorCodes :: field static const System.String IdentityConflict = IDENTITY_CONFLICT
+  GameServer.Client.ErrorCodes :: field static const System.String IdentityProofInvalid = IDENTITY_PROOF_INVALID
+  GameServer.Client.ErrorCodes :: field static const System.String InvalidResponse = INVALID_RESPONSE
+  GameServer.Client.ErrorCodes :: field static const System.String Maintenance = MAINTENANCE
+  GameServer.Client.ErrorCodes :: field static const System.String NetworkError = NETWORK_ERROR
+  GameServer.Client.ErrorCodes :: field static const System.String Ok = OK
+  GameServer.Client.ErrorCodes :: field static const System.String ProviderAlreadyLinked = PROVIDER_ALREADY_LINKED
+  GameServer.Client.ErrorCodes :: field static const System.String ProviderUnavailable = PROVIDER_UNAVAILABLE
+  GameServer.Client.ErrorCodes :: field static const System.String RateLimited = RATE_LIMITED
+  GameServer.Client.ErrorCodes :: field static const System.String RequestTimeout = REQUEST_TIMEOUT
+  GameServer.Client.ErrorCodes :: field static const System.String SessionReplaced = SESSION_REPLACED
+  GameServer.Client.ErrorCodes :: field static const System.String SwitchAccount = SWITCH_ACCOUNT
+  GameServer.Client.ErrorCodes :: field static const System.String Unauthenticated = UNAUTHENTICATED
+  GameServer.Client.ErrorCodes :: field static const System.String UpdateRequired = UPDATE_REQUIRED
+  GameServer.Client.GameServerClient :: .ctor(GameServer.Client.GameServerClientOptions options, GameServer.Client.IHttpTransport transport, GameServer.Client.IClientClock clock, GameServer.Client.IDelay delay, GameServer.Client.ISessionStore session, GameServer.Client.IConfigCache config, System.Random random)
+  GameServer.Client.GameServerClient :: System.Threading.Tasks.Task LogoutAsync<>(System.Threading.CancellationToken cancellationToken=)
+  GameServer.Client.GameServerClient :: System.Threading.Tasks.Task`1[GameServer.Client.CommandResult`1[GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult]] LinkProviderAsync<>(GameServer.Modules.Identity.Protocol.V1.ProviderCredential credential, System.Threading.CancellationToken cancellationToken=)
+  GameServer.Client.GameServerClient :: System.Threading.Tasks.Task`1[GameServer.Client.CommandResult`1[GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult]] RequestAccountDeletionAsync<>(System.Threading.CancellationToken cancellationToken=)
+  GameServer.Client.GameServerClient :: System.Threading.Tasks.Task`1[GameServer.Client.CommandResult`1[TResult]] SendCommandAsync<TResult>(System.String route, Google.Protobuf.IMessage request, Google.Protobuf.MessageParser`1[TResult] resultParser, System.Threading.CancellationToken cancellationToken=)
+  GameServer.Client.GameServerClient :: System.Threading.Tasks.Task`1[GameServer.Modules.Identity.Protocol.V1.LoginResponse] LoginGuestAsync<>(System.String localId, System.Byte[] secret, System.Threading.CancellationToken cancellationToken=)
+  GameServer.Client.GameServerClient :: System.Threading.Tasks.Task`1[GameServer.Modules.Identity.Protocol.V1.LoginResponse] LoginWithProviderAsync<>(GameServer.Modules.Identity.Protocol.V1.ProviderCredential credential, System.Boolean switchAccount=False, System.Threading.CancellationToken cancellationToken=)
+  GameServer.Client.GameServerClient :: System.Threading.Tasks.Task`1[GameServer.Protocol.Core.V1.SnapshotResponse] RefreshSectionsAsync<>(System.Collections.Generic.IEnumerable`1[System.String] sections=, System.Threading.CancellationToken cancellationToken=)
+  GameServer.Client.GameServerClient :: System.Threading.Tasks.Task`1[System.Boolean] RefreshConfigAsync<>(System.Threading.CancellationToken cancellationToken=)
+  GameServer.Client.GameServerClient :: System.Threading.Tasks.Task`1[System.DateTimeOffset] SyncTimeAsync<>(System.Threading.CancellationToken cancellationToken=)
+  GameServer.Client.GameServerClient :: event System.Action`1[GameServer.Client.GameServerError] AccountBlocked
+  GameServer.Client.GameServerClient :: event System.Action`1[GameServer.Client.GameServerError] Maintenance
+  GameServer.Client.GameServerClient :: event System.Action`1[GameServer.Client.GameServerError] SessionReplaced
+  GameServer.Client.GameServerClient :: event System.Action`1[GameServer.Client.GameServerError] UpdateRequired
+  GameServer.Client.GameServerClient :: event System.Action`1[System.Exception] HandlerFailed
+  GameServer.Client.GameServerClient :: event System.Action`1[System.String] ConfigVersionChanged
+  GameServer.Client.GameServerClient :: field static const System.String BuildIdHeader = X-Build-Id
+  GameServer.Client.GameServerClient :: field static const System.String ClientVersionHeader = X-Client-Version
+  GameServer.Client.GameServerClient :: field static const System.String ConfigRoute = api/v1/config/get
+  GameServer.Client.GameServerClient :: field static const System.String DeleteAccountRoute = api/v1/identity/delete-account
+  GameServer.Client.GameServerClient :: field static const System.String LinkRoute = api/v1/identity/link
+  GameServer.Client.GameServerClient :: field static const System.String LoginRoute = api/v1/identity/login/guest
+  GameServer.Client.GameServerClient :: field static const System.String LogoutRoute = api/v1/identity/logout
+  GameServer.Client.GameServerClient :: field static const System.String PlatformHeader = X-Platform
+  GameServer.Client.GameServerClient :: field static const System.String ProtobufContentType = application/x-protobuf
+  GameServer.Client.GameServerClient :: field static const System.String ProviderLoginRoute = api/v1/identity/login/provider
+  GameServer.Client.GameServerClient :: field static const System.String PurgeAfterDetail = purgeAfter
+  GameServer.Client.GameServerClient :: field static const System.String RequestIdHeader = X-Request-Id
+  GameServer.Client.GameServerClient :: field static const System.String SnapshotRoute = api/v1/player/snapshot
+  GameServer.Client.GameServerClient :: field static const System.String TimeRoute = v1/time
+  GameServer.Client.GameServerClient :: prop GameServer.Client.IConfigCache Config {get;}
+  GameServer.Client.GameServerClient :: prop GameServer.Client.SectionStore Sections {get;}
+  GameServer.Client.GameServerClient :: prop System.Boolean ConfigOutdated {get;}
+  GameServer.Client.GameServerClient :: prop System.Boolean HasSession {get;}
+  GameServer.Client.GameServerClient :: prop System.DateTimeOffset ServerNow {get;}
+  GameServer.Client.GameServerClient :: prop System.String PlayerId {get;}
+  GameServer.Client.GameServerClient :: prop System.String ServerConfigVersion {get;}
+  GameServer.Client.GameServerClient :: prop System.TimeSpan ServerTimeOffset {get;}
+  GameServer.Client.GameServerClientOptions :: .ctor(System.Uri baseUrl, System.String clientVersion, System.String platform, System.String buildId)
+  GameServer.Client.GameServerClientOptions :: System.Void Validate<>()
+  GameServer.Client.GameServerClientOptions :: prop System.Double Jitter {get;set;}
+  GameServer.Client.GameServerClientOptions :: prop System.Int32 MaxRetries {get;set;}
+  GameServer.Client.GameServerClientOptions :: prop System.String BuildId {get;}
+  GameServer.Client.GameServerClientOptions :: prop System.String ClientVersion {get;}
+  GameServer.Client.GameServerClientOptions :: prop System.String Platform {get;}
+  GameServer.Client.GameServerClientOptions :: prop System.TimeSpan InitialBackoff {get;set;}
+  GameServer.Client.GameServerClientOptions :: prop System.TimeSpan MaxBackoff {get;set;}
+  GameServer.Client.GameServerClientOptions :: prop System.TimeSpan MaxRetryAfter {get;set;}
+  GameServer.Client.GameServerClientOptions :: prop System.Uri BaseUrl {get;}
+  GameServer.Client.GameServerError :: .ctor(System.String code, System.Int32 codeNumber, System.Int32 httpStatus, System.String message, System.Boolean retryable, System.Int32 retryAfterMs, System.String requestId, System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.String] details)
+  GameServer.Client.GameServerError :: System.String ToString<>()
+  GameServer.Client.GameServerError :: prop System.Boolean Retryable {get;}
+  GameServer.Client.GameServerError :: prop System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.String] Details {get;}
+  GameServer.Client.GameServerError :: prop System.Int32 CodeNumber {get;}
+  GameServer.Client.GameServerError :: prop System.Int32 HttpStatus {get;}
+  GameServer.Client.GameServerError :: prop System.Int32 RetryAfterMs {get;}
+  GameServer.Client.GameServerError :: prop System.String Code {get;}
+  GameServer.Client.GameServerError :: prop System.String Message {get;}
+  GameServer.Client.GameServerError :: prop System.String RequestId {get;}
+  GameServer.Client.GameServerError :: static GameServer.Client.GameServerError Client<>(System.String code, System.String message, System.Boolean retryable=False)
+  GameServer.Client.GameServerError :: static GameServer.Client.GameServerError FromEnvelope<>(GameServer.Protocol.Core.V1.ErrorEnvelope envelope, System.Int32 httpStatus)
+  GameServer.Client.GameServerException :: .ctor(GameServer.Client.GameServerError error, System.Exception inner)
+  GameServer.Client.GameServerException :: prop GameServer.Client.GameServerError Error {get;}
+  GameServer.Client.HttpClientTransport :: .ctor(System.Net.Http.HttpClient http)
+  GameServer.Client.HttpClientTransport :: System.Threading.Tasks.Task`1[GameServer.Client.TransportResponse] SendAsync<>(GameServer.Client.TransportRequest request, System.Threading.CancellationToken cancellationToken)
+  GameServer.Client.IClientClock :: prop System.DateTimeOffset UtcNow {get;}
+  GameServer.Client.IClientClock :: prop System.TimeSpan Monotonic {get;}
+  GameServer.Client.IConfigCache :: System.Void Store<>(System.String version, System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.Byte[]] files)
+  GameServer.Client.IConfigCache :: prop System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.Byte[]] Files {get;}
+  GameServer.Client.IConfigCache :: prop System.String Version {get;}
+  GameServer.Client.IDelay :: System.Threading.Tasks.Task DelayAsync<>(System.TimeSpan delay, System.Threading.CancellationToken cancellationToken)
+  GameServer.Client.IHttpTransport :: System.Threading.Tasks.Task`1[GameServer.Client.TransportResponse] SendAsync<>(GameServer.Client.TransportRequest request, System.Threading.CancellationToken cancellationToken)
+  GameServer.Client.ISessionStore :: System.Void Clear<>()
+  GameServer.Client.ISessionStore :: prop System.String PlayerId {get;set;}
+  GameServer.Client.ISessionStore :: prop System.String Token {get;set;}
+  GameServer.Client.InMemoryConfigCache :: .ctor()
+  GameServer.Client.InMemoryConfigCache :: System.Void Store<>(System.String version, System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.Byte[]] files)
+  GameServer.Client.InMemoryConfigCache :: prop System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.Byte[]] Files {get;}
+  GameServer.Client.InMemoryConfigCache :: prop System.String Version {get;}
+  GameServer.Client.InMemorySessionStore :: .ctor()
+  GameServer.Client.InMemorySessionStore :: System.Void Clear<>()
+  GameServer.Client.InMemorySessionStore :: prop System.String PlayerId {get;set;}
+  GameServer.Client.InMemorySessionStore :: prop System.String Token {get;set;}
+  GameServer.Client.SectionState :: .ctor(System.String id, System.Int64 rev, Google.Protobuf.ByteString payload)
+  GameServer.Client.SectionState :: prop Google.Protobuf.ByteString Payload {get;}
+  GameServer.Client.SectionState :: prop System.Int64 Rev {get;}
+  GameServer.Client.SectionState :: prop System.String Id {get;}
+  GameServer.Client.SectionStore :: .ctor()
+  GameServer.Client.SectionStore :: System.Boolean Apply<>(GameServer.Protocol.Core.V1.SectionUpdate update)
+  GameServer.Client.SectionStore :: System.Boolean TryGet<>(System.String id, GameServer.Client.SectionState& section)
+  GameServer.Client.SectionStore :: System.Int64 RevOf<>(System.String id)
+  GameServer.Client.SectionStore :: System.Void Clear<>()
+  GameServer.Client.SectionStore :: System.Void Set<>(GameServer.Protocol.Core.V1.Section section)
+  GameServer.Client.SectionStore :: T Get<T>(System.String id, Google.Protobuf.MessageParser`1[T] parser)
+  GameServer.Client.SectionStore :: event System.Action`1[System.Exception] HandlerFailed
+  GameServer.Client.SectionStore :: event System.Action`1[System.String] SectionChanged
+  GameServer.Client.SectionStore :: prop System.Collections.Generic.IReadOnlyCollection`1[GameServer.Client.SectionState] All {get;}
+  GameServer.Client.SystemClientClock :: .ctor()
+  GameServer.Client.SystemClientClock :: prop GameServer.Client.SystemClientClock Instance {get;}
+  GameServer.Client.SystemClientClock :: prop System.DateTimeOffset UtcNow {get;}
+  GameServer.Client.SystemClientClock :: prop System.TimeSpan Monotonic {get;}
+  GameServer.Client.TaskDelay :: .ctor()
+  GameServer.Client.TaskDelay :: System.Threading.Tasks.Task DelayAsync<>(System.TimeSpan delay, System.Threading.CancellationToken cancellationToken)
+  GameServer.Client.TaskDelay :: prop GameServer.Client.TaskDelay Instance {get;}
+  GameServer.Client.TransportException :: .ctor(System.String message, System.Exception inner)
+  GameServer.Client.TransportRequest :: .ctor(System.String method, System.Uri url, System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.String] headers, System.Byte[] body)
+  GameServer.Client.TransportRequest :: prop System.Byte[] Body {get;}
+  GameServer.Client.TransportRequest :: prop System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.String] Headers {get;}
+  GameServer.Client.TransportRequest :: prop System.String Method {get;}
+  GameServer.Client.TransportRequest :: prop System.Uri Url {get;}
+  GameServer.Client.TransportResponse :: .ctor(System.Int32 status, System.String contentType, System.Byte[] body)
+  GameServer.Client.TransportResponse :: prop System.Byte[] Body {get;}
+  GameServer.Client.TransportResponse :: prop System.Int32 Status {get;}
+  GameServer.Client.TransportResponse :: prop System.String ContentType {get;}
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest :: .ctor()
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest :: .ctor(GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest other)
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest :: GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest Clone<>()
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest :: System.Boolean Equals<>(GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest other)
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest :: System.Boolean Equals<>(System.Object other)
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest :: System.Int32 CalculateSize<>()
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest :: System.Int32 GetHashCode<>()
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest :: System.String ToString<>()
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest :: System.Void MergeFrom<>(GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest other)
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest :: field static const System.Int32 QuantityFieldNumber = 2
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest :: field static const System.Int32 ResourceFieldNumber = 1
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest :: prop Google.Protobuf.MessageParser`1[GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest] Parser {get;}
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest :: prop System.Int64 Quantity {get;set;}
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest :: prop System.String Resource {get;set;}
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantResult :: .ctor()
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantResult :: .ctor(GameServer.Modules.Economy.Protocol.V1.CheatGrantResult other)
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantResult :: GameServer.Modules.Economy.Protocol.V1.CheatGrantResult Clone<>()
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantResult :: System.Boolean Equals<>(GameServer.Modules.Economy.Protocol.V1.CheatGrantResult other)
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantResult :: System.Boolean Equals<>(System.Object other)
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantResult :: System.Int32 CalculateSize<>()
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantResult :: System.Int32 GetHashCode<>()
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantResult :: System.String ToString<>()
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantResult :: System.Void MergeFrom<>(GameServer.Modules.Economy.Protocol.V1.CheatGrantResult other)
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantResult :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantResult :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantResult :: field static const System.Int32 BalanceAfterFieldNumber = 1
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantResult :: prop Google.Protobuf.MessageParser`1[GameServer.Modules.Economy.Protocol.V1.CheatGrantResult] Parser {get;}
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantResult :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Modules.Economy.Protocol.V1.CheatGrantResult :: prop System.Int64 BalanceAfter {get;set;}
+  GameServer.Modules.Economy.Protocol.V1.EconomyReflection :: prop Google.Protobuf.Reflection.FileDescriptor Descriptor {get;}
+  GameServer.Modules.Economy.Protocol.V1.InventoryState :: .ctor()
+  GameServer.Modules.Economy.Protocol.V1.InventoryState :: .ctor(GameServer.Modules.Economy.Protocol.V1.InventoryState other)
+  GameServer.Modules.Economy.Protocol.V1.InventoryState :: GameServer.Modules.Economy.Protocol.V1.InventoryState Clone<>()
+  GameServer.Modules.Economy.Protocol.V1.InventoryState :: System.Boolean Equals<>(GameServer.Modules.Economy.Protocol.V1.InventoryState other)
+  GameServer.Modules.Economy.Protocol.V1.InventoryState :: System.Boolean Equals<>(System.Object other)
+  GameServer.Modules.Economy.Protocol.V1.InventoryState :: System.Int32 CalculateSize<>()
+  GameServer.Modules.Economy.Protocol.V1.InventoryState :: System.Int32 GetHashCode<>()
+  GameServer.Modules.Economy.Protocol.V1.InventoryState :: System.String ToString<>()
+  GameServer.Modules.Economy.Protocol.V1.InventoryState :: System.Void MergeFrom<>(GameServer.Modules.Economy.Protocol.V1.InventoryState other)
+  GameServer.Modules.Economy.Protocol.V1.InventoryState :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Modules.Economy.Protocol.V1.InventoryState :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Modules.Economy.Protocol.V1.InventoryState :: field static const System.Int32 ItemsFieldNumber = 1
+  GameServer.Modules.Economy.Protocol.V1.InventoryState :: prop Google.Protobuf.Collections.MapField`2[System.String,System.Int64] Items {get;}
+  GameServer.Modules.Economy.Protocol.V1.InventoryState :: prop Google.Protobuf.MessageParser`1[GameServer.Modules.Economy.Protocol.V1.InventoryState] Parser {get;}
+  GameServer.Modules.Economy.Protocol.V1.InventoryState :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Modules.Economy.Protocol.V1.WalletState :: .ctor()
+  GameServer.Modules.Economy.Protocol.V1.WalletState :: .ctor(GameServer.Modules.Economy.Protocol.V1.WalletState other)
+  GameServer.Modules.Economy.Protocol.V1.WalletState :: GameServer.Modules.Economy.Protocol.V1.WalletState Clone<>()
+  GameServer.Modules.Economy.Protocol.V1.WalletState :: System.Boolean Equals<>(GameServer.Modules.Economy.Protocol.V1.WalletState other)
+  GameServer.Modules.Economy.Protocol.V1.WalletState :: System.Boolean Equals<>(System.Object other)
+  GameServer.Modules.Economy.Protocol.V1.WalletState :: System.Int32 CalculateSize<>()
+  GameServer.Modules.Economy.Protocol.V1.WalletState :: System.Int32 GetHashCode<>()
+  GameServer.Modules.Economy.Protocol.V1.WalletState :: System.String ToString<>()
+  GameServer.Modules.Economy.Protocol.V1.WalletState :: System.Void MergeFrom<>(GameServer.Modules.Economy.Protocol.V1.WalletState other)
+  GameServer.Modules.Economy.Protocol.V1.WalletState :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Modules.Economy.Protocol.V1.WalletState :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Modules.Economy.Protocol.V1.WalletState :: field static const System.Int32 BalancesFieldNumber = 1
+  GameServer.Modules.Economy.Protocol.V1.WalletState :: prop Google.Protobuf.Collections.MapField`2[System.String,System.Int64] Balances {get;}
+  GameServer.Modules.Economy.Protocol.V1.WalletState :: prop Google.Protobuf.MessageParser`1[GameServer.Modules.Economy.Protocol.V1.WalletState] Parser {get;}
+  GameServer.Modules.Economy.Protocol.V1.WalletState :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Modules.Iap.Protocol.V1.GrantedResource :: .ctor()
+  GameServer.Modules.Iap.Protocol.V1.GrantedResource :: .ctor(GameServer.Modules.Iap.Protocol.V1.GrantedResource other)
+  GameServer.Modules.Iap.Protocol.V1.GrantedResource :: GameServer.Modules.Iap.Protocol.V1.GrantedResource Clone<>()
+  GameServer.Modules.Iap.Protocol.V1.GrantedResource :: System.Boolean Equals<>(GameServer.Modules.Iap.Protocol.V1.GrantedResource other)
+  GameServer.Modules.Iap.Protocol.V1.GrantedResource :: System.Boolean Equals<>(System.Object other)
+  GameServer.Modules.Iap.Protocol.V1.GrantedResource :: System.Int32 CalculateSize<>()
+  GameServer.Modules.Iap.Protocol.V1.GrantedResource :: System.Int32 GetHashCode<>()
+  GameServer.Modules.Iap.Protocol.V1.GrantedResource :: System.String ToString<>()
+  GameServer.Modules.Iap.Protocol.V1.GrantedResource :: System.Void MergeFrom<>(GameServer.Modules.Iap.Protocol.V1.GrantedResource other)
+  GameServer.Modules.Iap.Protocol.V1.GrantedResource :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Modules.Iap.Protocol.V1.GrantedResource :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Modules.Iap.Protocol.V1.GrantedResource :: field static const System.Int32 QuantityFieldNumber = 2
+  GameServer.Modules.Iap.Protocol.V1.GrantedResource :: field static const System.Int32 ResourceFieldNumber = 1
+  GameServer.Modules.Iap.Protocol.V1.GrantedResource :: prop Google.Protobuf.MessageParser`1[GameServer.Modules.Iap.Protocol.V1.GrantedResource] Parser {get;}
+  GameServer.Modules.Iap.Protocol.V1.GrantedResource :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Modules.Iap.Protocol.V1.GrantedResource :: prop System.Int64 Quantity {get;set;}
+  GameServer.Modules.Iap.Protocol.V1.GrantedResource :: prop System.String Resource {get;set;}
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseRequest :: .ctor()
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseRequest :: .ctor(GameServer.Modules.Iap.Protocol.V1.IapPurchaseRequest other)
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseRequest :: GameServer.Modules.Iap.Protocol.V1.IapPurchaseRequest Clone<>()
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseRequest :: System.Boolean Equals<>(GameServer.Modules.Iap.Protocol.V1.IapPurchaseRequest other)
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseRequest :: System.Boolean Equals<>(System.Object other)
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseRequest :: System.Int32 CalculateSize<>()
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseRequest :: System.Int32 GetHashCode<>()
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseRequest :: System.String ToString<>()
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseRequest :: System.Void MergeFrom<>(GameServer.Modules.Iap.Protocol.V1.IapPurchaseRequest other)
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseRequest :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseRequest :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseRequest :: field static const System.Int32 ProductIdFieldNumber = 2
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseRequest :: field static const System.Int32 ReceiptPayloadFieldNumber = 3
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseRequest :: field static const System.Int32 StoreFieldNumber = 1
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseRequest :: prop Google.Protobuf.MessageParser`1[GameServer.Modules.Iap.Protocol.V1.IapPurchaseRequest] Parser {get;}
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseRequest :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseRequest :: prop System.String ProductId {get;set;}
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseRequest :: prop System.String ReceiptPayload {get;set;}
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseRequest :: prop System.String Store {get;set;}
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseResult :: .ctor()
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseResult :: .ctor(GameServer.Modules.Iap.Protocol.V1.IapPurchaseResult other)
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseResult :: GameServer.Modules.Iap.Protocol.V1.IapPurchaseResult Clone<>()
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseResult :: System.Boolean Equals<>(GameServer.Modules.Iap.Protocol.V1.IapPurchaseResult other)
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseResult :: System.Boolean Equals<>(System.Object other)
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseResult :: System.Int32 CalculateSize<>()
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseResult :: System.Int32 GetHashCode<>()
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseResult :: System.String ToString<>()
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseResult :: System.Void MergeFrom<>(GameServer.Modules.Iap.Protocol.V1.IapPurchaseResult other)
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseResult :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseResult :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseResult :: field static const System.Int32 GrantedFieldNumber = 1
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseResult :: prop Google.Protobuf.Collections.RepeatedField`1[GameServer.Modules.Iap.Protocol.V1.GrantedResource] Granted {get;}
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseResult :: prop Google.Protobuf.MessageParser`1[GameServer.Modules.Iap.Protocol.V1.IapPurchaseResult] Parser {get;}
+  GameServer.Modules.Iap.Protocol.V1.IapPurchaseResult :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Modules.Iap.Protocol.V1.IapReflection :: prop Google.Protobuf.Reflection.FileDescriptor Descriptor {get;}
+  GameServer.Modules.Identity.Protocol.V1.CustomCredential :: .ctor()
+  GameServer.Modules.Identity.Protocol.V1.CustomCredential :: .ctor(GameServer.Modules.Identity.Protocol.V1.CustomCredential other)
+  GameServer.Modules.Identity.Protocol.V1.CustomCredential :: GameServer.Modules.Identity.Protocol.V1.CustomCredential Clone<>()
+  GameServer.Modules.Identity.Protocol.V1.CustomCredential :: System.Boolean Equals<>(GameServer.Modules.Identity.Protocol.V1.CustomCredential other)
+  GameServer.Modules.Identity.Protocol.V1.CustomCredential :: System.Boolean Equals<>(System.Object other)
+  GameServer.Modules.Identity.Protocol.V1.CustomCredential :: System.Int32 CalculateSize<>()
+  GameServer.Modules.Identity.Protocol.V1.CustomCredential :: System.Int32 GetHashCode<>()
+  GameServer.Modules.Identity.Protocol.V1.CustomCredential :: System.String ToString<>()
+  GameServer.Modules.Identity.Protocol.V1.CustomCredential :: System.Void MergeFrom<>(GameServer.Modules.Identity.Protocol.V1.CustomCredential other)
+  GameServer.Modules.Identity.Protocol.V1.CustomCredential :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Modules.Identity.Protocol.V1.CustomCredential :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Modules.Identity.Protocol.V1.CustomCredential :: field static const System.Int32 DataFieldNumber = 2
+  GameServer.Modules.Identity.Protocol.V1.CustomCredential :: field static const System.Int32 ProviderFieldNumber = 1
+  GameServer.Modules.Identity.Protocol.V1.CustomCredential :: prop Google.Protobuf.ByteString Data {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.CustomCredential :: prop Google.Protobuf.MessageParser`1[GameServer.Modules.Identity.Protocol.V1.CustomCredential] Parser {get;}
+  GameServer.Modules.Identity.Protocol.V1.CustomCredential :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Modules.Identity.Protocol.V1.CustomCredential :: prop System.String Provider {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.GameCenterCredential :: .ctor()
+  GameServer.Modules.Identity.Protocol.V1.GameCenterCredential :: .ctor(GameServer.Modules.Identity.Protocol.V1.GameCenterCredential other)
+  GameServer.Modules.Identity.Protocol.V1.GameCenterCredential :: GameServer.Modules.Identity.Protocol.V1.GameCenterCredential Clone<>()
+  GameServer.Modules.Identity.Protocol.V1.GameCenterCredential :: System.Boolean Equals<>(GameServer.Modules.Identity.Protocol.V1.GameCenterCredential other)
+  GameServer.Modules.Identity.Protocol.V1.GameCenterCredential :: System.Boolean Equals<>(System.Object other)
+  GameServer.Modules.Identity.Protocol.V1.GameCenterCredential :: System.Int32 CalculateSize<>()
+  GameServer.Modules.Identity.Protocol.V1.GameCenterCredential :: System.Int32 GetHashCode<>()
+  GameServer.Modules.Identity.Protocol.V1.GameCenterCredential :: System.String ToString<>()
+  GameServer.Modules.Identity.Protocol.V1.GameCenterCredential :: System.Void MergeFrom<>(GameServer.Modules.Identity.Protocol.V1.GameCenterCredential other)
+  GameServer.Modules.Identity.Protocol.V1.GameCenterCredential :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Modules.Identity.Protocol.V1.GameCenterCredential :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Modules.Identity.Protocol.V1.GameCenterCredential :: field static const System.Int32 BundleIdFieldNumber = 7
+  GameServer.Modules.Identity.Protocol.V1.GameCenterCredential :: field static const System.Int32 GamePlayerIdFieldNumber = 6
+  GameServer.Modules.Identity.Protocol.V1.GameCenterCredential :: field static const System.Int32 PublicKeyUrlFieldNumber = 1
+  GameServer.Modules.Identity.Protocol.V1.GameCenterCredential :: field static const System.Int32 SaltFieldNumber = 3
+  GameServer.Modules.Identity.Protocol.V1.GameCenterCredential :: field static const System.Int32 SignatureFieldNumber = 2
+  GameServer.Modules.Identity.Protocol.V1.GameCenterCredential :: field static const System.Int32 TeamPlayerIdFieldNumber = 5
+  GameServer.Modules.Identity.Protocol.V1.GameCenterCredential :: field static const System.Int32 TimestampFieldNumber = 4
+  GameServer.Modules.Identity.Protocol.V1.GameCenterCredential :: prop Google.Protobuf.ByteString Salt {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.GameCenterCredential :: prop Google.Protobuf.ByteString Signature {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.GameCenterCredential :: prop Google.Protobuf.MessageParser`1[GameServer.Modules.Identity.Protocol.V1.GameCenterCredential] Parser {get;}
+  GameServer.Modules.Identity.Protocol.V1.GameCenterCredential :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Modules.Identity.Protocol.V1.GameCenterCredential :: prop System.String BundleId {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.GameCenterCredential :: prop System.String GamePlayerId {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.GameCenterCredential :: prop System.String PublicKeyUrl {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.GameCenterCredential :: prop System.String TeamPlayerId {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.GameCenterCredential :: prop System.UInt64 Timestamp {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.GuestLoginRequest :: .ctor()
+  GameServer.Modules.Identity.Protocol.V1.GuestLoginRequest :: .ctor(GameServer.Modules.Identity.Protocol.V1.GuestLoginRequest other)
+  GameServer.Modules.Identity.Protocol.V1.GuestLoginRequest :: GameServer.Modules.Identity.Protocol.V1.GuestLoginRequest Clone<>()
+  GameServer.Modules.Identity.Protocol.V1.GuestLoginRequest :: System.Boolean Equals<>(GameServer.Modules.Identity.Protocol.V1.GuestLoginRequest other)
+  GameServer.Modules.Identity.Protocol.V1.GuestLoginRequest :: System.Boolean Equals<>(System.Object other)
+  GameServer.Modules.Identity.Protocol.V1.GuestLoginRequest :: System.Int32 CalculateSize<>()
+  GameServer.Modules.Identity.Protocol.V1.GuestLoginRequest :: System.Int32 GetHashCode<>()
+  GameServer.Modules.Identity.Protocol.V1.GuestLoginRequest :: System.String ToString<>()
+  GameServer.Modules.Identity.Protocol.V1.GuestLoginRequest :: System.Void MergeFrom<>(GameServer.Modules.Identity.Protocol.V1.GuestLoginRequest other)
+  GameServer.Modules.Identity.Protocol.V1.GuestLoginRequest :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Modules.Identity.Protocol.V1.GuestLoginRequest :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Modules.Identity.Protocol.V1.GuestLoginRequest :: field static const System.Int32 LocalIdFieldNumber = 1
+  GameServer.Modules.Identity.Protocol.V1.GuestLoginRequest :: field static const System.Int32 SecretFieldNumber = 2
+  GameServer.Modules.Identity.Protocol.V1.GuestLoginRequest :: prop Google.Protobuf.ByteString Secret {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.GuestLoginRequest :: prop Google.Protobuf.MessageParser`1[GameServer.Modules.Identity.Protocol.V1.GuestLoginRequest] Parser {get;}
+  GameServer.Modules.Identity.Protocol.V1.GuestLoginRequest :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Modules.Identity.Protocol.V1.GuestLoginRequest :: prop System.String LocalId {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.IdentityReflection :: prop Google.Protobuf.Reflection.FileDescriptor Descriptor {get;}
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityRequest :: .ctor()
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityRequest :: .ctor(GameServer.Modules.Identity.Protocol.V1.LinkIdentityRequest other)
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityRequest :: GameServer.Modules.Identity.Protocol.V1.LinkIdentityRequest Clone<>()
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityRequest :: System.Boolean Equals<>(GameServer.Modules.Identity.Protocol.V1.LinkIdentityRequest other)
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityRequest :: System.Boolean Equals<>(System.Object other)
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityRequest :: System.Int32 CalculateSize<>()
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityRequest :: System.Int32 GetHashCode<>()
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityRequest :: System.String ToString<>()
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityRequest :: System.Void MergeFrom<>(GameServer.Modules.Identity.Protocol.V1.LinkIdentityRequest other)
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityRequest :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityRequest :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityRequest :: field static const System.Int32 CredentialFieldNumber = 1
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityRequest :: prop GameServer.Modules.Identity.Protocol.V1.ProviderCredential Credential {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityRequest :: prop Google.Protobuf.MessageParser`1[GameServer.Modules.Identity.Protocol.V1.LinkIdentityRequest] Parser {get;}
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityRequest :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult :: .ctor()
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult :: .ctor(GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult other)
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult :: GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult Clone<>()
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult :: System.Boolean Equals<>(GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult other)
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult :: System.Boolean Equals<>(System.Object other)
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult :: System.Int32 CalculateSize<>()
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult :: System.Int32 GetHashCode<>()
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult :: System.String ToString<>()
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult :: System.Void MergeFrom<>(GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult other)
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult :: field static const System.Int32 AlreadyLinkedFieldNumber = 2
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult :: field static const System.Int32 ProviderFieldNumber = 1
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult :: prop Google.Protobuf.MessageParser`1[GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult] Parser {get;}
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult :: prop System.Boolean AlreadyLinked {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult :: prop System.String Provider {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: .ctor()
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: .ctor(GameServer.Modules.Identity.Protocol.V1.LoginResponse other)
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: GameServer.Modules.Identity.Protocol.V1.LoginResponse Clone<>()
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: System.Boolean Equals<>(GameServer.Modules.Identity.Protocol.V1.LoginResponse other)
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: System.Boolean Equals<>(System.Object other)
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: System.Int32 CalculateSize<>()
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: System.Int32 GetHashCode<>()
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: System.String ToString<>()
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: System.Void MergeFrom<>(GameServer.Modules.Identity.Protocol.V1.LoginResponse other)
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: field static const System.Int32 ConfigVersionFieldNumber = 4
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: field static const System.Int32 PlayerIdFieldNumber = 2
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: field static const System.Int32 SectionsFieldNumber = 3
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: field static const System.Int32 ServerTimeUtcMsFieldNumber = 5
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: field static const System.Int32 SessionExpiresAtUtcMsFieldNumber = 6
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: field static const System.Int32 SessionTokenFieldNumber = 1
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: prop Google.Protobuf.Collections.RepeatedField`1[GameServer.Protocol.Core.V1.Section] Sections {get;}
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: prop Google.Protobuf.MessageParser`1[GameServer.Modules.Identity.Protocol.V1.LoginResponse] Parser {get;}
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: prop System.Int64 ServerTimeUtcMs {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: prop System.Int64 SessionExpiresAtUtcMs {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: prop System.String ConfigVersion {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: prop System.String PlayerId {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: prop System.String SessionToken {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.LogoutRequest :: .ctor()
+  GameServer.Modules.Identity.Protocol.V1.LogoutRequest :: .ctor(GameServer.Modules.Identity.Protocol.V1.LogoutRequest other)
+  GameServer.Modules.Identity.Protocol.V1.LogoutRequest :: GameServer.Modules.Identity.Protocol.V1.LogoutRequest Clone<>()
+  GameServer.Modules.Identity.Protocol.V1.LogoutRequest :: System.Boolean Equals<>(GameServer.Modules.Identity.Protocol.V1.LogoutRequest other)
+  GameServer.Modules.Identity.Protocol.V1.LogoutRequest :: System.Boolean Equals<>(System.Object other)
+  GameServer.Modules.Identity.Protocol.V1.LogoutRequest :: System.Int32 CalculateSize<>()
+  GameServer.Modules.Identity.Protocol.V1.LogoutRequest :: System.Int32 GetHashCode<>()
+  GameServer.Modules.Identity.Protocol.V1.LogoutRequest :: System.String ToString<>()
+  GameServer.Modules.Identity.Protocol.V1.LogoutRequest :: System.Void MergeFrom<>(GameServer.Modules.Identity.Protocol.V1.LogoutRequest other)
+  GameServer.Modules.Identity.Protocol.V1.LogoutRequest :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Modules.Identity.Protocol.V1.LogoutRequest :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Modules.Identity.Protocol.V1.LogoutRequest :: prop Google.Protobuf.MessageParser`1[GameServer.Modules.Identity.Protocol.V1.LogoutRequest] Parser {get;}
+  GameServer.Modules.Identity.Protocol.V1.LogoutRequest :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Modules.Identity.Protocol.V1.LogoutResponse :: .ctor()
+  GameServer.Modules.Identity.Protocol.V1.LogoutResponse :: .ctor(GameServer.Modules.Identity.Protocol.V1.LogoutResponse other)
+  GameServer.Modules.Identity.Protocol.V1.LogoutResponse :: GameServer.Modules.Identity.Protocol.V1.LogoutResponse Clone<>()
+  GameServer.Modules.Identity.Protocol.V1.LogoutResponse :: System.Boolean Equals<>(GameServer.Modules.Identity.Protocol.V1.LogoutResponse other)
+  GameServer.Modules.Identity.Protocol.V1.LogoutResponse :: System.Boolean Equals<>(System.Object other)
+  GameServer.Modules.Identity.Protocol.V1.LogoutResponse :: System.Int32 CalculateSize<>()
+  GameServer.Modules.Identity.Protocol.V1.LogoutResponse :: System.Int32 GetHashCode<>()
+  GameServer.Modules.Identity.Protocol.V1.LogoutResponse :: System.String ToString<>()
+  GameServer.Modules.Identity.Protocol.V1.LogoutResponse :: System.Void MergeFrom<>(GameServer.Modules.Identity.Protocol.V1.LogoutResponse other)
+  GameServer.Modules.Identity.Protocol.V1.LogoutResponse :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Modules.Identity.Protocol.V1.LogoutResponse :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Modules.Identity.Protocol.V1.LogoutResponse :: field static const System.Int32 ServerTimeUtcMsFieldNumber = 1
+  GameServer.Modules.Identity.Protocol.V1.LogoutResponse :: prop Google.Protobuf.MessageParser`1[GameServer.Modules.Identity.Protocol.V1.LogoutResponse] Parser {get;}
+  GameServer.Modules.Identity.Protocol.V1.LogoutResponse :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Modules.Identity.Protocol.V1.LogoutResponse :: prop System.Int64 ServerTimeUtcMs {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.PlayGamesCredential :: .ctor()
+  GameServer.Modules.Identity.Protocol.V1.PlayGamesCredential :: .ctor(GameServer.Modules.Identity.Protocol.V1.PlayGamesCredential other)
+  GameServer.Modules.Identity.Protocol.V1.PlayGamesCredential :: GameServer.Modules.Identity.Protocol.V1.PlayGamesCredential Clone<>()
+  GameServer.Modules.Identity.Protocol.V1.PlayGamesCredential :: System.Boolean Equals<>(GameServer.Modules.Identity.Protocol.V1.PlayGamesCredential other)
+  GameServer.Modules.Identity.Protocol.V1.PlayGamesCredential :: System.Boolean Equals<>(System.Object other)
+  GameServer.Modules.Identity.Protocol.V1.PlayGamesCredential :: System.Int32 CalculateSize<>()
+  GameServer.Modules.Identity.Protocol.V1.PlayGamesCredential :: System.Int32 GetHashCode<>()
+  GameServer.Modules.Identity.Protocol.V1.PlayGamesCredential :: System.String ToString<>()
+  GameServer.Modules.Identity.Protocol.V1.PlayGamesCredential :: System.Void MergeFrom<>(GameServer.Modules.Identity.Protocol.V1.PlayGamesCredential other)
+  GameServer.Modules.Identity.Protocol.V1.PlayGamesCredential :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Modules.Identity.Protocol.V1.PlayGamesCredential :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Modules.Identity.Protocol.V1.PlayGamesCredential :: field static const System.Int32 ServerAuthCodeFieldNumber = 1
+  GameServer.Modules.Identity.Protocol.V1.PlayGamesCredential :: prop Google.Protobuf.MessageParser`1[GameServer.Modules.Identity.Protocol.V1.PlayGamesCredential] Parser {get;}
+  GameServer.Modules.Identity.Protocol.V1.PlayGamesCredential :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Modules.Identity.Protocol.V1.PlayGamesCredential :: prop System.String ServerAuthCode {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.ProfileState :: .ctor()
+  GameServer.Modules.Identity.Protocol.V1.ProfileState :: .ctor(GameServer.Modules.Identity.Protocol.V1.ProfileState other)
+  GameServer.Modules.Identity.Protocol.V1.ProfileState :: GameServer.Modules.Identity.Protocol.V1.ProfileState Clone<>()
+  GameServer.Modules.Identity.Protocol.V1.ProfileState :: System.Boolean Equals<>(GameServer.Modules.Identity.Protocol.V1.ProfileState other)
+  GameServer.Modules.Identity.Protocol.V1.ProfileState :: System.Boolean Equals<>(System.Object other)
+  GameServer.Modules.Identity.Protocol.V1.ProfileState :: System.Int32 CalculateSize<>()
+  GameServer.Modules.Identity.Protocol.V1.ProfileState :: System.Int32 GetHashCode<>()
+  GameServer.Modules.Identity.Protocol.V1.ProfileState :: System.String ToString<>()
+  GameServer.Modules.Identity.Protocol.V1.ProfileState :: System.Void MergeFrom<>(GameServer.Modules.Identity.Protocol.V1.ProfileState other)
+  GameServer.Modules.Identity.Protocol.V1.ProfileState :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Modules.Identity.Protocol.V1.ProfileState :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Modules.Identity.Protocol.V1.ProfileState :: field static const System.Int32 DisplayNameFieldNumber = 1
+  GameServer.Modules.Identity.Protocol.V1.ProfileState :: field static const System.Int32 SessionEpochFieldNumber = 2
+  GameServer.Modules.Identity.Protocol.V1.ProfileState :: prop Google.Protobuf.MessageParser`1[GameServer.Modules.Identity.Protocol.V1.ProfileState] Parser {get;}
+  GameServer.Modules.Identity.Protocol.V1.ProfileState :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Modules.Identity.Protocol.V1.ProfileState :: prop System.Int64 SessionEpoch {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.ProfileState :: prop System.String DisplayName {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.ProviderCredential :: .ctor()
+  GameServer.Modules.Identity.Protocol.V1.ProviderCredential :: .ctor(GameServer.Modules.Identity.Protocol.V1.ProviderCredential other)
+  GameServer.Modules.Identity.Protocol.V1.ProviderCredential :: GameServer.Modules.Identity.Protocol.V1.ProviderCredential Clone<>()
+  GameServer.Modules.Identity.Protocol.V1.ProviderCredential :: System.Boolean Equals<>(GameServer.Modules.Identity.Protocol.V1.ProviderCredential other)
+  GameServer.Modules.Identity.Protocol.V1.ProviderCredential :: System.Boolean Equals<>(System.Object other)
+  GameServer.Modules.Identity.Protocol.V1.ProviderCredential :: System.Int32 CalculateSize<>()
+  GameServer.Modules.Identity.Protocol.V1.ProviderCredential :: System.Int32 GetHashCode<>()
+  GameServer.Modules.Identity.Protocol.V1.ProviderCredential :: System.String ToString<>()
+  GameServer.Modules.Identity.Protocol.V1.ProviderCredential :: System.Void ClearCredential<>()
+  GameServer.Modules.Identity.Protocol.V1.ProviderCredential :: System.Void MergeFrom<>(GameServer.Modules.Identity.Protocol.V1.ProviderCredential other)
+  GameServer.Modules.Identity.Protocol.V1.ProviderCredential :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Modules.Identity.Protocol.V1.ProviderCredential :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Modules.Identity.Protocol.V1.ProviderCredential :: field static const System.Int32 CustomFieldNumber = 15
+  GameServer.Modules.Identity.Protocol.V1.ProviderCredential :: field static const System.Int32 GameCenterFieldNumber = 2
+  GameServer.Modules.Identity.Protocol.V1.ProviderCredential :: field static const System.Int32 PlayGamesFieldNumber = 1
+  GameServer.Modules.Identity.Protocol.V1.ProviderCredential :: prop GameServer.Modules.Identity.Protocol.V1.CustomCredential Custom {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.ProviderCredential :: prop GameServer.Modules.Identity.Protocol.V1.GameCenterCredential GameCenter {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.ProviderCredential :: prop GameServer.Modules.Identity.Protocol.V1.PlayGamesCredential PlayGames {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.ProviderCredential :: prop GameServer.Modules.Identity.Protocol.V1.ProviderCredential+CredentialOneofCase CredentialCase {get;}
+  GameServer.Modules.Identity.Protocol.V1.ProviderCredential :: prop Google.Protobuf.MessageParser`1[GameServer.Modules.Identity.Protocol.V1.ProviderCredential] Parser {get;}
+  GameServer.Modules.Identity.Protocol.V1.ProviderCredential :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Modules.Identity.Protocol.V1.ProviderCredential+CredentialOneofCase :: field System.Int32 value__
+  GameServer.Modules.Identity.Protocol.V1.ProviderCredential+CredentialOneofCase :: field static const GameServer.Modules.Identity.Protocol.V1.ProviderCredential+CredentialOneofCase Custom = 15
+  GameServer.Modules.Identity.Protocol.V1.ProviderCredential+CredentialOneofCase :: field static const GameServer.Modules.Identity.Protocol.V1.ProviderCredential+CredentialOneofCase GameCenter = 2
+  GameServer.Modules.Identity.Protocol.V1.ProviderCredential+CredentialOneofCase :: field static const GameServer.Modules.Identity.Protocol.V1.ProviderCredential+CredentialOneofCase None = 0
+  GameServer.Modules.Identity.Protocol.V1.ProviderCredential+CredentialOneofCase :: field static const GameServer.Modules.Identity.Protocol.V1.ProviderCredential+CredentialOneofCase PlayGames = 1
+  GameServer.Modules.Identity.Protocol.V1.ProviderLoginRequest :: .ctor()
+  GameServer.Modules.Identity.Protocol.V1.ProviderLoginRequest :: .ctor(GameServer.Modules.Identity.Protocol.V1.ProviderLoginRequest other)
+  GameServer.Modules.Identity.Protocol.V1.ProviderLoginRequest :: GameServer.Modules.Identity.Protocol.V1.ProviderLoginRequest Clone<>()
+  GameServer.Modules.Identity.Protocol.V1.ProviderLoginRequest :: System.Boolean Equals<>(GameServer.Modules.Identity.Protocol.V1.ProviderLoginRequest other)
+  GameServer.Modules.Identity.Protocol.V1.ProviderLoginRequest :: System.Boolean Equals<>(System.Object other)
+  GameServer.Modules.Identity.Protocol.V1.ProviderLoginRequest :: System.Int32 CalculateSize<>()
+  GameServer.Modules.Identity.Protocol.V1.ProviderLoginRequest :: System.Int32 GetHashCode<>()
+  GameServer.Modules.Identity.Protocol.V1.ProviderLoginRequest :: System.String ToString<>()
+  GameServer.Modules.Identity.Protocol.V1.ProviderLoginRequest :: System.Void MergeFrom<>(GameServer.Modules.Identity.Protocol.V1.ProviderLoginRequest other)
+  GameServer.Modules.Identity.Protocol.V1.ProviderLoginRequest :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Modules.Identity.Protocol.V1.ProviderLoginRequest :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Modules.Identity.Protocol.V1.ProviderLoginRequest :: field static const System.Int32 CredentialFieldNumber = 1
+  GameServer.Modules.Identity.Protocol.V1.ProviderLoginRequest :: field static const System.Int32 SwitchAccountFieldNumber = 2
+  GameServer.Modules.Identity.Protocol.V1.ProviderLoginRequest :: prop GameServer.Modules.Identity.Protocol.V1.ProviderCredential Credential {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.ProviderLoginRequest :: prop Google.Protobuf.MessageParser`1[GameServer.Modules.Identity.Protocol.V1.ProviderLoginRequest] Parser {get;}
+  GameServer.Modules.Identity.Protocol.V1.ProviderLoginRequest :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Modules.Identity.Protocol.V1.ProviderLoginRequest :: prop System.Boolean SwitchAccount {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionRequest :: .ctor()
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionRequest :: .ctor(GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionRequest other)
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionRequest :: GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionRequest Clone<>()
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionRequest :: System.Boolean Equals<>(GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionRequest other)
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionRequest :: System.Boolean Equals<>(System.Object other)
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionRequest :: System.Int32 CalculateSize<>()
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionRequest :: System.Int32 GetHashCode<>()
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionRequest :: System.String ToString<>()
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionRequest :: System.Void MergeFrom<>(GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionRequest other)
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionRequest :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionRequest :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionRequest :: prop Google.Protobuf.MessageParser`1[GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionRequest] Parser {get;}
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionRequest :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult :: .ctor()
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult :: .ctor(GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult other)
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult :: GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult Clone<>()
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult :: System.Boolean Equals<>(GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult other)
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult :: System.Boolean Equals<>(System.Object other)
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult :: System.Int32 CalculateSize<>()
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult :: System.Int32 GetHashCode<>()
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult :: System.String ToString<>()
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult :: System.Void MergeFrom<>(GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult other)
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult :: field static const System.Int32 PurgeAfterUtcMsFieldNumber = 2
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult :: field static const System.Int32 RequestedAtUtcMsFieldNumber = 1
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult :: prop Google.Protobuf.MessageParser`1[GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult] Parser {get;}
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult :: prop System.Int64 PurgeAfterUtcMs {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult :: prop System.Int64 RequestedAtUtcMs {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameRequest :: .ctor()
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameRequest :: .ctor(GameServer.Modules.Identity.Protocol.V1.SetDisplayNameRequest other)
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameRequest :: GameServer.Modules.Identity.Protocol.V1.SetDisplayNameRequest Clone<>()
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameRequest :: System.Boolean Equals<>(GameServer.Modules.Identity.Protocol.V1.SetDisplayNameRequest other)
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameRequest :: System.Boolean Equals<>(System.Object other)
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameRequest :: System.Int32 CalculateSize<>()
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameRequest :: System.Int32 GetHashCode<>()
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameRequest :: System.String ToString<>()
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameRequest :: System.Void MergeFrom<>(GameServer.Modules.Identity.Protocol.V1.SetDisplayNameRequest other)
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameRequest :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameRequest :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameRequest :: field static const System.Int32 DisplayNameFieldNumber = 1
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameRequest :: prop Google.Protobuf.MessageParser`1[GameServer.Modules.Identity.Protocol.V1.SetDisplayNameRequest] Parser {get;}
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameRequest :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameRequest :: prop System.String DisplayName {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameResult :: .ctor()
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameResult :: .ctor(GameServer.Modules.Identity.Protocol.V1.SetDisplayNameResult other)
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameResult :: GameServer.Modules.Identity.Protocol.V1.SetDisplayNameResult Clone<>()
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameResult :: System.Boolean Equals<>(GameServer.Modules.Identity.Protocol.V1.SetDisplayNameResult other)
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameResult :: System.Boolean Equals<>(System.Object other)
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameResult :: System.Int32 CalculateSize<>()
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameResult :: System.Int32 GetHashCode<>()
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameResult :: System.String ToString<>()
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameResult :: System.Void MergeFrom<>(GameServer.Modules.Identity.Protocol.V1.SetDisplayNameResult other)
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameResult :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameResult :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameResult :: field static const System.Int32 DisplayNameFieldNumber = 1
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameResult :: prop Google.Protobuf.MessageParser`1[GameServer.Modules.Identity.Protocol.V1.SetDisplayNameResult] Parser {get;}
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameResult :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Modules.Identity.Protocol.V1.SetDisplayNameResult :: prop System.String DisplayName {get;set;}
+  GameServer.Protocol.Core.V1.AggregateRev :: .ctor()
+  GameServer.Protocol.Core.V1.AggregateRev :: .ctor(GameServer.Protocol.Core.V1.AggregateRev other)
+  GameServer.Protocol.Core.V1.AggregateRev :: GameServer.Protocol.Core.V1.AggregateRev Clone<>()
+  GameServer.Protocol.Core.V1.AggregateRev :: System.Boolean Equals<>(GameServer.Protocol.Core.V1.AggregateRev other)
+  GameServer.Protocol.Core.V1.AggregateRev :: System.Boolean Equals<>(System.Object other)
+  GameServer.Protocol.Core.V1.AggregateRev :: System.Int32 CalculateSize<>()
+  GameServer.Protocol.Core.V1.AggregateRev :: System.Int32 GetHashCode<>()
+  GameServer.Protocol.Core.V1.AggregateRev :: System.String ToString<>()
+  GameServer.Protocol.Core.V1.AggregateRev :: System.Void MergeFrom<>(GameServer.Protocol.Core.V1.AggregateRev other)
+  GameServer.Protocol.Core.V1.AggregateRev :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Protocol.Core.V1.AggregateRev :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Protocol.Core.V1.AggregateRev :: field static const System.Int32 AggregateIdFieldNumber = 1
+  GameServer.Protocol.Core.V1.AggregateRev :: field static const System.Int32 NewRevFieldNumber = 2
+  GameServer.Protocol.Core.V1.AggregateRev :: prop Google.Protobuf.MessageParser`1[GameServer.Protocol.Core.V1.AggregateRev] Parser {get;}
+  GameServer.Protocol.Core.V1.AggregateRev :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Protocol.Core.V1.AggregateRev :: prop System.Int64 NewRev {get;set;}
+  GameServer.Protocol.Core.V1.AggregateRev :: prop System.String AggregateId {get;set;}
+  GameServer.Protocol.Core.V1.CommandResponse :: .ctor()
+  GameServer.Protocol.Core.V1.CommandResponse :: .ctor(GameServer.Protocol.Core.V1.CommandResponse other)
+  GameServer.Protocol.Core.V1.CommandResponse :: GameServer.Protocol.Core.V1.CommandResponse Clone<>()
+  GameServer.Protocol.Core.V1.CommandResponse :: System.Boolean Equals<>(GameServer.Protocol.Core.V1.CommandResponse other)
+  GameServer.Protocol.Core.V1.CommandResponse :: System.Boolean Equals<>(System.Object other)
+  GameServer.Protocol.Core.V1.CommandResponse :: System.Int32 CalculateSize<>()
+  GameServer.Protocol.Core.V1.CommandResponse :: System.Int32 GetHashCode<>()
+  GameServer.Protocol.Core.V1.CommandResponse :: System.String ToString<>()
+  GameServer.Protocol.Core.V1.CommandResponse :: System.Void MergeFrom<>(GameServer.Protocol.Core.V1.CommandResponse other)
+  GameServer.Protocol.Core.V1.CommandResponse :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Protocol.Core.V1.CommandResponse :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Protocol.Core.V1.CommandResponse :: field static const System.Int32 CodeFieldNumber = 1
+  GameServer.Protocol.Core.V1.CommandResponse :: field static const System.Int32 CodeNumberFieldNumber = 2
+  GameServer.Protocol.Core.V1.CommandResponse :: field static const System.Int32 ConfigVersionFieldNumber = 6
+  GameServer.Protocol.Core.V1.CommandResponse :: field static const System.Int32 ReceiptIdFieldNumber = 3
+  GameServer.Protocol.Core.V1.CommandResponse :: field static const System.Int32 ReplayedFieldNumber = 8
+  GameServer.Protocol.Core.V1.CommandResponse :: field static const System.Int32 ResultFieldNumber = 5
+  GameServer.Protocol.Core.V1.CommandResponse :: field static const System.Int32 ServerTimeUtcMsFieldNumber = 7
+  GameServer.Protocol.Core.V1.CommandResponse :: field static const System.Int32 UpdatesFieldNumber = 4
+  GameServer.Protocol.Core.V1.CommandResponse :: prop Google.Protobuf.ByteString Result {get;set;}
+  GameServer.Protocol.Core.V1.CommandResponse :: prop Google.Protobuf.Collections.RepeatedField`1[GameServer.Protocol.Core.V1.SectionUpdate] Updates {get;}
+  GameServer.Protocol.Core.V1.CommandResponse :: prop Google.Protobuf.MessageParser`1[GameServer.Protocol.Core.V1.CommandResponse] Parser {get;}
+  GameServer.Protocol.Core.V1.CommandResponse :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Protocol.Core.V1.CommandResponse :: prop System.Boolean Replayed {get;set;}
+  GameServer.Protocol.Core.V1.CommandResponse :: prop System.Int32 CodeNumber {get;set;}
+  GameServer.Protocol.Core.V1.CommandResponse :: prop System.Int64 ServerTimeUtcMs {get;set;}
+  GameServer.Protocol.Core.V1.CommandResponse :: prop System.String Code {get;set;}
+  GameServer.Protocol.Core.V1.CommandResponse :: prop System.String ConfigVersion {get;set;}
+  GameServer.Protocol.Core.V1.CommandResponse :: prop System.String ReceiptId {get;set;}
+  GameServer.Protocol.Core.V1.ConfigFile :: .ctor()
+  GameServer.Protocol.Core.V1.ConfigFile :: .ctor(GameServer.Protocol.Core.V1.ConfigFile other)
+  GameServer.Protocol.Core.V1.ConfigFile :: GameServer.Protocol.Core.V1.ConfigFile Clone<>()
+  GameServer.Protocol.Core.V1.ConfigFile :: System.Boolean Equals<>(GameServer.Protocol.Core.V1.ConfigFile other)
+  GameServer.Protocol.Core.V1.ConfigFile :: System.Boolean Equals<>(System.Object other)
+  GameServer.Protocol.Core.V1.ConfigFile :: System.Int32 CalculateSize<>()
+  GameServer.Protocol.Core.V1.ConfigFile :: System.Int32 GetHashCode<>()
+  GameServer.Protocol.Core.V1.ConfigFile :: System.String ToString<>()
+  GameServer.Protocol.Core.V1.ConfigFile :: System.Void MergeFrom<>(GameServer.Protocol.Core.V1.ConfigFile other)
+  GameServer.Protocol.Core.V1.ConfigFile :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Protocol.Core.V1.ConfigFile :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Protocol.Core.V1.ConfigFile :: field static const System.Int32 ContentFieldNumber = 2
+  GameServer.Protocol.Core.V1.ConfigFile :: field static const System.Int32 NameFieldNumber = 1
+  GameServer.Protocol.Core.V1.ConfigFile :: prop Google.Protobuf.ByteString Content {get;set;}
+  GameServer.Protocol.Core.V1.ConfigFile :: prop Google.Protobuf.MessageParser`1[GameServer.Protocol.Core.V1.ConfigFile] Parser {get;}
+  GameServer.Protocol.Core.V1.ConfigFile :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Protocol.Core.V1.ConfigFile :: prop System.String Name {get;set;}
+  GameServer.Protocol.Core.V1.CoreReflection :: prop Google.Protobuf.Reflection.FileDescriptor Descriptor {get;}
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: .ctor()
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: .ctor(GameServer.Protocol.Core.V1.ErrorEnvelope other)
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: GameServer.Protocol.Core.V1.ErrorEnvelope Clone<>()
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: System.Boolean Equals<>(GameServer.Protocol.Core.V1.ErrorEnvelope other)
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: System.Boolean Equals<>(System.Object other)
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: System.Int32 CalculateSize<>()
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: System.Int32 GetHashCode<>()
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: System.String ToString<>()
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: System.Void MergeFrom<>(GameServer.Protocol.Core.V1.ErrorEnvelope other)
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: field static const System.Int32 CodeFieldNumber = 1
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: field static const System.Int32 CodeNumberFieldNumber = 2
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: field static const System.Int32 ConfigVersionFieldNumber = 8
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: field static const System.Int32 DetailsFieldNumber = 9
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: field static const System.Int32 MessageFieldNumber = 3
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: field static const System.Int32 RequestIdFieldNumber = 4
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: field static const System.Int32 RetryAfterMsFieldNumber = 6
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: field static const System.Int32 RetryableFieldNumber = 5
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: field static const System.Int32 ServerTimeUtcMsFieldNumber = 7
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: prop Google.Protobuf.Collections.MapField`2[System.String,System.String] Details {get;}
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: prop Google.Protobuf.MessageParser`1[GameServer.Protocol.Core.V1.ErrorEnvelope] Parser {get;}
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: prop System.Boolean Retryable {get;set;}
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: prop System.Int32 CodeNumber {get;set;}
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: prop System.Int32 RetryAfterMs {get;set;}
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: prop System.Int64 ServerTimeUtcMs {get;set;}
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: prop System.String Code {get;set;}
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: prop System.String ConfigVersion {get;set;}
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: prop System.String Message {get;set;}
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: prop System.String RequestId {get;set;}
+  GameServer.Protocol.Core.V1.GetConfigRequest :: .ctor()
+  GameServer.Protocol.Core.V1.GetConfigRequest :: .ctor(GameServer.Protocol.Core.V1.GetConfigRequest other)
+  GameServer.Protocol.Core.V1.GetConfigRequest :: GameServer.Protocol.Core.V1.GetConfigRequest Clone<>()
+  GameServer.Protocol.Core.V1.GetConfigRequest :: System.Boolean Equals<>(GameServer.Protocol.Core.V1.GetConfigRequest other)
+  GameServer.Protocol.Core.V1.GetConfigRequest :: System.Boolean Equals<>(System.Object other)
+  GameServer.Protocol.Core.V1.GetConfigRequest :: System.Int32 CalculateSize<>()
+  GameServer.Protocol.Core.V1.GetConfigRequest :: System.Int32 GetHashCode<>()
+  GameServer.Protocol.Core.V1.GetConfigRequest :: System.String ToString<>()
+  GameServer.Protocol.Core.V1.GetConfigRequest :: System.Void MergeFrom<>(GameServer.Protocol.Core.V1.GetConfigRequest other)
+  GameServer.Protocol.Core.V1.GetConfigRequest :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Protocol.Core.V1.GetConfigRequest :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Protocol.Core.V1.GetConfigRequest :: field static const System.Int32 ConfigVersionFieldNumber = 1
+  GameServer.Protocol.Core.V1.GetConfigRequest :: prop Google.Protobuf.MessageParser`1[GameServer.Protocol.Core.V1.GetConfigRequest] Parser {get;}
+  GameServer.Protocol.Core.V1.GetConfigRequest :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Protocol.Core.V1.GetConfigRequest :: prop System.String ConfigVersion {get;set;}
+  GameServer.Protocol.Core.V1.GetConfigResponse :: .ctor()
+  GameServer.Protocol.Core.V1.GetConfigResponse :: .ctor(GameServer.Protocol.Core.V1.GetConfigResponse other)
+  GameServer.Protocol.Core.V1.GetConfigResponse :: GameServer.Protocol.Core.V1.GetConfigResponse Clone<>()
+  GameServer.Protocol.Core.V1.GetConfigResponse :: System.Boolean Equals<>(GameServer.Protocol.Core.V1.GetConfigResponse other)
+  GameServer.Protocol.Core.V1.GetConfigResponse :: System.Boolean Equals<>(System.Object other)
+  GameServer.Protocol.Core.V1.GetConfigResponse :: System.Int32 CalculateSize<>()
+  GameServer.Protocol.Core.V1.GetConfigResponse :: System.Int32 GetHashCode<>()
+  GameServer.Protocol.Core.V1.GetConfigResponse :: System.String ToString<>()
+  GameServer.Protocol.Core.V1.GetConfigResponse :: System.Void MergeFrom<>(GameServer.Protocol.Core.V1.GetConfigResponse other)
+  GameServer.Protocol.Core.V1.GetConfigResponse :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Protocol.Core.V1.GetConfigResponse :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Protocol.Core.V1.GetConfigResponse :: field static const System.Int32 ConfigVersionFieldNumber = 1
+  GameServer.Protocol.Core.V1.GetConfigResponse :: field static const System.Int32 FilesFieldNumber = 3
+  GameServer.Protocol.Core.V1.GetConfigResponse :: field static const System.Int32 NotModifiedFieldNumber = 2
+  GameServer.Protocol.Core.V1.GetConfigResponse :: field static const System.Int32 ServerTimeUtcMsFieldNumber = 4
+  GameServer.Protocol.Core.V1.GetConfigResponse :: prop Google.Protobuf.Collections.RepeatedField`1[GameServer.Protocol.Core.V1.ConfigFile] Files {get;}
+  GameServer.Protocol.Core.V1.GetConfigResponse :: prop Google.Protobuf.MessageParser`1[GameServer.Protocol.Core.V1.GetConfigResponse] Parser {get;}
+  GameServer.Protocol.Core.V1.GetConfigResponse :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Protocol.Core.V1.GetConfigResponse :: prop System.Boolean NotModified {get;set;}
+  GameServer.Protocol.Core.V1.GetConfigResponse :: prop System.Int64 ServerTimeUtcMs {get;set;}
+  GameServer.Protocol.Core.V1.GetConfigResponse :: prop System.String ConfigVersion {get;set;}
+  GameServer.Protocol.Core.V1.OutboxEntryView :: .ctor()
+  GameServer.Protocol.Core.V1.OutboxEntryView :: .ctor(GameServer.Protocol.Core.V1.OutboxEntryView other)
+  GameServer.Protocol.Core.V1.OutboxEntryView :: GameServer.Protocol.Core.V1.OutboxEntryView Clone<>()
+  GameServer.Protocol.Core.V1.OutboxEntryView :: System.Boolean Equals<>(GameServer.Protocol.Core.V1.OutboxEntryView other)
+  GameServer.Protocol.Core.V1.OutboxEntryView :: System.Boolean Equals<>(System.Object other)
+  GameServer.Protocol.Core.V1.OutboxEntryView :: System.Int32 CalculateSize<>()
+  GameServer.Protocol.Core.V1.OutboxEntryView :: System.Int32 GetHashCode<>()
+  GameServer.Protocol.Core.V1.OutboxEntryView :: System.String ToString<>()
+  GameServer.Protocol.Core.V1.OutboxEntryView :: System.Void MergeFrom<>(GameServer.Protocol.Core.V1.OutboxEntryView other)
+  GameServer.Protocol.Core.V1.OutboxEntryView :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Protocol.Core.V1.OutboxEntryView :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Protocol.Core.V1.OutboxEntryView :: field static const System.Int32 EntryIdFieldNumber = 1
+  GameServer.Protocol.Core.V1.OutboxEntryView :: field static const System.Int32 KindFieldNumber = 2
+  GameServer.Protocol.Core.V1.OutboxEntryView :: field static const System.Int32 PayloadJsonFieldNumber = 3
+  GameServer.Protocol.Core.V1.OutboxEntryView :: prop Google.Protobuf.MessageParser`1[GameServer.Protocol.Core.V1.OutboxEntryView] Parser {get;}
+  GameServer.Protocol.Core.V1.OutboxEntryView :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Protocol.Core.V1.OutboxEntryView :: prop System.String EntryId {get;set;}
+  GameServer.Protocol.Core.V1.OutboxEntryView :: prop System.String Kind {get;set;}
+  GameServer.Protocol.Core.V1.OutboxEntryView :: prop System.String PayloadJson {get;set;}
+  GameServer.Protocol.Core.V1.ReceiptView :: .ctor()
+  GameServer.Protocol.Core.V1.ReceiptView :: .ctor(GameServer.Protocol.Core.V1.ReceiptView other)
+  GameServer.Protocol.Core.V1.ReceiptView :: GameServer.Protocol.Core.V1.ReceiptView Clone<>()
+  GameServer.Protocol.Core.V1.ReceiptView :: System.Boolean Equals<>(GameServer.Protocol.Core.V1.ReceiptView other)
+  GameServer.Protocol.Core.V1.ReceiptView :: System.Boolean Equals<>(System.Object other)
+  GameServer.Protocol.Core.V1.ReceiptView :: System.Int32 CalculateSize<>()
+  GameServer.Protocol.Core.V1.ReceiptView :: System.Int32 GetHashCode<>()
+  GameServer.Protocol.Core.V1.ReceiptView :: System.String ToString<>()
+  GameServer.Protocol.Core.V1.ReceiptView :: System.Void MergeFrom<>(GameServer.Protocol.Core.V1.ReceiptView other)
+  GameServer.Protocol.Core.V1.ReceiptView :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Protocol.Core.V1.ReceiptView :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Protocol.Core.V1.ReceiptView :: field static const System.Int32 AggregatesFieldNumber = 6
+  GameServer.Protocol.Core.V1.ReceiptView :: field static const System.Int32 CommittedAtUtcMsFieldNumber = 8
+  GameServer.Protocol.Core.V1.ReceiptView :: field static const System.Int32 ConfigVersionFieldNumber = 7
+  GameServer.Protocol.Core.V1.ReceiptView :: field static const System.Int32 OperationFieldNumber = 2
+  GameServer.Protocol.Core.V1.ReceiptView :: field static const System.Int32 OutboxFieldNumber = 9
+  GameServer.Protocol.Core.V1.ReceiptView :: field static const System.Int32 ReceiptIdFieldNumber = 1
+  GameServer.Protocol.Core.V1.ReceiptView :: field static const System.Int32 RequestIdFieldNumber = 3
+  GameServer.Protocol.Core.V1.ReceiptView :: field static const System.Int32 ResultCodeFieldNumber = 4
+  GameServer.Protocol.Core.V1.ReceiptView :: field static const System.Int32 ResultFieldNumber = 5
+  GameServer.Protocol.Core.V1.ReceiptView :: field static const System.Int32 ServerTimeUtcMsFieldNumber = 10
+  GameServer.Protocol.Core.V1.ReceiptView :: prop Google.Protobuf.ByteString Result {get;set;}
+  GameServer.Protocol.Core.V1.ReceiptView :: prop Google.Protobuf.Collections.RepeatedField`1[GameServer.Protocol.Core.V1.AggregateRev] Aggregates {get;}
+  GameServer.Protocol.Core.V1.ReceiptView :: prop Google.Protobuf.Collections.RepeatedField`1[GameServer.Protocol.Core.V1.OutboxEntryView] Outbox {get;}
+  GameServer.Protocol.Core.V1.ReceiptView :: prop Google.Protobuf.MessageParser`1[GameServer.Protocol.Core.V1.ReceiptView] Parser {get;}
+  GameServer.Protocol.Core.V1.ReceiptView :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Protocol.Core.V1.ReceiptView :: prop System.Int64 CommittedAtUtcMs {get;set;}
+  GameServer.Protocol.Core.V1.ReceiptView :: prop System.Int64 ServerTimeUtcMs {get;set;}
+  GameServer.Protocol.Core.V1.ReceiptView :: prop System.String ConfigVersion {get;set;}
+  GameServer.Protocol.Core.V1.ReceiptView :: prop System.String Operation {get;set;}
+  GameServer.Protocol.Core.V1.ReceiptView :: prop System.String ReceiptId {get;set;}
+  GameServer.Protocol.Core.V1.ReceiptView :: prop System.String RequestId {get;set;}
+  GameServer.Protocol.Core.V1.ReceiptView :: prop System.String ResultCode {get;set;}
+  GameServer.Protocol.Core.V1.Section :: .ctor()
+  GameServer.Protocol.Core.V1.Section :: .ctor(GameServer.Protocol.Core.V1.Section other)
+  GameServer.Protocol.Core.V1.Section :: GameServer.Protocol.Core.V1.Section Clone<>()
+  GameServer.Protocol.Core.V1.Section :: System.Boolean Equals<>(GameServer.Protocol.Core.V1.Section other)
+  GameServer.Protocol.Core.V1.Section :: System.Boolean Equals<>(System.Object other)
+  GameServer.Protocol.Core.V1.Section :: System.Int32 CalculateSize<>()
+  GameServer.Protocol.Core.V1.Section :: System.Int32 GetHashCode<>()
+  GameServer.Protocol.Core.V1.Section :: System.String ToString<>()
+  GameServer.Protocol.Core.V1.Section :: System.Void MergeFrom<>(GameServer.Protocol.Core.V1.Section other)
+  GameServer.Protocol.Core.V1.Section :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Protocol.Core.V1.Section :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Protocol.Core.V1.Section :: field static const System.Int32 IdFieldNumber = 1
+  GameServer.Protocol.Core.V1.Section :: field static const System.Int32 PayloadFieldNumber = 3
+  GameServer.Protocol.Core.V1.Section :: field static const System.Int32 RevFieldNumber = 2
+  GameServer.Protocol.Core.V1.Section :: prop Google.Protobuf.ByteString Payload {get;set;}
+  GameServer.Protocol.Core.V1.Section :: prop Google.Protobuf.MessageParser`1[GameServer.Protocol.Core.V1.Section] Parser {get;}
+  GameServer.Protocol.Core.V1.Section :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Protocol.Core.V1.Section :: prop System.Int64 Rev {get;set;}
+  GameServer.Protocol.Core.V1.Section :: prop System.String Id {get;set;}
+  GameServer.Protocol.Core.V1.SectionUpdate :: .ctor()
+  GameServer.Protocol.Core.V1.SectionUpdate :: .ctor(GameServer.Protocol.Core.V1.SectionUpdate other)
+  GameServer.Protocol.Core.V1.SectionUpdate :: GameServer.Protocol.Core.V1.SectionUpdate Clone<>()
+  GameServer.Protocol.Core.V1.SectionUpdate :: System.Boolean Equals<>(GameServer.Protocol.Core.V1.SectionUpdate other)
+  GameServer.Protocol.Core.V1.SectionUpdate :: System.Boolean Equals<>(System.Object other)
+  GameServer.Protocol.Core.V1.SectionUpdate :: System.Int32 CalculateSize<>()
+  GameServer.Protocol.Core.V1.SectionUpdate :: System.Int32 GetHashCode<>()
+  GameServer.Protocol.Core.V1.SectionUpdate :: System.String ToString<>()
+  GameServer.Protocol.Core.V1.SectionUpdate :: System.Void MergeFrom<>(GameServer.Protocol.Core.V1.SectionUpdate other)
+  GameServer.Protocol.Core.V1.SectionUpdate :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Protocol.Core.V1.SectionUpdate :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Protocol.Core.V1.SectionUpdate :: field static const System.Int32 BaseRevFieldNumber = 2
+  GameServer.Protocol.Core.V1.SectionUpdate :: field static const System.Int32 FullFieldNumber = 5
+  GameServer.Protocol.Core.V1.SectionUpdate :: field static const System.Int32 IdFieldNumber = 1
+  GameServer.Protocol.Core.V1.SectionUpdate :: field static const System.Int32 NewRevFieldNumber = 3
+  GameServer.Protocol.Core.V1.SectionUpdate :: field static const System.Int32 PayloadFieldNumber = 4
+  GameServer.Protocol.Core.V1.SectionUpdate :: prop Google.Protobuf.ByteString Payload {get;set;}
+  GameServer.Protocol.Core.V1.SectionUpdate :: prop Google.Protobuf.MessageParser`1[GameServer.Protocol.Core.V1.SectionUpdate] Parser {get;}
+  GameServer.Protocol.Core.V1.SectionUpdate :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Protocol.Core.V1.SectionUpdate :: prop System.Boolean Full {get;set;}
+  GameServer.Protocol.Core.V1.SectionUpdate :: prop System.Int64 BaseRev {get;set;}
+  GameServer.Protocol.Core.V1.SectionUpdate :: prop System.Int64 NewRev {get;set;}
+  GameServer.Protocol.Core.V1.SectionUpdate :: prop System.String Id {get;set;}
+  GameServer.Protocol.Core.V1.SnapshotRequest :: .ctor()
+  GameServer.Protocol.Core.V1.SnapshotRequest :: .ctor(GameServer.Protocol.Core.V1.SnapshotRequest other)
+  GameServer.Protocol.Core.V1.SnapshotRequest :: GameServer.Protocol.Core.V1.SnapshotRequest Clone<>()
+  GameServer.Protocol.Core.V1.SnapshotRequest :: System.Boolean Equals<>(GameServer.Protocol.Core.V1.SnapshotRequest other)
+  GameServer.Protocol.Core.V1.SnapshotRequest :: System.Boolean Equals<>(System.Object other)
+  GameServer.Protocol.Core.V1.SnapshotRequest :: System.Int32 CalculateSize<>()
+  GameServer.Protocol.Core.V1.SnapshotRequest :: System.Int32 GetHashCode<>()
+  GameServer.Protocol.Core.V1.SnapshotRequest :: System.String ToString<>()
+  GameServer.Protocol.Core.V1.SnapshotRequest :: System.Void MergeFrom<>(GameServer.Protocol.Core.V1.SnapshotRequest other)
+  GameServer.Protocol.Core.V1.SnapshotRequest :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Protocol.Core.V1.SnapshotRequest :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Protocol.Core.V1.SnapshotRequest :: field static const System.Int32 SectionsFieldNumber = 1
+  GameServer.Protocol.Core.V1.SnapshotRequest :: prop Google.Protobuf.Collections.RepeatedField`1[System.String] Sections {get;}
+  GameServer.Protocol.Core.V1.SnapshotRequest :: prop Google.Protobuf.MessageParser`1[GameServer.Protocol.Core.V1.SnapshotRequest] Parser {get;}
+  GameServer.Protocol.Core.V1.SnapshotRequest :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Protocol.Core.V1.SnapshotResponse :: .ctor()
+  GameServer.Protocol.Core.V1.SnapshotResponse :: .ctor(GameServer.Protocol.Core.V1.SnapshotResponse other)
+  GameServer.Protocol.Core.V1.SnapshotResponse :: GameServer.Protocol.Core.V1.SnapshotResponse Clone<>()
+  GameServer.Protocol.Core.V1.SnapshotResponse :: System.Boolean Equals<>(GameServer.Protocol.Core.V1.SnapshotResponse other)
+  GameServer.Protocol.Core.V1.SnapshotResponse :: System.Boolean Equals<>(System.Object other)
+  GameServer.Protocol.Core.V1.SnapshotResponse :: System.Int32 CalculateSize<>()
+  GameServer.Protocol.Core.V1.SnapshotResponse :: System.Int32 GetHashCode<>()
+  GameServer.Protocol.Core.V1.SnapshotResponse :: System.String ToString<>()
+  GameServer.Protocol.Core.V1.SnapshotResponse :: System.Void MergeFrom<>(GameServer.Protocol.Core.V1.SnapshotResponse other)
+  GameServer.Protocol.Core.V1.SnapshotResponse :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Protocol.Core.V1.SnapshotResponse :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Protocol.Core.V1.SnapshotResponse :: field static const System.Int32 ConfigVersionFieldNumber = 2
+  GameServer.Protocol.Core.V1.SnapshotResponse :: field static const System.Int32 SectionsFieldNumber = 1
+  GameServer.Protocol.Core.V1.SnapshotResponse :: field static const System.Int32 ServerTimeUtcMsFieldNumber = 3
+  GameServer.Protocol.Core.V1.SnapshotResponse :: prop Google.Protobuf.Collections.RepeatedField`1[GameServer.Protocol.Core.V1.Section] Sections {get;}
+  GameServer.Protocol.Core.V1.SnapshotResponse :: prop Google.Protobuf.MessageParser`1[GameServer.Protocol.Core.V1.SnapshotResponse] Parser {get;}
+  GameServer.Protocol.Core.V1.SnapshotResponse :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Protocol.Core.V1.SnapshotResponse :: prop System.Int64 ServerTimeUtcMs {get;set;}
+  GameServer.Protocol.Core.V1.SnapshotResponse :: prop System.String ConfigVersion {get;set;}
+  GameServer.Protocol.Core.V1.TimeResponse :: .ctor()
+  GameServer.Protocol.Core.V1.TimeResponse :: .ctor(GameServer.Protocol.Core.V1.TimeResponse other)
+  GameServer.Protocol.Core.V1.TimeResponse :: GameServer.Protocol.Core.V1.TimeResponse Clone<>()
+  GameServer.Protocol.Core.V1.TimeResponse :: System.Boolean Equals<>(GameServer.Protocol.Core.V1.TimeResponse other)
+  GameServer.Protocol.Core.V1.TimeResponse :: System.Boolean Equals<>(System.Object other)
+  GameServer.Protocol.Core.V1.TimeResponse :: System.Int32 CalculateSize<>()
+  GameServer.Protocol.Core.V1.TimeResponse :: System.Int32 GetHashCode<>()
+  GameServer.Protocol.Core.V1.TimeResponse :: System.String ToString<>()
+  GameServer.Protocol.Core.V1.TimeResponse :: System.Void MergeFrom<>(GameServer.Protocol.Core.V1.TimeResponse other)
+  GameServer.Protocol.Core.V1.TimeResponse :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Protocol.Core.V1.TimeResponse :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Protocol.Core.V1.TimeResponse :: field static const System.Int32 ServerTimeUtcMsFieldNumber = 1
+  GameServer.Protocol.Core.V1.TimeResponse :: prop Google.Protobuf.MessageParser`1[GameServer.Protocol.Core.V1.TimeResponse] Parser {get;}
+  GameServer.Protocol.Core.V1.TimeResponse :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Protocol.Core.V1.TimeResponse :: prop System.Int64 ServerTimeUtcMs {get;set;}
+type GameServer.Client.CommandResult`1 : System.Object []
+type GameServer.Client.ErrorCodes : System.Object []
+type GameServer.Client.GameServerClient : System.Object []
+type GameServer.Client.GameServerClientOptions : System.Object []
+type GameServer.Client.GameServerError : System.Object []
+type GameServer.Client.GameServerException : System.Exception [System.Runtime.Serialization.ISerializable]
+type GameServer.Client.HttpClientTransport : System.Object [GameServer.Client.IHttpTransport]
+type GameServer.Client.IClientClock :  []
+type GameServer.Client.IConfigCache :  []
+type GameServer.Client.IDelay :  []
+type GameServer.Client.IHttpTransport :  []
+type GameServer.Client.ISessionStore :  []
+type GameServer.Client.InMemoryConfigCache : System.Object [GameServer.Client.IConfigCache]
+type GameServer.Client.InMemorySessionStore : System.Object [GameServer.Client.ISessionStore]
+type GameServer.Client.SectionState : System.Object []
+type GameServer.Client.SectionStore : System.Object []
+type GameServer.Client.SystemClientClock : System.Object [GameServer.Client.IClientClock]
+type GameServer.Client.TaskDelay : System.Object [GameServer.Client.IDelay]
+type GameServer.Client.TransportException : System.Exception [System.Runtime.Serialization.ISerializable]
+type GameServer.Client.TransportRequest : System.Object []
+type GameServer.Client.TransportResponse : System.Object []
+type GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Modules.Economy.Protocol.V1.CheatGrantResult : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Modules.Economy.Protocol.V1.CheatGrantResult, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Modules.Economy.Protocol.V1.CheatGrantResult, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Modules.Economy.Protocol.V1.CheatGrantResult, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Modules.Economy.Protocol.V1.EconomyReflection : System.Object []
+type GameServer.Modules.Economy.Protocol.V1.InventoryState : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Modules.Economy.Protocol.V1.InventoryState, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Modules.Economy.Protocol.V1.InventoryState, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Modules.Economy.Protocol.V1.InventoryState, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Modules.Economy.Protocol.V1.WalletState : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Modules.Economy.Protocol.V1.WalletState, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Modules.Economy.Protocol.V1.WalletState, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Modules.Economy.Protocol.V1.WalletState, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Modules.Iap.Protocol.V1.GrantedResource : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Modules.Iap.Protocol.V1.GrantedResource, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Modules.Iap.Protocol.V1.GrantedResource, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Modules.Iap.Protocol.V1.GrantedResource, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Modules.Iap.Protocol.V1.IapPurchaseRequest : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Modules.Iap.Protocol.V1.IapPurchaseRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Modules.Iap.Protocol.V1.IapPurchaseRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Modules.Iap.Protocol.V1.IapPurchaseRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Modules.Iap.Protocol.V1.IapPurchaseResult : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Modules.Iap.Protocol.V1.IapPurchaseResult, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Modules.Iap.Protocol.V1.IapPurchaseResult, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Modules.Iap.Protocol.V1.IapPurchaseResult, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Modules.Iap.Protocol.V1.IapReflection : System.Object []
+type GameServer.Modules.Identity.Protocol.V1.CustomCredential : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Modules.Identity.Protocol.V1.CustomCredential, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Modules.Identity.Protocol.V1.CustomCredential, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Modules.Identity.Protocol.V1.CustomCredential, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Modules.Identity.Protocol.V1.GameCenterCredential : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Modules.Identity.Protocol.V1.GameCenterCredential, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Modules.Identity.Protocol.V1.GameCenterCredential, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Modules.Identity.Protocol.V1.GameCenterCredential, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Modules.Identity.Protocol.V1.GuestLoginRequest : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Modules.Identity.Protocol.V1.GuestLoginRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Modules.Identity.Protocol.V1.GuestLoginRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Modules.Identity.Protocol.V1.GuestLoginRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Modules.Identity.Protocol.V1.IdentityReflection : System.Object []
+type GameServer.Modules.Identity.Protocol.V1.LinkIdentityRequest : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Modules.Identity.Protocol.V1.LinkIdentityRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Modules.Identity.Protocol.V1.LinkIdentityRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Modules.Identity.Protocol.V1.LinkIdentityRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Modules.Identity.Protocol.V1.LoginResponse : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Modules.Identity.Protocol.V1.LoginResponse, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Modules.Identity.Protocol.V1.LoginResponse, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Modules.Identity.Protocol.V1.LoginResponse, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Modules.Identity.Protocol.V1.LogoutRequest : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Modules.Identity.Protocol.V1.LogoutRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Modules.Identity.Protocol.V1.LogoutRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Modules.Identity.Protocol.V1.LogoutRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Modules.Identity.Protocol.V1.LogoutResponse : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Modules.Identity.Protocol.V1.LogoutResponse, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Modules.Identity.Protocol.V1.LogoutResponse, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Modules.Identity.Protocol.V1.LogoutResponse, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Modules.Identity.Protocol.V1.PlayGamesCredential : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Modules.Identity.Protocol.V1.PlayGamesCredential, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Modules.Identity.Protocol.V1.PlayGamesCredential, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Modules.Identity.Protocol.V1.PlayGamesCredential, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Modules.Identity.Protocol.V1.ProfileState : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Modules.Identity.Protocol.V1.ProfileState, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Modules.Identity.Protocol.V1.ProfileState, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Modules.Identity.Protocol.V1.ProfileState, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Modules.Identity.Protocol.V1.ProviderCredential : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Modules.Identity.Protocol.V1.ProviderCredential, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Modules.Identity.Protocol.V1.ProviderCredential, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Modules.Identity.Protocol.V1.ProviderCredential, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Modules.Identity.Protocol.V1.ProviderCredential+CredentialOneofCase : System.Enum [System.IComparable,System.IConvertible,System.IFormattable,System.ISpanFormattable]
+type GameServer.Modules.Identity.Protocol.V1.ProviderLoginRequest : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Modules.Identity.Protocol.V1.ProviderLoginRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Modules.Identity.Protocol.V1.ProviderLoginRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Modules.Identity.Protocol.V1.ProviderLoginRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionRequest : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Modules.Identity.Protocol.V1.SetDisplayNameRequest : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Modules.Identity.Protocol.V1.SetDisplayNameRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Modules.Identity.Protocol.V1.SetDisplayNameRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Modules.Identity.Protocol.V1.SetDisplayNameRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Modules.Identity.Protocol.V1.SetDisplayNameResult : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Modules.Identity.Protocol.V1.SetDisplayNameResult, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Modules.Identity.Protocol.V1.SetDisplayNameResult, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Modules.Identity.Protocol.V1.SetDisplayNameResult, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Protocol.Core.V1.AggregateRev : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Protocol.Core.V1.AggregateRev, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Protocol.Core.V1.AggregateRev, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Protocol.Core.V1.AggregateRev, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Protocol.Core.V1.CommandResponse : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Protocol.Core.V1.CommandResponse, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Protocol.Core.V1.CommandResponse, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Protocol.Core.V1.CommandResponse, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Protocol.Core.V1.ConfigFile : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Protocol.Core.V1.ConfigFile, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Protocol.Core.V1.ConfigFile, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Protocol.Core.V1.ConfigFile, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Protocol.Core.V1.CoreReflection : System.Object []
+type GameServer.Protocol.Core.V1.ErrorEnvelope : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Protocol.Core.V1.ErrorEnvelope, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Protocol.Core.V1.ErrorEnvelope, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Protocol.Core.V1.ErrorEnvelope, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Protocol.Core.V1.GetConfigRequest : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Protocol.Core.V1.GetConfigRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Protocol.Core.V1.GetConfigRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Protocol.Core.V1.GetConfigRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Protocol.Core.V1.GetConfigResponse : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Protocol.Core.V1.GetConfigResponse, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Protocol.Core.V1.GetConfigResponse, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Protocol.Core.V1.GetConfigResponse, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Protocol.Core.V1.OutboxEntryView : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Protocol.Core.V1.OutboxEntryView, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Protocol.Core.V1.OutboxEntryView, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Protocol.Core.V1.OutboxEntryView, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Protocol.Core.V1.ReceiptView : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Protocol.Core.V1.ReceiptView, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Protocol.Core.V1.ReceiptView, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Protocol.Core.V1.ReceiptView, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Protocol.Core.V1.Section : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Protocol.Core.V1.Section, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Protocol.Core.V1.Section, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Protocol.Core.V1.Section, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Protocol.Core.V1.SectionUpdate : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Protocol.Core.V1.SectionUpdate, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Protocol.Core.V1.SectionUpdate, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Protocol.Core.V1.SectionUpdate, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Protocol.Core.V1.SnapshotRequest : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Protocol.Core.V1.SnapshotRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Protocol.Core.V1.SnapshotRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Protocol.Core.V1.SnapshotRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Protocol.Core.V1.SnapshotResponse : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Protocol.Core.V1.SnapshotResponse, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Protocol.Core.V1.SnapshotResponse, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Protocol.Core.V1.SnapshotResponse, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Protocol.Core.V1.TimeResponse : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Protocol.Core.V1.TimeResponse, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Protocol.Core.V1.TimeResponse, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Protocol.Core.V1.TimeResponse, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]

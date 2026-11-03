@@ -1,13 +1,15 @@
 using GameServer.Commands;
 using GameServer.Platform.Registry;
+using GameServer.Platform.Web.Aggregates;
+using Google.Protobuf;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GameServer.Platform.Web.Hosting;
 
 /// <summary>
-/// Explicit game overrides applied after framework modules (EXT-02): replace a policy/service or a
-/// command handler. Overrides stay inside the common pipeline (EXT-04).
+/// Explicit game overrides applied after framework modules (EXT-02): replace a policy/service, a command handler or a
+/// wire mapper. Overrides stay inside the common pipeline (EXT-04).
 /// </summary>
 public sealed class ExtensionRegistry(IServiceCollection services, ModuleRegistry registry)
 {
@@ -30,6 +32,32 @@ public sealed class ExtensionRegistry(IServiceCollection services, ModuleRegistr
         where THandler : ICommandHandler<TRequest, TResult>
     {
         registry.ReplaceHandler(operation, typeof(THandler));
+        return this;
+    }
+
+    /// <summary>
+    /// Replaces the wire mapper of <paramref name="aggregateId"/> (BC-4: two mappers for one aggregate fail startup, so this is the
+    /// documented way to change a framework section's payload). Removes the mappers registered for the id so far through
+    /// <c>AddAggregateWireMapper</c> and adds the typed one; without an earlier mapper it simply registers it.
+    /// </summary>
+    public ExtensionRegistry ReplaceWireMapper<TState, TWire>(string aggregateId, Func<TState, TWire> map, Action<WireMapperOptions>? configure = null)
+        where TState : class
+        where TWire : class, IMessage<TWire>, new()
+    {
+        ArgumentException.ThrowIfNullOrEmpty(aggregateId);
+        ArgumentNullException.ThrowIfNull(map);
+
+        // AddAggregateWireMapper registers instances; a mapper registered by type or factory stays and is reported as a duplicate.
+        var earlier = services
+            .Where(d => d.ServiceType == typeof(IAggregateWireMapper) && !d.IsKeyedService && d.ImplementationInstance is IAggregateWireMapper mapper &&
+                        string.Equals(mapper.AggregateId, aggregateId, StringComparison.Ordinal))
+            .ToArray();
+        foreach (var descriptor in earlier)
+        {
+            services.Remove(descriptor);
+        }
+
+        services.AddAggregateWireMapper(aggregateId, map, configure);
         return this;
     }
 }

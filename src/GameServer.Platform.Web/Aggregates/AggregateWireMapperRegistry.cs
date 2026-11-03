@@ -102,6 +102,7 @@ public sealed class WireMapperOptions
 /// <summary>One aggregate id registered with more than one wire mapper (reported at startup, BC-4).</summary>
 internal sealed record DuplicateWireMapper(string AggregateId, int Count);
 
+/// <summary>The wire mappers of the host by aggregate id: the first registration per id serves, later ones are duplicates (BC-4).</summary>
 public sealed class AggregateWireMapperRegistry
 {
     private readonly Dictionary<string, IAggregateWireMapper> _mappers = new(StringComparer.Ordinal);
@@ -112,7 +113,8 @@ public sealed class AggregateWireMapperRegistry
         var counts = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var mapper in mappers)
         {
-            _mappers[mapper.AggregateId] = mapper;
+            // First wins: a duplicate fails startup anyway (BC-4); nothing depends on registration order any more.
+            _mappers.TryAdd(mapper.AggregateId, mapper);
             counts[mapper.AggregateId] = counts.GetValueOrDefault(mapper.AggregateId) + 1;
         }
 
@@ -158,7 +160,8 @@ public static class AggregateWireMapperServiceCollectionExtensions
         return services.AddSingleton<IAggregateWireMapper>(new AggregateWireMapper<TState, TWire>(aggregateId, map, options));
     }
 
-    /// <summary>Registers the wire mapping of a client-visible aggregate.</summary>
+    /// <summary>Registers the wire mapping of a client-visible aggregate without its message type (no catalog message, no Unity parser).</summary>
+    [Obsolete("Use AddAggregateWireMapper<TState, TWire>(aggregateId, map) so the catalog and Unity know the section's message (FG-028). Kept through v0.7.x.")]
     public static IServiceCollection AddAggregateWireMapper<TState>(this IServiceCollection services, string aggregateId, Func<TState, IMessage> map) =>
         services.AddSingleton<IAggregateWireMapper>(new AggregateWireMapper<TState>(aggregateId, map));
 }

@@ -18,7 +18,7 @@ public sealed class TemplateModule : IGameModule, IPlayerApiModule
     public void ConfigureServices(IServiceCollection services, ModuleContext context)
     {
         services.TryAddSingleton<ITemplatePolicy, DefaultTemplatePolicy>();
-        services.AddAggregateWireMapper<TemplateState>(TemplateModuleDefinition.AggregateId, s => new Wire.TemplateState { Points = s.Points });
+        services.AddAggregateWireMapper<TemplateState, Wire.TemplateState>(TemplateModuleDefinition.AggregateId, s => new Wire.TemplateState { Points = s.Points });
     }
 
     public void MapPlayerApi(IEndpointRouteBuilder routes) =>
