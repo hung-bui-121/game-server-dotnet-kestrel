@@ -219,3 +219,51 @@ public sealed class KitViolationHandler : ICommandHandler<KitViolation, string>
 
     private static CommandOutcome<string> Ok(string result) => CommandOutcome<string>.Ok(result);
 }
+
+/// <summary>
+/// Size and no-op probe of the commit-check conformance (review 013 m6, m7): one aggregate with a 1 KiB budget and
+/// one command that writes a note of the requested length, optionally sets the loaded state back, and returns a result of the
+/// requested length.
+/// </summary>
+public sealed class KitSizeModule : IGameModule
+{
+    public const string Sized = "kit_sized";
+    public const string Operation = "kit.size";
+    public const int WarnBytes = 512;
+    public const int HardBytes = 1024;
+
+    public static CommandDescriptor Descriptor { get; } = new(Operation, touches: [Sized]);
+
+    public ModuleDescriptor Describe() => new()
+    {
+        Name = "kit_size",
+        Aggregates = [new PlayerAggregateDescriptor<KitNotes>(Sized, 1, clientVisible: false, () => new KitNotes(), warnBytes: WarnBytes, hardBytes: HardBytes)],
+        Commands = [Command.Define<KitSize, string>(Descriptor).HandledBy<KitSizeHandler>()],
+    };
+
+    public void ConfigureServices(IServiceCollection services, ModuleContext context)
+    {
+    }
+}
+
+/// <summary>Request of <see cref="KitSizeHandler"/>: note length (0 = no change), set the loaded state back afterwards, result length.</summary>
+public sealed record KitSize(int NoteLength = 0, bool SetBack = false, int ResultLength = 1);
+
+public sealed class KitSizeHandler : ICommandHandler<KitSize, string>
+{
+    public ValueTask<CommandOutcome<string>> HandleAsync(KitSize request, ICommandContext context)
+    {
+        var loaded = context.Get<KitNotes>(KitSizeModule.Sized);
+        if (request.NoteLength > 0)
+        {
+            context.Set(KitSizeModule.Sized, loaded with { Text = new string('n', request.NoteLength) });
+        }
+
+        if (request.SetBack)
+        {
+            context.Set(KitSizeModule.Sized, loaded);
+        }
+
+        return ValueTask.FromResult(CommandOutcome<string>.Ok(new string('r', request.ResultLength)));
+    }
+}

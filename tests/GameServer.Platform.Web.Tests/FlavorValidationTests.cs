@@ -77,6 +77,40 @@ public sealed class FlavorValidationTests
         ex.Message.ShouldNotContain("GameServer:DeploymentEnvironment");
     }
 
+    /// <summary>Review 013 m9 (fail closed): Test turns the development tools on, so only a test host (environment id <c>test</c>) may use it.</summary>
+    [Theory]
+    [InlineData("qa")]
+    [InlineData("staging2")]
+    [InlineData("TEST")]
+    public async Task Test_with_any_environment_id_but_test_is_refused(string environmentId)
+    {
+        var ex = await StartupFails("Development", s =>
+        {
+            s["GameServer:EnvironmentId"] = environmentId;
+            s[DeploymentKey] = "Test";
+        });
+
+        ex.Message.ShouldContain(
+            "[deployment] GameServer:DeploymentEnvironment=Test is reserved for automated test hosts with GameServer:EnvironmentId 'test', " +
+            $"but EnvironmentId is '{environmentId}'. Test enables the development tools (test authentication, cheats, file and in-memory " +
+            "stores). Fix: use Development, Staging or Production for a deployed environment (host environment 'Development'), or " +
+            "EnvironmentId 'test' for a test host.");
+    }
+
+    [Fact]
+    public async Task Test_with_the_test_environment_id_starts()
+    {
+        await using var host = await SampleTestHost.StartAsync(settings: s =>
+        {
+            s["GameServer:EnvironmentId"] = "test";
+            s[DeploymentKey] = "test";
+        });
+
+        var options = host.Services.GetRequiredService<GameServerOptions>();
+        options.DeploymentEnvironment.ShouldBe("Test");
+        options.AllowsDevelopmentTools.ShouldBeTrue();
+    }
+
     [Fact]
     public async Task A_lowercase_value_is_normalized_and_selects_the_canonical_overlay()
     {

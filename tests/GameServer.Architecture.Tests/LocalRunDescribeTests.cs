@@ -182,6 +182,20 @@ public sealed class LocalRunDescribeTests : IDisposable
         description.GlobalJson.ShouldBe(Slashed(Path.GetFullPath(Path.Combine(HostDir, "..", "global.json"))));
     }
 
+    [Theory]
+    [InlineData("10", "(10)")]
+    [InlineData("{ \"major\": 10 }", "({ \"major\": 10 })")]
+    [InlineData("\"\"", "(\"\")")]
+    public void A_global_json_whose_sdk_version_is_not_a_string_is_invalid_host_input(string version, string shown)
+    {
+        WriteHost();
+        var globalJson = Path.Combine(_root, "repo", "global.json");
+        File.WriteAllText(globalJson, $$"""{ "sdk": { "version": {{version}} } }""");
+
+        Fails(HostDir).ShouldBe(
+            $"{Slashed(globalJson)} has an sdk.version that is not a version string {shown}. Fix: write it as a quoted string (\"sdk\": {{ \"version\": \"10.0.403\" }}).");
+    }
+
     [Fact]
     public void A_host_without_a_global_json_above_it_is_refused()
     {

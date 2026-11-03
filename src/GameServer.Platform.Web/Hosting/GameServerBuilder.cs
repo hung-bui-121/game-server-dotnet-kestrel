@@ -142,6 +142,7 @@ public static class GameServerBuilderExtensions
         services.AddSingleton(deployment);
         services.AddSingleton(runtime);
         services.AddSingleton<IStartupCheck, DeploymentIdentityCheck>();
+        services.AddSingleton<IStartupCheck, TestKitReferenceCheck>();
         services.AddSingleton(registry);
         services.TryAddSingleton<IClock, GameServer.Time.SystemClock>();
         services.AddSingleton<PlatformMetrics>();

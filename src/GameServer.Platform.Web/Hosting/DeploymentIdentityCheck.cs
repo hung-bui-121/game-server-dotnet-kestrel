@@ -49,6 +49,8 @@ internal sealed record DeploymentEnvironmentResolution(
 /// <summary>
 /// FR-003 (the deployment environment is valid) and FR-004 (a standard environment id matches its flavor's deployment
 /// environment). <c>Test</c> is not exempt: test hosts use the environment id <c>test</c>, which is not a standard flavor.
+/// <c>Test</c> allows development tools (test authentication, cheats, the file and in-memory stores), so it is accepted only
+/// with the environment id <c>test</c> (fail closed, review 013 m9): a deployed environment never runs as Test.
 /// </summary>
 internal sealed class DeploymentIdentityCheck(DeploymentEnvironmentResolution resolution, GameServerOptions options) : IStartupCheck
 {
@@ -75,6 +77,18 @@ internal sealed class DeploymentIdentityCheck(DeploymentEnvironmentResolution re
                 $"[deployment] GameServer:EnvironmentId '{options.EnvironmentId}' is a standard flavor that requires " +
                 $"GameServer:DeploymentEnvironment={expected}, but it is '{resolution.Effective}'. Fix: correct one of the two keys " +
                 $"(host environment '{resolution.HostEnvironmentName}'). Standard flavors: {StandardFlavors.Describe()}.");
+            return;
+        }
+
+        if (string.Equals(resolution.Effective, DeploymentEnvironments.Test, StringComparison.Ordinal)
+            && !string.Equals(options.EnvironmentId, DeploymentEnvironments.TestEnvironmentId, StringComparison.Ordinal))
+        {
+            result.Errors.Add(
+                $"[deployment] GameServer:DeploymentEnvironment=Test is reserved for automated test hosts with GameServer:EnvironmentId " +
+                $"'{DeploymentEnvironments.TestEnvironmentId}', but EnvironmentId is '{options.EnvironmentId}'. Test enables the development " +
+                "tools (test authentication, cheats, file and in-memory stores). Fix: use Development, Staging or Production for a " +
+                $"deployed environment (host environment '{resolution.HostEnvironmentName}'), or EnvironmentId " +
+                $"'{DeploymentEnvironments.TestEnvironmentId}' for a test host.");
         }
     }
 }

@@ -28,8 +28,15 @@ internal sealed class RequestLogMiddleware(RequestDelegate next, GameServerOptio
 
     public async Task InvokeAsync(HttpContext context)
     {
-        var outcome = new RequestOutcome();
-        context.Features.Set<IRequestOutcomeFeature>(outcome);
+        // A consumer middleware placed before UseGameServer may already hold the feature (context.RequestOutcome() before
+        // next()): keep that instance so the reference it holds is the one finalized below. Only another implementation of the
+        // interface (which the framework cannot finalize) is replaced.
+        if (context.Features.Get<IRequestOutcomeFeature>() is not RequestOutcome outcome)
+        {
+            outcome = new RequestOutcome();
+            context.Features.Set<IRequestOutcomeFeature>(outcome);
+        }
+
         var started = Stopwatch.GetTimestamp();
         Exception? failure = null;
         try
@@ -80,6 +87,28 @@ internal sealed class RequestLogMiddleware(RequestDelegate next, GameServerOptio
         });
     }
 
+    /// <summary>
+    /// <c>Route</c> of a request without a route template (404, 405): the rest of the path is client-controlled and may carry ids
+    /// or tokens (LOG-05), so only its first segment is kept, cleaned and cut: <c>/api/v1/nope</c> → <c>/api/...</c>,
+    /// <c>/scan</c> → <c>/scan</c>, <c>//x</c> → <c>/...</c>, the root → <c>/</c>.
+    /// </summary>
+    internal static string UnmatchedRoute(PathString path)
+    {
+        var value = path.Value;
+        if (value is null || value.Length <= 1)
+        {
+            return "/";
+        }
+
+        var end = value.IndexOf('/', 1);
+        return end switch
+        {
+            < 0 => Clean(value, MaxRouteLength, ellipsis: true),
+            1 => "/" + Ellipsis,
+            _ => string.Concat(Clean(value[..end], MaxRouteLength, ellipsis: true), "/", Ellipsis),
+        };
+    }
+
     private void Write(HttpContext context, RequestOutcome outcome, long started)
     {
         try
@@ -94,8 +123,7 @@ internal sealed class RequestLogMiddleware(RequestDelegate next, GameServerOptio
             }
 
             var endpoint = context.GetEndpoint();
-            var route = (endpoint as RouteEndpoint)?.RoutePattern.RawText
-                ?? Clean(context.Request.Path.Value is { Length: > 0 } path ? path : "/", MaxRouteLength, ellipsis: true);
+            var route = (endpoint as RouteEndpoint)?.RoutePattern.RawText ?? UnmatchedRoute(context.Request.Path);
             var actorType = ActorClaims.GetActorType(context.User);
             var actorId = actorType is null ? null : context.User.FindFirst(ActorClaims.ActorId)?.Value;
             var entry = new RequestLogEntry(

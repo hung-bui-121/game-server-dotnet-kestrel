@@ -21,11 +21,12 @@ code or a setting is a breaking change (PCR-01). Field types and examples: [data
   For command routes the event and `command_results_total{code}` agree.
 - Levels: Information (< 400), Warning (4xx, aborted), Error (5xx).
 - Privacy (LOG-05): no body, query string, header value, cookie, token, password, guest secret, provider token, CSRF
-  token, purchase token or IP address. `Route` is the endpoint template; unmatched paths are cleaned (control characters
-  → `?`) and cut at 120 characters. `ActorId` comes from the authenticated principal only, cleaned and cut at 64.
+  token, purchase token or IP address. `Route` is the endpoint template; for unmatched paths (404, 405) only the first path
+  segment is kept, followed by `/...` (`/api/v1/nope` → `/api/...`, `/` for the root; the rest of the path is
+  client-controlled and may carry ids or tokens), cleaned (control characters → `?`) and cut at 120 characters. `ActorId` comes from the authenticated principal only, cleaned and cut at 64.
   Player and staff ids are internal ids under the existing LOG-04/TBD-08 policy.
 - Loss (LOG-06): the event goes through the bounded, dropping operational log pipeline; when a sink cannot keep up the
-  event is dropped and counted (`log_dropped_total`); logging never delays or fails a request; a failure while building
+  event is dropped and counted (`log_dropped_total{sink="file"}`); logging never delays or fails a request; a failure while building
   the event is swallowed (counted as a sink error) and the response is unchanged.
 
 ## 2. Request outcome feature (semantic contract with consumer code)
@@ -45,6 +46,8 @@ app.UseGameServer();
 - Readable by consumer endpoints and `afterExecute` hooks during the request (values set so far) and by consumer
   middleware outside the framework pipeline after it returned (final values). Covers rejections and non-command routes,
   which the `afterExecute` hook of `MapPlayerCommand` does not.
+- A consumer middleware may also take the feature before `await next()`: the framework keeps the instance it finds
+  (created by `context.RequestOutcome()`) and finalizes that one, so the early reference reads the final values too.
 - A consumer endpoint may set `ResultCode`, `Operation`, `Replayed`, `NotModified` for its own responses; the framework
   does not overwrite a code a consumer endpoint set, except `ABORTED`/`INTERNAL` at finalization.
 - Reading it never buffers, copies or parses the response body.
@@ -56,9 +59,11 @@ app.UseGameServer();
   `MinimumLevel` (default `Information`), `BufferSize` (default 1 000).
 - One human-readable line per event at or above `MinimumLevel`: request events in the compact request shape of
   data-model §1, other operational events as `time level message [category]` with the exception below. Colours only when
-  stdout is a terminal.
+  stdout is a terminal. Control characters in every rendered value (message, properties, category, exception) become `?`
+  (no terminal escape sequences, no forged lines); the exception keeps its line breaks.
 - Bounded and dropping like the file sink (never the default console provider, which waits when its queue is full);
-  drops counted in `log_dropped_total`; a stopped or redirected stdout never blocks requests.
+  drops counted in `log_dropped_total{sink="console"}`, apart from the file sink's `sink="file"` (same tag on
+  `log_queue_entries`); a stopped or redirected stdout never blocks requests.
 - In addition to the file sink, never instead of it; the file content is unchanged; operational logs still go to no other
   provider.
 - Enabling it outside Development/Test is allowed and produces one startup warning.

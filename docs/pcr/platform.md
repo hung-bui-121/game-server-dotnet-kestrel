@@ -271,7 +271,7 @@ Bật bằng `gameServer.AddObservability()` (project `GameServer.Platform.Obser
 | File | `{Logging:Directory}/{gameId}-{instanceId}-{yyyyMMdd}[_NNN].log`, compact JSON (`@t` UTC, `@mt`, `@l`, `@x`, `@tr`, `@sp`) |
 | Instance id | `Observability:InstanceId` → `HOSTNAME` → tên máy. Nhiều process cùng máy + cùng thư mục phải đặt id khác nhau (LOG-03) |
 | Rolling | ngày + kích thước (`FileSizeLimitBytes` 100 MiB), giữ `RetainedFileCountLimit` 30 file, `RetainedFileTimeLimitDays` tuỳ chọn; restart cùng instance append |
-| Queue | async, `BufferSize` 10 000, không chặn khi đầy → bỏ và đếm `log_dropped_total` (cộng dồn cả host đã dừng) |
+| Queue | async, `BufferSize` 10 000, không chặn khi đầy → bỏ và đếm `log_dropped_total{sink="file"}` (cộng dồn cả host đã dừng; console sink đếm riêng `sink="console"`, cùng tag cho `log_queue_entries`; health `log`: `dropped` = file, `consoleDropped` = console) |
 | Mức theo nguồn | `Logging:LevelOverrides` (prefix SourceContext → level, key không phân biệt hoa thường), cấu hình ghi đè lên mặc định `Microsoft.AspNetCore`, `Couchbase.Client.Transactions`, `ExecuteApplicationLambda` = Warning — phần transaction của Couchbase SDK ghi ~6 dòng Information mỗi transaction (đo 2026-10-27); log bootstrap/topology của SDK giữ nguyên. Level sai → startup fail. Mức thấp hơn `Logging:LogLevel` của Microsoft vẫn bị filter đó cắt trước |
 | Provider khác | Serilog thay `ILoggerFactory` và **không** ghi sang provider khác (console mặc định chờ khi queue đầy → có thể chặn request) |
 | Thuộc tính | `InstanceId`, `GameId`, `EnvironmentId`, `RequestId` (scope), `SourceContext`; trace/span id |
@@ -292,7 +292,7 @@ category, event id, result code cố định hoặc setting dưới đây là br
 | Thuộc tính | Kiểu | Giá trị |
 | --- | --- | --- |
 | `HttpMethod` | string | `GET`, `POST`, … |
-| `Route` | string | template của endpoint (`/api/v1/player/receipts/{receiptId}`); không khớp endpoint (404, 405, scanner): path đã làm sạch (ký tự điều khiển → `?`, cắt 120 ký tự + `...`), không bao giờ có query string |
+| `Route` | string | template của endpoint (`/api/v1/player/receipts/{receiptId}`); không khớp endpoint (404, 405, scanner): chỉ segment đầu của path rồi `/...` (`/api/v1/nope` → `/api/...`, gốc → `/`; phần còn lại do client đặt, có thể chứa id/token), đã làm sạch (ký tự điều khiển → `?`, cắt 120 ký tự + `...`), không bao giờ có query string |
 | `Profile` | string? | `Public`, `Player`, `Gm`, `Dev`; null khi không khớp endpoint |
 | `Operation` | string? | operation của command (`counter.increment`), cả khi command bị từ chối trước runner; null cho route không phải command |
 | `ActorType` | string? | `player`, `gm`; null khi chưa xác thực |
@@ -340,6 +340,8 @@ app.UseGameServer();
 - Endpoint consumer và hook `afterExecute` đọc được giá trị đặt tới lúc đó (`Completed` false, `StatusCode` null); middleware
   consumer ngoài pipeline framework đọc giá trị cuối sau `await next`. Bao gồm rejection và route không phải command, điều mà hook
   `afterExecute` của `MapPlayerCommand` không thấy.
+- Middleware consumer lấy feature **trước** `await next` cũng được: framework giữ đúng instance đã có (do
+  `context.RequestOutcome()` tạo) và chốt chính instance đó, nên tham chiếu lấy sớm cũng đọc được giá trị cuối.
 - Endpoint consumer có thể đặt `ResultCode`, `Operation`, `Replayed`, `NotModified` cho response của chính nó; framework không
   ghi đè code đó, trừ `ABORTED`/`INTERNAL` khi chốt. Response non-2xx của consumer không có code → `HTTP_{status}`.
 - Đọc feature không bao giờ buffer, copy hay parse body response. Không phải hợp đồng wire: client không thấy nó.
@@ -349,7 +351,9 @@ host mẫu đặt `true`), `Observability:Logging:Console:MinimumLevel` (`Inform
 (1 000, ≥ 1). Một dòng dễ đọc mỗi event ≥ `MinimumLevel`: request event dạng
 `08:15:02.123 INF POST /api/v1/counter/increment (counter.increment) player=p_7f3a… req=1a2b3c4d -> 200 OK 12.4 ms`
 (`staff=` cho GM, `replayed`, `not_modified`, `-` thay status khi abort), event khác `HH:mm:ss.fff LVL message [SourceContext]` và
-exception ở các dòng sau; màu chỉ khi stdout là terminal. Queue riêng bounded, drop (đếm `log_dropped_total`) — không bao giờ là
+exception ở các dòng sau; màu chỉ khi stdout là terminal. Ký tự điều khiển trong mọi giá trị in ra (message, thuộc tính, category,
+exception) → `?` (không có escape ANSI hay dòng giả; exception giữ xuống dòng). Queue riêng bounded, drop (đếm
+`log_dropped_total{sink="console"}`, tách khỏi file) — không bao giờ là
 console provider mặc định (chờ khi queue đầy); stdout bị dừng/redirect không chặn request. **Thêm vào** file sink, không thay: nội
 dung file không đổi, log vận hành vẫn không đi tới provider khác. Bật ngoài Development/Test được phép, kèm một Warning khi start.
 
@@ -625,6 +629,8 @@ biến môi trường rồi dòng lệnh ghi đè. Nguồn duy nhất của bả
 | --- | --- |
 | `GameServer:DeploymentEnvironment` ∈ {Development, Staging, Production, Test}, không phân biệt hoa thường, chuẩn hoá về cách viết chuẩn. Không đặt → dùng tên môi trường của host **chỉ khi** tên đó là deployment environment. Giá trị sai/thiếu không bao giờ thành Development (fail-closed) | key, giá trị hợp lệ, file `appsettings.<Tên>.json` mong đợi (tìm thấy hay không), bảng flavor |
 | `GameServer:EnvironmentId` là id chuẩn ⇒ `GameServer:DeploymentEnvironment` = giá trị của bảng (Test không được miễn) | cả hai key, giá trị mong đợi |
+| `GameServer:DeploymentEnvironment=Test` chỉ với `GameServer:EnvironmentId` = `test` (host test tự động; Test bật công cụ dev). Môi trường triển khai do game đặt (`qa`, …) phải dùng Development, Staging hoặc Production (slice 013, review m9, fail-closed) | `[deployment] GameServer:DeploymentEnvironment=Test is reserved for automated test hosts with GameServer:EnvironmentId 'test', but EnvironmentId is '<id>' …` |
+| `GameServer.TestKit` được nạp ngoài Development/Test (trừ TestServer in-process của kit) (slice 013, review m8) | `[deployment] the consumer test kit (GameServer.TestKit) is loaded in '<env>' …`, cách sửa |
 | Store `InMemory`/`File` chỉ ở Development/Test | `[deployment] the <InMemory/File> store is configured in '<env>'. Fix: set GameServer:Store=Couchbase …` |
 | Secret trong file cấu hình ngoài Development/Test (`GameServer:SecretKeys`) | key, file, tên biến môi trường |
 | Endpoint hoặc command profile Dev ngoài Development/Test (slice 013, mục 12) | endpoint (method + route) hoặc module + operation, deployment environment, environment id, cách sửa |
@@ -766,7 +772,7 @@ file store khoá/hỏng/sai format/không đọc-ghi được, thiếu collectio
 | Cổng mặc định | `http://localhost:5080` (`Urls` trong `appsettings.Local.json`, launch profile, client Unity mẫu, `smoke-build.ps1`) |
 | Thứ tự URL | `--urls` > `Urls` của file flavor > `ASPNETCORE_URLS` (biến tiền tố host là nguồn thấp nhất: `applicationUrl` của launch profile **không** đổi được cổng) |
 | Launch profile | `local` (mặc định; flavor Local) và `dev-couchbase` (flavor Dev, mật khẩu từ biến môi trường user `Couchbase__Password`); `dotnet run --launch-profile` dùng thư mục project làm working directory |
-| `tools/local/run-local.ps1` / `.sh` | `-Port`/`--port` (5080), `-Reset`/`--reset` (`--FileStore:ResetOnStart=true`), `-Lan`/`--lan` (`0.0.0.0`, cảnh báo đỏ + địa chỉ LAN); build Debug mỗi lần, `dotnet run --no-build --launch-profile local` từ `samples/SampleHost`, readiness `http://127.0.0.1:<port>/health/ready` ≤ 60 s |
+| `tools/local/run-local.ps1` / `.sh` | `-Port`/`--port` (5080), `-Reset`/`--reset` (`--FileStore:ResetOnStart=true`), `-Lan`/`--lan` (`0.0.0.0`, cảnh báo đỏ + địa chỉ LAN); build Debug mỗi lần, `dotnet run --no-build --project <host> --launch-profile local` từ thư mục host, readiness `http://127.0.0.1:<port>/health/ready` ≤ 60 s |
 | Exit code script | 0 dừng bằng Ctrl+C sau khi host dừng êm; 2 tham số sai; 3 thiếu SDK của `global.json`; 4 cổng bận; 5 build lỗi; 6 host thoát trước khi sẵn sàng; 7 quá 60 s (in 20 dòng log cuối, dừng host); khác = exit code của host sau khi sẵn sàng. Không đường nào để lại host chạy |
 | `start-hosts.ps1` | đặt `ASPNETCORE_ENVIRONMENT=Dev` cho mỗi host (khôi phục sau); tham số và cổng 5080+ giữ nguyên |
 
@@ -1017,7 +1023,12 @@ và được nêu trong consumer guide. Bộ hiện tại (8 key): `FileStore:Fo
 
 **`CommandContextDouble`:** bọc chính `CommandContext` của runner, nên mọi luật truy cập (Touches/Reads, kiểu state, giới
 hạn claim, claim `receipts`/`pa_*`, claim trùng hoặc có sẵn) ném đúng exception và thông báo của runner; `NewId`/`NewSeed`
-bằng của runner với cùng receipt id (test conformance). `CheckCommit(outcome)` trả đúng thông báo commit-rule của runner.
+bằng của runner với cùng receipt id (test conformance). `Writes` như runner: `Set` lại state đã nạp (hoặc đổi rồi đặt lại)
+không phải là ghi. `CheckCommit(outcome)` trả đúng thông báo commit-rule của runner (dùng chung `CommitRules`): code commit
+không có trong catalog hoặc ≠ HTTP 200, aggregate ghi vượt `HardBytes` (runner trả `AGGREGATE_TOO_LARGE`; envelope đo với
+GameId/EnvironmentId của actor, mặc định `test`/`test`), luật audit GM; `CheckCommit(outcome, encodeResult)` thêm giới hạn
+resultCompact (`ResultCompactMaxBytes`, giới hạn = mặc định framework hoặc `WithCommandSettings`). **Không** kiểm kích thước
+receipt (`ReceiptMaxBytes`): receipt chứa body hash, config version và encoding của host, double không có.
 
 ### Luật Dev (semantic — FG-010, FR-001..FR-008)
 

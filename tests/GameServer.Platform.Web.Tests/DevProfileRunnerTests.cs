@@ -67,6 +67,39 @@ public sealed class DevProfileRunnerTests
         refusals.Count.ShouldBe(2);
     }
 
+    /// <summary>Review m13 (T078): the profile decision comes before the target-player check on both paths.</summary>
+    [Theory]
+    [MemberData(nameof(Actors))]
+    public async Task A_dev_command_without_a_target_player_is_forbidden_not_a_bad_request_outside_development(ActorType type)
+    {
+        await using var host = await StartAsync();
+        var runner = host.Services.GetRequiredService<ICommandRunner>();
+        SwitchToStaging(host);
+        var actor = Actor(type) with { PlayerId = null };
+        using var refusals = new RefusalCounter();
+
+        var execute = await Should.ThrowAsync<GameServerException>(() =>
+            runner.ExecuteAsync(Grant(type, Guid.NewGuid().ToString("D")) with { Actor = actor }, CancellationToken.None));
+        var replay = await Should.ThrowAsync<GameServerException>(() =>
+            runner.TryReplayAsync(CheatGrantHandler.Operation, actor, Guid.NewGuid().ToString("D"), "hash", CancellationToken.None));
+
+        execute.Code.ShouldBe(CoreErrorCodes.Forbidden);
+        replay.Code.ShouldBe(CoreErrorCodes.Forbidden);
+        refusals.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task A_dev_command_without_a_target_player_stays_a_bad_request_in_development()
+    {
+        await using var host = await StartAsync();
+        var runner = host.Services.GetRequiredService<ICommandRunner>();
+        var actor = Actor(ActorType.System) with { PlayerId = null };
+
+        (await Should.ThrowAsync<GameServerException>(() =>
+            runner.ExecuteAsync(Grant(ActorType.System, Guid.NewGuid().ToString("D")) with { Actor = actor }, CancellationToken.None)))
+            .Code.ShouldBe(CoreErrorCodes.BadRequest);
+    }
+
     [Fact]
     public async Task A_dev_receipt_committed_in_development_is_not_replayed_after_the_switch()
     {

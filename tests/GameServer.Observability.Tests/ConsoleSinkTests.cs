@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Text;
 using System.Text.Json.Nodes;
 using GameServer.Platform.Observability;
@@ -50,7 +51,8 @@ public sealed class ConsoleSinkTests
     {
         const int bufferSize = 10;
         using var console = new BlockingWriter();
-        var dropped = LogSinkMonitor.Instance.DroppedCount;
+        var dropped = LogSinkMonitor.Instance.ConsoleQueue.DroppedCount;
+        var droppedMetric = DroppedTotals()[LogSinkMonitor.ConsoleSink];
         await using var observed = await ObservedHost.StartAsync(
             settings: s =>
             {
@@ -75,13 +77,55 @@ public sealed class ConsoleSinkTests
             // Bounded memory: the worker holds one event in the blocked write and the queue at most bufferSize, so every other
             // request event was dropped (other tests of the process only add drops; process memory is not measured here because
             // parallel tests allocate too — the opt-in RequestLogPerformanceTests measures it alone).
-            (LogSinkMonitor.Instance.DroppedCount - dropped).ShouldBeGreaterThanOrEqualTo(Requests - bufferSize - 1);
+            // m4 (review T078): console drops are counted under sink=console, apart from the file sink's.
+            (LogSinkMonitor.Instance.ConsoleQueue.DroppedCount - dropped).ShouldBeGreaterThanOrEqualTo(Requests - bufferSize - 1);
+            (DroppedTotals()[LogSinkMonitor.ConsoleSink] - droppedMetric).ShouldBeGreaterThanOrEqualTo(Requests - bufferSize - 1);
         }
         finally
         {
             // Disposing the host drains the queue: let the writer go first.
             console.Release();
         }
+    }
+
+    [Fact]
+    public void Log_dropped_total_reports_the_file_and_the_console_sink_apart()
+    {
+        var totals = DroppedTotals();
+
+        totals.Keys.ShouldBe([LogSinkMonitor.FileSink, LogSinkMonitor.ConsoleSink], ignoreOrder: true);
+        totals[LogSinkMonitor.FileSink].ShouldBeGreaterThanOrEqualTo(0);
+        LogSinkMonitor.Instance.FileQueue.Sink.ShouldBe("file");
+        LogSinkMonitor.Instance.ConsoleQueue.Sink.ShouldBe("console");
+    }
+
+    /// <summary>One collection of <c>log_dropped_total</c>: value per <c>sink</c> tag.</summary>
+    private static Dictionary<string, long> DroppedTotals()
+    {
+        var totals = new Dictionary<string, long>();
+        using var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (instrument.Meter.Name == LogSinkMonitor.MeterName && instrument.Name == "log_dropped_total")
+                {
+                    l.EnableMeasurementEvents(instrument);
+                }
+            },
+        };
+        listener.SetMeasurementEventCallback<long>((_, value, tags, _) =>
+        {
+            foreach (var tag in tags)
+            {
+                if (tag.Key == "sink")
+                {
+                    totals[(string)tag.Value!] = value;
+                }
+            }
+        });
+        listener.Start();
+        listener.RecordObservableInstruments();
+        return totals;
     }
 
     [Fact]

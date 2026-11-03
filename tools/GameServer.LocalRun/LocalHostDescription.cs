@@ -202,10 +202,16 @@ public sealed record LocalHostDescription(
             }
 
             var root = ParseJson(file);
-            return root.TryGetProperty("sdk", out var sdk) && sdk.ValueKind == JsonValueKind.Object
-                && sdk.TryGetProperty("version", out var version) && version.GetString() is { Length: > 0 } text
+            if (!root.TryGetProperty("sdk", out var sdk) || sdk.ValueKind != JsonValueKind.Object || !sdk.TryGetProperty("version", out var version))
+            {
+                throw new LocalRunException($"{Slashed(file)} has no sdk.version. Fix: pin the .NET SDK there (\"sdk\": {{ \"version\": \"...\" }}).");
+            }
+
+            // GetString() throws on a number or an object: a non-string version is invalid host input (exit 2), not a resolver crash.
+            return version.ValueKind == JsonValueKind.String && version.GetString() is { Length: > 0 } text
                 ? (text, file)
-                : throw new LocalRunException($"{Slashed(file)} has no sdk.version. Fix: pin the .NET SDK there (\"sdk\": {{ \"version\": \"...\" }}).");
+                : throw new LocalRunException(
+                    $"{Slashed(file)} has an sdk.version that is not a version string ({version.GetRawText()}). Fix: write it as a quoted string (\"sdk\": {{ \"version\": \"10.0.403\" }}).");
         }
 
         throw new LocalRunException(

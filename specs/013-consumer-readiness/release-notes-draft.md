@@ -5,7 +5,7 @@ tag message when the slice closes. Slices 014–016 append their own sections to
 from the merged notes of 013–016 (one tag for the round).
 
 FG ids fixed by slice 013: FG-010, FG-001, FG-006, FG-003, FG-004, FG-002, FG-007, FG-011, FG-012, FG-025. Breaking changes:
-BC-1 … BC-7. Release rule (FR-051): the annotated tag of declared version `X.Y.Z` is `vX.Y.Z`; `GameServerFrameworkVersion` in
+BC-1 … BC-8. Release rule (FR-051): the annotated tag of declared version `X.Y.Z` is `vX.Y.Z`; `GameServerFrameworkVersion` in
 `Directory.Build.props` and `version` in `sdk/unity/com.gameserver.client/package.json` are bumped together in one commit
 (`VersionTests` fails on a mismatch, naming both values). This round: `0.7.0` → tag `v0.7.0`.
 
@@ -22,8 +22,10 @@ BC-1 … BC-7. Release rule (FR-051): the annotated tag of declared version `X.Y
      authentication scheme runs (no session touch, no login/resume analytics event, no CSRF/body handling), with one
      Warning naming method, route template and environment; an unknown security-profile value is refused the same way;
   3. command runner: Dev commands are refused with `FORBIDDEN` for every actor on `ExecuteAsync` and `TryReplayAsync`,
-     before the per-player limiter, the receipt read, the guards and the transaction (a Dev receipt from a development
-     store is never replayed); `command_results_total{code=FORBIDDEN}` counts both paths.
+     before the target-player check (a Dev command without target player is `FORBIDDEN`, not `BAD_REQUEST`), the
+     per-player limiter, the receipt read, the guards and the transaction (a Dev receipt from a development store is
+     never replayed); `command_results_total{code=FORBIDDEN}` counts both paths.
+  `DeploymentEnvironment=Test` (which allows the development tools) is accepted only with `EnvironmentId=test` (BC-8).
   Development and Test behave as in `v0.6.0`.
 - **FG-001** — consumer test support: a game could only link three sample-free files of `tests/Shared` and copy the
   local-flavor factory settings by hand. New project `src/GameServer.TestKit` (namespace `GameServer.TestKit`, no test
@@ -36,14 +38,19 @@ BC-1 … BC-7. Release rule (FR-051): the annotated tag of declared version `X.Y
   dispose unless `LocalFlavorOptions.Folder` is given). The framework's own tests run on the kit (`SampleTestHost`,
   `SampleHostSmokeTests`) and a consumer-shaped fixture (`tests/ConsumerFixture`) builds and tests against it on every
   framework build. `Microsoft.AspNetCore.Mvc.Testing` flows through the kit; the game test project needs no direct
-  reference.
+  reference. A host with `GameServer.TestKit` loaded fails startup outside Development/Test (except on the kit's own
+  in-process test server), so the kit cannot ship in a production host by accident.
 - **FG-006** — command-context test double: `CommandContextDouble.Create(operation, modules…)` is an `ICommandContext`
   for handler unit tests without host, store or DI. It wraps the runner's own context, so every access rule
   (Touches/Reads, state type, claim limit, `receipts`/`pa_*` claims, duplicate and pre-existing claims) throws the
   runner's exception and message, and `NewId`/`NewSeed` equal the runner's for the same receipt id (conformance test).
   Configure actor (`AsPlayer`, `AsGm`, `WithActor`), `At`, `WithConfig`, `WithRequestId`/`WithReceiptId`, `Seed`,
-  `SeedClaim`; read `Writes`/`Written<T>`, `Outbox` (audit and analytics entries included), `Claims`;
-  `CheckCommit(outcome)` returns the runner's commit-rule messages (uncatalogued or non-200 commit code, GM audit count).
+  `SeedClaim`, `WithCommandSettings`; read `Writes`/`Written<T>` (like the runner, a `Set` of the loaded state or a change
+  set back is no write), `Outbox` (audit and analytics entries included), `Claims`; `CheckCommit(outcome)` returns the
+  runner's commit-rule messages (uncatalogued or non-200 commit code, written aggregate above its `HardBytes` = the
+  runner's `AGGREGATE_TOO_LARGE`, GM audit count) and `CheckCommit(outcome, encodeResult)` also the resultCompact limit.
+  Not checked: the receipt size (`ReceiptMaxBytes`; the double has no request body hash, config version or host
+  encoding).
 - **FG-003** — a consumer's root `Directory.Build.targets` reached framework projects (the framework had none, so MSBuild
   imported the nearest one above it). The framework root now has its own behaviour-free `Directory.Build.targets`, which
   imports no parent; a game may add its own root `Directory.Build.targets` for its projects.
@@ -58,8 +65,10 @@ BC-1 … BC-7. Release rule (FR-051): the annotated tag of declared version `X.Y
   `-LaunchProfile`/`--launch-profile` (default `local`) and `-Name`/`--name`; the host is read (never written) by the new
   framework tool `tools/GameServer.LocalRun` (`describe`): launch profile flavor and first `http://` port (none → 5080
   with a note), `FileStore:Folder` and `Observability:Logging:Directory` of the flavor's settings (+ environment
-  variables, profile variables last), `sdk.version` of the nearest `global.json`. Invalid host input exits 2 naming the
-  cause and the fix; the banner of a non-sample host has only host-independent lines (name, project, base URL, health);
+  variables, profile variables last), `sdk.version` of the nearest `global.json` (a non-string value is invalid input).
+  Invalid host input exits 2 naming the cause and the fix; the host starts with `dotnet run --project <file>`, so its
+  folder may hold other project files; `run-local.sh` warns on stderr under bash < 4.4 (stock macOS 3.2: no forced
+  stop after 35 s); the banner of a non-sample host has only host-independent lines (name, project, base URL, health);
   a failure before ready also tails the host's newest log file. Without the new parameters both scripts behave as in
   `v0.6.0` (sample banner unchanged; new line `run-local: host project …`; LAN warning text is host-neutral).
   Repeatable checks: `RunLocalScriptTests` (exit 2/4 every run; start/stop of the sample and the fixture host with
@@ -68,18 +77,23 @@ BC-1 … BC-7. Release rule (FR-051): the annotated tag of declared version `X.Y
   console, so a game had to buffer and parse response bodies to log what clients received. Now:
   1. one structured event per HTTP request (category `GameServer.Requests`, event id `1`/`Request`, template
      `{HttpMethod} {Route} -> {Status} {ResultCode} in {DurationMs} ms`) with `HttpMethod`, `Route` (template; unmatched
-     paths cleaned and cut at 120), `Profile`, `Operation`, `ActorType`, `ActorId` (principal only, cleaned, ≤ 64),
+     paths: first segment + `/...`, cleaned and cut at 120), `Profile`, `Operation`, `ActorType`, `ActorId` (principal only, cleaned, ≤ 64),
      `RequestId`, `TraceId`, `Status` (null when aborted), `ResultCode` (`OK`, business code at HTTP 200, error code,
      `ABORTED`, `INTERNAL`, `HTTP_{status}`), `Replayed`, `NotModified`, `Aborted`, `DurationMs`; Information < 400,
      Warning 4xx/aborts, Error 5xx; never for `/health/live`, `/health/ready` or `GameServer:RequestLog:ExcludedPaths`;
      no body, query string, header, cookie, token, password or IP; on by default in Development/Test only;
   2. public `IRequestOutcomeFeature` (`HttpContext.RequestOutcome()`, namespace `GameServer.Platform.Web.Requests`), set by
      every framework writer and final after the pipeline, so a game middleware placed before `UseGameServer` reads the
-     same code/status/operation/replayed/not-modified as the event without touching the body; consumer endpoints may set
-     their own code; `RequestResultCodes.Aborted`/`ForStatus`, `RequestLog.Category`/`EventId`;
+     same code/status/operation/replayed/not-modified as the event without touching the body (also through a reference
+     taken before `await next()`: the framework finalizes the instance it finds); consumer endpoints may set their own
+     code; `RequestResultCodes.Aborted`/`ForStatus`, `RequestLog.Category`/`EventId`;
   3. optional console sink `Observability:Logging:Console` (`Enabled` false, `MinimumLevel` Information, `BufferSize`
-     1 000): one human-readable line per event, its own bounded dropping queue (`log_dropped_total`), in addition to the
-     unchanged file sink; the sample host's `Local` and `Dev` flavor files turn it on;
+     1 000): one human-readable line per event (control characters of every value printed as `?`: no terminal escape
+     sequences), its own bounded dropping queue, in addition to the unchanged file sink; the sample host's `Local` and
+     `Dev` flavor files turn it on. `log_dropped_total` (and `log_queue_entries`) now carry the tag `sink=file|console`
+     (a sum over the tag equals the former value); the GM health detail `log` reports `dropped` (file) and
+     `consoleDropped`; `LogSinkMonitor` is no longer itself a Serilog `IAsyncLogEventSinkMonitor`: its per-sink queues are
+     `FileQueue`/`ConsoleQueue` (`LogQueueMonitor`), `DroppedCount` stays the sum (no consumer use found);
   4. new counter `request_log_failures_total` (meter `GameServer.Platform`) for events that could not be built or written.
   Measured in process (Windows 11, Release, 2026-11-03): p95 of a command round trip 0.786 ms off vs 0.681 ms with event +
   console (noise); stalled console + saturated file queue: 2 000/2 000 requests OK in 0.23 s, drops counted.
@@ -255,6 +269,21 @@ Migration:
 5. Tests that count every log entry of a test host: filter category `GameServer.Requests` out, or set
    `GameServer:RequestLog:Enabled=false` for that host.
 
+### BC-8 — `DeploymentEnvironment=Test` only with `EnvironmentId=test`
+
+Was: `GameServer:DeploymentEnvironment=Test` was accepted with any environment id that is not a standard flavor, so a
+deployed environment such as `qa` could run as Test — with test authentication, cheats (Dev profile), the staff seed and
+the file/in-memory stores, like Development. Now (fail closed): startup refuses Test unless `GameServer:EnvironmentId`
+is `test` — `[deployment] GameServer:DeploymentEnvironment=Test is reserved for automated test hosts with
+GameServer:EnvironmentId 'test', but EnvironmentId is '<id>' …` (exit 1). Framework test hosts (`TestHost`,
+`SampleTestHost`, `LocalFlavorFactory`) are unaffected (they use `test`, or Development).
+
+Migration:
+
+1. A deployed environment of the game that set `DeploymentEnvironment=Test`: use `Staging` (no development tools) or,
+   for a developer-only environment, `Development`.
+2. A game test host that sets `Test` with another environment id: set `GameServer:EnvironmentId=test`.
+
 ### Non-breaking but recommended — run the game host with the framework's run-local
 
 1. Call `framework/tools/local/run-local.ps1 -HostProject src/<Game>.Host -LaunchProfile local -Name "<Game>"` (bash:
@@ -324,8 +353,8 @@ hành)": `README.md`, `docs/guides/consumer-guide.md` (new), `docs/guides/module
 | Check | State |
 | --- | --- |
 | T075 consumer-guide walkthrough (SC-009) | **done** 2026-11-03 (implementer agent): fresh game repo in `%TEMP%`, framework as submodule of a throwaway clone holding the uncommitted 013 tree (tag `v0.7.0` in that clone only), one module (`walk.step`, codes 51000–51099), handler test with `CommandContextDouble`, `LocalFlavorFactory<Program>` smoke test, host via `framework/tools/local/run-local.ps1 -HostProject src/Walk.Host -Name "Walk game"` (port 5291): build 0 warnings, 3/3 tests green, ready banner + startup version line + console request line; gaps fixed in the guide (`.editorconfig` copy, `config/base/manifest.json`, `using` lines in samples); temp repo deleted |
-| T076 `GAMESERVER_SCRIPT_TESTS=1` `RunLocalScriptTests` (default + fixture host) | open (T076) |
-| T076 `GAMESERVER_PERF=1` `RequestLogPerformanceTests` (SC-008) | open (T076; the in-process figures above are from US3) |
-| T076 `tools/local/check-build-seal.ps1` (SC-004) | open (T076) |
-| `run-local.sh` on macOS/Linux | open (no machine; spec assumption) |
-| Full suite with Couchbase (T080) | open |
+| T076 `GAMESERVER_SCRIPT_TESTS=1` `RunLocalScriptTests` (default + fixture host) | **done** 2026-11-03: 12/12 (ps1 + Git Bash on Windows: sample default, fixture host, fixture exit 6, two-project host folder) in 2 min 34 s |
+| T076 `GAMESERVER_PERF=1` `RequestLogPerformanceTests` (SC-008) | **done** 2026-11-03: p95 off 0.433 ms / on 0.506 ms (delta 0.073 ms ≤ 1 ms); stalled console + saturated file queue 2 000/2 000 OK in 0.21 s, drops counted per sink |
+| T076 `tools/local/check-build-seal.ps1` (SC-004) | **done** 2026-11-03: exit 0, 0 errors, 0 warnings, marker absent |
+| `run-local.sh` on macOS/Linux | open (no machine; spec assumption; includes the bash < 4.4 warning) |
+| Full suite with Couchbase (T080) | **done** 2026-11-03: 1 482 total, 1 464 passed, 17 skipped, 1 known flaky (`TelemetryTests.A_command_is_one_trace…`, green on re-run); in memory and File 1 482 / 1 387 / 95 skipped, 0 failed |

@@ -8,6 +8,12 @@ public static class DeploymentEnvironments
     public const string Production = "Production";
     public const string Test = "Test";
 
+    /// <summary>
+    /// The only <c>GameServer:EnvironmentId</c> accepted with <see cref="Test"/> (automated test hosts): Test allows development
+    /// tools, so a deployed environment (<c>qa</c>, <c>staging2</c>, ...) must use Development, Staging or Production.
+    /// </summary>
+    public const string TestEnvironmentId = "test";
+
     public static IReadOnlyList<string> All { get; } = [Development, Staging, Production, Test];
 
     /// <summary>Case-insensitive match against <see cref="All"/>; returns the canonical spelling.</summary>

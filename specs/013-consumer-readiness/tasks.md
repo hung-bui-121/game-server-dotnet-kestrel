@@ -1162,7 +1162,7 @@ hosting (kit, version line) and the local run.
 
 ## Phase 10: Polish, verification and close
 
-- [ ] T076 Opt-in and manual runs (after T047, T052, T058, T075), each recorded as a Note:
+- [X] T076 Opt-in and manual runs (after T047, T052, T058, T075), each recorded as a Note:
   - `GAMESERVER_SCRIPT_TESTS=1` `RunLocalScriptTests` (default + fixture host);
   - `GAMESERVER_PERF=1` `RequestLogPerformanceTests` (SC-008: p95 delta ≤ 1 ms; numbers also into PCR §19);
   - `tools/local/check-build-seal.ps1` (SC-004: 0 errors, 0 warnings, no marker);
@@ -1170,22 +1170,40 @@ hosting (kit, version line) and the local run.
     assumption, open item).
   Done when: every run green or its miss explained and listed as an open item. (FR-032, FR-041, FR-085, FR-091,
   SC-004, SC-005, SC-008)
-- [ ] T077 Pre-review run (after every task above): Debug **and** Release build of `GameServer.slnx` 0 warnings; full
+  Note (2026-11-03, after T079, Windows 11, Release, PowerShell 5.1 + Git Bash 5.2.15):
+  `GAMESERVER_SCRIPT_TESTS=1` `RunLocalScriptTests` 12/12 passed in 2 min 34 s (default sample invocation on 5080 without
+  `-Reset`, fixture host on a free port, fixture exit 6, the new two-project-folder case of review m2 — each for ps1 and
+  bash; the two-project case fails 2/2 with the pre-fix scripts: "Specify which project file to use…", exit 6). The fixture
+  test no longer probes or uses the profile port 5180 (owner's game host port): it always passes a free `--port`.
+  `GAMESERVER_PERF=1` `RequestLogPerformanceTests` 2/2 passed: p95 command round trip off 0.433 ms, on (event + console)
+  0.506 ms, delta 0.073 ms (SC-008 ≤ 1 ms); stalled console + one-entry file queue: 2 000/2 000 requests OK in 0.21 s,
+  drops 2 969 (file 977, console 1 992), managed memory delta 18.3 MiB. `tools/local/check-build-seal.ps1`: exit 0,
+  0 errors, 0 warnings, hostile marker absent ("sealed"), 20.7 s. **Not run:** `run-local.sh` on macOS/Linux (no machine;
+  open item, as is the bash < 4.4 warning of review m10, checked only by its condition on 3.2/4.3/4.4/5.2).
+- [X] T077 Pre-review run (after every task above): Debug **and** Release build of `GameServer.slnx` 0 warnings; full
   suite in memory; full suite with `GAMESERVER_TEST_STORE=File`. Afterwards `git status --porcelain` shows only
   intended changes (plus the owner's untracked `tasks/`): no `tests/ConsumerFixture/.local/`, no `samples/SampleHost/logs`
   or `analytics/` created by tests, no `gs-local-*`/`gs-seal-*` left in `%TEMP%`, no `SampleHost`/`Fixture.Host` process.
   Done when: all green with counts recorded (total/passed/skipped vs T001), or every failure fixed. (FR-091)
-- [ ] T078 Run tech-lead-reviewer on the slice (request + plan + this file + `git diff --stat` list of changed files).
+  Note (2026-11-03, re-run after T079): Debug and Release builds of `GameServer.slnx` 0 warnings, 0 errors. Full suite in
+  memory 1 482 total / 1 387 passed / 95 skipped / 0 failed (34.7 s); `GAMESERVER_TEST_STORE=File` 1 482 / 1 387 / 95 / 0
+  (47.0 s). Pre-T079 baseline 1 445 / 1 352 / 93 / 0: +37 tests from the review fixes (+2 skipped = the opt-in two-project
+  case for both shells). Afterwards: no `tests/ConsumerFixture/.local/`, no `samples/SampleHost/analytics/`, no
+  `gs-local-*`/`gs-seal-*` in `%TEMP%`, no host process; `samples/SampleHost/logs/` is the sample host's own git-ignored log
+  folder (exists since 2026-10-26; the default script invocation appends to it). `git status` = the intended changes +
+  the owner's `tasks/`.
+- [X] T078 Run tech-lead-reviewer on the slice (request + plan + this file + `git diff --stat` list of changed files).
   Focus: FG-010 layers (refusal before any authentication; no fallback branch; runner execute + replay; one decision),
   `CommandContextDouble` ↔ runner conformance and the IVT surface, request-log privacy (LOG-05) and non-blocking sinks
   (LOG-06), outcome finalization (aborts, escapes), rename completeness (no Identity-only default where the sample
   composition was meant), build seal, version stamping in a submodule, docs ↔ behaviour.
   Done when: the review verdict and findings are recorded in this file under "Review (T078)". (FR-091)
-- [ ] T079 Fix the review findings (after T078): every Blocker and Major fixed with a test; Minors fixed or documented
+  Note: verdict and findings recorded under "Review (T078/T079)" at the end of this file.
+- [X] T079 Fix the review findings (after T078): every Blocker and Major fixed with a test; Minors fixed or documented
   with the reason; spec/plan/contracts amended where a fix changes a documented behaviour; the review summary (counts,
   fixes, deviations, deferred items) appended under "Review (T078)"; affected test classes re-run.
   Done when: no open Blocker/Major; summary appended. (FR-091)
-- [ ] T080 Final verification — full suite **including Couchbase** (after T079): Release build 0 warnings; Debug build
+- [X] T080 Final verification — full suite **including Couchbase** (after T079): Release build 0 warnings; Debug build
   0 warnings; `test --solution GameServer.slnx -c Release --no-build` in memory, with `GAMESERVER_TEST_STORE=File`, and
   with the Couchbase variables of the resume "Environment" section (`COUCHBASE_CONNSTR=couchbase://localhost`,
   `COUCHBASE_USERNAME=Administrator`, `COUCHBASE_PASSWORD` from the user variable `COUCHBASE_PW` read via
@@ -1196,6 +1214,19 @@ hosting (kit, version line) and the local run.
   asks for the commit.
   Done when: counts of the three runs recorded in a table (total/passed/failed/skipped/time); 0 failed (the known flaky
   `TelemetryTests.A_command_is_one_trace…` re-run once if it fails, and noted). (FR-091)
+  Note (2026-11-03, after T079; Windows 11, Couchbase EE 7.6.12; Release and Debug builds of `GameServer.slnx` 0 warnings,
+  0 errors; nothing else building during the runs):
+
+  | Run | Total | Passed | Failed | Skipped | Time |
+  | --- | --- | --- | --- | --- | --- |
+  | in memory | 1 482 | 1 387 | 0 | 95 | 34.7 s |
+  | `GAMESERVER_TEST_STORE=File` | 1 482 | 1 387 | 0 | 95 | 47.0 s |
+  | Couchbase (`COUCHBASE_*` of the resume "Environment" section) | 1 482 | 1 464 | 1 | 17 | 4 min 48 s |
+
+  The one Couchbase-run failure was the known flaky `TelemetryTests.A_command_is_one_trace_from_http_to_the_runner_with_the_request_id`
+  (`Single` found no matching activity under full-suite load, `TelemetryTests.cs:26`); re-run of `TelemetryTests` alone: 3/3
+  passed. Afterwards: bucket `gameserver-it` holds only `_default` and `_system` scopes, no `gs-it-*` user; no host process;
+  no `gs-local-*`/`gs-seal-*` in `%TEMP%`; `git status` as in T077. Not committed (commit only when the owner asks).
 - [ ] T081 Update `AgentMemories/features/p05-speckit/00_summary.md` (after T080): slice 013 row and state (branch,
   not yet tagged; round 013–016 → one tag `v0.7.0`), technical notes (`AllowsDevProfile` three layers,
   `GameServer.TestKit` + `SampleTestHost` rename rule and the `GmTestHost` substring trap, `LocalFlavorSettings` rule,
@@ -1427,3 +1458,97 @@ V5 → T005, T038, T045; V6 → T005, T043, T044; V7 → T004, T026; V8 → T006
     Technical Context.
 12. **Stale wording**: plan SD1 still says "FR-086 default [NEEDS CLARIFICATION]"; the spec resolved it (on in
     Development/Test, off in Staging/Production) and the plan's design follows the resolution. No conflict.
+
+## Review (T078/T079, tech-lead-reviewer, 2026-11-03): CONDITIONAL, 0 Blocker, 0 Major, 13 Minor
+
+All 13 Minors fixed (orchestrator: fix all, each with a test that fails without the fix where practical). Verified sound by the
+review and not reworked: FG-010 layers, kit IVT surface, LOG-05/LOG-06 of the request event, outcome finalization, rename
+completeness, version stamping.
+
+- m1 outcome feature replaced — `RequestLogMiddleware` installed a new `RequestOutcome` even when a consumer middleware before
+  `UseGameServer` had already called `context.RequestOutcome()`, so that early reference was an orphan (`ResultCode` null,
+  `Completed` false). Fixed: the middleware keeps an existing `RequestOutcome` and finalizes it; only a foreign implementation of
+  the interface (which it cannot finalize) is replaced. Test:
+  `RequestOutcomeFeatureTests.A_consumer_middleware_that_takes_the_outcome_before_next_holds_the_finalized_instance` (command and
+  404; same instance before and after `next`). Docs: contract request-log §2, PCR §13, release notes FG-025.
+- m2 `dotnet run` without `--project` — a host folder with two project files failed with a misleading exit 6. Fixed:
+  `run-local.ps1`/`.sh` pass `--project "<project file>"`. Test (opt-in, T076):
+  `RunLocalScriptTests.A_host_folder_with_two_project_files_runs_the_named_project` (ps1 + bash; a temp web host plus a second
+  `*.csproj` in its folder; fails 2/2 with the old scripts). Docs: contract run-local §3 step 6, environments §3, PCR §17 row.
+- m3 console escape injection — `ConsoleLineFormatter` wrote message values, the category and the exception text unescaped.
+  Fixed: new `ControlCharacterWriter` (same rule as `RequestLogMiddleware.Clean`: `char.IsControl` → `?`, no truncation) wraps
+  every rendered value (message tokens incl. structured values, template text, category, request line); the exception keeps
+  `\n`/`\r\n` only (a lone `\r` → `?`). Allocated per event on the console queue's worker, never on the request path. Tests:
+  `ConsoleLineFormatterTests.Control_characters_in_rendered_values_become_question_marks_and_the_exception_keeps_its_line_breaks`,
+  `ConsoleLineFormatterTests.A_request_line_is_cleaned_too`. Docs: contract §3, PCR §13 console, release notes FG-025.
+- m4 shared drop counter — chosen: the tag `sink=file|console` on the existing `log_dropped_total` (and `log_queue_entries`); a
+  sum over the tag equals the former value. `LogSinkMonitor` now owns two `LogQueueMonitor`s (`FileQueue`, `ConsoleQueue`, each an
+  `IAsyncLogEventSinkMonitor`); `DroppedCount` stays the sum; GM health `log` detail: `dropped` = file, new `consoleDropped`.
+  Tests: `ConsoleSinkTests.Log_dropped_total_reports_the_file_and_the_console_sink_apart`; the blocked-console test asserts the
+  `sink=console` measurement and `ConsoleQueue`; `LoggingTests.A_full_queue_drops_and_counts_instead_of_blocking` asserts
+  `FileQueue`. Docs: PCR §13 (file table + console), contract §1/§3, consumer guide §8, release notes FG-025.
+- m5 raw unmatched path — 404/405 (no `RouteEndpoint`) logged the cleaned client path. Fixed (orchestrator decision): only the
+  first segment, then `/...` (`/api/v1/nope` → `/api/...`, `//x` → `/...`, root → `/`, a single segment stays, cleaned and
+  cut at 120). Tests: `RequestLogTests.An_unmatched_path_logs_only_its_first_segment` (3 paths through the host),
+  `RequestLogTests.The_unmatched_route_keeps_the_first_segment_only` (5 cases); the session test's 404/405 rows now expect
+  `/api/...`; the scanner-path test is unchanged (one segment). Docs: spec FR-081, data-model §1, contract §1, PCR §13 `Route`
+  row, environments §8.3 and data-model console examples, release notes FG-025.
+- m6 `CheckCommit` incomplete — the double reported "commits" for outcomes the runner refuses for size. Fixed with the runner's
+  own rules, moved into `CommitRules` and used by both: `ChangesState`, `ExceedsHardBytes`, `CheckAggregateSize` (envelope built
+  by the runner's `AggregateDocumentSerializer.BuildDocument`, now an internal static overload taking game and environment id),
+  `CheckResultSize`. `CheckCommit(outcome)` adds the HardBytes check per written aggregate (Touches order, as the runner);
+  new overload `CheckCommit(outcome, encodeResult)` adds the resultCompact limit; `WithCommandSettings(CommandSettings)` sets
+  the host's limits (default: framework defaults). Documented precisely (XML doc, consumer guide §5.1 table, PCR §19, public-api
+  contract, module-authoring): the envelope is measured with the actor's GameId/EnvironmentId (`test`/`test` by default;
+  other ids change the size by their length); the receipt size (`ReceiptMaxBytes`) is **not** checked — the receipt holds the
+  request body hash, config version and host encoding the double does not have. No new IVT surface (everything goes through
+  `CommitRules`; `TestKitArchitectureTests` unchanged and green). Tests (new probe `KitSizeModule`, 1 KiB budget):
+  `CommandContextConformanceTests.The_hard_bytes_boundary_of_the_commit_check_is_the_runners` (largest committing note found by
+  the double, runner commits it and rejects one byte more with `AGGREGATE_TOO_LARGE`; message checked),
+  `CommandContextConformanceTests.The_result_size_check_is_the_runners` (512 / 513 bytes, same message on both sides).
+- m7 no-op writes recorded — `Writes` listed a `Set` of the loaded state. Fixed: the double drops the entry when the state
+  equals the loaded (seeded or default) one, like the runner (also for a change set back). Tests:
+  `CommandContextConformanceTests.A_no_op_set_writes_nothing_through_the_runner_and_the_double` (3 cases; runner store count vs
+  `Writes`), `CommandContextDoubleTests.Setting_the_seeded_state_again_or_changing_it_back_records_no_write`.
+- m8 kit in a production host — new `TestKitReferenceCheck` (`IStartupCheck`, registered by `AddGameServer`): fails startup when
+  the `GameServer.TestKit` assembly is loaded and `!AllowsDevelopmentTools`, unless the host runs on the in-process
+  `TestServer` (the kit's own `TestHost`/`LocalFlavorFactory`, which test Staging/Production rules; compared by type name).
+  Tests: `TestKitReferenceCheckTests` (Staging/Production with a non-test server fail with the message; Development/Test pass;
+  the kit's TestServer is exempt in Production). Docs: consumer guide §5 (one sentence), PCR §17 rule row, release notes FG-001.
+- m9 `Test` for any environment id (pre-existing, 011) — fail closed (orchestrator decision): `DeploymentIdentityCheck` refuses
+  `DeploymentEnvironment=Test` unless `EnvironmentId` is `test` (`DeploymentEnvironments.TestEnvironmentId`); a standard-flavor
+  mismatch (e.g. `dev` + Test) is still reported by its own line, first. No framework test or fixture depended on another
+  combination (searched `src`, `tests`, the fixture and the sample flavor files; read-only `git grep` of the game repo found no
+  use); no genuine use broken. Tests: `FlavorValidationTests.Test_with_any_environment_id_but_test_is_refused` (`qa`,
+  `staging2`, `TEST`), `FlavorValidationTests.Test_with_the_test_environment_id_starts`. Docs: release notes **BC-8**, PCR §17
+  rule row, FG-010 note.
+- m10 bash < 4.4 silent — `run-local.sh` prints `run-local: warning: bash <v> is older than 4.4: … not killed … Fix: … (macOS:
+  brew install bash)` on stderr and continues. No automated test (needs a bash < 4.4); the condition was checked for 3.2/4.3
+  (warn) and 4.4/5.2 (none), `--help` on 5.2 prints no warning. Docs: script header, contract run-local §3 step 7,
+  environments §3.
+- m11 numeric `sdk.version` — `GetString()` threw → exit 5. Fixed: non-string (or empty) `sdk.version` → `LocalRunException`
+  (exit 2) "`<file>` has an sdk.version that is not a version string (`<raw>`). Fix: write it as a quoted string …". Test:
+  `LocalRunDescribeTests.A_global_json_whose_sdk_version_is_not_a_string_is_invalid_host_input` (number, object, empty).
+- m12 hostile `Directory.Packages.props` — `BuildSealingTests` now writes one above the framework (its own marker property, a
+  game-only package and a conflicting `0.0.1-hostile` pin of every framework package) and asserts per project: marker absent,
+  `DirectoryPackagesPropsPath` = the framework's file, evaluated `PackageVersion` items = exactly the framework's. (Test-only
+  finding: passes before and after; the framework was already sealed.) Consumer guide §2: framework projects never read the
+  game's file; a conflicting game pin applies to game projects only and NU1605 on restore is the expected result.
+- m13 Dev command without player — `ExecuteCoreAsync`/`TryReplayAsync` checked `PlayerId` before `EnsureActorAllowed`, so
+  outside development a Dev command without target player answered `BAD_REQUEST`. Fixed: profile decision first on both paths.
+  Tests: `DevProfileRunnerTests.A_dev_command_without_a_target_player_is_forbidden_not_a_bad_request_outside_development` (3
+  actor types, both paths, `command_results_total{FORBIDDEN}` +2),
+  `DevProfileRunnerTests.A_dev_command_without_a_target_player_stays_a_bad_request_in_development`. Release notes FG-010.
+
+**Deviations:** m5 uses the ASCII `...` (the cut marker the request event already uses) instead of the Unicode `…` of the
+decision text: one marker for every shortened `Route`, and it prints on any console code page. m8 also exempts the in-process
+`TestServer` (without it every framework/consumer test host in Staging/Production would fail) and sees only a *loaded* kit
+assembly (startup checks must not read files that configuration does not name, so `deps.json` is not inspected: a referenced
+but never used kit is not detected). m4: `LogSinkMonitor` is no longer itself an `IAsyncLogEventSinkMonitor` (public type;
+no consumer use found; release notes FG-025) and the health `dropped` value is now file-only. m6 adds two public members
+(`CheckCommit(outcome, encodeResult)`, `WithCommandSettings`). Not required by a finding: `RunLocalScriptTests` fixture case
+always runs on a free port (owner rule: never touch 5180); `RequestLogPerformanceTests` prints file/console drops apart.
+`CommandContextDouble.cs` is now ~370 lines (was ~305): split later together with the open `AccountPurgeService` item.
+
+**Tests:** +37 (1 445 → 1 482; 2 of them opt-in). Affected classes re-run green (Platform.Web 125/125, Observability 27/27,
+Architecture 48 + 6 opt-in skipped), then the full runs of T077/T080.

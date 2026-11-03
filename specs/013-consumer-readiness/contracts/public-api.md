@@ -406,6 +406,7 @@ public sealed class CommandContextDouble : GameServer.Commands.ICommandContext
     public CommandContextDouble WithReceiptId(string receiptId);
     public CommandContextDouble Seed<TState>(string aggregateId, TState state) where TState : class;
     public CommandContextDouble SeedClaim(string collection, string claimKey);
+    public CommandContextDouble WithCommandSettings(GameServer.Platform.CommandSettings commands); // limits of CheckCommit (default: framework defaults)
 
     // ICommandContext (forwarded to the runner's context)
     public GameServer.Actors.ActorContext Actor { get; }
@@ -423,16 +424,21 @@ public sealed class CommandContextDouble : GameServer.Commands.ICommandContext
     // recorded (call order)
     public GameServer.Commands.CommandDescriptor Descriptor { get; }
     public string ReceiptId { get; }
-    public IReadOnlyList<RecordedWrite> Writes { get; }
+    public IReadOnlyList<RecordedWrite> Writes { get; }   // what the runner writes: a Set of the loaded state (or a change set back) is no write
     public TState? Written<TState>(string aggregateId) where TState : class;
     public IReadOnlyList<GameServer.Platform.Outbox.OutboxEntry> Outbox { get; }
     public IReadOnlyList<RecordedClaim> Claims { get; }
 
     /// <summary>
-    /// What the runner would refuse at commit (FR-026): uncatalogued or non-200 commit code, GM command without exactly one
-    /// audit entry, non-GM command with one. Empty for a rejection or a committable outcome. Messages = runner messages.
+    /// What the runner would refuse at commit (FR-026), with the runner's rules (CommitRules): uncatalogued or non-200 commit
+    /// code, written aggregate above its HardBytes (runner: AGGREGATE_TOO_LARGE; envelope measured with the actor's
+    /// GameId/EnvironmentId), GM command without exactly one audit entry, non-GM command with one. Empty for a rejection or
+    /// a committable outcome. Messages = runner messages. Never checked: the receipt size (ReceiptMaxBytes).
     /// </summary>
     public IReadOnlyList<string> CheckCommit(GameServer.Commands.ICommandOutcome outcome);
+
+    /// <summary>Plus the resultCompact limit (ResultCompactMaxBytes) on encodeResult(outcome.Result), the endpoint's encoding.</summary>
+    public IReadOnlyList<string> CheckCommit(GameServer.Commands.ICommandOutcome outcome, Func<object, byte[]> encodeResult);
 }
 
 public sealed record RecordedWrite(string AggregateId, object State);

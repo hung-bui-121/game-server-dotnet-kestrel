@@ -110,7 +110,11 @@ the same packages:
 
 Game-only packages are added below the import with `<PackageVersion Include="…" Version="…" />`. Never `Include` a
 package the framework already pins (NU1506); if a game really must override one, use `<PackageVersion Update="…" />` and
-record why.
+record why. Framework projects never read the game's file: they import the nearest `Directory.Packages.props`, the
+framework's own (checked by `BuildSealingTests` with a conflicting file above the framework). A game pin that differs
+from the framework's version therefore applies to the game's projects only, and when a game project references a
+framework project the restore reports the downgrade as **NU1605** (an error with warnings as errors): expected
+behaviour — align the version or drop the pin.
 
 ## 3. Project references
 
@@ -286,7 +290,9 @@ game projects, and links no file of the framework's `tests/` folder. From
 ```
 
 A direct `Microsoft.AspNetCore.Mvc.Testing` reference is not needed (its build targets flow through the kit) but does no
-harm. The kit has no test framework dependency; the samples use xUnit v3 and Shouldly.
+harm. The kit has no test framework dependency; the samples use xUnit v3 and Shouldly. Reference the kit from test
+projects only: a host with `GameServer.TestKit` loaded fails startup outside Development/Test (`[deployment] the consumer
+test kit (GameServer.TestKit) is loaded in …`), except on the kit's own in-process test server.
 
 ### 5.1 Handler unit test — `CommandContextDouble`
 
@@ -294,9 +300,21 @@ harm. The kit has no test framework dependency; the samples use xUnit v3 and Sho
 runner's own context, so every access rule (Touches/Reads, state type, claim limit, duplicate claims) throws exactly what
 the runner throws. Pass every module whose aggregates the command touches or reads (`new IdentityModule()` for
 `profile`). Configure (`AsPlayer`, `AsGm`, `WithActor`, `At`, `WithConfig`, `WithRequestId`/`WithReceiptId`, `Seed`,
-`SeedClaim`) before the handler runs; read `Writes`/`Written<T>`, `Outbox`, `Claims` afterwards. `CheckCommit(outcome)`
-returns what the runner would refuse at commit (uncatalogued or non-200 commit code, GM audit rules); empty = the runner
-commits. From `tests/ConsumerFixture/tests/Fixture.Tests/SaveNoteHandlerTests.cs`:
+`SeedClaim`, `WithCommandSettings`) before the handler runs; read `Writes`/`Written<T>`, `Outbox`, `Claims` afterwards.
+`Writes` holds what the runner would write: a `Set` of the loaded (seeded or default) state, or a change set back, is no
+write. `CheckCommit(outcome)` returns what the runner would refuse at commit, with the runner's rules and messages; empty =
+the runner commits:
+
+| Check | Done by the double | Note |
+| --- | --- | --- |
+| commit code catalogued and HTTP 200 (API-11) | yes | |
+| GM command exactly one audit, others none (SEC-14) | yes | |
+| written aggregate within its `HardBytes` (runner: `AGGREGATE_TOO_LARGE`, nothing commits) | yes | envelope measured with the actor's GameId/EnvironmentId (`test`/`test` by default); other ids change the size by their length |
+| result within `ResultCompactMaxBytes` (CMD-03, runner: INTERNAL) | only `CheckCommit(outcome, encodeResult)` | pass the endpoint's encoding, e.g. `r => ToWire((MyResult)r).ToByteArray()`; limits = framework defaults or `WithCommandSettings(...)` |
+| receipt within `ReceiptMaxBytes` (CMD-03, runner: INTERNAL) | **no** | the receipt holds the request body hash, the config version and the encoded result as the host builds them; cover large outbox/claim payloads with a `TestHost` or `LocalFlavorFactory` test |
+| Touches/Reads, state type, claim limits | while the handler runs | the shared context throws, before any commit check |
+
+From `tests/ConsumerFixture/tests/Fixture.Tests/SaveNoteHandlerTests.cs`:
 
 ```csharp
 using Fixture.Game;
@@ -457,7 +475,9 @@ client received), replayed, not-modified, aborted, duration — never bodies, qu
 
 - `GameServer:RequestLog:ExcludedPaths`: more paths never logged (segment prefix, case-insensitive).
 - `Observability:Logging:Console:MinimumLevel` (`Information`), `Observability:Logging:Console:BufferSize` (1 000): the
-  console has its own bounded queue that drops (counted in `log_dropped_total`) and never blocks a request.
+  console has its own bounded queue that drops (counted in `log_dropped_total{sink="console"}`, apart from the file's
+  `sink="file"`) and never blocks a request. Control characters in console values become `?` (no terminal escapes).
+- Unmatched requests (404, 405) log only the first path segment: `GET /api/...`, never the rest of the path.
 - Volume: ~300–400 B per event in the file (≈ 13–17 GB per instance per day at 500 requests/s); before enabling it in
   Staging/Production raise the file limits or ship logs (`docs/guides/environments-and-local-run.md` §8).
 - `IRequestOutcomeFeature` (`HttpContext.RequestOutcome()`, namespace `GameServer.Platform.Web.Requests`): set by the

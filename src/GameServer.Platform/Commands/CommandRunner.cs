@@ -59,9 +59,11 @@ public sealed class CommandRunner(
         var registration = registry.GetCommand(invocation.Operation);
         var descriptor = registration.Descriptor;
         var actor = invocation.Actor;
+
+        // The profile decision first: outside development a Dev command is FORBIDDEN whatever else is wrong with it (FG-010).
+        EnsureActorAllowed(descriptor, actor);
         var playerId = actor.PlayerId
             ?? throw new GameServerException(CoreErrorCodes.BadRequest, "Command has no target player.");
-        EnsureActorAllowed(descriptor, actor);
 
         using var activity = PlatformMetrics.ActivitySource.StartActivity("command " + descriptor.Operation);
         activity?.SetTag("gs.operation", descriptor.Operation);
@@ -122,9 +124,9 @@ public sealed class CommandRunner(
         try
         {
             var descriptor = registry.GetCommand(operation).Descriptor;
+            EnsureActorAllowed(descriptor, actor);
             playerId = actor.PlayerId
                 ?? throw new GameServerException(CoreErrorCodes.BadRequest, "Command has no target player.");
-            EnsureActorAllowed(descriptor, actor);
         }
         catch (GameServerException ex)
         {
@@ -301,24 +303,23 @@ public sealed class CommandRunner(
 
         EnsureCommittableCode(registration, outcome.Error);
         var resultBytes = invocation.EncodeResult(outcome.Result!);
-        if (resultBytes.Length > options.Commands.ResultCompactMaxBytes)
+        if (CommitRules.CheckResultSize(descriptor.Operation, resultBytes.Length, options.Commands) is { } oversized)
         {
-            throw new InvalidOperationException(
-                $"Result of '{descriptor.Operation}' is {resultBytes.Length} bytes; resultCompact max is {options.Commands.ResultCompactMaxBytes} (CMD-03).");
+            throw new InvalidOperationException(oversized);
         }
 
         var writes = new List<AggregateWrite>();
         foreach (var aggregateId in descriptor.Touches)
         {
             var before = loaded[aggregateId];
-            if (!context.TryGetNewState(aggregateId, out var newJson) || newJson.AsSpan().SequenceEqual(before.StateJson))
+            if (!context.TryGetNewState(aggregateId, out var newJson) || !CommitRules.ChangesState(before, newJson))
             {
                 continue;
             }
 
             var newRev = before.Rev + 1;
             var (document, size) = serializer.BuildDocument(before, newJson, newRev, now);
-            if (size > before.Descriptor.HardBytes)
+            if (CommitRules.ExceedsHardBytes(before.Descriptor, size))
             {
                 throw new CommandRejectedException(CoreErrorCodes.AggregateTooLarge);
             }

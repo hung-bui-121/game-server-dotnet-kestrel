@@ -19,7 +19,6 @@ public sealed class RunLocalScriptTests : IDisposable
 
     private const string Ready = "Press Ctrl+C to stop.";
     private const int SamplePort = 5080;
-    private const int FixturePort = 5180;
 
     private static readonly TimeSpan FastTimeout = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan StartTimeout = TimeSpan.FromMinutes(4);
@@ -106,14 +105,16 @@ public sealed class RunLocalScriptTests : IDisposable
     public async Task The_fixture_host_runs_under_its_name_logs_requests_on_the_console_and_resets_its_data(Shell shell)
     {
         RequireOptIn(shell);
-        var port = PortIsFree(FixturePort) ? FixturePort : FreePort();
-        string[] arguments = [.. Option(shell, "HostProject", FixtureHost), .. Option(shell, "Name", "Fixture game")];
-        if (port != FixturePort)
-        {
-            // Another server (for example the game's own host) holds the profile port: the profile port rule is covered by
-            // LocalRunDescribeTests, the run itself goes elsewhere.
-            arguments = [.. arguments, .. Option(shell, "Port", port.ToString(System.Globalization.CultureInfo.InvariantCulture))];
-        }
+
+        // Never the fixture profile's port 5180: a game's own host runs there on the owner's machine (even probing it could
+        // collide with a host starting meanwhile). The profile-port rule is covered by LocalRunDescribeTests.
+        var port = FreePort();
+        string[] arguments =
+        [
+            .. Option(shell, "HostProject", FixtureHost),
+            .. Option(shell, "Name", "Fixture game"),
+            .. Option(shell, "Port", port.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+        ];
 
         using (var run = ScriptRun.Start(shell, arguments))
         {
@@ -138,6 +139,29 @@ public sealed class RunLocalScriptTests : IDisposable
             File.Exists(marker).ShouldBeFalse("-Reset empties the fixture's data folder");
             (await reset.StopAsync()).ShouldBe(0, reset.Output);
         }
+    }
+
+    /// <summary>Review m2: "dotnet run" gets the project file, so a host folder with a second project file still runs the named one.</summary>
+    [Theory]
+    [MemberData(nameof(Shells))]
+    public async Task A_host_folder_with_two_project_files_runs_the_named_project(Shell shell)
+    {
+        RequireOptIn(shell);
+        var port = FreePort();
+        var host = Path.Combine(_root, "two-projects");
+        WriteHost(host, port);
+        File.WriteAllText(
+            Path.Combine(host, "Probe.Host.csproj"),
+            """<Project Sdk="Microsoft.NET.Sdk.Web"><PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings></PropertyGroup></Project>""");
+        File.WriteAllText(Path.Combine(host, "Program.cs"), """var app = WebApplication.Create(args); app.MapGet("/health/ready", () => "ready"); app.Run();""");
+        File.WriteAllText(Path.Combine(host, "Probe.Tool.csproj"), """<Project Sdk="Microsoft.NET.Sdk" />""");
+
+        using var run = ScriptRun.Start(shell, Option(shell, "HostProject", Path.Combine(host, "Probe.Host.csproj")));
+        await run.WaitForAsync(Ready, StartTimeout);
+
+        run.Output.ShouldContain("Probe.Host is ready (flavor Local");
+        run.Output.ShouldContain($"  Base URL     http://localhost:{port}/");
+        (await run.StopAsync()).ShouldBe(0, run.Output);
     }
 
     [Theory]

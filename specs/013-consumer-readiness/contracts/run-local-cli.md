@@ -49,11 +49,12 @@ framework's `tools/GameServer.LocalRun/bin|obj` (git-ignored).
    exit 5.
 4. Port probe (loopback IPv4/IPv6, plus any with LAN) → exit 4 naming the port and `-Port`/`--port`.
 5. `dotnet build <project> -c Debug` (output visible) → exit 5.
-6. `dotnet run --no-build --launch-profile <profile> -- --urls … [--FileStore:ResetOnStart=true]` from the project folder;
+6. `dotnet run --no-build --project <project file> --launch-profile <profile> -- --urls … [--FileStore:ResetOnStart=true]` from the project folder (the folder may hold other project files);
    wait for `GET /health/ready` = 200 (≤ 60 s) → exit 6 if the host exits first (its message above), exit 7 on timeout
    (last 20 lines of the newest file in the log folder, host stopped).
 7. Banner, then stream host output until Ctrl+C (graceful stop; kill after 35 s). Exit code 0 after a graceful stop,
-   otherwise the host's exit code.
+   otherwise the host's exit code. The kill needs bash >= 4.4: an older bash (stock macOS 3.2) prints a warning on stderr at
+   start (`run-local: warning: bash … is older than 4.4 …`) and only stops gracefully.
 
 ## 4. Banner
 

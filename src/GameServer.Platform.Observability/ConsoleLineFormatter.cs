@@ -10,7 +10,10 @@ namespace GameServer.Platform.Observability;
 /// <summary>
 /// Console sink format (FR-087, research R12, data-model §1): request events as one compact line built from their properties
 /// (null parts omitted), other events as <c>HH:mm:ss.fff LVL message [SourceContext]</c> with the exception on the following
-/// lines. ANSI colours on the level only when asked (stdout is a terminal).
+/// lines. ANSI colours on the level only when asked (stdout is a terminal). Every rendered value goes through
+/// <see cref="ControlCharacterWriter"/>: control characters (ESC, CR, LF, ...) become <c>?</c> as in the request event's
+/// <c>Route</c> cleaning, so a logged value (a client-supplied string, an exception message) cannot inject terminal escape
+/// sequences or fake log lines; the exception keeps its line breaks.
 /// </summary>
 internal sealed class ConsoleLineFormatter(bool colours) : ITextFormatter
 {
@@ -25,25 +28,29 @@ internal sealed class ConsoleLineFormatter(bool colours) : ITextFormatter
         output.Write(' ');
         WriteLevel(logEvent.Level, output);
         output.Write(' ');
+
+        // Allocated per event on the console queue's worker thread, never on the request path.
+        var cleaned = new ControlCharacterWriter(output);
         if (string.Equals(Text(logEvent, "SourceContext"), RequestLog.Category, StringComparison.Ordinal))
         {
-            WriteRequest(logEvent, output);
+            WriteRequest(logEvent, cleaned);
         }
         else
         {
-            WriteMessage(logEvent, output);
+            WriteMessage(logEvent, cleaned);
             if (Text(logEvent, "SourceContext") is { } source)
             {
-                output.Write(" [");
-                output.Write(source);
-                output.Write(']');
+                cleaned.Write(" [");
+                cleaned.Write(source);
+                cleaned.Write(']');
             }
         }
 
         output.WriteLine();
         if (logEvent.Exception is not null)
         {
-            output.WriteLine(logEvent.Exception.ToString());
+            ControlCharacterWriter.WriteKeepingLineBreaks(logEvent.Exception.ToString(), output);
+            output.WriteLine();
         }
     }
 

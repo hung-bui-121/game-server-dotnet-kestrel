@@ -120,7 +120,7 @@ tools/local/run-local.sh --port 5090 --reset
 Không tham số, script chạy host mẫu `samples/SampleHost` với launch profile `local` (hành vi slice 011). Host do
 `tools/GameServer.LocalRun describe` đọc (launch profile, flavor, cổng, thư mục data/log, `global.json`; chỉ đọc, không ghi
 file nào của host); script in dòng `run-local: host project … (profile …, flavor …)`, build host (Debug), chạy
-`dotnet run --no-build --launch-profile <profile> -- --urls …` từ thư mục project, chờ `GET /health/ready` = 200 (tối đa
+`dotnet run --no-build --project <file project> --launch-profile <profile> -- --urls …` từ thư mục project (thư mục có thể chứa file project khác), chờ `GET /health/ready` = 200 (tối đa
 60 s), in khối URL rồi tiếp tục hiện log của host. Host mẫu giữ nguyên khối URL của slice 011:
 
 ```text
@@ -166,6 +166,8 @@ Ghi chú:
   (host thứ hai từ chối trong ≤ 5 s sau khi khởi động).
 - Flavor `Local` và `Dev` in một dòng mỗi request (và mỗi log vận hành từ Information) lên console, ngoài file log (mục 8).
 - `run-local.sh` cần bit thực thi (`git add --chmod=+x`); không có thì chạy `bash tools/local/run-local.sh`.
+- `run-local.sh` cần bash ≥ 4.4 để kill host sau 35 s khi Ctrl+C không dừng được; bash cũ hơn (macOS mặc định 3.2) in một
+  cảnh báo lên stderr lúc bắt đầu và chỉ dừng graceful (`brew install bash` để có bản mới).
 - Trên Windows, `bash` trong `C:\Windows\System32` là trình khởi động WSL; dùng Git Bash (`C:\Program Files\Git\bin\bash.exe`).
 - Kiểm lặp lại được: `RunLocalScriptTests` (exit 2 và 4, mỗi lần chạy test; khởi động/dừng host mẫu và host fixture khi
   `GAMESERVER_SCRIPT_TESTS=1`, Windows) và `LocalRunDescribeTests` (quy tắc đọc host).
@@ -551,7 +553,7 @@ dung lượng volume log), hoặc ship file log ra ngoài; cân nhắc `LevelOve
 ```text
 08:15:02.123 INF POST /api/v1/counter/increment (counter.increment) player=p_7f3a9c1e2b4d req=1a2b3c4d -> 200 OK 12.4 ms
 08:15:03.010 INF POST /api/v1/iap/purchase (iap.purchase) player=p_7f3a9c1e2b4d req=9f8e7d6c -> 200 ALREADY_GRANTED replayed 3.1 ms
-08:15:04.500 WRN GET /api/v1/nope req=0c1d2e3f -> 404 NOT_FOUND 0.4 ms
+08:15:04.500 WRN GET /api/... req=0c1d2e3f -> 404 NOT_FOUND 0.4 ms
 ```
 
 `req=` là 8 ký tự đầu của `X-Request-Id` (tìm cùng request trong file log bằng `RequestId`). Game muốn hành vi riêng theo request

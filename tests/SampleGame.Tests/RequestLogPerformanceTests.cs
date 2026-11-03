@@ -41,6 +41,7 @@ public sealed class RequestLogPerformanceTests
         RequireOptIn();
         using var console = new BlockingWriter();
         var dropped = LogSinkMonitor.Instance.DroppedCount;
+        var (fileDropped, consoleDropped) = (LogSinkMonitor.Instance.FileQueue.DroppedCount, LogSinkMonitor.Instance.ConsoleQueue.DroppedCount);
         var folder = TempFolder();
         try
         {
@@ -66,7 +67,9 @@ public sealed class RequestLogPerformanceTests
                 var memory = GC.GetTotalMemory(forceFullCollection: true) - memoryBefore;
                 var drops = LogSinkMonitor.Instance.DroppedCount - dropped;
 
-                Print($"request-log blocked sinks: {statuses.Count(s => s == 200)}/{BlockedRequests} OK in {watch.Elapsed.TotalSeconds:0.00} s, drops {drops}, managed memory delta {memory / 1024} KiB");
+                Print($"request-log blocked sinks: {statuses.Count(s => s == 200)}/{BlockedRequests} OK in {watch.Elapsed.TotalSeconds:0.00} s, drops {drops} " +
+                    $"(file {LogSinkMonitor.Instance.FileQueue.DroppedCount - fileDropped}, console {LogSinkMonitor.Instance.ConsoleQueue.DroppedCount - consoleDropped}), " +
+                    $"managed memory delta {memory / 1024} KiB");
                 statuses.ShouldAllBe(status => status == 200);
                 statuses.Count.ShouldBe(BlockedRequests);
                 drops.ShouldBeGreaterThanOrEqualTo(BlockedRequests - 11);

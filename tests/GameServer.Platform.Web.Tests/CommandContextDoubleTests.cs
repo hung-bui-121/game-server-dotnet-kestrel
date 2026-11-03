@@ -145,6 +145,25 @@ public sealed class CommandContextDoubleTests
             c => c.Attributes.ShouldBe(new Dictionary<string, string> { ["text"] = "new" }));
     }
 
+    /// <summary>Review m7: the runner writes an aggregate only when its final state differs from the loaded one.</summary>
+    [Fact]
+    public void Setting_the_seeded_state_again_or_changing_it_back_records_no_write()
+    {
+        var seeded = new KitNotes { Text = "old", Count = 1 };
+        var unchanged = Save().Seed(KitProbeModule.Notes, seeded);
+        var changedBack = Save().Seed(KitProbeModule.Notes, seeded);
+
+        unchanged.Set(KitProbeModule.Notes, seeded with { });
+        changedBack.Set(KitProbeModule.Notes, seeded with { Text = "new" });
+        changedBack.Writes.ShouldHaveSingleItem();
+        changedBack.Set(KitProbeModule.Notes, seeded with { });
+
+        unchanged.Writes.ShouldBeEmpty();
+        unchanged.Written<KitNotes>(KitProbeModule.Notes).ShouldBeNull();
+        changedBack.Writes.ShouldBeEmpty();
+        changedBack.Get<KitNotes>(KitProbeModule.Notes).ShouldBe(seeded);
+    }
+
     [Fact]
     public async Task A_seeded_claim_answers_false_and_is_not_recorded()
     {

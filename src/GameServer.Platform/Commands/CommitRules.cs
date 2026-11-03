@@ -1,14 +1,17 @@
 using GameServer.Actors;
+using GameServer.Aggregates;
 using GameServer.Commands;
 using GameServer.Errors;
+using GameServer.Platform.Aggregates;
 using GameServer.Platform.Outbox;
 using GameServer.Platform.Registry;
 
 namespace GameServer.Platform.Commands;
 
 /// <summary>
-/// Commit rules shared by <see cref="CommandRunner"/> and the consumer test kit (API-11, SEC-14). Each check returns the
-/// violation message, or null when the outcome may commit; the runner turns a message into INTERNAL (nothing commits).
+/// Commit rules shared by <see cref="CommandRunner"/> and the consumer test kit (API-11, SEC-14, CMD-03, DAT-01). Each check
+/// returns the violation message, or null when the outcome may commit; the runner turns a code, audit or size message into
+/// INTERNAL and an aggregate above its budget into the AGGREGATE_TOO_LARGE rejection (nothing commits either way).
 /// </summary>
 internal static class CommitRules
 {
@@ -63,6 +66,41 @@ internal static class CommitRules
             : $"Command '{descriptor.Operation}' ({descriptor.Profile}) wrote {audits} audit entries; expected {expected} (SEC-14). " +
               "Fix: GM commands call ctx.AddAudit(...) exactly once; other commands never do.";
     }
+
+    /// <summary>
+    /// A set aggregate is written only when its canonical state JSON differs from the loaded one: setting the loaded state again
+    /// (or changing it back) writes nothing and bumps no revision.
+    /// </summary>
+    internal static bool ChangesState(LoadedAggregate before, ReadOnlySpan<byte> newStateJson) => !newStateJson.SequenceEqual(before.StateJson);
+
+    /// <summary>The stored document of a written aggregate must fit its <see cref="PlayerAggregateDescriptor.HardBytes"/> budget.</summary>
+    internal static bool ExceedsHardBytes(PlayerAggregateDescriptor aggregate, int documentBytes) => documentBytes > aggregate.HardBytes;
+
+    /// <summary>
+    /// <see cref="ExceedsHardBytes"/> for the document the runner would store for <paramref name="newStateJson"/> (same envelope,
+    /// next revision, measured with <paramref name="gameId"/> and <paramref name="environmentId"/>).
+    /// </summary>
+    internal static string? CheckAggregateSize(
+        string operation,
+        string gameId,
+        string environmentId,
+        LoadedAggregate before,
+        byte[] newStateJson,
+        DateTimeOffset now)
+    {
+        var (_, size) = AggregateDocumentSerializer.BuildDocument(gameId, environmentId, before, newStateJson, before.Rev + 1, now);
+        return ExceedsHardBytes(before.Descriptor, size)
+            ? $"Command '{operation}' would store aggregate '{before.Descriptor.AggregateId}' as {size} bytes; its HardBytes is " +
+              $"{before.Descriptor.HardBytes}: the runner rejects the command with {CoreErrorCodes.AggregateTooLarge.Name} and nothing commits. " +
+              "Fix: keep the state smaller or split it into another aggregate."
+            : null;
+    }
+
+    /// <summary>CMD-03: the encoded result is stored in the receipt as resultCompact and must fit its limit.</summary>
+    internal static string? CheckResultSize(string operation, int resultBytes, CommandSettings settings) =>
+        resultBytes > settings.ResultCompactMaxBytes
+            ? $"Result of '{operation}' is {resultBytes} bytes; resultCompact max is {settings.ResultCompactMaxBytes} (CMD-03)."
+            : null;
 
     /// <summary>Owning module of a command, and the replacing handler when <c>ReplaceHandler</c> swapped it (EXT-02).</summary>
     private static string DescribeOwner(CommandRegistration registration, ModuleRegistry registry)

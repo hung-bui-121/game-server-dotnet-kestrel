@@ -4,6 +4,7 @@ using GameServer.Aggregates;
 using GameServer.Commands;
 using GameServer.Config;
 using GameServer.Modules;
+using GameServer.Platform;
 using GameServer.Platform.Aggregates;
 using GameServer.Platform.Commands;
 using GameServer.Platform.Outbox;
@@ -15,7 +16,8 @@ namespace GameServer.TestKit;
 /// <summary>
 /// ICommandContext for handler unit tests without host, store or DI (FR-020..FR-026). Wraps the runner's own context, so
 /// every access rule, exception type and message is the runner's. Configure first; the first ICommandContext call freezes
-/// the configuration. Not simulated: transactions, retries, receipts and the outbox relay.
+/// the configuration. Not simulated: transactions, retries, receipts (and so the receipt size limit, see
+/// <see cref="CheckCommit(ICommandOutcome, Func{object, byte[]})"/>) and the outbox relay.
 /// </summary>
 public sealed class CommandContextDouble : ICommandContext
 {
@@ -39,6 +41,8 @@ public sealed class CommandContextDouble : ICommandContext
     private IGameConfig _config = TestGameConfig.Empty;
     private string _requestId = DefaultRequestId;
     private string? _receiptId;
+    private CommandSettings _commands = new();
+    private Dictionary<string, LoadedAggregate>? _loaded;
     private CommandContext? _inner;
 
     private CommandContextDouble(ModuleRegistry registry, CommandRegistration registration, Dictionary<string, PlayerAggregateDescriptor> aggregates)
@@ -96,7 +100,10 @@ public sealed class CommandContextDouble : ICommandContext
     public string ReceiptId =>
         _receiptId ?? ReceiptIds.Compute(_actor.ActorId, _actor.PlayerId ?? string.Empty, Descriptor.Operation, _requestId);
 
-    /// <summary>Aggregates set by the handler, in first-<c>Set</c> order, each with its latest state.</summary>
+    /// <summary>
+    /// Aggregates the runner would write, in first-<c>Set</c> order, each with its latest state. Like the runner, a <c>Set</c> whose
+    /// state equals the loaded (seeded or default) state is no write: setting it unchanged, or changing it back, removes the entry.
+    /// </summary>
     public IReadOnlyList<RecordedWrite> Writes => _writes;
 
     /// <summary>Outbox entries of the runner's context in call order (audit and analytics entries included).</summary>
@@ -153,6 +160,16 @@ public sealed class CommandContextDouble : ICommandContext
         return Configure(() => _receiptId = receiptId);
     }
 
+    /// <summary>
+    /// The host's <c>GameServer:Commands</c> limits for <see cref="CheckCommit(ICommandOutcome, Func{object, byte[]})"/> (default:
+    /// the framework defaults).
+    /// </summary>
+    public CommandContextDouble WithCommandSettings(CommandSettings commands)
+    {
+        ArgumentNullException.ThrowIfNull(commands);
+        return Configure(() => _commands = commands);
+    }
+
     /// <summary>Existing state of an aggregate of Touches ∪ Reads (rev 1); the state must be of the aggregate's state type.</summary>
     public CommandContextDouble Seed<TState>(string aggregateId, TState state)
         where TState : class
@@ -192,8 +209,19 @@ public sealed class CommandContextDouble : ICommandContext
         var inner = Inner;
         inner.Set(aggregateId, state);
         inner.TryGetNewState(aggregateId, out var json);
-        var write = new RecordedWrite(aggregateId, AggregateDocumentSerializer.DeserializeState(json, _aggregates[aggregateId].StateType));
         var index = _writes.FindIndex(w => w.AggregateId == aggregateId);
+        if (!CommitRules.ChangesState(_loaded![aggregateId], json))
+        {
+            // The runner compares the final state with the loaded one and skips the write (no revision bump).
+            if (index >= 0)
+            {
+                _writes.RemoveAt(index);
+            }
+
+            return;
+        }
+
+        var write = new RecordedWrite(aggregateId, AggregateDocumentSerializer.DeserializeState(json, _aggregates[aggregateId].StateType));
         if (index < 0)
         {
             _writes.Add(write);
@@ -228,18 +256,54 @@ public sealed class CommandContextDouble : ICommandContext
     public long NewSeed(string purpose) => Inner.NewSeed(purpose);
 
     /// <summary>
-    /// What the runner would refuse at commit (FR-026): uncatalogued or non-200 commit code, GM command without exactly one
-    /// audit entry, non-GM command with one. Empty for a rejection or a committable outcome. Messages = runner messages.
+    /// What the runner would refuse at commit (FR-026), checked with the runner's rules: uncatalogued or non-200 commit code; a
+    /// written aggregate whose stored document would exceed its <c>HardBytes</c> (the runner rejects with
+    /// <c>AGGREGATE_TOO_LARGE</c>; the envelope is measured with the actor's GameId and EnvironmentId, "test"/"test" by default:
+    /// other ids change the size by their length); GM command without exactly one audit entry, non-GM command with one. Empty
+    /// for a rejection or a committable outcome. Messages = runner messages. The result size is checked only by the overload
+    /// that takes the result encoder. The receipt size (<c>ReceiptMaxBytes</c>) is never checked: the receipt holds the request
+    /// body hash, the config version and the encoded result, which the double does not have as the host builds them.
     /// </summary>
     public IReadOnlyList<string> CheckCommit(ICommandOutcome outcome)
     {
         ArgumentNullException.ThrowIfNull(outcome);
+        return CheckCommit(outcome, resultBytes: null);
+    }
+
+    /// <summary>
+    /// <see cref="CheckCommit(ICommandOutcome)"/> plus the resultCompact limit (<c>ResultCompactMaxBytes</c>, CMD-03) on the bytes
+    /// <paramref name="encodeResult"/> returns for the outcome's result: pass the endpoint's mapping, e.g.
+    /// <c>r =&gt; ToWire((MyResult)r).ToByteArray()</c> for the <c>toWire</c> given to <c>MapPlayerCommand</c>.
+    /// </summary>
+    public IReadOnlyList<string> CheckCommit(ICommandOutcome outcome, Func<object, byte[]> encodeResult)
+    {
+        ArgumentNullException.ThrowIfNull(outcome);
+        ArgumentNullException.ThrowIfNull(encodeResult);
+        return CheckCommit(outcome, outcome.IsOk ? encodeResult(outcome.Result!).Length : null);
+    }
+
+    private string[] CheckCommit(ICommandOutcome outcome, int? resultBytes)
+    {
         if (!outcome.IsOk)
         {
             return [];
         }
 
-        string?[] violations = [CommitRules.CheckCode(_registration, _registry, outcome.Error), CommitRules.CheckAudit(Descriptor, Outbox)];
+        // The runner's order: code, result size, aggregate sizes (Touches order), audit.
+        var violations = new List<string?>
+        {
+            CommitRules.CheckCode(_registration, _registry, outcome.Error),
+            resultBytes is { } size ? CommitRules.CheckResultSize(Descriptor.Operation, size, _commands) : null,
+        };
+        foreach (var aggregateId in Descriptor.Touches)
+        {
+            if (_inner is not null && _inner.TryGetNewState(aggregateId, out var json) && CommitRules.ChangesState(_loaded![aggregateId], json))
+            {
+                violations.Add(CommitRules.CheckAggregateSize(Descriptor.Operation, _actor.GameId, _actor.EnvironmentId, _loaded[aggregateId], json, _now));
+            }
+        }
+
+        violations.Add(CommitRules.CheckAudit(Descriptor, Outbox));
         return violations.OfType<string>().ToArray();
     }
 
@@ -255,6 +319,7 @@ public sealed class CommandContextDouble : ICommandContext
             loaded[aggregateId] = _seeds.TryGetValue(aggregateId, out var seeded) ? Existing(aggregate, playerId, seeded) : Missing(aggregate, playerId);
         }
 
+        _loaded = loaded;
         return new CommandContext(_actor, _now, _config, loaded, Descriptor, new DetachedTransaction(_seededClaims), ReceiptId);
     }
 

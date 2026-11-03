@@ -118,13 +118,23 @@ public sealed class AggregateDocumentSerializer(GameServerOptions options, Platf
     }
 
     /// <summary>Builds the stored envelope for a new revision and returns it with its serialized size.</summary>
-    public (JsonObject Document, int SizeBytes) BuildDocument(LoadedAggregate before, byte[] newStateJson, long newRev, DateTimeOffset now)
+    public (JsonObject Document, int SizeBytes) BuildDocument(LoadedAggregate before, byte[] newStateJson, long newRev, DateTimeOffset now) =>
+        BuildDocument(options.GameId, options.EnvironmentId, before, newStateJson, newRev, now);
+
+    /// <summary>The envelope for the given game and environment ids (also measured by the test kit's commit check, CommitRules).</summary>
+    internal static (JsonObject Document, int SizeBytes) BuildDocument(
+        string gameId,
+        string environmentId,
+        LoadedAggregate before,
+        byte[] newStateJson,
+        long newRev,
+        DateTimeOffset now)
     {
         var timestamp = FormatTime(now);
         var document = new JsonObject
         {
-            ["gameId"] = options.GameId,
-            ["environmentId"] = options.EnvironmentId,
+            ["gameId"] = gameId,
+            ["environmentId"] = environmentId,
             ["playerId"] = before.PlayerId,
             ["aggregateId"] = before.Descriptor.AggregateId,
             ["schemaVersion"] = before.Descriptor.SchemaVersion,

@@ -53,6 +53,38 @@ public sealed class RequestOutcomeFeatureTests
     }
 
     [Fact]
+    public async Task A_consumer_middleware_that_takes_the_outcome_before_next_holds_the_finalized_instance()
+    {
+        var observed = new ConcurrentDictionary<string, Observed>();
+        await using var session = await RequestLogHost.StartAsync(beforeUseGameServer: app => app.Use(async (context, next) =>
+        {
+            // Taken before the framework pipeline runs: the framework must finalize this instance, not install another one.
+            var early = context.RequestOutcome();
+            await next(context);
+            context.RequestOutcome().ShouldBeSameAs(early);
+            observed[CorrelationMiddleware.GetCorrelationId(context)] =
+                new(early.ResultCode, early.StatusCode, early.Operation, early.Replayed, early.NotModified, early.Aborted, early.Completed);
+        }));
+        var player = session.Host.PlayerClient("p_early");
+        var requestId = ProtobufHttp.NewRequestId();
+
+        (await player.PostProtobufAsync("/api/v1/counter/increment", new Wire.IncrementRequest { By = 1 }, requestId)).EnsureSuccessStatusCode();
+        var entry = await session.EventAsync(requestId);
+        var missing = await session.EventAsync(await player.GetAsync("/api/v1/nope"));
+
+        var early = await ObservedAsync(observed, requestId);
+        early.Completed.ShouldBeTrue();
+        early.ResultCode.ShouldBe("OK");
+        early.ResultCode.ShouldBe(entry.Properties["ResultCode"]);
+        early.StatusCode.ShouldBe(200);
+        early.Operation.ShouldBe(IncrementHandler.Operation);
+        var notFound = await ObservedAsync(observed, (string)missing.Properties["RequestId"]!);
+        notFound.Completed.ShouldBeTrue();
+        notFound.ResultCode.ShouldBe("NOT_FOUND");
+        notFound.StatusCode.ShouldBe(404);
+    }
+
+    [Fact]
     public async Task A_consumer_endpoint_sets_its_own_code_and_a_bare_418_becomes_HTTP_418()
     {
         var observed = new ConcurrentDictionary<string, Observed>();

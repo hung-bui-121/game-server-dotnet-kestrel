@@ -193,7 +193,8 @@ if ($LASTEXITCODE -ne 0) {
 # 5. Start the host from its project folder (content root) with the launch profile; --urls overrides the profile URL.
 $listenHost = "localhost"
 if ($Lan) { $listenHost = "0.0.0.0" }
-$runArgs = @("run", "--no-build", "--launch-profile", ('"' + $LaunchProfile + '"'), "--", "--urls", ("http://" + $listenHost + ":" + $portNumber))
+# --project: the folder may hold other project files ("dotnet run" alone refuses a folder with more than one).
+$runArgs = @("run", "--no-build", "--project", ('"' + $project + '"'), "--launch-profile", ('"' + $LaunchProfile + '"'), "--", "--urls", ("http://" + $listenHost + ":" + $portNumber))
 if ($Reset) {
     $runArgs += "--FileStore:ResetOnStart=true"
     Write-Host ("run-local: -Reset: the host empties its store folder " + $hostInfo["dataFolder"] + " after locking it.")

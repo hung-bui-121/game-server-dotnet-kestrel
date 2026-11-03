@@ -80,7 +80,7 @@ public static class ObservabilityExtensions
                             shared: false),
                         bufferSize: settings.BufferSize,
                         blockWhenFull: false,
-                        monitor: LogSinkMonitor.Instance);
+                        monitor: LogSinkMonitor.Instance.FileQueue);
                 }
 
                 if (settings.Console.Enabled)
@@ -116,7 +116,7 @@ public static class ObservabilityExtensions
             },
             bufferSize: console.BufferSize,
             blockWhenFull: false,
-            monitor: LogSinkMonitor.Instance);
+            monitor: LogSinkMonitor.Instance.ConsoleQueue);
     }
 
     private static void AddTelemetry(IServiceCollection services, GameServerOptions gameServer, ObservabilityOptions options, GameServerRuntimeInfo runtime)

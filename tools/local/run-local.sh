@@ -5,7 +5,8 @@
 # global.json; host files are only read), builds the host (Debug), starts it with the launch profile from its project
 # folder, waits until GET /health/ready answers 200 (at most 60 s), prints the URLs and keeps streaming the host output.
 # Ctrl+C stops the host gracefully (readiness 503, drain, commits complete); the script waits up to 35 s, then kills the
-# process tree (needs bash >= 4.4, see the watcher below). No path leaves a host running after the script exits.
+# process tree (needs bash >= 4.4, see the watcher below; older bash gets a warning on stderr and no forced stop). No path
+# leaves a host running after the script exits.
 # Contract: specs/013-consumer-readiness/contracts/run-local-cli.md (supersedes section 4 of the slice 011 operations
 # contract). Without --host-project, --launch-profile and --name it behaves as the slice 011 script (samples/SampleHost,
 # profile local, port 5080). Bash on macOS, Linux and Git Bash (Windows).
@@ -43,6 +44,13 @@ fail() {
     echo "run-local: $2" >&2
     exit "$1"
 }
+
+# The forced stop after Ctrl+C needs bash >= 4.4 (see the watcher below); older bash (stock macOS 3.2) still runs the host.
+readonly MIN_BASH_MAJOR=4
+readonly MIN_BASH_MINOR=4
+if [ "${BASH_VERSINFO[0]}" -lt "$MIN_BASH_MAJOR" ] || { [ "${BASH_VERSINFO[0]}" -eq "$MIN_BASH_MAJOR" ] && [ "${BASH_VERSINFO[1]}" -lt "$MIN_BASH_MINOR" ]; }; then
+    echo "run-local: warning: bash $BASH_VERSION is older than $MIN_BASH_MAJOR.$MIN_BASH_MINOR: Ctrl+C still stops the host gracefully, but a host that does not stop within $STOP_WAIT_SECONDS s is not killed (stop it yourself). Fix: run the script with bash >= $MIN_BASH_MAJOR.$MIN_BASH_MINOR (macOS: brew install bash)." >&2
+fi
 
 repo=$(cd "$(dirname "$0")/../.." && pwd)
 host_project="$repo/samples/SampleHost/SampleHost.csproj"
@@ -188,7 +196,8 @@ done
 
 listen_host=localhost
 [ "$lan" -eq 1 ] && listen_host=0.0.0.0
-run_args=(run --no-build --launch-profile "$launch_profile" -- --urls "http://$listen_host:$port")
+# --project: the folder may hold other project files ("dotnet run" alone refuses a folder with more than one).
+run_args=(run --no-build --project "$project" --launch-profile "$launch_profile" -- --urls "http://$listen_host:$port")
 if [ "$reset" -eq 1 ]; then
     run_args+=(--FileStore:ResetOnStart=true)
     echo "run-local: --reset: the host empties its store folder $data_folder after locking it."

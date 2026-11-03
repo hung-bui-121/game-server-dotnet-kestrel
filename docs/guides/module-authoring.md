@@ -179,7 +179,8 @@ public async Task Save_replaces_the_note_and_the_runner_would_commit_it()
 - `Create(operation, modules…)`: truyền mọi module có aggregate mà command `Touches`/`Reads` (ví dụ `new IdentityModule()`
   cho `profile`). Cấu hình (`AsPlayer`, `AsGm`, `At`, `WithConfig`, `Seed`, `SeedClaim`) trước lần gọi handler đầu tiên.
 - `CheckCommit(outcome)` trả các lỗi mà runner sẽ báo khi commit (code không có trong catalog, code commit ≠ HTTP 200,
-  thiếu audit GM); rỗng = runner sẽ commit.
+  aggregate vượt `HardBytes`, thiếu audit GM); rỗng = runner sẽ commit. `CheckCommit(outcome, encodeResult)` kiểm thêm
+  giới hạn resultCompact; kích thước receipt không được kiểm (consumer guide §5.1). `Writes` bỏ qua `Set` không đổi state.
 - Host test: `TestHost.StartAsync(modules: b => b.AddModule<IdentityModule>().AddModule<MyModule>())` (mặc định chỉ
   Identity, config rỗng); flavor thật của host game: `new LocalFlavorFactory<Program>()` (thư mục tạm riêng, xoá khi
   dispose).

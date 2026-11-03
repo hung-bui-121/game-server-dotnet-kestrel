@@ -146,6 +146,32 @@ public sealed class RequestLogTests
         route.ShouldNotContain("query-should-not-appear");
     }
 
+    [Theory]
+    [InlineData("/players/p_7f3a9c1e2b4d/receipts/r_secret", "/players/...")]
+    [InlineData("/reset-password/token-should-not-appear/", "/reset-password/...")]
+    [InlineData("/robots.txt", "/robots.txt")]
+    public async Task An_unmatched_path_logs_only_its_first_segment(string path, string expected)
+    {
+        await using var session = await RequestLogHost.StartAsync();
+
+        var response = await session.Host.Client().GetAsync(path);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        var entry = await session.EventAsync(response);
+        entry.Properties["Route"].ShouldBe(expected);
+        entry.Message.ShouldNotContain("should-not-appear");
+        entry.Message.ShouldNotContain("p_7f3a9c1e2b4d");
+    }
+
+    [Theory]
+    [InlineData("/api/v1/nope", "/api/...")]
+    [InlineData("/a/", "/a/...")]
+    [InlineData("//token", "/...")]
+    [InlineData("/", "/")]
+    [InlineData("", "/")]
+    public void The_unmatched_route_keeps_the_first_segment_only(string path, string expected) =>
+        RequestLogMiddleware.UnmatchedRoute(new PathString(path)).ShouldBe(expected);
+
     /// <summary>
     /// The 17 request kinds of T040 (+ the health probes, never logged) on <paramref name="session"/>; returns the session's player
     /// id and each request's expectation with its event. Also driven by the outcome-feature tests (T041).
@@ -196,9 +222,9 @@ public sealed class RequestLogTests
 
         // 9. 404 and 10. 405 (no endpoint profile).
         var missing = await player.GetAsync("/api/v1/nope");
-        results.Add((new("404", "GET", "/api/v1/nope", null, null, null, null, 404, "NOT_FOUND", LogLevel.Warning), await session.EventAsync(missing)));
+        results.Add((new("404", "GET", "/api/...", null, null, null, null, 404, "NOT_FOUND", LogLevel.Warning), await session.EventAsync(missing)));
         var wrongMethod = await player.GetAsync(IncrementRoute);
-        results.Add((new("405", "GET", IncrementRoute, null, null, null, null, 405, "METHOD_NOT_ALLOWED", LogLevel.Warning), await session.EventAsync(wrongMethod)));
+        results.Add((new("405", "GET", "/api/...", null, null, null, null, 405, "METHOD_NOT_ALLOWED", LogLevel.Warning), await session.EventAsync(wrongMethod)));
 
         var tooLarge = await player.PostBytesAsync(IncrementRoute, new byte[70 * 1024], ProtobufHttp.NewRequestId());
         results.Add((new("413", "POST", IncrementRoute, "Player", "counter.increment", "player", "*", 413, "PAYLOAD_TOO_LARGE", LogLevel.Warning), await session.EventAsync(tooLarge)));

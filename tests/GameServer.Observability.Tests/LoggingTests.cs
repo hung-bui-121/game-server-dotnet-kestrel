@@ -228,7 +228,7 @@ public sealed class LoggingTests
     [Fact]
     public async Task A_full_queue_drops_and_counts_instead_of_blocking()
     {
-        var dropped = LogSinkMonitor.Instance.DroppedCount;
+        var dropped = LogSinkMonitor.Instance.FileQueue.DroppedCount;
         await using (var observed = await ObservedHost.StartAsync(settings: s => s["Observability:Logging:BufferSize"] = "1"))
         {
             var logger = observed.Host.Services.GetRequiredService<ILogger<LoggingTests>>();
@@ -239,7 +239,7 @@ public sealed class LoggingTests
             }
 
             watch.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(10));
-            LogSinkMonitor.Instance.DroppedCount.ShouldBeGreaterThan(dropped);
+            LogSinkMonitor.Instance.FileQueue.DroppedCount.ShouldBeGreaterThan(dropped);
         }
     }
 

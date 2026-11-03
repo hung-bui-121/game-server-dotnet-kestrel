@@ -14,7 +14,7 @@ exact name (PascalCase like the existing `GameId`, `InstanceId`, `RequestId` pro
 | Property | Type | Value | Source |
 | --- | --- | --- | --- |
 | `HttpMethod` | string | `GET`, `POST`, … | `Request.Method` |
-| `Route` | string | route template (`/api/v1/player/receipts/{receiptId}`); unmatched: cleaned path (control chars → `?`, ≤ 120 chars + `...`), never the query string | `RouteEndpoint.RoutePattern.RawText` / `Request.Path` |
+| `Route` | string | route template (`/api/v1/player/receipts/{receiptId}`); unmatched (404, 405): first path segment only, then `/...` (`/api/v1/nope` → `/api/...`, root → `/`), cleaned (control chars → `?`, ≤ 120 chars + `...`), never the query string | `RouteEndpoint.RoutePattern.RawText` / `Request.Path` |
 | `Profile` | string? | `Public`, `Player`, `Gm`, `Dev`; null when no endpoint matched | endpoint `SecurityProfileMetadata` |
 | `Operation` | string? | command operation (`counter.increment`), null for non-command routes | outcome feature / `CommandOperationMetadata` |
 | `ActorType` | string? | `player`, `gm`; null when not authenticated | `ActorClaims.GetActorType(User)` |
@@ -56,7 +56,7 @@ file limits or ship logs (environments guide, PCR).
 ```text
 08:15:02.123 INF POST /api/v1/counter/increment (counter.increment) player=p_7f3a9c1e2b4d req=1a2b3c4d -> 200 OK 12.4 ms
 08:15:03.010 INF POST /api/v1/iap/purchase (iap.purchase) player=p_7f3a9c1e2b4d req=9f8e7d6c -> 200 ALREADY_GRANTED replayed 3.1 ms
-08:15:04.500 WRN GET /api/v1/nope req=0c1d2e3f -> 404 NOT_FOUND 0.4 ms
+08:15:04.500 WRN GET /api/... req=0c1d2e3f -> 404 NOT_FOUND 0.4 ms
 08:15:05.000 INF POST /gm/v1/players/{playerId}/ban staff=admin req=77aa88bb -> 200 OK 8.0 ms
 ```
 

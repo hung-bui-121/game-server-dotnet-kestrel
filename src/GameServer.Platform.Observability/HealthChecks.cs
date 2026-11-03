@@ -48,7 +48,9 @@ public sealed class LogHealthCheck(IOptions<ObservabilityOptions> options) : IHe
         var data = new Dictionary<string, object>
         {
             ["sinkErrors"] = monitor.SinkErrors,
-            ["dropped"] = monitor.DroppedCount,
+            // The operational log file's drops; the console sink's are separate (FR-087, log_dropped_total{sink=console}).
+            ["dropped"] = monitor.FileQueue.DroppedCount,
+            ["consoleDropped"] = monitor.ConsoleQueue.DroppedCount,
         };
         if (monitor.LastError is { } lastError)
         {

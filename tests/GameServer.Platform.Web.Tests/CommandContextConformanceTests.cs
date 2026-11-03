@@ -1,7 +1,9 @@
 using System.Text;
 using GameServer.Actors;
+using GameServer.Commands;
 using GameServer.Modules.Identity;
 using GameServer.Platform.Commands;
+using GameServer.Platform.Registry;
 using Microsoft.Extensions.DependencyInjection;
 using Shouldly;
 using static GameServer.Platform.Web.Tests.KitViolationHandler;
@@ -85,6 +87,102 @@ public sealed class CommandContextConformanceTests
         }
 
         samples.ShouldBe(25);
+    }
+
+    /// <summary>
+    /// Review m6: the double's commit check finds the runner's HardBytes boundary of a written aggregate (the largest note that
+    /// commits, the smallest that the runner rejects with AGGREGATE_TOO_LARGE) and the runner agrees on both sides.
+    /// </summary>
+    [Fact]
+    public async Task The_hard_bytes_boundary_of_the_commit_check_is_the_runners()
+    {
+        await using var host = await StartSizeAsync();
+        var playerId = NewPlayerId();
+        var fits = Enumerable.Range(1, KitSizeModule.HardBytes)
+            .Last(length => SizeCheck(playerId, new KitSize(NoteLength: length)).Result.Count == 0);
+        var (_, tooLarge) = SizeCheck(playerId, new KitSize(NoteLength: fits + 1));
+
+        fits.ShouldBeGreaterThan(KitSizeModule.HardBytes / 2, "the boundary must come from the budget, not from an earlier failure");
+        tooLarge.ShouldHaveSingleItem().ShouldStartWith(
+            $"Command 'kit.size' would store aggregate 'kit_sized' as {KitSizeModule.HardBytes + 1} bytes; its HardBytes is {KitSizeModule.HardBytes}: " +
+            "the runner rejects the command with AGGREGATE_TOO_LARGE and nothing commits.");
+        (await RunAsync(host, KitSizeModule.Operation, new KitSize(NoteLength: fits), playerId, Guid.NewGuid().ToString("D")))
+            .ShouldBe(Observed.Returned("r"));
+        (await RunAsync(host, KitSizeModule.Operation, new KitSize(NoteLength: fits + 1), NewPlayerIdOfLength(playerId.Length), Guid.NewGuid().ToString("D")))
+            .ShouldBe(Observed.Returned("AGGREGATE_TOO_LARGE"));
+    }
+
+    /// <summary>Review m6: the resultCompact limit, with the same encoder on both sides, refuses the same lengths with the same message.</summary>
+    [Theory]
+    [InlineData(512)]
+    [InlineData(513)]
+    public async Task The_result_size_check_is_the_runners(int resultLength)
+    {
+        await using var host = await StartSizeAsync();
+        var playerId = NewPlayerId();
+        var request = new KitSize(ResultLength: resultLength);
+
+        var throughRunner = await RunAsync(host, KitSizeModule.Operation, request, playerId, Guid.NewGuid().ToString("D"));
+        var context = SizeDouble(playerId);
+        var violations = context.CheckCommit(await new KitSizeHandler().HandleAsync(request, context), result => Encoding.UTF8.GetBytes((string)result));
+
+        if (resultLength <= 512)
+        {
+            throughRunner.Threw.ShouldBeFalse(throughRunner.Value);
+            violations.ShouldBeEmpty();
+        }
+        else
+        {
+            throughRunner.ShouldBe(new Observed(true, nameof(InvalidOperationException), "Result of 'kit.size' is 513 bytes; resultCompact max is 512 (CMD-03)."));
+            violations.ShouldBe([throughRunner.Value]);
+        }
+    }
+
+    /// <summary>Review m7: a set of the loaded state (or a change set back) is no write for the runner and no entry in Writes.</summary>
+    [Theory]
+    [InlineData(0, true, false)]
+    [InlineData(5, true, false)]
+    [InlineData(5, false, true)]
+    public async Task A_no_op_set_writes_nothing_through_the_runner_and_the_double(int noteLength, bool setBack, bool written)
+    {
+        await using var host = await StartSizeAsync();
+        var runner = host.Services.GetRequiredService<ICommandRunner>();
+        var playerId = NewPlayerId();
+        var request = new KitSize(noteLength, setBack);
+        var actor = new ActorContext(playerId, ActorType.Player, playerId, "test", "test", new HashSet<string>(StringComparer.Ordinal), "corr");
+
+        var execution = await runner.ExecuteAsync(
+            new CommandInvocation(KitSizeModule.Operation, actor, Guid.NewGuid().ToString("D"), "body", request, result => Encoding.UTF8.GetBytes((string)result)),
+            CancellationToken.None);
+        var context = SizeDouble(playerId);
+        await new KitSizeHandler().HandleAsync(request, context);
+
+        execution.Code.Name.ShouldBe("OK");
+        var collection = host.Services.GetRequiredService<ModuleRegistry>().GetAggregate(KitSizeModule.Sized).Collection;
+        host.Store.Count(collection).ShouldBe(written ? 1 : 0, "the runner stores the aggregate only when its state changed");
+        context.Writes.Select(w => w.AggregateId).ShouldBe(written ? [KitSizeModule.Sized] : []);
+        context.CheckCommit(CommandOutcome<string>.Ok("r")).ShouldBeEmpty();
+    }
+
+    private static Task<TestHost> StartSizeAsync() =>
+        TestHost.StartAsync(modules: b => b.AddModule<IdentityModule>().AddModule(new KitSizeModule()));
+
+    private static CommandContextDouble SizeDouble(string playerId) =>
+        CommandContextDouble.Create(KitSizeModule.Operation, new KitSizeModule()).AsPlayer(playerId);
+
+    private static (CommandContextDouble Context, IReadOnlyList<string> Result) SizeCheck(string playerId, KitSize request)
+    {
+        var context = SizeDouble(playerId);
+        var outcome = new KitSizeHandler().HandleAsync(request, context).AsTask().GetAwaiter().GetResult();
+        return (context, context.CheckCommit(outcome));
+    }
+
+    /// <summary>Another player id of the same length: the envelope (and so the boundary) depends on the id's length only.</summary>
+    private static string NewPlayerIdOfLength(int length)
+    {
+        var id = NewPlayerId();
+        id.Length.ShouldBe(length);
+        return id;
     }
 
     private static Task<TestHost> StartAsync() =>

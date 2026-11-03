@@ -529,8 +529,8 @@ without reading framework source; the reviewer records every step that was missi
   answers or that the client aborts, for every route (player, GM, public, Dev; commands, queries, login, snapshot, config;
   errors including 404/405), except the health probe routes and other routes in a configurable exclusion list. The
   event uses its own log category so it can be filtered or levelled independently.
-- **FR-081** (FG-025, LOG-04, OBS-02): The request event MUST contain: HTTP method, route template (for unmatched requests a
-  cleaned, length-limited path), security profile, command operation (when any), actor type and actor id (player id or
+- **FR-081** (FG-025, LOG-04, OBS-02): The request event MUST contain: HTTP method, route template (for unmatched requests the
+  cleaned, length-limited first path segment followed by `/...`), security profile, command operation (when any), actor type and actor id (player id or
   staff id, when authenticated), request/correlation id, trace id, HTTP status (none when aborted), result code, replayed,
   config not-modified, duration in milliseconds; plus the enrichment every operational event already has (game id,
   environment id, instance id). Field names are fixed in the plan and PCR.

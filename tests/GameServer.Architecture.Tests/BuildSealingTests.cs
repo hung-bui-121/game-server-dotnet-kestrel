@@ -8,14 +8,17 @@ namespace GameServer.Architecture.Tests;
 /// <summary>
 /// Slice 013 T051 (FR-030..FR-032, US4): framework projects evaluate the same inside a consumer repository. The framework's
 /// build inputs and project files are copied below a parent folder named <c>tests</c> that holds a hostile
-/// <c>Directory.Build.props</c> and <c>Directory.Build.targets</c>; every project must see neither, and the test-project
-/// rule must follow the framework root, not the absolute path; every project keeps the declared framework version (FR-050).
+/// <c>Directory.Build.props</c>, <c>Directory.Build.targets</c> and <c>Directory.Packages.props</c>; every project must see
+/// none of them (central package versions come from the framework's own file, review m12), and the test-project rule must
+/// follow the framework root, not the absolute path; every project keeps the declared framework version (FR-050).
 /// </summary>
 public sealed class BuildSealingTests : IDisposable
 {
     private const int MaxParallelEvaluations = 8;
     private const string HostileProps = "GameServerHostileProps";
     private const string HostileTargets = "GameServerHostileTargets";
+    private const string HostilePackages = "GameServerHostilePackages";
+    private const string HostileVersion = "0.0.1-hostile";
 
     private static readonly TimeSpan EvaluationTimeout = TimeSpan.FromMinutes(2);
 
@@ -55,11 +58,18 @@ public sealed class BuildSealingTests : IDisposable
 
         var declaredVersion = RepositoryTooling.DeclaredFrameworkVersion();
         var bannedSymbols = Path.Combine(Framework, "BannedSymbols.txt");
+        var packagesProps = Path.Combine(Framework, "Directory.Packages.props");
+        var frameworkPackages = FrameworkPackageVersions();
         foreach (var project in projects)
         {
             var evaluation = results[project];
             evaluation.Get(HostileTargets).ShouldBeEmpty($"{project}: a Directory.Build.targets above the framework root leaked into it (FR-030)");
             evaluation.Get(HostileProps).ShouldBeEmpty($"{project}: a Directory.Build.props above the framework root leaked into it");
+            evaluation.Get(HostilePackages).ShouldBeEmpty($"{project}: a Directory.Packages.props above the framework root leaked into it");
+            var packagesPath = evaluation.Get("DirectoryPackagesPropsPath");
+            string.Equals(Path.GetFullPath(packagesPath), packagesProps, StringComparison.OrdinalIgnoreCase)
+                .ShouldBeTrue($"{project} imports {packagesPath}, not the framework's Directory.Packages.props");
+            evaluation.PackageVersions.ShouldBe(frameworkPackages, ignoreOrder: true, $"{project} resolves central package versions from the framework's file");
             evaluation.Get("Version").ShouldBe(declaredVersion, $"{project} carries the declared framework version (FR-050)");
             if (project.StartsWith("tests/", StringComparison.Ordinal))
             {
@@ -76,6 +86,12 @@ public sealed class BuildSealingTests : IDisposable
             }
         }
     }
+
+    /// <summary><c>Include=Version</c> of every <c>PackageVersion</c> in the framework's <c>Directory.Packages.props</c>.</summary>
+    private static string[] FrameworkPackageVersions() =>
+        XDocument.Load(Path.Combine(RepositoryTooling.Root, "Directory.Packages.props")).Descendants("PackageVersion")
+            .Select(p => $"{(string)p.Attribute("Include")!}={(string)p.Attribute("Version")!}")
+            .ToArray();
 
     /// <summary>Every project of <c>GameServer.slnx</c> except the consumer fixture (its own props, like a game repository).</summary>
     private static string[] FrameworkProjects() =>
@@ -104,6 +120,13 @@ public sealed class BuildSealingTests : IDisposable
               <Target Name="GameServerHostileTarget" BeforeTargets="Build"><Error Text="consumer Directory.Build.targets ran" /></Target>
             </Project>
             """);
+
+        // A game's central versions: its own package and a conflicting pin of every framework package.
+        var pins = string.Concat(FrameworkPackageVersions().Select(p => $"<PackageVersion Include=\"{p.Split('=')[0]}\" Version=\"{HostileVersion}\" />"));
+        File.WriteAllText(
+            Path.Combine(Consumer, "Directory.Packages.props"),
+            $"<Project><PropertyGroup><{HostilePackages}>leaked</{HostilePackages}></PropertyGroup><ItemGroup>" +
+            $"<PackageVersion Include=\"Game.Only.Package\" Version=\"1.0.0\" />{pins}</ItemGroup></Project>");
     }
 
     private async Task<Evaluation> EvaluateAsync(string dotnet, string project)
@@ -112,7 +135,7 @@ public sealed class BuildSealingTests : IDisposable
         [
             "msbuild", project, "-nologo", "-nodeReuse:false",
             "-getProperty:IsTestProject", "-getProperty:IsFrameworkCode", "-getProperty:Version", $"-getProperty:{HostileTargets}", $"-getProperty:{HostileProps}",
-            "-getItem:AdditionalFiles",
+            $"-getProperty:{HostilePackages}", "-getProperty:DirectoryPackagesPropsPath", "-getItem:AdditionalFiles", "-getItem:PackageVersion",
         ];
         var result = await RepositoryTooling.RunAsync(dotnet, arguments, Framework, EvaluationTimeout);
         result.ExitCode.ShouldBe(0, $"dotnet msbuild {project} failed: {result.All}");
@@ -120,13 +143,17 @@ public sealed class BuildSealingTests : IDisposable
         // Several -getProperty/-getItem switches print one JSON object (V2): parse it, never match the text.
         using var json = JsonDocument.Parse(result.Output);
         var properties = json.RootElement.GetProperty("Properties").EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetString() ?? string.Empty);
-        var additionalFiles = json.RootElement.TryGetProperty("Items", out var items) && items.TryGetProperty("AdditionalFiles", out var files)
+        var hasItems = json.RootElement.TryGetProperty("Items", out var items);
+        var additionalFiles = hasItems && items.TryGetProperty("AdditionalFiles", out var files)
             ? files.EnumerateArray().Select(f => f.GetProperty("FullPath").GetString()!).ToArray()
             : [];
-        return new Evaluation(properties, additionalFiles);
+        var packageVersions = hasItems && items.TryGetProperty("PackageVersion", out var versions)
+            ? versions.EnumerateArray().Select(v => $"{v.GetProperty("Identity").GetString()}={v.GetProperty("Version").GetString()}").ToArray()
+            : [];
+        return new Evaluation(properties, additionalFiles, packageVersions);
     }
 
-    private sealed record Evaluation(IReadOnlyDictionary<string, string> Properties, IReadOnlyList<string> AdditionalFiles)
+    private sealed record Evaluation(IReadOnlyDictionary<string, string> Properties, IReadOnlyList<string> AdditionalFiles, IReadOnlyList<string> PackageVersions)
     {
         public string Get(string name) => Properties.TryGetValue(name, out var value) ? value : string.Empty;
     }
