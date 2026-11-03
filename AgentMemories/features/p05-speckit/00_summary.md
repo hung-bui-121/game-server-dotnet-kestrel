@@ -25,7 +25,7 @@ P0 is merged into `main` and pushed (fda9f00). The real-environment test tools f
 | (batch 2026-10-30) HTML docs | `docs-html-guides` | DONE: task 5 → `docs/html/{index,01-gioi-thieu,02-them-command,03-deploy}.html` (self-contained, drafts in `AgentMemories/features/task-30102026/docs-draft-5{a,b,c}-*.md`; HTML is now hand-maintained, drafts are historical). Accuracy review: reviewer followed 02 to add `counter.reset`, build + tests green. Also startup-validation fixes D1–D4 + m5/m6 (see notes). 5c checklist finished in ops-readiness. Packaging (task 4) skipped, separate later |
 | 013 consumer-readiness (improvement round, FG group A) | `013-consumer-readiness` | DONE: 81/81 tasks + B1. FG-010 (Dev lockdown), FG-001/006 (TestKit), FG-025 (request log), FG-002/003/004 (run-local, build seal), FG-007/011/012 (version, error band, consumer guide). Review CONDITIONAL (0 Blocker, 0 Major, 13 Minor, all fixed `b8a8623`) |
 | 014 wire-contract (FG group B) | `014-wire-contract` | DONE: 87/87 tasks. FG-026 direction B (route catalog + pre-serving endpoint check), FG-028 (export mode + WireGen), FG-021 (typed wire mappers), FG-027 (TestKit WireConformance). Review r1 NO (B1 + 2 Major + 9 minor, fixed `7024791`), r2 CONDITIONAL (5 minor, fixed `b1ff174`) |
-| 015 config (FG group C) | — | FG-018, FG-023, FG-024, FG-019 |
+| 015 config (FG group C) | `015-config` | DONE 71/72 (T058 Android/iOS device run = OWNER, tag waits on it). FG-018 (declared config rules + eager catalogs), FG-023 (isolated startup checks, GameConfigStatus), FG-024 (+ additive `client_config_version`), FG-019 (compression, PersistentConfigCache). Review r1 CONDITIONAL (3 Major + 11 minor + walkthrough G1–G4, decisions `specs/015-config/review-decisions.md`, fixed `8ac0023`), r2 CONDITIONAL (7 minor, fixed `1cb4a2e`) |
 | 016 login-command (FG group D) | — | FG-013, FG-015, FG-029, FG-016, FG-022 |
 | giftcode | — | GFT-01..06, GM-04 API, reaper (ACC-08, 22, 23) — number after the improvement round |
 | iap-notifications | — | IAP-03 S2S: Google RTDN, Apple v2, refund/revoke; add refund analytics event on the 012 seam |
@@ -194,6 +194,32 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
   no switch to allow cheats on Staging; version only via GM `ops.read`; `DeploymentEnvironment=Test` refused unless
   EnvironmentId `test` (BC-8, review m9). 014: `ReplaceWireMapper` must keep the framework message (M1 option
   "restrict", alternative = replaced section becomes origin `game`).
+
+## Technical notes from 015
+
+- Architect decisions awaiting owner override (release notes list them): additive `client_config_version` (ErrorEnvelope 10,
+  CommandResponse 9, SnapshotResponse 4, GetConfigResponse 5, LoginResponse 7) instead of redefining `config_version`
+  (API-03); D3 strictness (duplicate + case-variant property names fail startup, integer `kind` refused, maxQuantity ≥ 1);
+  BC-9 (provision never loads config; config-needing checks warn). zh-pvp config passes all (checked T067).
+- Config phase = first block of `UseGameServer`: load once → required files → module rules (`ConfigDeclarations` in
+  `ModuleDescriptor`, `ConfigJson` helpers, lines `[module m] config f row n: …`) → catalogs (platform-registered,
+  last registration wins, BC-8; optional-absent file → build still runs; backstop line for unexplained unbuilt catalog)
+  → bundle size (BC-7) → `GameConfigStatus` (never throws; `TryGetCatalog<T>`). Startup checks created one by one
+  (BC-10). TestKit: `ConfigDeclarationCheck`, `TestGameConfigStatus`; `LocalFlavorFactory` throws
+  `GameServerStartupException` on refused start.
+- Duplicate JSON properties: own walk `JsonDuplicateProperties` (V1 fallback), OrdinalIgnoreCase.
+- Versions: server hashes clientVisible set; client version = client-visible files + set + label. Control chars in
+  manifest names rejected.
+- Compression: per request in GetConfig, only with Accept-Encoding, gzip 6 / Brotli 4, startup probe per encoding,
+  per-host gate max(1, CPUs/4), fallback = identity + `config_compression_skipped_total{reason}`. Unity Editor/Windows
+  send `deflate, gzip` and decode gzip (V8), no SDK decoder.
+- SDK: `PersistentConfigCache` (Runtime/Core), `UnityConfigCache` (Runtime/Unity, iOS no-backup flag); cache name rule
+  `[a-z0-9._-]{1,64}`, no leading/trailing dot, no Windows device names. Save 1 MiB p95 ~11–15 ms on C:, ~70 ms on D:
+  (Flush(true) kept).
+- APK for T058 at `samples/SampleGame/KestrelDemo/Build/KestrelDemo.apk` (gitignored); owner steps in tasks.md T058.
+- Tests at `1cb4a2e`: 2321 total; in-memory 2219 pass / 101 skip (1 flaky `TelemetryTests.Exported_spans_and_metrics…`,
+  passes alone — second flaky telemetry test); File 2220 / 101 / 0. Couchbase at `8ac0023`: 2289 pass / 23 skip.
+  Re-run Couchbase before the tag.
 
 ## Technical notes from 014
 

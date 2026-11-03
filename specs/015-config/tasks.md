@@ -943,7 +943,7 @@ shipped behaviour.
   Note: step 6: (a) the release-notes client line compiles with C# 9 (netstandard2.1, warnings as errors) against the package `Runtime/**` with `UNITY_5_3_OR_NEWER` and the Unity 6000.3.22f1 `UnityEngine.CoreModule`/`UnityWebRequestModule` (types `UnityConfigCache`, `UnityWebRequestTransport` present in the output). (b) SC-009 with a C# 9 console over `sdk/GameServer.Client` (`HttpClientTransport`, `PersistentConfigCache`, `OnlineSession.FetchConfigAsync` shape): start 1 against the clone's host → login `outdated=True`, `RefreshConfigAsync` true, 7 files cached under `zhpvp-1+c2ba61ed994a` (27 877 B file); host restarted with `GameServer:ConfigPath` = scratch copy with `ConfigMission.json` `RewardCash` 3200 → 3201 (startup: server `zhpvp-1+f9d52cfb7538`, client `zhpvp-1+c2ba61ed994a`); start 2 → cache loaded 7 files, `outdated=False`, `RefreshConfigAsync` false (`not_modified`), **0 downloads** (one `config/get` because the snippet refreshes unconditionally; a `ConfigOutdated` gate skips it).
   Note: client file:line (read only, `research-and-development-games` `49df950ad`): `ServerConfigInjector.cs:39` and `OnlineSession.cs:333` markers, remark `:329`, `FetchConfigAsync` `:335-347` (applies cached files at boot: `appliedConfigVersion` starts null) all match. **Mismatch:** `OnlineSession.cs:83` is `this.Client = new GameServerClient(options, transport);` (a `transport` variable) and `OnlineSettings` has no environment name (only `BaseUrl`); `OnConfigVersionChanged` (`:179`) logs "Server config version" but now receives the client version (BC-4).
   Note: doc fixes: release notes 015 checklist rewritten as verified (013/014 order, two CS0618 + CS0104, measured startup line, the step-3 declaration shape and the three changed line texts, the client line with `transport` and a settings-held cache name, the `ConfigOutdated` gate, BC-4 log text, SC-009 result), "Removable vs stays" table; consumer guide §11 step 5 (line-format change of moved checks, CS0104 alias), §12.2 (porting text-line checks to `ConfigProblems`), §12.8 (cache name rule, `not_modified` round trip without the gate); PCR unity-sdk (platform-dependent invalid characters, name from settings); 013 release notes BC-4 step 3 (kit type names clash with game helpers). **Framework finding (not fixed, for T070):** `UnityConfigCache.Create` validates with the running platform's `Path.GetInvalidFileNameChars()`, so a name such as `localhost:5080` throws in the Windows Editor but is accepted on Android/iOS; a portable rule would refuse the same set everywhere. No other framework defect found.
-- [ ] T068 Final verification (after T065–T067): Debug and Release build of `GameServer.slnx`; full suite in memory and
+- [x] T068 Final verification (after T065–T067): Debug and Release build of `GameServer.slnx`; full suite in memory and
   with `GAMESERVER_TEST_STORE=File`; opt-in `GAMESERVER_PERF=1` run of `ConfigPhasePerformanceTests`, the perf sections
   of `ConfigCompressionTests` and `PersistentConfigCacheTests`, and the 014 endpoint-check performance test (budget
   unchanged); WireGen `verify` for the three configs; `git diff --stat main -- proto src/*/Protos` shows only the five
@@ -951,11 +951,11 @@ shipped behaviour.
   scratch output or Unity `Library` change).
   Done when: 0 warnings, 0 failures; counts against T001 and the per-story checkpoints recorded. (FR-091, SC-005, SC-006,
   SC-007)
-- [ ] T069 Couchbase full suite (after T068; run through PowerShell in the background, variables from the resume file,
+- [x] T069 Couchbase full suite (after T068; run through PowerShell in the background, variables from the resume file,
   password never printed).
   Done when: 0 failures; total/passed/skipped and duration recorded; a known flaky class is rerun alone before
   reporting. (FR-091)
-- [ ] T070 Tech-lead review (after T068): `tech-lead-reviewer` gets the spec, the plan, this file and the list of
+- [x] T070 Tech-lead review (after T068): `tech-lead-reviewer` gets the spec, the plan, this file and the list of
   changed files (`git diff --stat main`); focus: loader all-or-nothing and unchanged line texts; rules never weaker than
   `Load`; catalog binding (no lazy fallback, host override in both orders, module-alone error); check isolation and
   marker classification; provision config-free; version formula, determinism and API-03 (no field changes meaning);
@@ -997,7 +997,7 @@ shipped behaviour.
     - m-7: template comment and module-authoring §4 use `MyCatalog.Load(c.Config)` / `MyCatalog.Empty`; "(your catalog type)" is in the comment line above (in the code line it pushed the template past 160 characters). review-decisions M1 keeps its original proposal text.
     - BC-2: one sentence in release notes BC-2 "Who is affected" and consumer guide §12.1: case-variant keys fail startup even in files a game reads with its own case-sensitive reader (the loader checks every listed `.json` file).
     - Run: Debug and Release builds of `GameServer.slnx` 0 warnings, 0 errors. Full suite in memory: 2321 total, 2219 passed, 101 skipped, 1 failed = `TelemetryTests.Exported_spans_and_metrics_carry_service_version_and_the_framework_version` ("nothing was exported"; not touched here), `TelemetryTests` rerun alone 3/3 green (3 tests); with `GAMESERVER_TEST_STORE=File`: **2321 total, 2220 passed, 101 skipped, 0 failed** (no `COUCHBASE_PW`). Baseline 2312 / 2211 / 101: +9 tests (Platform.Tests +2, Platform.Web.Tests +7), skips unchanged. WireGen `verify --no-build` exit 0 for the three configs.
-- [ ] T072 Resume update `AgentMemories/features/p05-speckit/00_summary.md` (after T071): 015 row DONE with the task count
+- [x] T072 Resume update `AgentMemories/features/p05-speckit/00_summary.md` (after T071): 015 row DONE with the task count
   and review result; "Technical notes from 015" (config phase order, declarations and the kit call, `GameConfigLoad` /
   `GameConfigStatus` / markers, check creation, version formula and the five fields, `ConfigBundle` and compression
   constants, persistent cache format, `SeededConfig`, test counts); open items (T058/T067 if pending, owner
