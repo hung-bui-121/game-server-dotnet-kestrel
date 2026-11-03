@@ -11,6 +11,7 @@ using GameServer.Platform.Observability.Analytics;
 using GameServer.Platform.Persistence;
 using GameServer.Platform.Testing;
 using GameServer.Platform.Web.Hosting;
+using GameServer.TestKit;
 using NetArchTest.Rules;
 using Sample.Counter;
 using Sample.Counter.Adapters;
@@ -44,6 +45,7 @@ public sealed class ArchitectureTests
     private static readonly Assembly GameAdapters = typeof(SampleGameModule).Assembly;
     private static readonly Assembly GmBusiness = typeof(StaffRecord).Assembly;
     private static readonly Assembly GmAdapters = typeof(GmModule).Assembly;
+    private static readonly Assembly TestKit = typeof(CommandContextDouble).Assembly;
 
     private static readonly Assembly[] BusinessAssemblies = [Core, IdentityBusiness, CounterBusiness, EconomyBusiness, IapBusiness, GameBusiness, GmBusiness];
 
@@ -51,7 +53,7 @@ public sealed class ArchitectureTests
         [IdentityBusiness, IdentityAdapters, CounterBusiness, CounterAdapters, EconomyBusiness, EconomyAdapters, IapBusiness, IapAdapters, GameBusiness, GameAdapters, GmBusiness, GmAdapters];
 
     private static readonly Assembly[] AllFrameworkAndModules =
-        [Core, Platform, PlatformWeb, PlatformCouchbase, PlatformTesting, PlatformObservability, .. ModuleAssemblies];
+        [Core, Platform, PlatformWeb, PlatformCouchbase, PlatformTesting, PlatformObservability, TestKit, .. ModuleAssemblies];
 
     private static void ShouldPass(ConditionList rule, string because)
     {
@@ -109,8 +111,12 @@ public sealed class ArchitectureTests
     {
         foreach (var assembly in AllFrameworkAndModules.Where(a => a != Platform && a != PlatformCouchbase && a != PlatformTesting))
         {
+            // Slice 013 T032: the kit's detached stub is the transaction behind the runner's own context in handler tests (no store).
+            var types = assembly == TestKit
+                ? Types.InAssembly(assembly).That().DoNotHaveName("DetachedTransaction").ShouldNot()
+                : Types.InAssembly(assembly).ShouldNot();
             ShouldPass(
-                Types.InAssembly(assembly).ShouldNot().HaveDependencyOn(typeof(ITransactionContext).FullName!),
+                types.HaveDependencyOn(typeof(ITransactionContext).FullName!),
                 $"{assembly.GetName().Name} must not open transaction contexts: pa_* and receipts are written only by the runner (CMD-05, DAT-09)");
         }
     }
@@ -158,8 +164,13 @@ public sealed class ArchitectureTests
             .ShouldContain(typeof(FileStoreServiceCollectionExtensions), "rule must see a real dependency");
         foreach (var assembly in AllFrameworkAndModules.Where(a => a != PlatformTesting))
         {
+            // Slice 013 T032: the kit's TestHost builds the file store a test asks for (TestStoreKind.File) through kit-internal
+            // TestStores code; its public surface never exposes it (FR-014).
+            var types = assembly == TestKit
+                ? Types.InAssembly(assembly).That().DoNotHaveName(nameof(TestHost)).And().DoNotHaveName(nameof(TestStores)).ShouldNot()
+                : Types.InAssembly(assembly).ShouldNot();
             ShouldPass(
-                Types.InAssembly(assembly).ShouldNot().HaveDependencyOn(typeof(FileDocumentStore).FullName!),
+                types.HaveDependencyOn(typeof(FileDocumentStore).FullName!),
                 $"{assembly.GetName().Name} must not depend on the development-only file store (FR-007)");
         }
     }

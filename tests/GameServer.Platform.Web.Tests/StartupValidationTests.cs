@@ -29,7 +29,7 @@ public sealed class StartupValidationTests
     {
         return await Should.ThrowAsync<GameServerStartupException>(async () =>
         {
-            await using var host = await TestHost.StartAsync(modules, settings, endpoints, testAuthentication);
+            await using var host = await SampleTestHost.StartAsync(modules, settings, endpoints, testAuthentication);
         });
     }
 
@@ -198,7 +198,7 @@ public sealed class StartupValidationTests
     [Fact]
     public async Task Command_routes_of_the_default_host_carry_their_registered_operations()
     {
-        await using var host = await TestHost.StartAsync();
+        await using var host = await SampleTestHost.StartAsync();
 
         var operations = ((IEndpointRouteBuilder)host.App).DataSources
             .SelectMany(source => source.Endpoints)
@@ -214,7 +214,7 @@ public sealed class StartupValidationTests
     [Fact]
     public async Task Valid_host_starts()
     {
-        await using var host = await TestHost.StartAsync();
+        await using var host = await SampleTestHost.StartAsync();
         host.Services.GetRequiredService<Registry.ModuleRegistry>().Modules.Count.ShouldBe(2);
     }
 
@@ -223,7 +223,7 @@ public sealed class StartupValidationTests
     {
         var ex = await Should.ThrowAsync<GameServerStartupException>(async () =>
         {
-            await using var host = await TestHost.StartAsync(services: s => s.AddSingleton<IStartupCheck>(new FixedCheck(error: "[test] contributed error")));
+            await using var host = await SampleTestHost.StartAsync(services: s => s.AddSingleton<IStartupCheck>(new FixedCheck(error: "[test] contributed error")));
         });
 
         ex.Violations.ShouldContain("[test] contributed error");
@@ -233,7 +233,7 @@ public sealed class StartupValidationTests
     public async Task Startup_check_warnings_are_logged_once_under_the_startup_category()
     {
         var entries = new ConcurrentQueue<(string Category, LogLevel Level, string Message)>();
-        await using var host = await TestHost.StartAsync(services: s =>
+        await using var host = await SampleTestHost.StartAsync(services: s =>
         {
             s.AddSingleton<IStartupCheck>(new FixedCheck(warning: "[test] contributed warning"));
             s.AddSingleton<ILoggerProvider>(new CategoryLoggerProvider(entries));
@@ -249,7 +249,7 @@ public sealed class StartupValidationTests
         // A GameServerStartupException (not an OptionsValidationException from StartAsync) proves UseGameServer reported it.
         var ex = await StartupFails(modules: b =>
         {
-            TestHost.DefaultModules(b);
+            SampleTestHost.DefaultModules(b);
             b.Services.AddOptions<ProbeOptions>().Validate(_ => false, "[test] probe options are invalid").ValidateOnStart();
         });
 
@@ -263,7 +263,7 @@ public sealed class StartupValidationTests
         // instead of serving and answering every command INTERNAL.
         var ex = await StartupFails(modules: b =>
         {
-            TestHost.DefaultModules(b);
+            SampleTestHost.DefaultModules(b);
             b.Services.AddOptions<ProbeOptions>().Validate(_ => false, "[test] consumer options are invalid");
             b.Services.AddSingleton<IOutboxConsumer>(sp => new OptionsConsumer(sp.GetRequiredService<IOptions<ProbeOptions>>().Value));
         });
@@ -276,7 +276,7 @@ public sealed class StartupValidationTests
     {
         var ex = await StartupFails(modules: b =>
         {
-            TestHost.DefaultModules(b);
+            SampleTestHost.DefaultModules(b);
             b.Services.AddOptions<ProbeOptions>().Validate(_ => false, "[test] consumer options are invalid").ValidateOnStart();
             b.Services.AddSingleton<IOutboxConsumer>(sp => new OptionsConsumer(sp.GetRequiredService<IOptions<ProbeOptions>>().Value));
         });

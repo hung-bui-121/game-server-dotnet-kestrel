@@ -21,7 +21,7 @@ public sealed class AfterExecuteHookTests
     public async Task A_failing_hook_is_logged_and_the_committed_command_still_answers_ok()
     {
         var calls = 0;
-        await using var host = await TestHost.StartAsync(afterUseGameServer: app => app.MapPlayerCommand<Wire.IncrementRequest, IncrementCommand, IncrementResult>(
+        await using var host = await SampleTestHost.StartAsync(afterUseGameServer: app => app.MapPlayerCommand<Wire.IncrementRequest, IncrementCommand, IncrementResult>(
             Route,
             IncrementHandler.Operation,
             request => new IncrementCommand(request.By, null),

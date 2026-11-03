@@ -47,7 +47,7 @@ public sealed class ProviderExtensionTests
     public async Task Game_adapter_serves_login_and_link_and_a_committed_link_is_replayed_without_verifying_again()
     {
         var adapter = new SingleUseAdapter();
-        await using var host = await TestHost.StartAsync(services: s => s.AddSingleton<IIdentityProviderAdapter>(adapter));
+        await using var host = await SampleTestHost.StartAsync(services: s => s.AddSingleton<IIdentityProviderAdapter>(adapter));
         var guest = await host.Client().LoginAsync(IdentityHttp.NewLocalId(), IdentityHttp.NewSecret());
         var requestId = ProtobufHttp.NewRequestId();
         var body = new LinkIdentityRequest { Credential = Acme("user-1") };
@@ -93,7 +93,7 @@ public sealed class ProviderExtensionTests
     public async Task Slow_providers_hit_the_deadline_and_the_bulkhead_instead_of_holding_requests()
     {
         var slow = new SlowAdapter();
-        await using var host = await TestHost.StartAsync(
+        await using var host = await SampleTestHost.StartAsync(
             settings: s =>
             {
                 s["Identity:Providers:TimeoutSeconds"] = "1";
@@ -116,7 +116,7 @@ public sealed class ProviderExtensionTests
     [Fact]
     public async Task Provider_http_client_does_not_follow_redirects()
     {
-        await using var host = await TestHost.StartAsync();
+        await using var host = await SampleTestHost.StartAsync();
         HttpMessageHandler handler = host.Services.GetRequiredService<IHttpMessageHandlerFactory>().CreateHandler(IdentityProviders.HttpClientName);
         while (handler is DelegatingHandler delegating)
         {
@@ -129,10 +129,10 @@ public sealed class ProviderExtensionTests
     [Fact]
     public async Task Fakes_are_on_by_default_only_in_development()
     {
-        await using var test = await TestHost.StartAsync(settings: s => s["GameServer:DeploymentEnvironment"] = "Test");
+        await using var test = await SampleTestHost.StartAsync(settings: s => s["GameServer:DeploymentEnvironment"] = "Test");
         test.Services.GetRequiredService<IdentityProviders>().Names.ShouldBeEmpty();
 
-        await using var development = await TestHost.StartAsync();
+        await using var development = await SampleTestHost.StartAsync();
         development.Services.GetRequiredService<IdentityProviders>().Names.ShouldBe(["pgs", "gamecenter"], ignoreOrder: true);
     }
 
@@ -141,7 +141,7 @@ public sealed class ProviderExtensionTests
     {
         var ex = await Should.ThrowAsync<GameServerStartupException>(async () =>
         {
-            await using var host = await TestHost.StartAsync(services: s =>
+            await using var host = await SampleTestHost.StartAsync(services: s =>
             {
                 s.AddSingleton<IIdentityProviderAdapter>(new SingleUseAdapter());
                 s.AddSingleton<IIdentityProviderAdapter>(new SingleUseAdapter());
@@ -156,12 +156,12 @@ public sealed class ProviderExtensionTests
     {
         (await Should.ThrowAsync<GameServerStartupException>(async () =>
         {
-            await using var host = await TestHost.StartAsync(services: s => s.AddSingleton<IIdentityProviderAdapter>(new FakeIdentityAdapter("pgs")));
+            await using var host = await SampleTestHost.StartAsync(services: s => s.AddSingleton<IIdentityProviderAdapter>(new FakeIdentityAdapter("pgs")));
         })).Message.ShouldContain("'pgs'");
 
         (await Should.ThrowAsync<GameServerStartupException>(async () =>
         {
-            await using var host = await TestHost.StartAsync(services: s => s.AddSingleton<IIdentityProviderAdapter>(new FakeIdentityAdapter("guest")));
+            await using var host = await SampleTestHost.StartAsync(services: s => s.AddSingleton<IIdentityProviderAdapter>(new FakeIdentityAdapter("guest")));
         })).Message.ShouldContain("invalid name 'guest'");
     }
 
@@ -179,7 +179,7 @@ public sealed class ProviderExtensionTests
     {
         var ex = await Should.ThrowAsync<Exception>(async () =>
         {
-            await using var host = await TestHost.StartAsync(settings: s =>
+            await using var host = await SampleTestHost.StartAsync(settings: s =>
             {
                 s[key] = value;
                 s["GameServer:DeploymentEnvironment"] = environment;

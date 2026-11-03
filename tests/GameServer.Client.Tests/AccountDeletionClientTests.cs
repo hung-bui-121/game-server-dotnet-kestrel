@@ -27,7 +27,7 @@ public sealed class AccountDeletionClientTests
     [Fact]
     public async Task Ok_clears_the_session_and_sections_and_raises_account_blocked_with_the_purge_date()
     {
-        await using var host = await TestHost.StartAsync();
+        await using var host = await SampleTestHost.StartAsync();
         var (client, _) = NewClient(host);
         var (localId, secret) = SdkHarness.NewDevice();
         await client.LoginGuestAsync(localId, secret);
@@ -54,7 +54,7 @@ public sealed class AccountDeletionClientTests
     [Fact]
     public async Task A_lost_response_is_retried_and_account_deleted_means_committed()
     {
-        await using var host = await TestHost.StartAsync();
+        await using var host = await SampleTestHost.StartAsync();
         var (client, transport) = NewClient(host);
         var (localId, secret) = SdkHarness.NewDevice();
         await client.LoginGuestAsync(localId, secret);

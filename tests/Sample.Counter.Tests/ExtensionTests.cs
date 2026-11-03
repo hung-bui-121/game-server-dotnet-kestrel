@@ -23,7 +23,7 @@ public sealed class ExtensionTests
     [Fact]
     public async Task Default_policy_limits_increment_to_ten()
     {
-        await using var host = await TestHost.StartAsync();
+        await using var host = await SampleTestHost.StartAsync();
 
         (await IncrementAsync(host.PlayerClient("p1"), 50)).Code.ShouldBe("COUNTER_LIMIT_EXCEEDED");
     }
@@ -31,7 +31,7 @@ public sealed class ExtensionTests
     [Fact]
     public async Task Game_can_replace_the_policy()
     {
-        await using var host = await TestHost.StartAsync(b => b
+        await using var host = await SampleTestHost.StartAsync(b => b
             .AddModule<IdentityModule>()
             .AddModule<CounterModule>()
             .ConfigureExtensions(x => x.ReplacePolicy<ICounterLimitPolicy, GenerousPolicy>()));
@@ -45,7 +45,7 @@ public sealed class ExtensionTests
     [Fact]
     public async Task Game_can_replace_the_handler_and_keeps_idempotency()
     {
-        await using var host = await TestHost.StartAsync(b => b
+        await using var host = await SampleTestHost.StartAsync(b => b
             .AddModule<IdentityModule>()
             .AddModule<CounterModule>()
             .ConfigureExtensions(x => x.ReplaceHandler<IncrementCommand, IncrementResult, DoublingHandler>(IncrementHandler.Operation)));
@@ -63,7 +63,7 @@ public sealed class ExtensionTests
     [Fact]
     public async Task Service_only_module_maps_no_endpoint_but_its_service_works()
     {
-        await using var host = await TestHost.StartAsync(b => b
+        await using var host = await SampleTestHost.StartAsync(b => b
             .AddModule<IdentityModule>()
             .AddModule<CounterModule>(m => m.ServiceOnly()));
 

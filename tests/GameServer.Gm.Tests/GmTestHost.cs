@@ -21,7 +21,7 @@ public static class GmTestHost
         GameServer.Platform.Testing.InMemoryDocumentStore? store = null,
         GameServer.Platform.Testing.FakeClock? clock = null,
         Action<Microsoft.Extensions.DependencyInjection.IServiceCollection>? services = null) =>
-        TestHost.StartAsync(
+        SampleTestHost.StartAsync(
             b => GameHttp.FullGame(b.AddModule<GmModule>()),
             values =>
             {

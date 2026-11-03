@@ -14,7 +14,7 @@ public sealed class AccountStateTests : IAsyncLifetime
 {
     private TestHost _host = null!;
 
-    public async ValueTask InitializeAsync() => _host = await TestHost.StartAsync();
+    public async ValueTask InitializeAsync() => _host = await SampleTestHost.StartAsync();
 
     public async ValueTask DisposeAsync() => await _host.DisposeAsync();
 

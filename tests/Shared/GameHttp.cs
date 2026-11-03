@@ -92,7 +92,7 @@ public static class GameHttp
         GameServer.Platform.Testing.InMemoryDocumentStore? store = null,
         GameServer.Platform.Testing.FakeClock? clock = null,
         Action<GameServerBuilder>? extra = null) =>
-        TestHost.StartAsync(
+        SampleTestHost.StartAsync(
             modules: b =>
             {
                 FullGame(b);

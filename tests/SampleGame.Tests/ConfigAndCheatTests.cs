@@ -75,7 +75,7 @@ public sealed class ConfigAndCheatTests
     {
         var ex = await Should.ThrowAsync<GameServerStartupException>(async () =>
         {
-            await using var host = await TestHost.StartAsync(
+            await using var host = await SampleTestHost.StartAsync(
                 modules: b =>
                 {
                     GameHttp.FullGame(b);
@@ -106,7 +106,7 @@ public sealed class ConfigAndCheatTests
     {
         var ex = await Should.ThrowAsync<GameServerStartupException>(async () =>
         {
-            await using var host = await TestHost.StartAsync(
+            await using var host = await SampleTestHost.StartAsync(
                 modules: GameHttp.FullGame,
                 settings: s =>
                 {

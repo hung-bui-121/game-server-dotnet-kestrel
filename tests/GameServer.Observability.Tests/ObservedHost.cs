@@ -74,7 +74,7 @@ public sealed class ObservedHost : IAsyncDisposable
         List<Activity> activities,
         List<MetricSnapshot> metrics,
         Action<GameServerBuilder>? extra) =>
-        TestHost.StartAsync(
+        SampleTestHost.StartAsync(
             b =>
             {
                 GameHttp.FullGame(b.AddModule<GmModule>());

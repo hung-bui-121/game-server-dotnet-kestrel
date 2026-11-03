@@ -3,7 +3,7 @@ using GameServer.Modules.Identity;
 using GameServer.Modules.Identity.Protocol.V1;
 using Google.Protobuf;
 
-namespace GameServer.Tests.Shared;
+namespace GameServer.TestKit;
 
 /// <summary>Guest login helpers for HTTP tests.</summary>
 public static class IdentityHttp

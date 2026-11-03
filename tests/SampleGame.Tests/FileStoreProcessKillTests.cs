@@ -94,7 +94,7 @@ public sealed class FileStoreProcessKillTests : IDisposable
     /// <summary>Reopens the folder, checks it and returns the number of committed receipts.</summary>
     private async Task<int> AssertAllOrNothingAsync(int kill)
     {
-        using var reopened = TestStores.CreateFileStore(Folder, "sample", new GameServer.Time.SystemClock(), NullLogger<FileDocumentStore>.Instance);
+        using var reopened = FileStoreTestSupport.Create(Folder, "sample", new GameServer.Time.SystemClock(), NullLogger<FileDocumentStore>.Instance);
         await reopened.EnsureInitializedAsync(CancellationToken.None);
         var store = reopened.Store;
 

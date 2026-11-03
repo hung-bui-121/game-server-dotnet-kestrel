@@ -14,7 +14,7 @@ public sealed class LoginLimitAndSchemeTests
     [Fact]
     public async Task Eleventh_login_per_minute_for_one_local_id_is_429()
     {
-        await using var host = await TestHost.StartAsync();
+        await using var host = await SampleTestHost.StartAsync();
         var localId = IdentityHttp.NewLocalId();
         var secret = IdentityHttp.NewSecret();
         for (var i = 0; i < 10; i++)
@@ -34,7 +34,7 @@ public sealed class LoginLimitAndSchemeTests
     [Fact]
     public async Task Sixty_failures_per_minute_from_one_ip_block_further_logins()
     {
-        await using var host = await TestHost.StartAsync();
+        await using var host = await SampleTestHost.StartAsync();
         // Spread failures so no localId exceeds its own 10/min limit first (creation login + at most 9 failures each).
         var victims = Enumerable.Range(0, 7).Select(_ => (Id: IdentityHttp.NewLocalId(), Secret: IdentityHttp.NewSecret())).ToArray();
         foreach (var victim in victims)
@@ -66,7 +66,7 @@ public sealed class LoginLimitAndSchemeTests
         };
         listener.SetMeasurementEventCallback<long>((_, value, _, _) => warnings.Enqueue(value));
         listener.Start();
-        await using var host = await TestHost.StartAsync(settings: s => s["Identity:LoginPerIpWarnPerMinute"] = "50");
+        await using var host = await SampleTestHost.StartAsync(settings: s => s["Identity:LoginPerIpWarnPerMinute"] = "50");
 
         for (var i = 0; i < 100; i++)
         {
@@ -79,7 +79,7 @@ public sealed class LoginLimitAndSchemeTests
     [Fact]
     public async Task Player_token_is_rejected_on_gm_api_and_gm_identity_on_player_api()
     {
-        await using var host = await TestHost.StartAsync();
+        await using var host = await SampleTestHost.StartAsync();
         var login = await host.Client().LoginAsync(IdentityHttp.NewLocalId(), IdentityHttp.NewSecret());
 
         var playerOnGm = await host.BearerClient(login.SessionToken).GetAsync($"/gm/v1/counter/{login.PlayerId}");

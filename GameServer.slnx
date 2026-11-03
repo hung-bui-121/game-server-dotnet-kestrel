@@ -50,4 +50,9 @@
     <Project Path="tests/Sample.Counter.Tests/Sample.Counter.Tests.csproj" />
     <Project Path="tests/SampleGame.Tests/SampleGame.Tests.csproj" />
   </Folder>
+  <Folder Name="/tests/ConsumerFixture/">
+    <Project Path="tests/ConsumerFixture/src/Fixture.Game/Fixture.Game.csproj" />
+    <Project Path="tests/ConsumerFixture/src/Fixture.Host/Fixture.Host.csproj" />
+    <Project Path="tests/ConsumerFixture/tests/Fixture.Tests/Fixture.Tests.csproj" />
+  </Folder>
 </Solution>

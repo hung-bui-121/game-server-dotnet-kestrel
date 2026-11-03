@@ -357,7 +357,7 @@ public sealed class CouchbaseSettingsTests
     [Fact]
     public async Task A_host_reports_missing_couchbase_settings_in_the_startup_report_instead_of_throwing_at_registration()
     {
-        var ex = await Should.ThrowAsync<GameServerStartupException>(() => TestHost.StartAsync(
+        var ex = await Should.ThrowAsync<GameServerStartupException>(() => SampleTestHost.StartAsync(
             b => b.AddModule<IdentityModule>().AddModule<CounterModule>(),
             s => s["GameServer:Store"] = nameof(StoreKind.Couchbase),
             services: s => s.AddCouchbaseDocumentStore(new CouchbaseOptions())));

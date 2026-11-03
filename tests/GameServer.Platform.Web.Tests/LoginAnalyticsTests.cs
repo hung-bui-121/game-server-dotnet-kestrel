@@ -34,7 +34,7 @@ public sealed class LoginAnalyticsTests
     private static readonly DateTimeOffset Evening = new(2026, 10, 30, 16, 0, 0, TimeSpan.Zero);
 
     private static Task<TestHost> StartAsync(Action<Dictionary<string, string?>>? settings = null, Action<IServiceCollection>? services = null) =>
-        TestHost.StartAsync(
+        SampleTestHost.StartAsync(
             settings: s =>
             {
                 s["GameServer:Analytics:TimeZone"] = Zone;
@@ -274,7 +274,7 @@ public sealed class LoginAnalyticsTests
         clock.Set(Evening);
         var login = await a.Client().LoginAsync(IdentityHttp.NewLocalId(), IdentityHttp.NewSecret());
         clock.Advance(TimeSpan.FromDays(1));
-        await using (var b = await TestHost.StartAsync(settings: s => s["GameServer:Analytics:TimeZone"] = Zone, store: a.Store, clock: clock))
+        await using (var b = await SampleTestHost.StartAsync(settings: s => s["GameServer:Analytics:TimeZone"] = Zone, store: a.Store, clock: clock))
         {
             for (var i = 0; i < 3; i++)
             {
@@ -287,7 +287,7 @@ public sealed class LoginAnalyticsTests
         }
 
         // "Restart": a new instance on the same day forgot the set.
-        await using var restarted = await TestHost.StartAsync(settings: s => s["GameServer:Analytics:TimeZone"] = Zone, store: a.Store, clock: clock);
+        await using var restarted = await SampleTestHost.StartAsync(settings: s => s["GameServer:Analytics:TimeZone"] = Zone, store: a.Store, clock: clock);
         (await SnapshotAsync(restarted, login.SessionToken)).StatusCode.ShouldBe(HttpStatusCode.OK);
         (await SnapshotAsync(restarted, login.SessionToken)).StatusCode.ShouldBe(HttpStatusCode.OK);
         (await RecordsAsync(restarted, "resume", login.PlayerId)).Count.ShouldBe(1);

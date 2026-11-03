@@ -28,7 +28,7 @@ public sealed class ProviderClientTests
     [Fact]
     public async Task Link_then_reinstall_login_returns_the_same_player()
     {
-        await using var host = await TestHost.StartAsync(GameHttp.FullGame);
+        await using var host = await SampleTestHost.StartAsync(GameHttp.FullGame);
         var id = "g" + Guid.NewGuid().ToString("N")[..16];
         var (phone, _, _) = NewClient(host);
         var (localId, secret) = SdkHarness.NewDevice();
@@ -51,7 +51,7 @@ public sealed class ProviderClientTests
     [Fact]
     public async Task Switch_account_keeps_the_session_until_the_player_confirms()
     {
-        await using var host = await TestHost.StartAsync(GameHttp.FullGame);
+        await using var host = await SampleTestHost.StartAsync(GameHttp.FullGame);
         var id = "g" + Guid.NewGuid().ToString("N")[..16];
         var (owner, _, _) = NewClient(host);
         var (ownerLocal, ownerSecret) = SdkHarness.NewDevice();
@@ -82,7 +82,7 @@ public sealed class ProviderClientTests
     [Fact]
     public async Task Errors_about_the_target_account_keep_the_current_session()
     {
-        await using var host = await TestHost.StartAsync(GameHttp.FullGame);
+        await using var host = await SampleTestHost.StartAsync(GameHttp.FullGame);
         var id = "g" + Guid.NewGuid().ToString("N")[..16];
         var (owner, _, _) = NewClient(host);
         var (ownerLocal, ownerSecret) = SdkHarness.NewDevice();
@@ -108,7 +108,7 @@ public sealed class ProviderClientTests
     [Fact]
     public async Task Identity_of_another_player_is_reported_as_a_conflict()
     {
-        await using var host = await TestHost.StartAsync(GameHttp.FullGame);
+        await using var host = await SampleTestHost.StartAsync(GameHttp.FullGame);
         var id = "g" + Guid.NewGuid().ToString("N")[..16];
         var (owner, _, _) = NewClient(host);
         var (ownerLocal, ownerSecret) = SdkHarness.NewDevice();

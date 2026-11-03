@@ -189,7 +189,7 @@ public sealed class GameServerCommandLineTests
         await File.WriteAllTextAsync(file, """{ "Couchbase": { "Password": "from-a-file" } }""");
         try
         {
-            var app = TestHost.BuildApp(
+            var app = SampleTestHost.BuildApp(
                 settings: s => s["GameServer:DeploymentEnvironment"] = "Production",
                 testAuthentication: false,
                 services: s => s.AddSingleton<IStoreProvisioner>(provisioner));
@@ -223,7 +223,7 @@ public sealed class GameServerCommandLineTests
             },
             b =>
             {
-                TestHost.DefaultModules(b);
+                SampleTestHost.DefaultModules(b);
                 b.AddModule<EconomyModule>().AddModule<CheatModule>();
             });
 
@@ -246,10 +246,10 @@ public sealed class GameServerCommandLineTests
 
         var serve = await Should.ThrowAsync<GameServerStartupException>(async () =>
         {
-            await using var host = await TestHost.StartAsync(services: Checks);
+            await using var host = await SampleTestHost.StartAsync(services: Checks);
         });
         var provisioner = new FakeProvisioner();
-        var (code, _, error) = await RunProvisionAsync(TestHost.BuildApp(services: s =>
+        var (code, _, error) = await RunProvisionAsync(SampleTestHost.BuildApp(services: s =>
         {
             Checks(s);
             s.AddSingleton<IStoreProvisioner>(provisioner);
@@ -283,7 +283,7 @@ public sealed class GameServerCommandLineTests
     [Fact]
     public async Task Provisioning_without_a_couchbase_store_exits_1()
     {
-        var app = TestHost.BuildApp(testAuthentication: false);
+        var app = SampleTestHost.BuildApp(testAuthentication: false);
         var (code, _, error) = await RunProvisionAsync(app);
 
         code.ShouldBe(HostExitCodes.InvalidConfiguration);
@@ -293,7 +293,7 @@ public sealed class GameServerCommandLineTests
     [Fact]
     public async Task Serve_mode_maps_a_startup_error_to_exit_1()
     {
-        await using var app = TestHost.BuildApp(settings: s => s["GameServer:DeploymentEnvironment"] = "Staging");
+        await using var app = SampleTestHost.BuildApp(settings: s => s["GameServer:DeploymentEnvironment"] = "Staging");
         var error = new StringWriter();
 
         var code = await GameServerRunExtensions.ServeAsync(app, error);
@@ -340,7 +340,7 @@ public sealed class GameServerCommandLineTests
         FakeProvisioner provisioner,
         Action<Dictionary<string, string?>>? settings = null,
         Action<GameServerBuilder>? modules = null) =>
-        RunProvisionAsync(TestHost.BuildApp(
+        RunProvisionAsync(SampleTestHost.BuildApp(
             modules: modules,
             settings: settings,
             testAuthentication: false,

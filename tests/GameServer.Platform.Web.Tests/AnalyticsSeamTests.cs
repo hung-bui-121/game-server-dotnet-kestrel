@@ -27,7 +27,7 @@ public sealed class AnalyticsSeamTests
     private const string Route = "/api/v1/test/seam-emit";
 
     private static Task<TestHost> StartAsync(InMemoryAnalyticsSink second) =>
-        TestHost.StartAsync(
+        SampleTestHost.StartAsync(
             modules: b =>
             {
                 GameHttp.FullGame(b);
@@ -85,7 +85,7 @@ public sealed class AnalyticsSeamTests
     {
         var ex = await Should.ThrowAsync<GameServerStartupException>(async () =>
         {
-            await using var host = await TestHost.StartAsync(services: s => s.AddSingleton<IOutboxConsumer>(new NoopConsumer(AnalyticsOutbox.Kind)));
+            await using var host = await SampleTestHost.StartAsync(services: s => s.AddSingleton<IOutboxConsumer>(new NoopConsumer(AnalyticsOutbox.Kind)));
         });
 
         ex.Message.ShouldContain("two consumers handle kind 'analytics'");
@@ -96,7 +96,7 @@ public sealed class AnalyticsSeamTests
     {
         var ex = await Should.ThrowAsync<GameServerStartupException>(async () =>
         {
-            await using var host = await TestHost.StartAsync(
+            await using var host = await SampleTestHost.StartAsync(
                 settings: s => s["GameServer:Analytics:QueueCapacity"] = "5",
                 services: s => s.AddSingleton<IOutboxConsumer>(new NoopConsumer(AnalyticsOutbox.Kind)));
         });
@@ -110,7 +110,7 @@ public sealed class AnalyticsSeamTests
     {
         var ex = await Should.ThrowAsync<GameServerStartupException>(async () =>
         {
-            await using var host = await TestHost.StartAsync(modules: b => TestHost.DefaultModules(b.AddModule(new ProjectionModule())));
+            await using var host = await SampleTestHost.StartAsync(modules: b => SampleTestHost.DefaultModules(b.AddModule(new ProjectionModule())));
         });
 
         ex.Message.ShouldContain("two consumers handle kind 'analytics'");

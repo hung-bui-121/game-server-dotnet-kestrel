@@ -324,14 +324,17 @@ Depends on: Phase 2 (T008, T009). Code moved from `tests/Shared` into `src/` bec
 `AnalysisLevel latest-recommended`, `TreatWarningsAsErrors` and `BannedSymbols.txt` (no `DateTime.UtcNow`, `.Result`,
 `.Wait()`) now apply to it — fix analyzer findings without changing behaviour and list them in a Note.
 
-- [ ] T020 [P] [US2] `TestGameConfig` in a new file `src/GameServer.TestKit/TestGameConfig.cs` (research R10, D10):
+- [X] T020 [P] [US2] `TestGameConfig` in a new file `src/GameServer.TestKit/TestGameConfig.cs` (research R10, D10):
   `Empty` (label `test`, no files), `FromJson(files, label, clientVisible)` (version via
   `FileGameConfigLoader.ComputeVersion`), `FromDirectory(configRoot, deploymentEnvironment)` (the loader itself).
   Tests in a new file `tests/GameServer.Platform.Web.Tests/TestGameConfigTests.cs`: `FromJson` and a host loading the
   same bytes from disk report the same `ConfigVersion`; `clientVisible` honoured; `FromDirectory` overlay
   `base` + `env/{environment}` equals the host's view of `tests/Shared/config`.
   Done when: green. (FR-021, 015 seam)
-- [ ] T021 [US2] Move `tests/Shared/ProtobufHttp.cs`, `IdentityHttp.cs`, `TestStores.cs`, `GmBrowser.cs` into
+  Note: `src/GameServer.TestKit/TestGameConfig.cs` builds real `GameConfig`s (`FromJson` rejects a client-visible name that
+  is not a given file); 5 tests in `TestGameConfigTests` green (kit host on disk = `FromJson`, overlay `base` + `env/Development`
+  = host, sample config = `SampleTestHost` host).
+- [X] T021 [US2] Move `tests/Shared/ProtobufHttp.cs`, `IdentityHttp.cs`, `TestStores.cs`, `GmBrowser.cs` into
   `src/GameServer.TestKit/` (namespace `GameServer.TestKit`; research R7 table; contracts/public-api.md §6.1):
   `TestStores.CreateFileStore` becomes `internal` (FR-014); `GmBrowser` keeps both `TestServer` and `TestHost` overloads
   (the `TestHost` overloads compile once T022 lands — move `GmBrowser.cs` in T022 if needed). New
@@ -340,7 +343,12 @@ Depends on: Phase 2 (T008, T009). Code moved from `tests/Shared` into `src/` bec
   `tests/SampleGame.Tests/FileStoreProcessKillTests.cs:97`.
   Done when: the kit builds with 0 warnings under the framework analyzers; analyzer fixes listed in a Note.
   (FR-010, FR-011, FR-014, BC-4)
-- [ ] T022 [US2] Kit `TestHost` + `CapturedLog` in `src/GameServer.TestKit/TestHost.cs` and `CapturedLog.cs` (after
+  Note: moved with `git mv` (history kept), namespace `GameServer.TestKit`; `TestStores.CreateFileStore` internal;
+  `FileStoreTestSupport.Create` replaces it in `FileStoreHostTests.cs:26` and `FileStoreProcessKillTests.cs:97`. Analyzer
+  fixes in the kit (framework rules now apply): CA1859 `TestHost.RemoveFlavorFile` takes `ConfigurationManager` instead of
+  `IConfigurationBuilder` (the only finding in the moved code); CA1816 `LocalFlavorFactory.DisposeAsync` calls
+  `GC.SuppressFinalize` (T026). No suppression added.
+- [X] T022 [US2] Kit `TestHost` + `CapturedLog` in `src/GameServer.TestKit/TestHost.cs` and `CapturedLog.cs` (after
   T020, T021; moved from `tests/Shared/TestHost.cs`; plan "Kit TestHost", data-model §3.5): default modules Identity
   only (`DefaultModules`), game config = `config` argument → `GameServer:ConfigPath` setting → `TestGameConfig.Empty`;
   new optional last parameter `IGameConfig? config` on `StartAsync`/`BuildApp`; structured `LogEntries` (category, level,
@@ -349,7 +357,12 @@ Depends on: Phase 2 (T008, T009). Code moved from `tests/Shared` into `src/` bec
   `GAMESERVER_TEST_STORE`, in-memory analytics sink, test authentication, `beforeUseGameServer`/`afterUseGameServer`,
   `services`, `environmentName`, `storeKind`).
   Done when: the kit builds with 0 warnings and depends on no `Sample.*`/`SampleGame` assembly. (FR-011)
-- [ ] T023 [US2] Framework-only support in `tests/Shared/` (after T022; research R7, public-api §7): new
+  Note: log capture split into internal `LogCapture.cs` (formatted `Logs` unchanged, `LogEntries` = `CapturedLog` with the
+  `IReadOnlyList<KeyValuePair<string, object?>>` state incl. `{OriginalFormat}`); the file store's own logger feeds both.
+  The config decision reads the test's settings dictionary only: a host `appsettings.json` copied into the test output
+  (`ConfigPath: config`, SampleHost or any game host) never switches a kit host to files. The kit references no
+  `Sample.*`/`SampleGame` assembly (T032 rule).
+- [X] T023 [US2] Framework-only support in `tests/Shared/` (after T022; research R7, public-api §7): new
   `SampleTestHost.cs` (namespace `GameServer.Tests.Shared`; `StartAsync`/`BuildApp`/`DefaultSettings`/`DefaultModules`
   forwarding to the kit with the old defaults: Identity + `CounterModule`, `GameServer:ConfigPath` =
   `{BaseDirectory}/config`, every other parameter passed through), new `GlobalUsings.cs`
@@ -360,7 +373,9 @@ Depends on: Phase 2 (T008, T009). Code moved from `tests/Shared` into `src/` bec
   `Sample.Counter.Tests`, `SampleGame.Tests` (`*.csproj`).
   Done when: `tests/Shared` holds only `GameHttp.cs`, `SampleTestHost.cs`, `FileStoreTestSupport.cs`, `GlobalUsings.cs`
   and `config/`. (FR-013, SD12)
-- [ ] T024 [US2] Mechanical rename of the framework call sites (after T023; plan D7, SD12, risk "rename"):
+  Note: `tests/Shared` = `GameHttp.cs`, `SampleTestHost.cs`, `FileStoreTestSupport.cs`, `GlobalUsings.cs`, `config/`. The kit
+  `ProjectReference` is in the 7 projects; they keep `<Compile Include="../Shared/*.cs">`.
+- [X] T024 [US2] Mechanical rename of the framework call sites (after T023; plan D7, SD12, risk "rename"):
   - Rename **only** the static calls matching `(?<![\w.])TestHost\.(StartAsync|BuildApp|DefaultSettings|DefaultModules)\b`
     to `SampleTestHost.$1` in `tests/**/*.cs` (outside `tests/Shared/SampleTestHost.cs`). Measured on `fea3d29`: 102 sites
     in 35 files (89 `StartAsync`, 5 `BuildApp`, 1 `DefaultSettings`, 7 `DefaultModules`) — plus the new US1 test files.
@@ -374,13 +389,22 @@ Depends on: Phase 2 (T008, T009). Code moved from `tests/Shared` into `src/` bec
   `GameServer.Tests.Shared.TestHost`, `GameServer.Tests.Shared.ProtobufHttp` (etc.) fully qualified name remains;
   (5) full suite in memory and with `GAMESERVER_TEST_STORE=File` green with the same counts as T019 (no test lost).
   (FR-013)
-- [ ] T025 [US2] Kit host tests in a new file `tests/GameServer.Platform.Web.Tests/TestKitHostTests.cs` (after T024):
+  Note: rename by script (regex of this task, `tests/**/*.cs`, `SampleTestHost.cs` excluded): **111 occurrences in 39
+  files** (97 `StartAsync`, 5 `BuildApp`, 1 `DefaultSettings`, 8 `DefaultModules`). The plan's "102 in 35" is a *line*
+  count at `fea3d29` (`git grep -c` = 102 lines in 36 files, 103 occurrences: one line has two calls); + 8 sites in the
+  US1 test files = 111. After: regex 0 hits, `GmTestHost.StartAsync(` 20 sites, 0 fully qualified
+  `GameServer.Tests.Shared.{TestHost,ProtobufHttp,IdentityHttp,TestStores,TestStoreKind,GmBrowser,CookieJarHandler}`.
+  Debug and Release 0 warnings; suite 1261/1176/85/0 in memory and with `GAMESERVER_TEST_STORE=File` (= T019). The
+  later kit tests (T020, T025, T031) call the kit `TestHost` directly on purpose (11 hits, all in those new files).
+- [X] T025 [US2] Kit host tests in a new file `tests/GameServer.Platform.Web.Tests/TestKitHostTests.cs` (after T024):
   kit `TestHost.StartAsync()` without arguments → only Identity routes (`/api/v1/counter/*` is 404), config label `test`
   and empty; `config:` argument wins over `GameServer:ConfigPath`; `storeKind: File` and `GAMESERVER_TEST_STORE=File` →
   file store in a temp folder deleted on dispose; `LogEntries` carries category, level, event id and properties of a
   structured log call; two hosts sharing store and clock see each other's writes.
   Done when: green. (FR-011, US2-2)
-- [ ] T026 [US2] `LocalFlavorFactory<TEntryPoint>`, `LocalFlavorOptions`, `LocalFlavorSettings` in new files
+  Note: 6 tests (`TestKitHostTests` 5 + `TestKitHostStoreVariableTests` 1). The `GAMESERVER_TEST_STORE` case sets the
+  process-wide variable, so it runs in its own `DisableParallelization` collection and restores the previous value.
+- [X] T026 [US2] `LocalFlavorFactory<TEntryPoint>`, `LocalFlavorOptions`, `LocalFlavorSettings` in new files
   `src/GameServer.TestKit/LocalFlavorFactory.cs` and `LocalFlavorSettings.cs` (after T004 V4/V7; research R8, D8,
   data-model §3.4, public-api §6.3): one root `%TEMP%/gs-local-{guid}` with `data/`, `analytics/`, `logs/`; instance id
   `lf-{8 hex}`; `UseEnvironment(options.Environment)` (default `Local`); the 8 keys of data-model §3.4 through
@@ -388,7 +412,16 @@ Depends on: Phase 2 (T008, T009). Code moved from `tests/Shared` into `src/` bec
   `AppliedSettings`; `DisposeAsync` disposes the host first (releases file-store and analytics locks), then deletes the
   root with `TestStores.DeleteFolder` retries; `options.Folder` → reuse, never delete.
   Done when: builds with 0 warnings; T027 and T028 cover it. (FR-012, SD6)
-- [ ] T027 [US2] `tests/Sample.Counter.Tests/SampleHostSmokeTests.cs` on `LocalFlavorFactory<Program>` (after T026;
+  Note: new `LocalFlavorOptions.cs` besides the two named files (one type per file). `LocalFlavorSettings.Keys` holds the
+  **7 FR-012 keys**: `Observability:Logging:Console:Enabled` binds to nothing until `ConsoleLoggingSettings` exists, so
+  T028's binding rule would fail; T043 adds it (note there). Deviation from "`TestStores.DeleteFolder` retries":
+  measured under load (4 parallel `Sample.Counter.Tests` runs + fixture, File store) the root's log file was still open
+  after `WebApplicationFactory.DisposeAsync` returned (with minimal hosting the entry point's `RunAsync` disposes the
+  same host on its own thread, and the losing disposer returns at once), and the 5 x 50 ms retries left 1-3
+  `gs-local-*/logs/*.log` behind (also once in a full-suite File run). The factory now waits for the release itself
+  (`DeleteRootAsync`, async, 100 x 50 ms) and throws `IOException` naming the root if a file is still open after 5 s (a
+  real leak fails the test instead of littering `%TEMP%`); same stress loop afterwards: 0 left. `TestStores` unchanged.
+- [X] T027 [US2] `tests/Sample.Counter.Tests/SampleHostSmokeTests.cs` on `LocalFlavorFactory<Program>` (after T026;
   plan US2): remove the hand-written settings (6 of 7 today, no `Observability:Logging:Directory`); keep every existing
   case (including the outbox-sweeper case via `OutboxSweeper = true` and the restart case through `Folder`); new cases:
   two factories in parallel → distinct roots and instance ids; after dispose the root is gone; after a guest login,
@@ -396,13 +429,20 @@ Depends on: Phase 2 (T008, T009). Code moved from `tests/Shared` into `src/` bec
   (`data/`, `analytics/`, `logs/`, `*.jsonl`, `*.log`).
   Done when: green, also when run in parallel with `SampleHostConfigurationFileTests` and `SampleHostEntryPointTests`.
   (FR-012, FR-013, US2-3, edge cases "factory settings win", "two factories in parallel")
-- [ ] T028 [US2] `tests/GameServer.Platform.Web.Tests/LocalFlavorSettingsTests.cs` (after T026): every key of
+  Note: 8 cases green (5 kept + 3 new); restart/GM/analytics cases share one `Folder` root (kept by the factories,
+  deleted by the class). The "nothing outside" case searches the sample content root (bin/obj skipped),
+  `samples/_database` and the test output for files named with the factory's instance id or the player id (both proven
+  present inside the root first) and requires no `data`/`analytics`/`logs` folder and no `*.jsonl`/`*.log` in the test
+  output. Green when run at the same time as `SampleHostConfigurationFileTests` (34) and `SampleHostEntryPointTests` (4).
+- [X] T028 [US2] `tests/GameServer.Platform.Web.Tests/LocalFlavorSettingsTests.cs` (after T026): every key of
   `LocalFlavorSettings.Keys` binds to a property of `GameServerOptions`, `FileStoreOptions`, `AnalyticsOptions` or
   `ObservabilityOptions` (walk like the configuration binder, as `DocumentedConfigurationKeysTests` does); `For(...)`
   sets exactly those keys; `outboxSweeper: true` flips only the sweeper. The "named in the consumer guide" assertion is
   added by T070.
   Done when: green; adding a bogus key to the list fails the test (verified, reverted). (FR-012)
-- [ ] T029 [US2] `CommandContextDouble` + `RecordedWrite` + `RecordedClaim` + internal `DetachedTransaction` in new files
+  Note: 8 tests green. Verified: appending `"GameServer:Bogus:Key"` to `Keys` fails `Every_key_binds_to_an_option_property`
+  and `For_sets_exactly_the_listed_keys_under_the_root`; reverted. The walk also has permanent negative cases (5 keys).
+- [X] T029 [US2] `CommandContextDouble` + `RecordedWrite` + `RecordedClaim` + internal `DetachedTransaction` in new files
   `src/GameServer.TestKit/CommandContextDouble.cs`, `RecordedWrite.cs`, `RecordedClaim.cs`, `DetachedTransaction.cs`
   (after T008, T020; research R9, D9, plan contract table, data-model §6, public-api §6.4): decorator over the internal
   `CommandContext` created lazily on the first `ICommandContext` call; registry from `Describe()` of the given modules;
@@ -417,7 +457,12 @@ Depends on: Phase 2 (T008, T009). Code moved from `tests/Shared` into `src/` bec
   outbox from the inner context incl. `AddAudit`/`AddAnalyticsEvent`, claims only when `TryClaimAsync` returned true);
   configuration methods throw after the first `ICommandContext` call; `CheckCommit(outcome)` via `CommitRules`.
   Done when: builds with 0 warnings; T030/T031 cover it. (FR-020, FR-021, FR-022, FR-023, FR-024, FR-025, FR-026)
-- [ ] T030 [US2] `tests/GameServer.Platform.Web.Tests/CommandContextDoubleTests.cs` (after T029): build errors (unknown
+  Note: kit builds with 0 warnings, no analyzer finding. Missing aggregates and seeds both go through the internal
+  `LoadedAggregate` constructor (no `AggregateDocumentSerializer` instance needed: it would need `PlatformMetrics`);
+  seeded state is stored as the canonical JSON of the state type (a copy, rev 1, `Exists`). `Writes` keep a copy
+  deserialized from the inner context's new state (later mutation of the handler's object does not change the record).
+  The default request id is private (not in public-api §6.4).
+- [X] T030 [US2] `tests/GameServer.Platform.Web.Tests/CommandContextDoubleTests.cs` (after T029): build errors (unknown
   operation, missing aggregate module); defaults (actor, `Now`, empty config, receipt id); seeds and their errors;
   missing aggregate → default state; `Set` then `Get` → new state; records in call order (writes, outbox kinds/payloads
   incl. one audit and one analytics entry added through the Core extension methods, claims with attributes); seeded
@@ -428,7 +473,9 @@ Depends on: Phase 2 (T008, T009). Code moved from `tests/Shared` into `src/` bec
   handler, before any commit check.
   Done when: green. (FR-020..FR-024, FR-026, US2-4, US2-5, US2-7, edge cases "built without descriptors",
   "Set then Get", "pre-existing claim")
-- [ ] T031 [US2] Conformance in a new file `tests/GameServer.Platform.Web.Tests/CommandContextConformanceTests.cs`
+  Note: 19 tests green; the probe module (`KitProbeModule.cs`, codes 24000-24099, aggregates `kit_notes`/`kit_ledger`/
+  `kit_other`, claim collection `kit_claims`) is shared with T031.
+- [X] T031 [US2] Conformance in a new file `tests/GameServer.Platform.Web.Tests/CommandContextConformanceTests.cs`
   (after T029, T024; research R9): a test module whose handler performs the violation chosen by the request — write
   outside Touches, read outside Touches ∪ Reads, wrong state type, claim over the limit, claim in `receipts`, claim in
   `pa_x`, duplicate claim in one run, pre-existing claim, `Set`→`Get` round trip — run through `ICommandRunner` on a kit
@@ -436,7 +483,11 @@ Depends on: Phase 2 (T008, T009). Code moved from `tests/Shared` into `src/` bec
   runner wraps handler failures in `GameServerException(INTERNAL)`), return values; `NewId`/`NewSeed` for 5 purposes × 5
   request ids identical between runner and double (and stable across two doubles with the same receipt id).
   Done when: green; ≥ 9 rule cases and 25 id/seed samples, 100% identical. (FR-023, FR-024, FR-025, US2-5, US2-6, SC-003)
-- [ ] T032 [US2] Architecture rules in `tests/GameServer.Architecture.Tests/ArchitectureTests.cs` and
+  Note: 10 tests green: 9 rule cases (each compares `Observed(threw, innermost InvalidOperationException type, message |
+  return value)` and asserts the 6 violation cases really throw) + 25 id/seed samples (5 request ids x 5 purposes, one
+  run each; a second double built only from `WithReceiptId` gives the same values). Pre-existing claim through the
+  runner: a committed `kit.save` claims the key first.
+- [X] T032 [US2] Architecture rules in `tests/GameServer.Architecture.Tests/ArchitectureTests.cs` and
   `tests/GameServer.Architecture.Tests/GameServer.Architecture.Tests.csproj` (after T029; plan "Module breakdown"):
   reference the kit project; add it to `AllFrameworkAndModules` with explicit exceptions for `ITransactionContext`
   (`DetachedTransaction`, line ~110 rule) and `FileDocumentStore` (kit-internal file store, line ~157 rule); new rules:
@@ -445,7 +496,16 @@ Depends on: Phase 2 (T008, T009). Code moved from `tests/Shared` into `src/` bec
   to `CommandContext`, the `LoadedAggregate` constructor and `CommitRules` (review rule, named in the test).
   Done when: green; a temporary kit reference from `samples/SampleHost` fails the rule (verified, reverted).
   (FR-010, FR-014)
-- [ ] T033 [US2] Consumer fixture `tests/ConsumerFixture/` (after T026, T029; research R17, D17): own
+  Note: rules in a new file `tests/GameServer.Architecture.Tests/TestKitArchitectureTests.cs` (3 tests) to keep
+  `ArchitectureTests.cs` at its size; the kit is in `AllFrameworkAndModules` with the named exceptions `DetachedTransaction`
+  (ITransactionContext rule) and `TestHost`/`TestStores` (file-store rule), exactly the 3 types the rules reported. Kit
+  dependencies: referenced assemblies + NetArchTest namespaces + the kit csproj (no xunit/Shouldly/Test.Sdk package, no
+  tests/samples/modules project). No non-test solution project (read from `GameServer.slnx`, no file-system walk over
+  `samples/`) references the kit. Internals: Mono.Cecil (via NetArchTest) lists every non-public Platform type/member the
+  kit's IL refers to; allowed = `CommandContext`, `CommitRules`, `LoadedAggregate::.ctor` (each must be seen).
+  Verified: a temporary kit `ProjectReference` in `samples/SampleHost/SampleHost.csproj` fails
+  `No_project_outside_tests_references_the_kit` naming it; reverted (git clean).
+- [X] T033 [US2] Consumer fixture `tests/ConsumerFixture/` (after T026, T029; research R17, D17): own
   `Directory.Build.props` (consumer style: name-based `IsTestProject` for `*.Tests`, analyzers, `TreatWarningsAsErrors`;
   defines `GameServerRoot` = the framework root) and `Directory.Packages.props` importing the framework's;
   `src/Fixture.Game` (module `fixture`, command `fixture.save`, aggregate `notes`, codes 50000–50099);
@@ -459,14 +519,33 @@ Depends on: Phase 2 (T008, T009). Code moved from `tests/Shared` into `src/` bec
   Done when: Release build 0 warnings; `Fixture.Tests` green; no `tests/Shared` link and no sample reference in the
   fixture (checked by a test in `Fixture.Tests` reading its own csproj, or by T032); `git status` shows no stray
   fixture data. (FR-010, FR-011, FR-013, US2-1, SC-002)
-- [ ] T034 [US2] Release notes: append FG-001 and FG-006 to "Fixed", BC-4 with the exact moved files, the removed
+  Note: `Fixture.Game` = business + adapter in one project (wire = `Google.Protobuf.WellKnownTypes.StringValue`, no proto
+  codegen; aggregate `notes` server-only; config `notes.json` rule `maxLength`, `RequiredConfigFiles`); `Fixture.Host`
+  Program = SampleHost's minus the sample modules (Identity + fixture; Couchbase/File/InMemory switch kept); the Local
+  flavor writes to `tests/ConsumerFixture/.local/{data,analytics,logs}` (gitignored). `Fixture.Tests`: 6 tests green
+  (handler + `CheckCommit` 4, factory smoke 1, own-csproj check 1); no direct `Mvc.Testing` reference (V4). Evaluated:
+  `Fixture.Game` `IsTestProject` empty and `AnalysisLevel` latest-recommended although under `tests/` (consumer props,
+  framework path rule bypassed). The very first solution build after adding the projects failed once in restore
+  (`NuGet.targets(198): Cannot create a file when that file already exists`); not reproduced on rebuild nor after
+  deleting the fixture `obj/bin`.
+- [X] T034 [US2] Release notes: append FG-001 and FG-006 to "Fixed", BC-4 with the exact moved files, the removed
   `TestStores.CreateFileStore`, the Identity-only default and the 6 migration steps of plan "Migration notes", and the
   FG-001/FG-006 rows of "Consumer workarounds now removable" in `specs/013-consumer-readiness/release-notes-draft.md`.
   Done when: BC-4 lists every moved file with its replacement. (FR-090, BC-4)
-- [ ] T035 [US2] US2 checkpoint: Debug and Release build 0 warnings; full suite in memory and with
+  Note: appended FG-001, FG-006 (Fixed), BC-4 (table of the 5 moved files and their replacements, `CreateFileStore`,
+  Identity-only default + empty config, 6 migration steps) and the FG-001/FG-006 rows of "Consumer workarounds now
+  removable".
+- [X] T035 [US2] US2 checkpoint: Debug and Release build 0 warnings; full suite in memory and with
   `GAMESERVER_TEST_STORE=File`; the Couchbase integration project builds, and — when `COUCHBASE_*` is set — the two
   renamed Couchbase classes (`CouchbaseSettingsTests`, a class using `CouchbaseGameHost`) pass alone.
   Done when: all green; counts recorded; no `gs-local-*` folder left in `%TEMP%` by the run. (FR-091 partial)
+  Note: 2026-11-03: Debug and Release build 0 warnings/0 errors (also `--no-incremental` Release). Suite in memory
+  **1321 total, 1236 passed, 85 skipped, 0 failed** (T019: 1261/1176/85; +60 new tests: T020 5, T025 6, T027 3, T028 8,
+  T030 19, T031 10, T032 3, fixture 6). With `GAMESERVER_TEST_STORE=File`: first run 1 failure in a pre-existing unit
+  test unrelated to the kit (`LoginAnalyticsTests.Parallel_adds_keep_the_count_exact_and_seen_players_never_reach_the_capacity_path`,
+  `DailyPlayerSet` of slice 012: `marked` 88 923 instead of 80 000; passes 6/6 alone; open item), second run
+  1321/1236/85/0. No `gs-local-*` folder in `%TEMP%` after both runs. The Couchbase integration project builds;
+  `COUCHBASE_*` not set, so the two Couchbase classes were not run alone (skipped in the suite).
 
 **Checkpoint**: a consumer-shaped project uses the kit without `tests/Shared`; the double behaves like the runner.
 
@@ -566,6 +645,8 @@ extra log entry per request. Its formatted message is `{HttpMethod} {Route} -> {
   Development/Test; `Serilog.Sinks.Console` `PackageVersion` (V8 value) in `Directory.Packages.props` and
   `PackageReference` in `src/GameServer.Platform.Observability/GameServer.Platform.Observability.csproj`.
   Done when: Release build 0 warnings; no restore warning (NU1605/NU1608). (FR-087, FR-088)
+  Note (from T026): also add `Observability:Logging:Console:Enabled` = `false` to `LocalFlavorSettings.Keys`/`For` in
+  `src/GameServer.TestKit/LocalFlavorSettings.cs` (data-model §3.4 eighth key; `LocalFlavorSettingsTests` checks it binds).
 - [ ] T044 [US3] Console tests in new files `tests/GameServer.Observability.Tests/ConsoleLineFormatterTests.cs` (each
   line shape of data-model §1: operation, player/staff, replayed, not_modified, aborted `-`, other events with
   exception; no colour codes when redirected) and `tests/GameServer.Observability.Tests/ConsoleSinkTests.cs` (after

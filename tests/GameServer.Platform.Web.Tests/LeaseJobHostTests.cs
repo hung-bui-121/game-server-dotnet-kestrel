@@ -23,10 +23,10 @@ public sealed class LeaseJobHostTests
     public LeaseJobHostTests() => _store = new InMemoryDocumentStore(_clock);
 
     private Task<TestHost> StartHostAsync(string name, bool loop, Action<Dictionary<string, string?>>? settings = null) =>
-        TestHost.StartAsync(
+        SampleTestHost.StartAsync(
             modules: b =>
             {
-                TestHost.DefaultModules(b);
+                SampleTestHost.DefaultModules(b);
                 b.AddModule(new JobModule("jobs", TestJob));
             },
             settings: s =>
@@ -180,10 +180,10 @@ public sealed class LeaseJobHostTests
     {
         var ex = await Should.ThrowAsync<GameServerStartupException>(async () =>
         {
-            await using var host = await TestHost.StartAsync(
+            await using var host = await SampleTestHost.StartAsync(
                 modules: b =>
                 {
-                    TestHost.DefaultModules(b);
+                    SampleTestHost.DefaultModules(b);
                     b.AddModule(new JobModule("jobs", TestJob));
                     b.AddModule(new JobModule("jobs2", TestJob));
                 },

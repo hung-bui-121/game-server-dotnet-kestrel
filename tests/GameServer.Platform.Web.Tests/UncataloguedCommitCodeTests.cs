@@ -23,10 +23,10 @@ public sealed class UncataloguedCommitCodeTests
     public async Task Commit_with_an_uncatalogued_code_is_internal_commits_nothing_and_logs_the_code()
     {
         // Mapped before UseGameServer: the route's operation is registered, so the startup route check accepts it.
-        await using var host = await TestHost.StartAsync(
+        await using var host = await SampleTestHost.StartAsync(
             modules: b =>
             {
-                TestHost.DefaultModules(b);
+                SampleTestHost.DefaultModules(b);
                 b.AddModule(new UncataloguedModule());
             },
             beforeUseGameServer: app => app.MapPlayerCommand<Wire.IncrementRequest, IncrementCommand, IncrementResult>(

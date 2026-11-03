@@ -18,7 +18,7 @@ public sealed class AnalyticsStartupTests
     private static async Task<GameServerStartupException> StartupFails(Action<Dictionary<string, string?>> settings, Action<IServiceCollection>? services = null) =>
         await Should.ThrowAsync<GameServerStartupException>(async () =>
         {
-            await using var host = await TestHost.StartAsync(settings: settings, services: services);
+            await using var host = await SampleTestHost.StartAsync(settings: settings, services: services);
         });
 
     private static void NoZone(Dictionary<string, string?> s) => s.Remove("GameServer:Analytics:TimeZone");
@@ -96,7 +96,7 @@ public sealed class AnalyticsStartupTests
     [InlineData("Test")]
     public async Task Development_and_test_default_to_utc_with_one_warning(string environment)
     {
-        await using var host = await TestHost.StartAsync(settings: s =>
+        await using var host = await SampleTestHost.StartAsync(settings: s =>
         {
             NoZone(s);
             s["GameServer:DeploymentEnvironment"] = environment;
@@ -114,7 +114,7 @@ public sealed class AnalyticsStartupTests
     [InlineData("Test")]
     public async Task Enabled_without_a_sink_starts_in_development_and_test_with_one_warning_and_writes_nothing(string environment)
     {
-        await using var host = await TestHost.StartAsync(
+        await using var host = await SampleTestHost.StartAsync(
             settings: s =>
             {
                 NoZone(s);
@@ -130,7 +130,7 @@ public sealed class AnalyticsStartupTests
     [Fact]
     public async Task Disabled_analytics_logs_no_warning()
     {
-        await using var host = await TestHost.StartAsync(settings: s =>
+        await using var host = await SampleTestHost.StartAsync(settings: s =>
         {
             NoZone(s);
             s["GameServer:Analytics:Enabled"] = "false";

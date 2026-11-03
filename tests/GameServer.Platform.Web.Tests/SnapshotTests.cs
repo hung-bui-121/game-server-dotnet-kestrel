@@ -16,7 +16,7 @@ public sealed class SnapshotTests : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        _host = await TestHost.StartAsync();
+        _host = await SampleTestHost.StartAsync();
         _player = _host.PlayerClient("p1");
     }
 

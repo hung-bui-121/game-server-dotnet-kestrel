@@ -15,7 +15,7 @@ public sealed class IdentityLoginTests : IAsyncLifetime
 {
     private TestHost _host = null!;
 
-    public async ValueTask InitializeAsync() => _host = await TestHost.StartAsync();
+    public async ValueTask InitializeAsync() => _host = await SampleTestHost.StartAsync();
 
     public async ValueTask DisposeAsync() => await _host.DisposeAsync();
 
@@ -132,7 +132,7 @@ public sealed class IdentityLoginTests : IAsyncLifetime
     [Fact]
     public async Task Login_goes_through_the_maintenance_gate()
     {
-        await using var host = await TestHost.StartAsync(services: s => s.AddSingleton<IGateEvaluator, MaintenanceGate>());
+        await using var host = await SampleTestHost.StartAsync(services: s => s.AddSingleton<IGateEvaluator, MaintenanceGate>());
 
         var response = await host.Client().PostLoginAsync(IdentityHttp.NewLocalId(), IdentityHttp.NewSecret());
 

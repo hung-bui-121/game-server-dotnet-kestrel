@@ -25,7 +25,7 @@ public sealed class DevProfileRunnerTests
     public static TheoryData<ActorType> Actors => new() { ActorType.Player, ActorType.Gm, ActorType.System };
 
     private static Task<TestHost> StartAsync() =>
-        TestHost.StartAsync(modules: b => b.AddModule<IdentityModule>().AddModule<EconomyModule>().AddModule<CheatModule>());
+        SampleTestHost.StartAsync(modules: b => b.AddModule<IdentityModule>().AddModule<EconomyModule>().AddModule<CheatModule>());
 
     private static void SwitchToStaging(TestHost host)
     {

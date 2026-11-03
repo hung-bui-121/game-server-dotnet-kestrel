@@ -30,3 +30,5 @@ appsettings.*.local.json
 
 # Local flavor data (file store: samples/_database/<name>; holds key material and guest credentials)
 _database/
+# Consumer fixture local run (data, analytics, logs of tests/ConsumerFixture/src/Fixture.Host on the Local flavor)
+/tests/ConsumerFixture/.local/

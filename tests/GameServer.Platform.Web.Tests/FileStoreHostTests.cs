@@ -23,10 +23,10 @@ public sealed class FileStoreHostTests : IDisposable
 
     public void Dispose() => TestStores.DeleteFolder(_folder);
 
-    private FileDocumentStore NewStore() => TestStores.CreateFileStore(_folder, "test", _clock, NullLogger<FileDocumentStore>.Instance);
+    private FileDocumentStore NewStore() => FileStoreTestSupport.Create(_folder, "test", _clock, NullLogger<FileDocumentStore>.Instance);
 
     private Task<TestHost> StartAsync(FileDocumentStore fileStore, Action<Dictionary<string, string?>>? settings = null) =>
-        TestHost.StartAsync(
+        SampleTestHost.StartAsync(
             settings: s =>
             {
                 s["GameServer:Store"] = "File";
@@ -86,7 +86,7 @@ public sealed class FileStoreHostTests : IDisposable
     public async Task The_test_host_file_switch_runs_on_a_temporary_folder_deleted_with_the_host()
     {
         string folder;
-        await using (var host = await TestHost.StartAsync(storeKind: TestStoreKind.File))
+        await using (var host = await SampleTestHost.StartAsync(storeKind: TestStoreKind.File))
         {
             var fileStore = host.Services.GetRequiredService<FileDocumentStore>();
             host.Store.ShouldBeSameAs(fileStore.Store);

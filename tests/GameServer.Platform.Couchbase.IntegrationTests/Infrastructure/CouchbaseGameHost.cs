@@ -40,7 +40,7 @@ public sealed class CouchbaseGameHost : IAsyncDisposable
         Action<GameServerBuilder>? extraModules = null,
         Action<IServiceCollection>? services = null)
     {
-        var values = TestHost.DefaultSettings();
+        var values = SampleTestHost.DefaultSettings();
         values["GameServer:GameId"] = fixture.GameServer.GameId;
         values["GameServer:EnvironmentId"] = fixture.GameServer.EnvironmentId;
         values["GameServer:Store"] = nameof(StoreKind.Couchbase);

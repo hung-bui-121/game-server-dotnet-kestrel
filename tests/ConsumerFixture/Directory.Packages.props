@@ -1,0 +1,4 @@
+<Project>
+  <!-- Package versions of the framework: game and framework projects always resolve the same versions. -->
+  <Import Project="$(MSBuildThisFileDirectory)../../Directory.Packages.props" />
+</Project>

@@ -2,7 +2,7 @@ using System.Net.Http.Headers;
 using GameServer.Protocol.Core.V1;
 using Google.Protobuf;
 
-namespace GameServer.Tests.Shared;
+namespace GameServer.TestKit;
 
 /// <summary>Protobuf helpers for HTTP tests.</summary>
 public static class ProtobufHttp

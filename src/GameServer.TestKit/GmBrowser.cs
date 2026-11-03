@@ -3,7 +3,7 @@ using GameServer.Modules.Gm;
 using GameServer.Platform.Web.Security;
 using Microsoft.AspNetCore.TestHost;
 
-namespace GameServer.Tests.Shared;
+namespace GameServer.TestKit;
 
 /// <summary>Browser-like GM client helpers: cookie jar and CSRF token (SEC-05) for TestServer hosts.</summary>
 public static class GmBrowser

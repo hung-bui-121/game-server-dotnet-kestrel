@@ -103,7 +103,7 @@ public sealed class SdkHarness : IAsyncDisposable
     public static async Task<SdkHarness> StartAsync()
     {
         var gate = new SwitchableGate();
-        var host = await TestHost.StartAsync(GameHttp.FullGame, services: s => s.AddSingleton<IGateEvaluator>(gate));
+        var host = await SampleTestHost.StartAsync(GameHttp.FullGame, services: s => s.AddSingleton<IGateEvaluator>(gate));
         return new SdkHarness(host, gate);
     }
 

@@ -24,7 +24,7 @@ public sealed class DeletionExtensionTests
 {
     private const string Increment = "/api/v1/counter/increment";
 
-    private static Task<TestHost> StartAsync(NotesProbe probe, Action<Dictionary<string, string?>>? settings = null) => TestHost.StartAsync(
+    private static Task<TestHost> StartAsync(NotesProbe probe, Action<Dictionary<string, string?>>? settings = null) => SampleTestHost.StartAsync(
         b => b.AddModule<IdentityModule>().AddModule<CounterModule>().AddModule(new NotesModule(probe)),
         s =>
         {
@@ -209,13 +209,13 @@ public sealed class DeletionExtensionTests
     [Fact]
     public async Task A_collection_without_treatment_or_a_module_step_without_a_step_fails_startup_naming_module_and_collection()
     {
-        var missing = await Should.ThrowAsync<Exception>(() => TestHost.StartAsync(b => b
+        var missing = await Should.ThrowAsync<Exception>(() => SampleTestHost.StartAsync(b => b
             .AddModule<IdentityModule>()
             .AddModule<CounterModule>()
             .AddModule(new DescriptorModule(new ModuleDescriptor { Name = "notes", Collections = [new CollectionSpec(NotesModule.Collection)] }))));
         missing.ToString().ShouldContain($"[module notes] collection '{NotesModule.Collection}' declares no deletion treatment");
 
-        var stepless = await Should.ThrowAsync<Exception>(() => TestHost.StartAsync(b => b
+        var stepless = await Should.ThrowAsync<Exception>(() => SampleTestHost.StartAsync(b => b
             .AddModule<IdentityModule>()
             .AddModule<CounterModule>()
             .AddModule(new DescriptorModule(new ModuleDescriptor

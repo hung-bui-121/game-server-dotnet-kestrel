@@ -60,7 +60,7 @@ public sealed class DevProfileFlavorMatrixTests
     [MemberData(nameof(DevelopmentFlavors))]
     public async Task Development_flavors_start_and_grant_for_players_and_gm_actors(string environmentId, string deploymentEnvironment)
     {
-        await using var host = await TestHost.StartAsync(modules: WithCheat(), settings: Flavor(environmentId, deploymentEnvironment));
+        await using var host = await SampleTestHost.StartAsync(modules: WithCheat(), settings: Flavor(environmentId, deploymentEnvironment));
 
         var player = await host.PlayerClient("p1").PostProtobufAsync(CheatModule.GrantRoute, new CheatGrantRequest { Resource = "gold", Quantity = 7 }, ProtobufHttp.NewRequestId());
         player.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -120,11 +120,11 @@ public sealed class DevProfileFlavorMatrixTests
     [MemberData(nameof(DevelopmentFlavors))]
     public async Task Service_only_and_no_player_api_variants_start_in_development_flavors(string environmentId, string deploymentEnvironment)
     {
-        await using (await TestHost.StartAsync(modules: WithCheat(serviceOnly: true), settings: Flavor(environmentId, deploymentEnvironment)))
+        await using (await SampleTestHost.StartAsync(modules: WithCheat(serviceOnly: true), settings: Flavor(environmentId, deploymentEnvironment)))
         {
         }
 
-        await using (await TestHost.StartAsync(modules: WithCheat(), settings: s =>
+        await using (await SampleTestHost.StartAsync(modules: WithCheat(), settings: s =>
         {
             Flavor(environmentId, deploymentEnvironment)(s);
             s["GameServer:Hosting:MapPlayerApi"] = "false";
@@ -138,7 +138,7 @@ public sealed class DevProfileFlavorMatrixTests
     {
         var ex = await Should.ThrowAsync<GameServerStartupException>(async () =>
         {
-            await using var host = await TestHost.StartAsync(modules: modules, settings: settings);
+            await using var host = await SampleTestHost.StartAsync(modules: modules, settings: settings);
         });
         return ex.Violations.Where(v => v.StartsWith(EndpointLine, StringComparison.Ordinal) || v.StartsWith(CommandLine, StringComparison.Ordinal)).ToArray();
     }

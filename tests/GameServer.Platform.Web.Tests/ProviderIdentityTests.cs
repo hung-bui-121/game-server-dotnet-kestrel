@@ -24,8 +24,8 @@ public sealed class ProviderIdentityTests : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        _a = await TestHost.StartAsync();
-        _b = await TestHost.StartAsync(store: _a.Store, clock: _a.Clock);
+        _a = await SampleTestHost.StartAsync();
+        _b = await SampleTestHost.StartAsync(store: _a.Store, clock: _a.Clock);
     }
 
     public async ValueTask DisposeAsync()
@@ -254,7 +254,7 @@ public sealed class ProviderIdentityTests : IAsyncLifetime
     [Fact]
     public async Task Link_attempts_are_limited_per_player_and_failed_proofs_count_per_ip()
     {
-        await using var host = await TestHost.StartAsync(settings: s =>
+        await using var host = await SampleTestHost.StartAsync(settings: s =>
         {
             s["Identity:Providers:LinkPerPlayerPerMinute"] = "3";
             s["Identity:FailedLoginPerIpPerMinute"] = "2";
@@ -278,7 +278,7 @@ public sealed class ProviderIdentityTests : IAsyncLifetime
     [Fact]
     public async Task Failed_proofs_count_against_the_ip_limit()
     {
-        await using var host = await TestHost.StartAsync(settings: s => s["Identity:FailedLoginPerIpPerMinute"] = "2");
+        await using var host = await SampleTestHost.StartAsync(settings: s => s["Identity:FailedLoginPerIpPerMinute"] = "2");
         for (var i = 0; i < 2; i++)
         {
             (await ProviderLoginAsync(host.Client(), new ProviderCredential { PlayGames = new PlayGames { ServerAuthCode = "forged" } })).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);

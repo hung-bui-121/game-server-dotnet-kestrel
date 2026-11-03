@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using GameServer.Config;
 using GameServer.Modules.Identity;
 using GameServer.Platform.Analytics;
 using GameServer.Platform.Testing;
@@ -12,9 +13,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
-using Sample.Counter.Adapters;
 
-namespace GameServer.Tests.Shared;
+namespace GameServer.TestKit;
 
 /// <summary>
 /// Builds a framework host on TestServer with the in-memory store, a fake clock and test authentication.
@@ -22,17 +22,22 @@ namespace GameServer.Tests.Shared;
 /// share one store and clock to play two instances (ACC-20). With <see cref="TestStoreKind.File"/> (or
 /// <c>GAMESERVER_TEST_STORE=File</c> when no store is passed) the host runs on a file store in a temporary folder and
 /// <see cref="Store"/> is its inner in-memory store; the folder is deleted with the host.
+/// Defaults: Identity only, game config = the <c>config</c> argument, else the loader on <c>GameServer:ConfigPath</c> when the
+/// settings set it, else <see cref="TestGameConfig.Empty"/>.
 /// </summary>
 public sealed class TestHost : IAsyncDisposable
 {
-    private readonly FileDocumentStore? _fileStore;
+    private const string ConfigPathKey = "GameServer:ConfigPath";
 
-    private TestHost(WebApplication app, InMemoryDocumentStore store, FakeClock clock, ConcurrentQueue<string> logs, FileDocumentStore? fileStore)
+    private readonly FileDocumentStore? _fileStore;
+    private readonly LogCapture _capture;
+
+    private TestHost(WebApplication app, InMemoryDocumentStore store, FakeClock clock, LogCapture capture, FileDocumentStore? fileStore)
     {
         App = app;
         Store = store;
         Clock = clock;
-        Logs = logs;
+        _capture = capture;
         _fileStore = fileStore;
     }
 
@@ -43,7 +48,10 @@ public sealed class TestHost : IAsyncDisposable
     public FakeClock Clock { get; }
 
     /// <summary>Every formatted log message (for "no secret in logs" checks, ACC-25).</summary>
-    public ConcurrentQueue<string> Logs { get; }
+    public ConcurrentQueue<string> Logs => _capture.Logs;
+
+    /// <summary>Every log call with category, level, event id, message, structured properties and exception, in call order.</summary>
+    public IReadOnlyCollection<CapturedLog> LogEntries => _capture.Entries;
 
     public IServiceProvider Services => App.Services;
 
@@ -63,7 +71,6 @@ public sealed class TestHost : IAsyncDisposable
         // Not a standard flavor (slice 011 D9): tests may switch the deployment environment without tripping FR-004.
         ["GameServer:EnvironmentId"] = "test",
         ["GameServer:DeploymentEnvironment"] = "Development",
-        ["GameServer:ConfigPath"] = Path.Combine(AppContext.BaseDirectory, "config"),
         ["GameServer:Outbox:SweeperEnabled"] = "false",
         // Lease jobs run only through LeaseJobRunner.RunOnceAsync unless a test enables the loop.
         ["GameServer:Jobs:Enabled"] = "false",
@@ -73,10 +80,14 @@ public sealed class TestHost : IAsyncDisposable
         ["GameServer:Analytics:TimeZone"] = "UTC",
     };
 
-    /// <summary>Default modules: Identity + Sample.Counter.</summary>
-    public static void DefaultModules(GameServerBuilder builder) => builder.AddModule<IdentityModule>().AddModule<CounterModule>();
+    /// <summary>Default modules: Identity only.</summary>
+    public static void DefaultModules(GameServerBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        builder.AddModule<IdentityModule>();
+    }
 
-    /// <summary>Builds the app; <see cref="GameServerApplicationExtensions.UseGameServer"/> exceptions propagate.</summary>
+    /// <summary>Builds and starts the app; <see cref="GameServerApplicationExtensions.UseGameServer"/> exceptions propagate.</summary>
     public static async Task<TestHost> StartAsync(
         Action<GameServerBuilder>? modules = null,
         Action<Dictionary<string, string?>>? settings = null,
@@ -87,9 +98,10 @@ public sealed class TestHost : IAsyncDisposable
         FakeClock? clock = null,
         Action<IServiceCollection>? services = null,
         string environmentName = "Development",
-        TestStoreKind? storeKind = null)
+        TestStoreKind? storeKind = null,
+        IGameConfig? config = null)
     {
-        var logs = new ConcurrentQueue<string>();
+        var capture = new LogCapture();
         clock ??= new FakeClock();
         var values = DefaultSettings();
         settings?.Invoke(values);
@@ -99,18 +111,18 @@ public sealed class TestHost : IAsyncDisposable
         if (store is null && (storeKind ?? TestStores.Default) == TestStoreKind.File)
         {
             fileStore = TestStores.CreateFileStore(
-                TestStores.NewFolder(), values["GameServer:GameId"] ?? string.Empty, clock, new TypedCapturingLogger<FileDocumentStore>(logs));
+                TestStores.NewFolder(), values["GameServer:GameId"] ?? string.Empty, clock, capture.CreateLogger<FileDocumentStore>());
         }
 
         store ??= fileStore?.Store ?? new InMemoryDocumentStore(clock);
         try
         {
-            var app = Compose(modules, values, testAuthentication, store, fileStore, clock, services, environmentName, logs);
+            var app = Compose(modules, values, testAuthentication, store, fileStore, clock, services, environmentName, capture, config);
             beforeUseGameServer?.Invoke(app);
             app.UseGameServer();
             afterUseGameServer?.Invoke(app);
             await app.StartAsync();
-            return new TestHost(app, store, clock, logs, fileStore);
+            return new TestHost(app, store, clock, capture, fileStore);
         }
         catch when (fileStore is not null)
         {
@@ -128,12 +140,13 @@ public sealed class TestHost : IAsyncDisposable
         Action<Dictionary<string, string?>>? settings = null,
         bool testAuthentication = true,
         Action<IServiceCollection>? services = null,
-        string environmentName = "Development")
+        string environmentName = "Development",
+        IGameConfig? config = null)
     {
         var clock = new FakeClock();
         var values = DefaultSettings();
         settings?.Invoke(values);
-        return Compose(modules, values, testAuthentication, new InMemoryDocumentStore(clock), null, clock, services, environmentName, new ConcurrentQueue<string>());
+        return Compose(modules, values, testAuthentication, new InMemoryDocumentStore(clock), null, clock, services, environmentName, new LogCapture(), config);
     }
 
     private static WebApplication Compose(
@@ -145,7 +158,8 @@ public sealed class TestHost : IAsyncDisposable
         FakeClock clock,
         Action<IServiceCollection>? services,
         string environmentName,
-        ConcurrentQueue<string> logs)
+        LogCapture capture,
+        IGameConfig? config)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
         {
@@ -157,7 +171,7 @@ public sealed class TestHost : IAsyncDisposable
         builder.Configuration.AddInMemoryCollection(values);
         builder.Logging.ClearProviders();
         builder.Logging.SetMinimumLevel(LogLevel.Debug);
-        builder.Logging.AddProvider(new CapturingLoggerProvider(logs));
+        builder.Logging.AddProvider(capture.CreateProvider());
 
         var gameServer = builder.AddGameServer();
         if (fileStore is null)
@@ -168,6 +182,16 @@ public sealed class TestHost : IAsyncDisposable
         {
             builder.Services.AddFileDocumentStore(fileStore);
         }
+
+        // The decision reads the test's settings only: a host appsettings.json copied into the test output (ConfigPath
+        // "config") must not switch a kit host to files the test never chose.
+        var useLoader = config is null && !string.IsNullOrEmpty(values.GetValueOrDefault(ConfigPathKey));
+        if (!useLoader)
+        {
+            builder.Services.RemoveAll<IGameConfig>();
+            builder.Services.AddSingleton(config ?? TestGameConfig.Empty);
+        }
+
         builder.Services.RemoveAll<IClock>();
         builder.Services.AddSingleton<IClock>(clock);
         var analytics = new InMemoryAnalyticsSink();
@@ -184,10 +208,10 @@ public sealed class TestHost : IAsyncDisposable
     }
 
     /// <summary>
-    /// SampleHost's flavor files (<c>appsettings.Local.json</c>, …) are copied into every test output that references it. A test
-    /// host sets every key itself and never runs a sample flavor, so its environment name must not load one (slice 011, T025).
+    /// A referenced host's flavor files (<c>appsettings.Local.json</c>, …) are copied into every test output that references it.
+    /// A test host sets every key itself and never runs a host flavor, so its environment name must not load one (slice 011, T025).
     /// </summary>
-    private static void RemoveFlavorFile(IConfigurationBuilder configuration, string environmentName)
+    private static void RemoveFlavorFile(ConfigurationManager configuration, string environmentName)
     {
         var flavorFile = $"appsettings.{environmentName}.json";
         foreach (var source in configuration.Sources.OfType<FileConfigurationSource>().Where(s => string.Equals(s.Path, flavorFile, StringComparison.OrdinalIgnoreCase)).ToArray())
@@ -235,38 +259,5 @@ public sealed class TestHost : IAsyncDisposable
     {
         fileStore.Dispose();
         TestStores.DeleteFolder(fileStore.Folder);
-    }
-
-    private sealed class CapturingLoggerProvider(ConcurrentQueue<string> sink) : ILoggerProvider
-    {
-        public ILogger CreateLogger(string categoryName) => new CapturingLogger(sink);
-
-        public void Dispose()
-        {
-        }
-    }
-
-    private sealed class TypedCapturingLogger<T>(ConcurrentQueue<string> sink) : ILogger<T>
-    {
-        private readonly CapturingLogger _inner = new(sink);
-
-        public IDisposable? BeginScope<TState>(TState state)
-            where TState : notnull => null;
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
-            _inner.Log(logLevel, eventId, state, exception, formatter);
-    }
-
-    private sealed class CapturingLogger(ConcurrentQueue<string> sink) : ILogger
-    {
-        public IDisposable? BeginScope<TState>(TState state)
-            where TState : notnull => null;
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
-            sink.Enqueue(formatter(state, exception) + (exception is null ? string.Empty : " | " + exception));
     }
 }

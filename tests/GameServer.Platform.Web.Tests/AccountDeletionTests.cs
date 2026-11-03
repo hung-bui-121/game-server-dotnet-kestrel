@@ -33,8 +33,8 @@ public sealed class AccountDeletionTests : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        _a = await TestHost.StartAsync(settings: WithCache);
-        _b = await TestHost.StartAsync(settings: WithCache, store: _a.Store, clock: _a.Clock);
+        _a = await SampleTestHost.StartAsync(settings: WithCache);
+        _b = await SampleTestHost.StartAsync(settings: WithCache, store: _a.Store, clock: _a.Clock);
     }
 
     public async ValueTask DisposeAsync()
@@ -319,7 +319,7 @@ public sealed class AccountDeletionTests : IAsyncLifetime
         Exception? failure = null;
         try
         {
-            await using var host = await TestHost.StartAsync(settings: s => s["Identity:Deletion:GraceDays"] = graceDays);
+            await using var host = await SampleTestHost.StartAsync(settings: s => s["Identity:Deletion:GraceDays"] = graceDays);
         }
         catch (Exception ex)
         {

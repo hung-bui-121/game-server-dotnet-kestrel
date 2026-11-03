@@ -2,7 +2,7 @@ using GameServer.Platform.Testing;
 using GameServer.Time;
 using Microsoft.Extensions.Logging;
 
-namespace GameServer.Tests.Shared;
+namespace GameServer.TestKit;
 
 /// <summary>The store a <see cref="TestHost"/> runs on.</summary>
 public enum TestStoreKind
@@ -29,7 +29,7 @@ public static class TestStores
 
     public static string NewFolder() => Path.Combine(Path.GetTempPath(), "gs-teststore-" + Guid.NewGuid().ToString("N"));
 
-    public static FileDocumentStore CreateFileStore(string folder, string gameId, IClock clock, ILogger<FileDocumentStore> logger) =>
+    internal static FileDocumentStore CreateFileStore(string folder, string gameId, IClock clock, ILogger<FileDocumentStore> logger) =>
         new(new FileStoreSettings(folder, gameId, ResetOnStart: false, AppContext.BaseDirectory), clock, logger);
 
     /// <summary>Deletes a test folder; retries briefly while the OS releases handles of a store that was just disposed.</summary>

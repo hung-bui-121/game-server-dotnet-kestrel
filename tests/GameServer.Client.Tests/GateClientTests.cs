@@ -51,7 +51,7 @@ public sealed class GateClientTests
     [Fact]
     public async Task The_sdk_reports_maintenance_and_required_updates_from_the_real_gate()
     {
-        await using var host = await TestHost.StartAsync(GameHttp.FullGame);
+        await using var host = await SampleTestHost.StartAsync(GameHttp.FullGame);
         var (localId, secret) = SdkHarness.NewDevice();
 
         await SetGateAsync(host, new GateDocument

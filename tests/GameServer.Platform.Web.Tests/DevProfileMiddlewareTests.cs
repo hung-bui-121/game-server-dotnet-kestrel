@@ -111,7 +111,7 @@ public sealed class DevProfileMiddlewareTests
         const string StaffId = "admin";
         const string Password = "dev-password-for-the-test";
         var logs = new RecordingLoggerProvider();
-        await using var host = await TestHost.StartAsync(
+        await using var host = await SampleTestHost.StartAsync(
             modules: b => b.AddModule<IdentityModule>().AddModule<EconomyModule>().AddModule<CheatModule>().AddModule<GmModule>(),
             settings: s =>
             {

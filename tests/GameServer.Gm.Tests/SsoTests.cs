@@ -142,7 +142,7 @@ public sealed class SsoTests : IAsyncLifetime
     [Fact]
     public async Task Bootstrap_managers_are_invited_when_the_deployment_has_none()
     {
-        await using var host = await TestHost.StartAsync(
+        await using var host = await SampleTestHost.StartAsync(
             b => GameHttp.FullGame(b.AddModule<GmModule>()),
             values =>
             {

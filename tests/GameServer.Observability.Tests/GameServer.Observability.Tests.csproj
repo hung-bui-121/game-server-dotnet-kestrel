@@ -11,6 +11,7 @@
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="OpenTelemetry.Exporter.InMemory" />
     <ProjectReference Include="../../samples/SampleHost/SampleHost.csproj" />
+    <ProjectReference Include="../../src/GameServer.TestKit/GameServer.TestKit.csproj" />
     <ProjectReference Include="../GameServer.Platform.Tests/GameServer.Platform.Tests.csproj" />
   </ItemGroup>
   <ItemGroup>

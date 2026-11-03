@@ -24,7 +24,7 @@ public sealed class SessionTests
     [Fact]
     public async Task New_login_replaces_the_previous_session()
     {
-        await using var host = await TestHost.StartAsync();
+        await using var host = await SampleTestHost.StartAsync();
         var localId = IdentityHttp.NewLocalId();
         var secret = IdentityHttp.NewSecret();
         var first = await host.Client().LoginAsync(localId, secret);
@@ -40,8 +40,8 @@ public sealed class SessionTests
         var clock = new GameServer.Platform.Testing.FakeClock();
         var store = new GameServer.Platform.Testing.InMemoryDocumentStore(clock);
         void Cache60(Dictionary<string, string?> s) => s["Identity:CacheSeconds"] = "60";
-        await using var instanceA = await TestHost.StartAsync(settings: Cache60, store: store, clock: clock);
-        await using var instanceB = await TestHost.StartAsync(settings: Cache60, store: store, clock: clock);
+        await using var instanceA = await SampleTestHost.StartAsync(settings: Cache60, store: store, clock: clock);
+        await using var instanceB = await SampleTestHost.StartAsync(settings: Cache60, store: store, clock: clock);
         var localId = IdentityHttp.NewLocalId();
         var secret = IdentityHttp.NewSecret();
 
@@ -61,7 +61,7 @@ public sealed class SessionTests
     [Fact]
     public async Task Idle_session_expires_after_thirty_days()
     {
-        await using var host = await TestHost.StartAsync();
+        await using var host = await SampleTestHost.StartAsync();
         var login = await host.Client().LoginAsync(IdentityHttp.NewLocalId(), IdentityHttp.NewSecret());
 
         host.Clock.Advance(TimeSpan.FromDays(29));
@@ -74,7 +74,7 @@ public sealed class SessionTests
     [Fact]
     public async Task Active_session_still_ends_after_ninety_days()
     {
-        await using var host = await TestHost.StartAsync();
+        await using var host = await SampleTestHost.StartAsync();
         var login = await host.Client().LoginAsync(IdentityHttp.NewLocalId(), IdentityHttp.NewSecret());
 
         for (var day = 0; day < 4; day++)
@@ -90,7 +90,7 @@ public sealed class SessionTests
     [Fact]
     public async Task Use_after_a_day_touches_the_session_lazily()
     {
-        await using var host = await TestHost.StartAsync();
+        await using var host = await SampleTestHost.StartAsync();
         var login = await host.Client().LoginAsync(IdentityHttp.NewLocalId(), IdentityHttp.NewSecret());
         var key = new DocumentKey(SessionService.Collection, SessionService.KeyOf(login.SessionToken));
         var created = host.Store.Peek(key)!["lastTouchAtUtc"]!.GetValue<string>();
@@ -107,7 +107,7 @@ public sealed class SessionTests
     [Fact]
     public async Task Token_is_only_accepted_from_the_authorization_header()
     {
-        await using var host = await TestHost.StartAsync();
+        await using var host = await SampleTestHost.StartAsync();
         var login = await host.Client().LoginAsync(IdentityHttp.NewLocalId(), IdentityHttp.NewSecret());
         var client = host.Client();
         client.DefaultRequestHeaders.Add("X-Session-Token", login.SessionToken);

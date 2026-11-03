@@ -54,7 +54,7 @@ public abstract class AccountPurgeTests
     protected abstract TestStoreKind StoreKind { get; }
 
     private Task<TestHost> StartAsync(Action<Dictionary<string, string?>>? settings = null, InMemoryDocumentStore? store = null, FakeClock? clock = null) =>
-        TestHost.StartAsync(
+        SampleTestHost.StartAsync(
             modules: b => GameHttp.FullGame(b.AddModule<GmModule>()),
             settings: s =>
             {

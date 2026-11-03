@@ -10,6 +10,7 @@
     <PackageReference Include="Shouldly" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <ProjectReference Include="../../samples/SampleHost/SampleHost.csproj" />
+    <ProjectReference Include="../../src/GameServer.TestKit/GameServer.TestKit.csproj" />
     <ProjectReference Include="../GameServer.Platform.Tests/GameServer.Platform.Tests.csproj" />
     <!-- The SDK carries its own generated copies of the server contract: keep them apart from the server's types. -->
     <ProjectReference Include="../../sdk/GameServer.Client/GameServer.Client.csproj" Aliases="sdk" />

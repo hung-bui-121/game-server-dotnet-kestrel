@@ -28,7 +28,7 @@ public sealed class ErrorContractTests
     [Fact]
     public async Task Player_middleware_errors_are_error_envelopes()
     {
-        await using var host = await TestHost.StartAsync();
+        await using var host = await SampleTestHost.StartAsync();
         var player = host.PlayerClient("p1");
 
         await AssertEnvelope(
@@ -51,7 +51,7 @@ public sealed class ErrorContractTests
     {
         var release = new TaskCompletionSource();
         var entered = new TaskCompletionSource();
-        await using var host = await TestHost.StartAsync(
+        await using var host = await SampleTestHost.StartAsync(
             settings: s =>
             {
                 s["GameServer:Limits:CommandConcurrency"] = "1";
@@ -78,7 +78,7 @@ public sealed class ErrorContractTests
     [Fact]
     public async Task Unhandled_exception_is_500_without_details()
     {
-        await using var host = await TestHost.StartAsync(
+        await using var host = await SampleTestHost.StartAsync(
             beforeUseGameServer: app => app.MapPost("/api/v1/test/boom", (Func<IResult>)(() => throw new InvalidOperationException("secret detail")))
                 .AsPlayerEndpoint());
 
@@ -91,7 +91,7 @@ public sealed class ErrorContractTests
     [Fact]
     public async Task Request_timeout_is_503_request_timeout()
     {
-        await using var host = await TestHost.StartAsync(
+        await using var host = await SampleTestHost.StartAsync(
             settings: s => s["GameServer:Limits:PlayerTimeoutSeconds"] = "1",
             beforeUseGameServer: app => app.MapPost("/api/v1/test/slow", async (HttpContext http) =>
             {
@@ -107,7 +107,7 @@ public sealed class ErrorContractTests
     [Fact]
     public async Task Time_endpoint_is_public()
     {
-        await using var host = await TestHost.StartAsync();
+        await using var host = await SampleTestHost.StartAsync();
 
         var response = await host.Client().GetAsync("/v1/time");
 
@@ -118,7 +118,7 @@ public sealed class ErrorContractTests
     [Fact]
     public async Task Gm_api_uses_problem_details_and_checks_actor_and_permission()
     {
-        await using var host = await TestHost.StartAsync();
+        await using var host = await SampleTestHost.StartAsync();
         await host.PlayerClient("p9").PostProtobufAsync("/api/v1/counter/increment", new IncrementRequest { By = 3 }, ProtobufHttp.NewRequestId());
 
         var asPlayer = await host.PlayerClient("p9").GetAsync("/gm/v1/counter/p9");
@@ -139,7 +139,7 @@ public sealed class ErrorContractTests
     [Fact]
     public async Task Gm_token_cannot_call_player_api()
     {
-        await using var host = await TestHost.StartAsync();
+        await using var host = await SampleTestHost.StartAsync();
 
         var response = await host.GmClient("staff", "counter.read").PostProtobufAsync("/api/v1/player/snapshot", new SnapshotRequest());
 
@@ -149,7 +149,7 @@ public sealed class ErrorContractTests
     [Fact]
     public async Task Endpoint_added_after_validation_without_profile_is_denied()
     {
-        await using var host = await TestHost.StartAsync(afterUseGameServer: app => app.MapGet("/api/v1/late", () => "leak"));
+        await using var host = await SampleTestHost.StartAsync(afterUseGameServer: app => app.MapGet("/api/v1/late", () => "leak"));
 
         var response = await host.PlayerClient("p1").GetAsync("/api/v1/late");
 

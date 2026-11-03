@@ -156,7 +156,7 @@ public sealed class GmAuthTests : IAsyncLifetime
     [Fact]
     public async Task Gm_endpoint_with_a_permission_outside_the_catalog_fails_startup()
     {
-        var ex = await Should.ThrowAsync<GameServerStartupException>(() => TestHost.StartAsync(
+        var ex = await Should.ThrowAsync<GameServerStartupException>(() => SampleTestHost.StartAsync(
             b => GameHttp.FullGame(b.AddModule<GmModule>()),
             beforeUseGameServer: app => app.MapGet("/gm/v1/rogue", () => Results.Ok()).AsGmEndpoint("rogue.permission")));
         ex.Message.ShouldContain("rogue.permission");

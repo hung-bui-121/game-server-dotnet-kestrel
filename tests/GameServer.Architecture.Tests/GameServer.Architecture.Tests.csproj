@@ -13,5 +13,6 @@
     <PackageReference Include="Shouldly" />
     <PackageReference Include="NetArchTest.Rules" />
     <ProjectReference Include="../../samples/SampleHost/SampleHost.csproj" />
+    <ProjectReference Include="../../src/GameServer.TestKit/GameServer.TestKit.csproj" />
   </ItemGroup>
 </Project>

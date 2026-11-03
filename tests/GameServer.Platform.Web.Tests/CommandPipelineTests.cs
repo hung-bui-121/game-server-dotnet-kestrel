@@ -16,7 +16,7 @@ public sealed class CommandPipelineTests : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        _host = await TestHost.StartAsync();
+        _host = await SampleTestHost.StartAsync();
         _player = _host.PlayerClient("p1");
     }
 
@@ -109,7 +109,7 @@ public sealed class CommandPipelineTests : IAsyncLifetime
     [Fact]
     public async Task Timeout_after_commit_returns_503_and_retry_replays_without_second_effect()
     {
-        await using var host = await TestHost.StartAsync(settings: s => s["GameServer:Limits:PlayerTimeoutSeconds"] = "1");
+        await using var host = await SampleTestHost.StartAsync(settings: s => s["GameServer:Limits:PlayerTimeoutSeconds"] = "1");
         var player = host.PlayerClient("slow");
         var requestId = ProtobufHttp.NewRequestId();
         host.Store.Faults.CommitDelay = TimeSpan.FromMilliseconds(1500);

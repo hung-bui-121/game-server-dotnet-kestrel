@@ -23,7 +23,7 @@ public sealed class FlavorValidationTests
         Action<GameServer.Platform.Web.Hosting.GameServerBuilder>? modules = null) =>
         await Should.ThrowAsync<GameServerStartupException>(async () =>
         {
-            await using var host = await TestHost.StartAsync(modules: modules, settings: settings, environmentName: environmentName);
+            await using var host = await SampleTestHost.StartAsync(modules: modules, settings: settings, environmentName: environmentName);
         });
 
     [Fact]
@@ -87,7 +87,7 @@ public sealed class FlavorValidationTests
             var overlay = Directory.CreateDirectory(Path.Combine(configRoot, "env", "Development")).FullName;
             await File.WriteAllTextAsync(Path.Combine(overlay, "manifest.json"), """{"label":"flavor-overlay","files":[],"clientVisible":[]}""");
 
-            await using var host = await TestHost.StartAsync(settings: s =>
+            await using var host = await SampleTestHost.StartAsync(settings: s =>
             {
                 s[DeploymentKey] = "development";
                 s["GameServer:ConfigPath"] = configRoot;

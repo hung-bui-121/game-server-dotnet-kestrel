@@ -28,7 +28,7 @@ public sealed class IapStartupValidationTests
     {
         var ex = await Should.ThrowAsync<GameServerStartupException>(async () =>
         {
-            await using var host = await TestHost.StartAsync(
+            await using var host = await SampleTestHost.StartAsync(
                 modules: GameHttp.FullGame,
                 settings: s =>
                 {
