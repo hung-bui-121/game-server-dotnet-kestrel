@@ -69,8 +69,8 @@ public sealed class EconomyModule : IGameModule, IGmApiModule
 public sealed record AdjustResourceBody(string? Resource, long Delta, string? Reason) : IGmCommandBody;
 
 /// <summary>
-/// Development cheat module (OPS-09): register only when <c>GameServerOptions.AllowsDevelopmentTools</c>; the startup
-/// validator rejects its Dev endpoint in Production.
+/// Development cheat module (OPS-09): register only when <c>GameServerOptions.AllowsDevelopmentTools</c>; outside
+/// Development/Test the startup validator rejects its Dev endpoint and command, the pipeline and the runner refuse them.
 /// </summary>
 public sealed class CheatModule : IGameModule, IPlayerApiModule
 {

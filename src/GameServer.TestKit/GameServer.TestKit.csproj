@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>GameServer.TestKit</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Consumer test kit (FR-010): framework code, no test framework, no sample or test project reference. -->
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\GameServer.Platform.Web\GameServer.Platform.Web.csproj" />
+    <ProjectReference Include="..\GameServer.Platform.Testing\GameServer.Platform.Testing.csproj" />
+    <ProjectReference Include="..\GameServer.Modules.Identity.Adapters\GameServer.Modules.Identity.Adapters.csproj" />
+    <ProjectReference Include="..\GameServer.Modules.Gm.Adapters\GameServer.Modules.Gm.Adapters.csproj" />
+  </ItemGroup>
+</Project>

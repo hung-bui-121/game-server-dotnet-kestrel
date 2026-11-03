@@ -70,14 +70,22 @@ public sealed class GamePlayer(HttpClient client, string playerId)
 
 public static class GameHttp
 {
-    /// <summary>All SampleGame modules (Identity, Economy, IAP, SampleGame, Counter, Cheat).</summary>
-    public static void FullGame(GameServerBuilder builder) =>
+    /// <summary>
+    /// All SampleGame modules (Identity, Economy, IAP, SampleGame, Counter), plus Cheat where development tools are allowed
+    /// (the rule of SampleHost, FG-010: a Dev module outside Development/Test fails startup).
+    /// </summary>
+    public static void FullGame(GameServerBuilder builder)
+    {
         builder.AddModule<IdentityModule>()
             .AddModule<EconomyModule>()
             .AddModule<IapModule>()
             .AddModule<SampleGameModule>()
-            .AddModule<CounterModule>()
-            .AddModule<CheatModule>();
+            .AddModule<CounterModule>();
+        if (builder.Options.AllowsDevelopmentTools)
+        {
+            builder.AddModule<CheatModule>();
+        }
+    }
 
     public static Task<TestHost> StartGameAsync(
         Action<Dictionary<string, string?>>? settings = null,

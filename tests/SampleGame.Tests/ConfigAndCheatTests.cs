@@ -68,8 +68,41 @@ public sealed class ConfigAndCheatTests
         host.Ledger(player.PlayerId).ShouldHaveSingleItem()["payload"]!["sourceType"]!.GetValue<string>().ShouldBe(CheatGrantHandler.SourceType);
     }
 
-    [Fact]
-    public async Task Cheat_module_in_production_fails_startup()
+    [Theory]
+    [InlineData("Staging")]
+    [InlineData("Production")]
+    public async Task Cheat_module_outside_development_fails_startup(string environment)
+    {
+        var ex = await Should.ThrowAsync<GameServerStartupException>(async () =>
+        {
+            await using var host = await TestHost.StartAsync(
+                modules: b =>
+                {
+                    GameHttp.FullGame(b);
+                    b.AddModule<CheatModule>();
+                },
+                settings: s =>
+                {
+                    s["GameServer:DeploymentEnvironment"] = environment;
+                    s["Identity:GuestPepper"] = "prod-pepper";
+                },
+                testAuthentication: false);
+        });
+
+        ex.Violations.ShouldContain(
+            $"[endpoint POST /api/v1/cheat/grant] uses profile Dev in deployment environment '{environment}' (environment id 'test'). " +
+            "Fix: register Dev (cheat) modules only when development tools are allowed " +
+            "(GameServerOptions.AllowsDevelopmentTools: Development/Test, flavors local and dev) (OPS-09, SEC-08).");
+        ex.Violations.ShouldContain(
+            $"[module economy.cheat] command 'cheat.grant' has profile Dev in deployment environment '{environment}' (environment id 'test'). " +
+            "Fix: register Dev (cheat) modules only when development tools are allowed " +
+            "(GameServerOptions.AllowsDevelopmentTools: Development/Test, flavors local and dev) (OPS-09).");
+    }
+
+    [Theory]
+    [InlineData("Staging")]
+    [InlineData("Production")]
+    public async Task Full_game_composition_leaves_the_cheat_module_out_outside_development(string environment)
     {
         var ex = await Should.ThrowAsync<GameServerStartupException>(async () =>
         {
@@ -77,12 +110,12 @@ public sealed class ConfigAndCheatTests
                 modules: GameHttp.FullGame,
                 settings: s =>
                 {
-                    s["GameServer:DeploymentEnvironment"] = "Production";
+                    s["GameServer:DeploymentEnvironment"] = environment;
                     s["Identity:GuestPepper"] = "prod-pepper";
                 },
                 testAuthentication: false);
         });
 
-        ex.Message.ShouldContain("POST /api/v1/cheat/grant] uses profile Dev in Production");
+        ex.Violations.ShouldNotContain(v => v.Contains("profile Dev", StringComparison.Ordinal));
     }
 }

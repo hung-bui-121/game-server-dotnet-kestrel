@@ -96,7 +96,7 @@ public void MapPlayerApi(IEndpointRouteBuilder routes) =>
 ```
 
 Mọi endpoint phải có đúng một profile (`AsPlayerEndpoint`, `AsGmEndpoint(permission)`, `AsPublicEndpoint` +
-allowlist, `AsDevEndpoint` — cấm ở Production) và route có `/v{n}/`. Validation wire nằm trong `ToDomain`
+allowlist, `AsDevEndpoint` — chỉ khi development tools được phép: local, dev, test; chặt hơn OPS-09) và route có `/v{n}/`. Validation wire nằm trong `ToDomain`
 (ném `GameServerException(CoreErrorCodes.BadRequest)`). Operation truyền cho `MapPlayerCommand`/`MapDevCommand`/
 `MapGmCommand` phải là command đã khai trong `Commands` của một module đã `AddModule`, nếu không startup fail:
 `[endpoint POST /api/v1/mything/earn] runs command 'mything.earn' which no registered module declares. …`. Profile của

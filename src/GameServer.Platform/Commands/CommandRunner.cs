@@ -118,10 +118,20 @@ public sealed class CommandRunner(
 
     public async Task<CommandExecution?> TryReplayAsync(string operation, ActorContext actor, string requestId, string bodyHash, CancellationToken requestAborted)
     {
-        var descriptor = registry.GetCommand(operation).Descriptor;
-        var playerId = actor.PlayerId
-            ?? throw new GameServerException(CoreErrorCodes.BadRequest, "Command has no target player.");
-        EnsureActorAllowed(descriptor, actor);
+        string playerId;
+        try
+        {
+            var descriptor = registry.GetCommand(operation).Descriptor;
+            playerId = actor.PlayerId
+                ?? throw new GameServerException(CoreErrorCodes.BadRequest, "Command has no target player.");
+            EnsureActorAllowed(descriptor, actor);
+        }
+        catch (GameServerException ex)
+        {
+            // Counted like a refusal on the execute path (FR-005): the caller does not run ExecuteAsync after it.
+            metrics.CommandCompleted(operation, ex.Code.Name, replayed: false);
+            throw;
+        }
 
         var receiptId = ReceiptIds.Compute(actor.ActorId, playerId, operation, requestId);
         var existing = await store.GetAsync(ReceiptDocument.KeyFor(receiptId), requestAborted);
@@ -143,21 +153,29 @@ public sealed class CommandRunner(
 
     /// <summary>
     /// Defense in depth behind endpoint metadata (SEC-07, SEC-08): Player commands run for players only, GM commands
-    /// for GM actors holding the command's permission; Dev commands accept either (OPS-09 keeps them out of Production).
+    /// for GM actors holding the command's permission; Dev commands only where development tools are allowed
+    /// (<see cref="GameServerOptions.AllowsDevProfile"/>, OPS-09, FG-010), for any actor there. Runs before the limiter,
+    /// the receipt read, the guards and the transaction, so a refused command reads and writes nothing.
     /// </summary>
-    private static void EnsureActorAllowed(GameServer.Commands.CommandDescriptor descriptor, ActorContext actor)
+    private void EnsureActorAllowed(GameServer.Commands.CommandDescriptor descriptor, ActorContext actor)
     {
         var allowed = descriptor.Profile switch
         {
             SecurityProfile.Player => actor.ActorType == ActorType.Player,
             SecurityProfile.Gm => actor.ActorType == ActorType.Gm && descriptor.Permission is not null && actor.HasPermission(descriptor.Permission),
-            SecurityProfile.Dev => true,
+            SecurityProfile.Dev => options.AllowsDevProfile,
             _ => false,
         };
-        if (!allowed)
+        if (allowed)
         {
-            throw new GameServerException(CoreErrorCodes.Forbidden, $"Actor {actor.ActorType} may not run {descriptor.Operation} ({descriptor.Profile}).");
+            return;
         }
+
+        throw new GameServerException(
+            CoreErrorCodes.Forbidden,
+            descriptor.Profile == SecurityProfile.Dev
+                ? $"Dev command '{descriptor.Operation}' refused in deployment environment '{options.DeploymentEnvironment}' (environment id '{options.EnvironmentId}')."
+                : $"Actor {actor.ActorType} may not run {descriptor.Operation} ({descriptor.Profile}).");
     }
 
     private async Task<CommandExecution> ExecuteTransactionAsync(
@@ -349,71 +367,22 @@ public sealed class CommandRunner(
         return AttemptResult.Commit(receipt, receiptSize, writes, resultBytes);
     }
 
-    /// <summary>
-    /// SEC-14: every committed GM command carries exactly one audit entry in its receipt; other commands carry none, so
-    /// the audit trail cannot be forged by Player or Dev commands. A violation is a module bug (INTERNAL, nothing commits).
-    /// </summary>
+    /// <summary>SEC-14 (<see cref="CommitRules.CheckAudit"/>): a violation is a module bug (INTERNAL, nothing commits).</summary>
     private static void EnsureAudit(GameServer.Commands.CommandDescriptor descriptor, CommandContext context)
     {
-        var audits = context.Outbox.Count(e => e.Kind == GameServer.Commands.AuditExtensions.OutboxKind);
-        var expected = descriptor.Profile == SecurityProfile.Gm ? 1 : 0;
-        if (audits != expected)
+        if (CommitRules.CheckAudit(descriptor, context.Outbox) is { } violation)
         {
-            throw new InvalidOperationException(
-                $"Command '{descriptor.Operation}' ({descriptor.Profile}) wrote {audits} audit entries; expected {expected} (SEC-14). " +
-                "Fix: GM commands call ctx.AddAudit(...) exactly once; other commands never do.");
+            throw new InvalidOperationException(violation);
         }
     }
 
-    /// <summary>
-    /// API-11: a committed receipt stores the code by name and a response resolves it through the catalog, so the code of a
-    /// commit must be the catalogued instance (else the client gets OK or another code's number) and a business code (HTTP 200:
-    /// a commit always answers 200). A violation is a module bug (INTERNAL, nothing commits).
-    /// </summary>
+    /// <summary>API-11 (<see cref="CommitRules.CheckCode"/>): a violation is a module bug (INTERNAL, nothing commits).</summary>
     private void EnsureCommittableCode(GameServer.Commands.CommandRegistration registration, ErrorCode? code)
     {
-        if (code is null)
+        if (CommitRules.CheckCode(registration, registry, code) is { } violation)
         {
-            return;
+            throw new InvalidOperationException(violation);
         }
-
-        var catalogued = registry.Errors.FindByName(code.Name);
-        string problem;
-        string fix;
-        if (catalogued is null)
-        {
-            problem = "which is not in the error-code catalog; the client would receive OK";
-            fix = "list the code in the module's ErrorCodeSet (ModuleDescriptor.ErrorCodes)";
-        }
-        else if (catalogued != code)
-        {
-            problem = $"which has the name of the catalogued {catalogued} but differs from it (number, HTTP status, retryable flag or message)";
-            fix = "commit with the catalogued ErrorCode instance from the module's ErrorCodeSet";
-        }
-        else if (code.HttpStatus != 200)
-        {
-            problem = $"whose HTTP status is {code.HttpStatus}; a commit always answers HTTP 200";
-            fix = "use CommandOutcome.Reject for non-200 codes (nothing is committed)";
-        }
-        else
-        {
-            return;
-        }
-
-        throw new InvalidOperationException(
-            $"Command '{registration.Descriptor.Operation}' ({DescribeOwner(registration)}) committed with error code {code}, {problem}. Fix: {fix} (API-11).");
-    }
-
-    /// <summary>Owning module of a command, and the replacing handler when <c>ReplaceHandler</c> swapped it (EXT-02).</summary>
-    private string DescribeOwner(GameServer.Commands.CommandRegistration registration)
-    {
-        var operation = registration.Descriptor.Operation;
-        var (module, declared) = registry.Modules
-            .SelectMany(m => m.Descriptor.Commands.Select(c => (Module: m.Descriptor.Name, Registration: c)))
-            .FirstOrDefault(x => x.Registration.Descriptor.Operation == operation);
-        return declared is not null && declared.HandlerType != registration.HandlerType
-            ? $"module '{module}', handler replaced by {registration.HandlerType.Name} through ReplaceHandler"
-            : $"module '{module}'";
     }
 
     private ReceiptDocument BuildReceipt(

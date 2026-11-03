@@ -238,6 +238,13 @@ directly (version from the framework's `Directory.Packages.props`); the consumer
 **[VERIFY] V7** `WebApplicationFactory<T>.DisposeAsync` is overridable on 10.0.14; fallback: `Dispose(bool)` + an
 `IAsyncDisposable` wrapper type.
 
+> **V4 Confirmed (2026-11-03, T004).** The package ships `buildTransitive/net10.0/Microsoft.AspNetCore.Mvc.Testing.targets`;
+> a test project that references only a library with the `PackageReference` imports it, gets `MvcTestingAppManifest.json`
+> and the app's `.deps.json`, and the factory finds the app's content root. Consequence: neither the kit consumers nor
+> the fixture need a direct `Mvc.Testing` reference (optional in the consumer guide).
+> **V7 Confirmed.** `public override async ValueTask DisposeAsync()` compiles (warnings as errors) and runs; no wrapper.
+> `IHostEnvironment.ApplicationName` under `WebApplicationFactory<Program>` = the entry point's assembly name (R14).
+
 **Alternatives.** Composition (a holder exposing `Factory`, as the game's `LocalFlavorHost`) (rejected: callers lose
 `WithWebHostBuilder`/`CreateClient` on the factory itself); environment variables instead of `UseSetting` (rejected:
 process-wide, breaks parallel factories).
@@ -337,6 +344,10 @@ config-validation tests see real `ConfigVersion` strings.
 **[VERIFY] V5** Serilog's MEL bridge turns every state key/value not in the template into an event property and keeps
 `{OriginalFormat}` as the template (SerilogLogger behaviour). Fallback: put every field in the template.
 
+> **V5 Confirmed (2026-11-03, T005).** Serilog 4.3.0 + Serilog.Extensions.Logging 10.0.0 (`AddSerilog(...,
+> writeToProviders: false)`): `@mt` = the template, every key (also keys absent from the template) is a property, null
+> values are written as `null`, `EventId` = `{"Id":1,"Name":"Request"}`, `SourceContext` = category, enrichers kept.
+
 **Rationale.** `ErrorResponseWriter` is already the single funnel for error codes, so one assignment covers every
 failure path; the outermost placement is the only point that sees exceptions escaping `ExceptionMiddleware` and the final
 status; a feature on `HttpContext.Features` is the ASP.NET idiom consumer middleware can read after `await next()` without
@@ -361,6 +372,16 @@ Development/Test adds a startup warning through an `IStartupCheck` of the observ
 
 **[VERIFY] V6** A blocked stdout (pipe not read) blocks only the async worker; `TryAdd` drops are counted by the
 monitor. Test: internal blocking writer, 2 000 requests succeed, `DroppedCount` increases.
+
+> **V6 Confirmed (2026-11-03, T005).** Console sink behind `WriteTo.Async(bufferSize: 10, blockWhenFull: false, monitor)`
+> with `Console.Out` replaced by a writer that blocks forever: 2 000 calls returned in 3.8 ms, the writer was entered
+> once, the inspector counted 1 989 drops (queue 10). No own `Channel`. **Differs in detail:** Serilog.Sinks.Console
+> 6.1.1 exposes no `TextWriter` parameter (only the output-template and `ITextFormatter` overloads; it resolves
+> `Console.Out` per event). Consequence for T043/T044: the internal test seam writes through Serilog core's
+> `WriteTo.TextWriter(formatter, writer, level)` inside the same `WriteTo.Async`, instead of `Console.SetOut`
+> (process-wide, unsafe with parallel tests).
+> **V8 (plan Technical Context, T006).** The transitive `Serilog.Sinks.Console` of Serilog.AspNetCore 10.0.0 is
+> **6.1.1**; the explicit `PackageVersion` pins 6.1.1.
 
 **Alternatives.** `AddSimpleConsole` provider (the game's choice: rejected — Serilog `writeToProviders: false` bypasses
 providers, and the default console provider waits when its queue is full unless reconfigured; one logging pipeline is
@@ -392,6 +413,12 @@ simpler); compact JSON on the console (rejected: spec assumption "human-readable
 
 **[VERIFY] V2** `-getProperty`/`-getItem` output (JSON when several are requested) on SDK 10.0.403. **[VERIFY] V3**
 property functions `MakeRelative`, `Replace`, `ToLowerInvariant`, `StartsWith` in a property definition.
+
+> **V2 Confirmed (2026-11-03, T002).** Two or more switches → one JSON object `{"Properties": {..}, "Items": {"X":
+> [{"Identity", "FullPath", ...}]}}`; a single `-getProperty` → the bare value (empty line when empty). Evaluation only
+> unless `-t:` is given; `+` is escaped `\u002B` in the JSON (parse, do not string-match).
+> **V3 Confirmed.** In `...\tests\fw\` the expression yields `src/a` / `tests/b` (no trailing slash); `IsTestProject` is
+> true for `tests/B` only.
 
 **Alternatives.** Name-based rule `*.Tests` (rejected: `GameServer.Platform.Couchbase.IntegrationTests` and future
 names; location is what the framework controls); full build copy in the default suite (rejected: minutes of build per
@@ -432,6 +459,11 @@ sensitive on Windows).
 Fallback in the new `Directory.Build.targets`: a target before `GetAssemblyVersion` that runs `git rev-parse HEAD` in
 `$(MSBuildThisFileDirectory)` (`ContinueOnError=true`) when `SourceRevisionId` is empty — the targets file then holds
 "what the framework needs" (FR-030).
+
+> **V1 Confirmed (2026-11-03, T003).** `-p:Version=0.7.0` build of `GameServer.Core`: `InformationalVersion` =
+> `0.7.0+{40-hex HEAD}` and FileVersion `0.7.0.0`, both in this clone and in a temp game repo that has this repository as a
+> submodule (`.git` file). No fallback target; `Directory.Build.targets` stays empty. The value exists only after the build
+> targets ran (an evaluation-only `-getProperty:InformationalVersion` is empty), which matters for `BuildSealingTests`.
 
 **Alternatives.** Version from the git tag at build time (MinVer/Nerdbank) (rejected: new package and tag-dependent
 builds of untagged commits); version in `/health/live` (rejected: public, OBS-03, spec assumption); entry assembly via

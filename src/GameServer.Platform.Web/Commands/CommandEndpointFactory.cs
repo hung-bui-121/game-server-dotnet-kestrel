@@ -72,7 +72,10 @@ public static class CommandEndpointFactory
             .AsPlayerEndpoint();
     }
 
-    /// <summary>Development-only command (OPS-09): profile Dev, Protobuf, forbidden in Production by the validator.</summary>
+    /// <summary>
+    /// Development-only command (OPS-09): profile Dev, Protobuf, allowed only where development tools are allowed
+    /// (Development/Test); refused by the startup validator, the request pipeline and the runner everywhere else.
+    /// </summary>
     public static IEndpointConventionBuilder MapDevCommand<TWireRequest, TRequest, TResult>(
         this IEndpointRouteBuilder routes,
         string pattern,

@@ -185,8 +185,21 @@ Health endpoints (`/health/live`, `/health/ready`) do module `platform.observabi
   IGmCommandBody` (reason bắt buộc); xem PCR gm.
 - `ICommandContext.AddAudit(...)` (Core): outbox kind `gm_audit`; module gm projection vào `gm_audit`.
 - `PlayerSnapshotReader.ReadAllAsync(playerId)`: mọi aggregate kể cả hidden (cho GM).
-- Runner: command profile `Player` chỉ cho actor player, `Gm` chỉ cho actor GM có permission của command, `Dev` cho cả hai
-  → sai → 403 `FORBIDDEN`. Command `Gm` phải commit với đúng một audit; command khác không được có audit (SEC-14).
+- Runner: command profile `Player` chỉ cho actor player, `Gm` chỉ cho actor GM có permission của command, `Dev` chỉ khi
+  development tools được phép (local, dev, test — `GameServerOptions.AllowsDevProfile`) và khi đó cho mọi actor → sai → 403
+  `FORBIDDEN`. Từ chối Dev xảy ra trước limiter, đọc receipt, guard và transaction, ở cả `ExecuteAsync` lẫn
+  `TryReplayAsync` (receipt Dev cũ không được replay; metric `command_results_total{code=FORBIDDEN}` đếm cả hai đường).
+  Command `Gm` phải commit với đúng một audit; command khác không được có audit (SEC-14).
+- **Profile Dev (slice 013, FG-010) — chặt hơn OPS-09:** Dev chỉ khi development tools được phép (local, dev, test),
+  không bao giờ ở Staging (beta, uat), Production (live) hay deployment environment nào khác. Ba lớp độc lập cùng đọc
+  `GameServerOptions.AllowsDevProfile` (= `AllowsDevelopmentTools`, không có setting): (1) startup — mỗi endpoint Dev
+  (`[endpoint POST /api/v1/cheat/grant] uses profile Dev in deployment environment '…' (environment id '…'). Fix: …`) và
+  mỗi command Dev đã đăng ký, kể cả module `ServiceOnly()`, `Hosting:MapPlayerApi=false`, command không route và
+  `--provision` (`[module economy.cheat] command 'cheat.grant' has profile Dev in deployment environment '…' …`) là một dòng
+  của báo cáo khởi động (exit 1); (2) pipeline — `ProfileEnforcementMiddleware` trả 403 `FORBIDDEN` ngay sau khi tìm
+  profile, trước mọi scheme xác thực (không chạm session, không event resume), CSRF, cache header và body limit, ghi một
+  Warning `Dev endpoint {Method} {Route} refused in deployment environment {DeploymentEnvironment} ({EnvironmentId}).` (chỉ
+  route template, không header/token); switch profile tường minh, giá trị profile lạ → 403; (3) runner như trên.
 - `IGmTargetValidator.ValidateAsync(playerId, operation, ct)`: kiểm player đích trước khi chạy command GM (module gm: tồn
   tại + không chờ xoá → 404; riêng `identity.cancel_deletion` được nhắm player đang chờ xoá, player đã purge → 409
   `DELETION_GRACE_OVER`). **Breaking (slice 010):** thêm tham số `operation` — implementation của game phải thêm tham số
@@ -504,12 +517,14 @@ biến môi trường rồi dòng lệnh ghi đè. Nguồn duy nhất của bả
 | `GameServer:EnvironmentId` là id chuẩn ⇒ `GameServer:DeploymentEnvironment` = giá trị của bảng (Test không được miễn) | cả hai key, giá trị mong đợi |
 | Store `InMemory`/`File` chỉ ở Development/Test | `[deployment] the <InMemory/File> store is configured in '<env>'. Fix: set GameServer:Store=Couchbase …` |
 | Secret trong file cấu hình ngoài Development/Test (`GameServer:SecretKeys`) | key, file, tên biến môi trường |
+| Endpoint hoặc command profile Dev ngoài Development/Test (slice 013, mục 12) | endpoint (method + route) hoặc module + operation, deployment environment, environment id, cách sửa |
 | Development nghe trên địa chỉ không phải loopback | một Warning sau khi server nghe (không lỗi) |
 
 Mọi lỗi của một lần khởi động (deployment identity, registry, service, secret, `IStartupCheck`, validator option của module qua
 `IStartupValidator`) nằm trong **một** `GameServerStartupException`; Warning ghi một lần, category `GameServer.Startup`.
 Overlay config game `config/env/<DeploymentEnvironment>`: beta và uat dùng chung `Staging`. Staging (beta, uat) **không** có cheat,
-xác thực thử nghiệm, seed staff GM, GM OpenAPI, verifier/provider giả (chặt hơn OPS-09).
+xác thực thử nghiệm, seed staff GM, GM OpenAPI, verifier/provider giả (chặt hơn OPS-09). Từ slice 013 framework tự chặn
+profile Dev ngoài Development/Test ở ba lớp (startup, pipeline, runner — mục 12), không chỉ dựa vào `if` trong host.
 
 `GameServer:SecretKeys` mặc định (6 key): `Identity:GuestPepper`, `Couchbase:Password`, `Iap:Google:ServiceAccountPrivateKeyPem`,
 `DataProtection:MasterKey`, `Gm:Oidc:ClientSecret`, `Identity:Providers:PlayGames:ClientSecret` (mới).
@@ -662,11 +677,19 @@ macOS/Linux, IDE, điện thoại thật qua `-Lan`, Unity E2E trên 5080.
 | `appsettings.json` của host mẫu | không còn deployment environment, environment id, store, seed staff; chạy không flavor → exit 1, không bao giờ Development | chọn flavor (`ASPNETCORE_ENVIRONMENT`) |
 | Nén Couchbase | thực sự bật (Snappy) | theo dõi CPU data service + latency KV trên beta; rollback `Couchbase:Compression=false` |
 
+### Breaking (slice 013, FG-010 — so với `v0.6.0`)
+
+| Mục | Thay đổi | Cách chuyển |
+| --- | --- | --- |
+| BC-1 Dev ở startup | endpoint và command profile Dev trước đây chỉ bị chặn ở Production; nay startup fail ở mọi môi trường ngoài Development/Test (beta, uat, live, giá trị khác), một dòng cho mỗi endpoint và mỗi command, kể cả module `ServiceOnly()`, `MapPlayerApi=false` và `--provision` | chỉ `AddModule` module cheat/Dev trong `if (gameServer.Options.AllowsDevelopmentTools)` (như `samples/SampleHost/Program.cs`); test dựng host Staging/Production với module Dev phải bỏ module hoặc chờ lỗi mới |
+| BC-2 Dev lúc chạy | route Dev map sau `UseGameServer` trả 403 `FORBIDDEN` ngoài Development/Test (Warning trong log); runner từ chối command Dev (`FORBIDDEN`) cho mọi actor, cả execute lẫn replay | job hoặc luồng GM gọi command Dev ở Staging phải dùng command không phải Dev |
+| BC-3 Thông báo | `[endpoint …] uses profile Dev in Production. Fix: do not register cheat/dev modules in Production (OPS-09).` → `[endpoint …] uses profile Dev in deployment environment '<env>' (environment id '<id>'). Fix: register Dev (cheat) modules only when development tools are allowed (GameServerOptions.AllowsDevelopmentTools: Development/Test, flavors local and dev) (OPS-09, SEC-08).` + dòng mới `[module …] command '…' has profile Dev …` | test so khớp text cũ: so khớp nhãn endpoint (`[endpoint POST /api/v1/cheat/grant]`) hoặc text mới |
+
 ### Không cung cấp
 
 | Hạng mục | Ghi chú |
 | --- | --- |
-| `GameServer:Staging:AllowCheatModule` | điểm mở rộng hoãn (R13): nếu QA cần cheat trên uat — chỉ Staging, từ chối ở Production, chỉ đăng ký `CheatModule` sau permission GM có audit, không bao giờ xác thực thử nghiệm hay seed |
+| `GameServer:Staging:AllowCheatModule` | điểm mở rộng hoãn (R13): nếu QA cần cheat trên uat — chỉ Staging, từ chối ở Production, chỉ đăng ký `CheatModule` sau permission GM có audit, không bao giờ xác thực thử nghiệm hay seed; nếu thêm, chỉ mở rộng `GameServerOptions.AllowsDevProfile` (slice 013, FR-006) |
 | Overlay config theo `EnvironmentId` | beta/uat dùng chung `config/env/Staging` (owner) |
 | Kiểm index khi khởi động | cần quyền catalog; báo cáo provisioning là nguồn đúng |
 | CI chạy integration Couchbase | CI-01 còn mở; chạy local với EE 7.6.12 trước merge |

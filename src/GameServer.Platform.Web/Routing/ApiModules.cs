@@ -74,7 +74,10 @@ public static class ApiRouteExtensions
         return builder;
     }
 
-    /// <summary>Development-only endpoint (OPS-09); forbidden in Production by the startup validator.</summary>
+    /// <summary>
+    /// Development-only endpoint (OPS-09): allowed only where development tools are allowed (Development/Test); refused by
+    /// the startup validator and the request pipeline everywhere else.
+    /// </summary>
     public static TBuilder AsDevEndpoint<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder =>
         builder.WithMetadata(new SecurityProfileMetadata(SecurityProfile.Dev));

@@ -111,7 +111,7 @@ public sealed partial class ModuleRegistry
         ValidateOptions(options, errors);
         ValidateModules(errors);
         ValidateAggregates(options, errors);
-        ValidateCommands(errors);
+        ValidateCommands(options, errors);
         ValidateErrorCodes(errors);
         ValidateOutbox(errors);
         ValidateDeletion(errors);
@@ -225,7 +225,7 @@ public sealed partial class ModuleRegistry
         }
     }
 
-    private void ValidateCommands(List<string> errors)
+    private void ValidateCommands(GameServerOptions options, List<string> errors)
     {
         var aggregates = _modules.SelectMany(m => m.Descriptor.Aggregates).Select(a => a.AggregateId).ToHashSet(StringComparer.Ordinal);
         var permissions = _modules.SelectMany(m => m.Descriptor.Permissions).ToHashSet(StringComparer.Ordinal);
@@ -278,6 +278,15 @@ public sealed partial class ModuleRegistry
                     errors.Add(
                         $"[module {owner}] GM command '{d.Operation}' requires permission '{d.Permission}' which is not in any module's permission catalog. " +
                         "Fix: declare the permission in ModuleDescriptor.Permissions (SEC-07).");
+                }
+
+                // Every registered Dev command, mapped or not (service-only module, player API off, no route), FG-010.
+                if (d.Profile is SecurityProfile.Dev && !options.AllowsDevProfile)
+                {
+                    errors.Add(
+                        $"[module {owner}] command '{d.Operation}' has profile Dev in deployment environment '{options.DeploymentEnvironment}' " +
+                        $"(environment id '{options.EnvironmentId}'). Fix: register Dev (cheat) modules only when development tools are allowed " +
+                        "(GameServerOptions.AllowsDevelopmentTools: Development/Test, flavors local and dev) (OPS-09).");
                 }
             }
         }

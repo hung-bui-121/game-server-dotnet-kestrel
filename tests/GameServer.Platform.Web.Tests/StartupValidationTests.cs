@@ -80,7 +80,7 @@ public sealed class StartupValidationTests
             app => app.MapPost("/api/v1/cheat/gold", () => "x").AsDevEndpoint(),
             s => s["GameServer:DeploymentEnvironment"] = "Production");
 
-        ex.Message.ShouldContain("uses profile Dev in Production");
+        ex.Message.ShouldContain("[endpoint POST /api/v1/cheat/gold] uses profile Dev in deployment environment 'Production' (environment id 'test').");
         ex.Message.ShouldContain("test authentication is enabled in 'Production'");
         ex.Message.ShouldContain("the InMemory store is configured in 'Production'");
     }

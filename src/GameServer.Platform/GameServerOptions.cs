@@ -78,6 +78,13 @@ public sealed class GameServerOptions
 
     public bool AllowsDevelopmentTools => IsDevelopment || IsTest;
 
+    /// <summary>
+    /// The single decision for the Dev profile (FR-006): startup validation, request pipeline and command runner allow
+    /// Dev endpoints and commands only when true. Today equals <see cref="AllowsDevelopmentTools"/> (Development/Test); a
+    /// future Staging switch (PCR platform §17 R13) would extend this property only, never for Production.
+    /// </summary>
+    public bool AllowsDevProfile => AllowsDevelopmentTools;
+
     /// <summary>Bounds of the background work settings (data-model.md); checked at startup with the module registry.</summary>
     public IEnumerable<string> ValidateBackgroundWork() => Jobs.Validate(Transactions).Concat(Purge.Validate());
 }

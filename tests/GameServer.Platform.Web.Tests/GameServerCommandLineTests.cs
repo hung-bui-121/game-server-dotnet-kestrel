@@ -208,6 +208,31 @@ public sealed class GameServerCommandLineTests
         }
     }
 
+    /// <summary>FG-010 (FR-002, edge case "--provision"): a Dev module makes the composition invalid for provisioning as well.</summary>
+    [Fact]
+    public async Task Provisioning_a_production_composition_with_a_dev_module_exits_1_without_provisioning()
+    {
+        var provisioner = new FakeProvisioner();
+
+        var (code, _, error) = await ProvisionAsync(
+            provisioner,
+            s =>
+            {
+                s["GameServer:DeploymentEnvironment"] = "Production";
+                s["GameServer:EnvironmentId"] = "live";
+            },
+            b =>
+            {
+                TestHost.DefaultModules(b);
+                b.AddModule<EconomyModule>().AddModule<CheatModule>();
+            });
+
+        code.ShouldBe(HostExitCodes.InvalidConfiguration);
+        error.ShouldContain(
+            "[module economy.cheat] command 'cheat.grant' has profile Dev in deployment environment 'Production' (environment id 'live').");
+        provisioner.Calls.ShouldBe(0);
+    }
+
     /// <summary>T055 m2: a check that throws still gives one report naming the check; the other checks' errors are kept.</summary>
     [Fact]
     public async Task A_throwing_startup_check_joins_the_report_in_serve_and_provision_mode()

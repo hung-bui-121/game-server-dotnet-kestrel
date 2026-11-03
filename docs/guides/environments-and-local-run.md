@@ -17,7 +17,9 @@ drill sự cố trên Couchbase thật: `docs/guides/local-real-env-testing.md`.
 | `Live` | Production | `live` | `Couchbase` | cluster riêng (DAT-01), bắt buộc TLS | tắt |
 
 "Công cụ dev" = xác thực thử nghiệm qua header `X-Test-Player`, module cheat, seed staff GM, tài liệu GM OpenAPI, verifier
-IAP và identity provider giả. Chỉ có ở Development/Test.
+IAP và identity provider giả. Chỉ có ở Development/Test. Endpoint và command profile Dev (cheat) chỉ chạy khi development tools
+được phép (local, dev, test); beta, uat, live bị framework chặn ở ba lớp (khởi động, pipeline, runner — mục "Kiểm tra khi
+khởi động" bên dưới).
 
 **Chọn flavor**: đặt `ASPNETCORE_ENVIRONMENT` (hoặc `DOTNET_ENVIRONMENT`) = `Local`, `Dev`, `Beta`, `Uat` hoặc `Live`.
 Viết đúng hoa thường: trên Linux tên file phân biệt hoa thường. Launch profile và script local đặt sẵn giá trị này
@@ -43,6 +45,11 @@ appsettings.json  <  appsettings.{Flavor}.json  <  biến môi trường  <  dò
 - `GameServer:EnvironmentId` là id chuẩn (`local`, `dev`, `beta`, `uat`, `live`) thì `GameServer:DeploymentEnvironment` phải đúng
   giá trị của bảng (ví dụ `live` với Development → lỗi nêu cả hai key).
 - Store `InMemory` và `File` chỉ được dùng ở Development/Test.
+- Profile Dev (slice 013): ngoài Development/Test mỗi endpoint Dev và mỗi command Dev đã đăng ký (kể cả module `ServiceOnly()`,
+  `GameServer:Hosting:MapPlayerApi=false`, command không có route, chế độ `--provision`) là một lỗi nêu endpoint hoặc
+  module + operation, deployment environment, environment id và cách sửa (chỉ `AddModule<CheatModule>()` khi
+  `AllowsDevelopmentTools`). Route Dev map sau `UseGameServer` vẫn bị pipeline trả 403 `FORBIDDEN` trước khi xác thực (một
+  Warning trong log), và runner từ chối command Dev (`FORBIDDEN`), cả khi replay.
 - Secret (mục 2) không được nằm trong file cấu hình nào ngoài Development/Test.
 - Thiếu secret của module (SSO GM, pepper, master key Data Protection, khoá IAP) và setting Couchbase được báo chung trong cùng
   một danh sách.
@@ -55,7 +62,8 @@ appsettings.json  <  appsettings.{Flavor}.json  <  biến môi trường  <  dò
   '<key>' …` trong cùng báo cáo, thoát 1 (không còn exception không xử lý).
 
 **Beta và uat không có công cụ dev**: không cheat, không xác thực thử nghiệm, không seed staff, không GM OpenAPI (chặt hơn
-OPS-09, vì beta/uat có tester bên ngoài và receipt sandbox thật). Công tắc `GameServer:Staging:AllowCheatModule` **chưa có**
+OPS-09, vì beta/uat có tester bên ngoài và receipt sandbox thật). Cheat bị framework chặn ở beta/uat/live dù host lỡ đăng ký
+module cheat (slice 013). Công tắc `GameServer:Staging:AllowCheatModule` **chưa có**
 (hoãn — PCR platform mục 17); QA cần cheat thì dùng local hoặc dev.
 
 **Môi trường dev phải giới hạn mạng**: flavor `Dev` bật xác thực thử nghiệm (header `X-Test-Player` mạo danh mọi player), cheat

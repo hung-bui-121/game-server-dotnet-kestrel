@@ -9,7 +9,7 @@ namespace GameServer.Platform.Web.Validation;
 /// <summary>
 /// Inspects every mapped endpoint before traffic (SEC-08, API-02, ARC-07, SEC-09, OPS-09):
 /// exactly one security profile, versioned route, no duplicate route+method, Public only from the
-/// allowlist, no Dev endpoints in Production.
+/// allowlist, Dev endpoints only where development tools are allowed (Development/Test).
 /// </summary>
 public static partial class EndpointSecurityValidator
 {
@@ -83,9 +83,12 @@ public static partial class EndpointSecurityValidator
                 }
             }
 
-            if (options.IsProduction && profiles.Any(p => p.Profile == SecurityProfile.Dev))
+            if (!options.AllowsDevProfile && profiles.Any(p => p.Profile == SecurityProfile.Dev))
             {
-                errors.Add($"[endpoint {label}] uses profile Dev in Production. Fix: do not register cheat/dev modules in Production (OPS-09).");
+                errors.Add(
+                    $"[endpoint {label}] uses profile Dev in deployment environment '{options.DeploymentEnvironment}' " +
+                    $"(environment id '{options.EnvironmentId}'). Fix: register Dev (cheat) modules only when development tools are allowed " +
+                    "(GameServerOptions.AllowsDevelopmentTools: Development/Test, flavors local and dev) (OPS-09, SEC-08).");
             }
         }
 

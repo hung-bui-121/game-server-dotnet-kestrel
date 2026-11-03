@@ -29,6 +29,7 @@
     <Project Path="src/GameServer.Platform.Testing/GameServer.Platform.Testing.csproj" />
     <Project Path="src/GameServer.Platform.Web/GameServer.Platform.Web.csproj" />
     <Project Path="src/GameServer.Platform/GameServer.Platform.csproj" />
+    <Project Path="src/GameServer.TestKit/GameServer.TestKit.csproj" />
   </Folder>
   <Folder Name="/templates/" />
   <Folder Name="/templates/module/">

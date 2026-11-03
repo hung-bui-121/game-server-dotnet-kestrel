@@ -45,39 +45,80 @@ except the new consumer guide (English, plan D18); keys, field names, commands a
 
 ## Phase 1: Setup
 
-- [ ] T001 Baseline on branch `013-consumer-readiness` (base `fea3d29`): Debug and Release build of `GameServer.slnx`;
+- [X] T001 Baseline on branch `013-consumer-readiness` (base `fea3d29`): Debug and Release build of `GameServer.slnx`;
   full suite in memory (no `COUCHBASE_*`) and with `GAMESERVER_TEST_STORE=File`.
   Done when: 0 warnings in both configurations, 0 failures; total/passed/skipped counts recorded as a Note (reference
   for T019, T035, T077).
-- [ ] T002 [P] **[VERIFY] V2 and V3** in a throw-away layout under `%TEMP%`: one `Directory.Build.props` defining
+  Note: Baseline 2026-11-03 (HEAD `cd06f31` = base `fea3d29` + slice docs): Debug and Release build 0 warnings/0 errors;
+  full suite in memory 1190 total, 1105 passed, 85 skipped, 0 failed (35 s); with `GAMESERVER_TEST_STORE=File` the same
+  1190/1105/85/0 (35 s). No `COUCHBASE_CONNSTR` set.
+- [X] T002 [P] **[VERIFY] V2 and V3** in a throw-away layout under `%TEMP%`: one `Directory.Build.props` defining
   `_GameServerRelativeDir` with `MakeRelative(...).Replace('\','/').ToLowerInvariant()` and `IsTestProject` from
   `StartsWith('tests/')`, two empty projects (`src/A`, `tests/B`) under a parent folder named `tests`; run
   `dotnet msbuild <proj> -getProperty:IsTestProject -getProperty:_GameServerRelativeDir -getItem:AdditionalFiles` and
   the same with a single `-getProperty`.
   Done when: a Note records the exact output shape (JSON vs plain text) and that `IsTestProject` is true only for
   `tests/B`; fallbacks chosen for T050/T051 if needed.
-- [ ] T003 [P] **[VERIFY] V1**: build one framework project (`src/GameServer.Core`) with a temporary
+  Note: V2 confirmed on SDK 10.0.403: two or more `-getProperty`/`-getItem` switches print one JSON object
+  `{"Properties": {...}, "Items": {"AdditionalFiles": [{"Identity": ..., "FullPath": ..., ...}]}}`; a single
+  `-getProperty` prints the bare value (an empty line when the property is empty). Without `-t:` the switches only
+  evaluate (`dotnet build -getProperty` also skips the build); with `-t:Build` they report values after the targets ran.
+  JSON escapes `+` as `\u002B` (parse it, never string-match). V3 confirmed: `MakeRelative(...).Replace('\','/')
+  .ToLowerInvariant()` gives `src/a` and `tests/b` (no trailing slash) in a layout `...\tests\fw\{src\A,tests\B}`;
+  `IsTestProject` from `StartsWith('tests/')` is `true` for `tests/B` only (empty for `src/A`, although its path contains
+  `\tests\`). No fallback needed for T050/T051.
+- [X] T003 [P] **[VERIFY] V1**: build one framework project (`src/GameServer.Core`) with a temporary
   `<Version>0.7.0</Version>` (command-line `-p:Version=0.7.0`, nothing committed) (a) in this clone and (b) in a
   temp game repo that adds this repository as a submodule from the local path (`git -c protocol.file.allow=always
   submodule add`); read `InformationalVersion` with `-getProperty` and from the built assembly.
   Done when: a Note records both values; if (b) has no `+{sha}`, T061 adds the `git rev-parse` fallback target. The temp
   repo is deleted.
-- [ ] T004 [P] **[VERIFY] V4 and V7** in a throw-away solution: a class library referencing
+  Note: V1 confirmed. (a) this clone, `dotnet msbuild src/GameServer.Core/GameServer.Core.csproj -t:Build
+  -p:Version=0.7.0` (intermediate/output redirected to the scratch folder): `SourceRevisionId` = HEAD sha,
+  `InformationalVersion` = `0.7.0+cd06f31dbe2b2108d9312f38e67350fb9eb4d0e6`, built DLL ProductVersion the same,
+  FileVersion `0.7.0.0`. (b) temp game repo with this repository as submodule `framework/` (`.git` file
+  `gitdir: ../.git/modules/framework`): identical values. Source Link fills the sha in both, so T061 needs **no**
+  `git rev-parse` fallback target. Values appear only after the build targets ran (evaluation-only `-getProperty`
+  returns an empty `InformationalVersion`). Temp repo deleted; nothing written to this clone.
+- [X] T004 [P] **[VERIFY] V4 and V7** in a throw-away solution: a class library referencing
   `Microsoft.AspNetCore.Mvc.Testing` (10.0.14) with a `WebApplicationFactory<T>` subclass overriding `DisposeAsync`, a
   minimal web app, and an xUnit test project that references only the library; run one test that creates a client.
   Also log `IHostEnvironment.ApplicationName` inside the factory (expected: the entry point's assembly name, used by T060).
   Done when: a Note records whether the content root is found without a direct `Mvc.Testing` reference in the test
   project (V4), whether `DisposeAsync` is overridable (V7) and the `ApplicationName` value; the fallbacks for T009/T026
   are chosen.
-- [ ] T005 [P] **[VERIFY] V5 and V6** in a throw-away console app with `Serilog.AspNetCore` 10.0.0: (V5) log a custom
+  Note: V4 confirmed: the package ships `buildTransitive/net10.0/Microsoft.AspNetCore.Mvc.Testing.targets`, imported
+  into the test project's `nuget.g.targets` through the library's `PackageReference`; the test output gets
+  `MvcTestingAppManifest.json` (entries for the app and the library) and `App.deps.json`, and the factory found the app's
+  content root (folder of `App/appsettings.json`) with no `Mvc.Testing` reference in the test project. T009/T026/T033 need
+  no direct reference (the consumer guide may still recommend it as optional). V7 confirmed: `public override async
+  ValueTask DisposeAsync()` compiles with warnings as errors and runs. `IHostEnvironment.ApplicationName` = `App` (the
+  entry point's assembly name) under `WebApplicationFactory<Program>` (T060).
+- [X] T005 [P] **[VERIFY] V5 and V6** in a throw-away console app with `Serilog.AspNetCore` 10.0.0: (V5) log a custom
   `IReadOnlyList<KeyValuePair<string, object?>>` state with `{OriginalFormat}` through `ILogger` → compact JSON file;
   check every key is a property and `@mt` is the template; (V6) `WriteTo.Async(console with a blocking TextWriter,
   bufferSize 10, blockWhenFull: false, monitor)` + 2 000 events: the logging calls return immediately and the monitor
   counts drops.
   Done when: a Note records both results and the fallback chosen for T038/T043 if needed.
-- [ ] T006 [P] **[VERIFY] V8**: `dotnet list src/GameServer.Platform.Observability package --include-transitive` → the
+  Note: V5 confirmed (Serilog 4.3.0 / Serilog.Extensions.Logging 10.0.0 through `AddSerilog(..., preserveStaticLogger:
+  true, writeToProviders: false)`): a custom `IReadOnlyList<KeyValuePair<string, object?>>` state with `{OriginalFormat}`
+  gives `@mt` = the template and every key as a property, also keys not in the template (`ActorId`, `NotModified`); a
+  null value is written as `"ActorId":null`; `EventId` renders `{"Id":1,"Name":"Request"}`, `SourceContext` = the
+  category, enrichers kept. No fallback for T038. V6 confirmed (Serilog.Sinks.Console 6.1.1 under `Console.SetOut` with a
+  writer that blocks forever): `WriteTo.Async(console, bufferSize: 10, blockWhenFull: false, monitor)` + 2 000 events
+  -> the calls returned in 3.8 ms, the writer was entered once (worker blocked), the inspector reported 1 989 drops and
+  a queue of 10. No own `Channel` needed for T043. The console sink resolves `Console.Out` per event, so `Console.SetOut`
+  would work as a seam, but it is process-wide and shared by parallel tests: T043/T044 keep the plan's internal
+  `TextWriter` seam. Consequence for T043: `Serilog.Sinks.Console` 6.1.1 has only two `Console(...)` overloads
+  (output template, or `ITextFormatter`) and **no `TextWriter` parameter**, so the seam is realised by writing to
+  Serilog core's `WriteTo.TextWriter(formatter, writer, restrictedToMinimumLevel)` inside the same `WriteTo.Async(...)`
+  when the internal writer is set, and `sink.Console(formatter, ...)` otherwise.
+- [X] T006 [P] **[VERIFY] V8**: `dotnet list src/GameServer.Platform.Observability package --include-transitive` → the
   resolved `Serilog.Sinks.Console` version.
   Done when: a Note records the version that T043 pins in `Directory.Packages.props`.
+  Note: V8: `Serilog.Sinks.Console` resolves to **6.1.1** (transitive through Serilog.AspNetCore 10.0.0; also Serilog
+  4.3.0, Serilog.Extensions.Hosting/Logging/Settings.Configuration 10.0.0, Serilog.Sinks.Debug 3.0.0). T043 pins
+  `<PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />`.
 
 **Checkpoint**: baseline counts known; V1–V8 decided with their fallbacks.
 
@@ -87,14 +128,14 @@ US1 depends only on T007. T008 and T009 are needed by US2 (and T009 by every lat
 behaviour. Version stamping and build sealing are **not** here (they are breaking changes BC-5/BC-6 and belong to US4/US6),
 so US1 can ship without them.
 
-- [ ] T007 `GameServerOptions.AllowsDevProfile` in `src/GameServer.Platform/GameServerOptions.cs` (research R1, D1):
+- [X] T007 `GameServerOptions.AllowsDevProfile` in `src/GameServer.Platform/GameServerOptions.cs` (research R1, D1):
   `public bool AllowsDevProfile => AllowsDevelopmentTools;` with the doc comment of contracts/public-api.md §2 (three
   layers, PCR platform §17 R13, never Production). No setting (FR-006).
   Tests in a new file `tests/GameServer.Platform.Tests/DevProfileDecisionTests.cs`: true for Development and Test, false
   for Staging, Production and an arbitrary value set directly on the options (`"Qa"`); always equal to
   `AllowsDevelopmentTools`.
   Done when: green; nothing else reads the new property yet. (FR-006)
-- [ ] T008 [P] Extract the commit rules into a new file `src/GameServer.Platform/Commands/CommitRules.cs` (research R9,
+- [X] T008 [P] Extract the commit rules into a new file `src/GameServer.Platform/Commands/CommitRules.cs` (research R9,
   contracts/public-api.md §2): `internal static class CommitRules` with `CheckCode(registration, registry, code)` and
   `CheckAudit(descriptor, outbox)` returning `string?`; `CommandRunner.EnsureCommittableCode`/`EnsureAudit`
   (`src/GameServer.Platform/Commands/CommandRunner.cs:352-405`) throw `InvalidOperationException(message)` when non-null,
@@ -104,7 +145,10 @@ so US1 can ship without them.
   entries, non-GM command with one → the runner's message; committable → null.
   Done when: new tests green; existing `tests/GameServer.Platform.Web.Tests/UncataloguedCommitCodeTests.cs`, GM audit
   tests and `tests/GameServer.Platform.Tests/Commands/CommandRunnerTests.cs` green unchanged. (FR-025, FR-026)
-- [ ] T009 [P] Kit project skeleton (after T004; research R7, plan US2 "Project"): new
+  Note: `DescribeOwner` moved into `CommitRules` with the code rule (it needs the registry only). `CommitRulesTests`
+  compare each message with the exception the runner throws for the same outcome (`RunnerHarness`), so equality with the
+  runner is checked, not only the literal text.
+- [X] T009 [P] Kit project skeleton (after T004; research R7, plan US2 "Project"): new
   `src/GameServer.TestKit/GameServer.TestKit.csproj` (FrameworkReference `Microsoft.AspNetCore.App`, PackageReference
   `Microsoft.AspNetCore.Mvc.Testing`, ProjectReferences Platform.Web, Platform.Testing, Modules.Identity.Adapters,
   Modules.Gm.Adapters; no xUnit/Shouldly/sample/test reference); add it to `GameServer.slnx` under `/src/`;
@@ -112,6 +156,8 @@ so US1 can ship without them.
   Done when: Release build 0 warnings; `dotnet msbuild src/GameServer.TestKit/GameServer.TestKit.csproj
   -getProperty:IsTestProject -getProperty:IsFrameworkCode` → not a test project, framework code (analyzers and banned
   APIs on). (FR-010)
+  Note: `IsTestProject` empty, `IsFrameworkCode` true, `AnalysisLevel` latest-recommended, `AdditionalFiles` =
+  `BannedSymbols.txt`. No direct `Mvc.Testing` reference needed downstream (V4).
 
 **Checkpoint**: Release build 0 warnings; full suite green and unchanged; no behaviour change.
 
@@ -122,7 +168,7 @@ Independent test: T016 (flavor matrix) + T015 (middleware with the validator byp
 Depends on: T001, T007 only. T010, T011 and T014 must land in the same change (they change the startup report that
 `ConfigAndCheatTests` and `StartupValidationTests` assert).
 
-- [ ] T010 [US1] Layer 1a — endpoint rule in `src/GameServer.Platform.Web/Validation/EndpointSecurityValidator.cs:86`
+- [X] T010 [US1] Layer 1a — endpoint rule in `src/GameServer.Platform.Web/Validation/EndpointSecurityValidator.cs:86`
   (research R2, D2): `options.IsProduction` → `!options.AllowsDevProfile`; message exactly
   `[endpoint {methods} {route}] uses profile Dev in deployment environment '{DeploymentEnvironment}' (environment id
   '{EnvironmentId}'). Fix: register Dev (cheat) modules only when development tools are allowed
@@ -136,7 +182,9 @@ Depends on: T001, T007 only. T010, T011 and T014 must land in the same change (t
   `tests/GameServer.Platform.Web.Tests/StartupValidationTests.cs:83` to the new text (BC-3).
   Done when: both files green; the message names method, route, deployment environment, environment id and the fix.
   (FR-001, FR-006, FR-007, US1-1)
-- [ ] T011 [US1] Layer 1b — Dev command rule in `src/GameServer.Platform/Registry/ModuleRegistry.cs` (research R2, D2):
+  Note: also updated the class summary of `EndpointSecurityValidator` and the `CheatModule` summary
+  (`src/GameServer.Modules.Economy.Adapters/EconomyModule.cs`), which said "in Production".
+- [X] T011 [US1] Layer 1b — Dev command rule in `src/GameServer.Platform/Registry/ModuleRegistry.cs` (research R2, D2):
   `ValidateCommands(options, errors)` receives the options (call sites `:108-124`, `:271-280`) and reports every
   registered command with `Profile == Dev && !options.AllowsDevProfile`, for every module including service-only ones:
   `[module {name}] command '{operation}' has profile Dev in deployment environment '{…}' (environment id '{…}'). Fix: …
@@ -148,7 +196,10 @@ Depends on: T001, T007 only. T010, T011 and T014 must land in the same change (t
   in `tests/GameServer.Platform.Web.Tests/GameServerCommandLineTests.cs`: Production, `CheatModule` registered, fake
   `IStoreProvisioner` → exit 1, the report names `cheat.grant`, the provisioner is never called.
   Done when: green. (FR-002, FR-006, FR-007, US1-2, edge case `--provision`)
-- [ ] T012 [US1] Layer 2 — pipeline in `src/GameServer.Platform.Web/Middleware/ProfileEnforcementMiddleware.cs:69-77`
+  Note: `Hosting:MapPlayerApi=false` does not change the registry rule (the registry never looks at it); the
+  registry-level test sets it on the options to document that, the host-level variant is in T016. Fix text of the command
+  line = the endpoint fix text with `(OPS-09)`.
+- [X] T012 [US1] Layer 2 — pipeline in `src/GameServer.Platform.Web/Middleware/ProfileEnforcementMiddleware.cs:69-77`
   (research R3, D3): directly after the profile lookup (and the existing 405/no-profile branches), before the GM same-site
   check, `Cache-Control`, `SetBodyLimit`, CSRF, permission checks and any `AuthenticateAsync`: Dev && `!AllowsDevProfile`
   → Warning `Dev endpoint {Method} {Route} refused in deployment environment {DeploymentEnvironment} ({EnvironmentId}).`
@@ -162,7 +213,11 @@ Depends on: T001, T007 only. T010, T011 and T014 must land in the same change (t
   called after player scheme then GM scheme; an endpoint whose `SecurityProfileMetadata` carries an undefined enum value
   (`(SecurityProfile)99`) → 403 and 0 authentication calls.
   Done when: green; existing profile/CSRF/permission tests green. (FR-003, FR-004, FR-006, FR-007, US1-3, US1-6)
-- [ ] T013 [US1] Layer 3 — runner in `src/GameServer.Platform/Commands/CommandRunner.cs` (after T008, same file; research
+  Note: the Dev refusal sits right after the no-profile branch, i.e. before the GM same-site check, `Cache-Control`,
+  `SetBodyLimit`, authentication, CSRF and permissions. The unknown-profile refusal is the `default` arm of the explicit
+  authentication `switch` (after `SetBodyLimit`, before any `AuthenticateAsync`). Route in the Warning =
+  `RoutePattern.RawText` (endpoint display name if the endpoint is not a route endpoint).
+- [X] T013 [US1] Layer 3 — runner in `src/GameServer.Platform/Commands/CommandRunner.cs` (after T008, same file; research
   R4, D4): `EnsureActorAllowed` (`:148-161`) becomes an instance method, `SecurityProfile.Dev => options.AllowsDevProfile`
   for player and GM actors; refusal = `GameServerException(CoreErrorCodes.Forbidden, "Dev command '{op}' refused in
   deployment environment '{…}' (environment id '{…}').")`; `TryReplayAsync` (`:124`) records
@@ -177,7 +232,13 @@ Depends on: T001, T007 only. T010, T011 and T014 must land in the same change (t
   the flip is not replayed after it.
   Done when: green; `tests/GameServer.Platform.Tests/Commands/CommandRunnerTests.cs` green. (FR-005, FR-006, FR-007,
   US1-4, SC-001 runner part, edge case "Dev receipt replayed")
-- [ ] T014 [US1] Framework tests broken by BC-1/BC-3 (research R6, D6; lands with T010/T011):
+  Note: in Development/Test `Dev => options.AllowsDevProfile` keeps today's behaviour exactly (any actor type, system
+  actors included; `v0.6.0` had `Dev => true`); no actor restriction added. `TryReplayAsync` records the metric for every
+  `GameServerException` of its pre-checks (unknown operation, no target player, actor refusal), as `ExecuteAsync` does;
+  callers never run `ExecuteAsync` after a throwing `TryReplayAsync`, so nothing is counted twice. The metric assertion
+  filters `command_results_total` by `operation=cheat.grant, code=FORBIDDEN, replayed=false` (no public handle on the
+  host's `Meter` instance; only this class makes the runner refuse that command).
+- [X] T014 [US1] Framework tests broken by BC-1/BC-3 (research R6, D6; lands with T010/T011):
   - `tests/Shared/GameHttp.cs`: `FullGame` adds `CheatModule` only when `builder.Options.AllowsDevelopmentTools` (rule of
     `samples/SampleHost/Program.cs:62-66`);
   - `tests/SampleGame.Tests/ConfigAndCheatTests.cs:77-86`: compose `CheatModule` explicitly, assert the new endpoint
@@ -187,7 +248,15 @@ Depends on: T001, T007 only. T010, T011 and T014 must land in the same change (t
   - search every `tests/**/*.cs` (not `samples/`) for `CheatModule`, `AsDevEndpoint`, `MapDevCommand`, `"profile Dev"`
     and `"in Production"` and fix any other composition that starts Staging/Production with a Dev module.
   Done when: full suite green in memory; a Note lists every file changed. (FR-001, FR-002, BC-1, BC-3)
-- [ ] T015 [US1] Middleware host tests, validator bypassed, in `tests/GameServer.Platform.Web.Tests/DevProfileMiddlewareTests.cs`
+  Note: changed `tests/Shared/GameHttp.cs` (`FullGame` adds `CheatModule` only when `AllowsDevelopmentTools`),
+  `tests/SampleGame.Tests/ConfigAndCheatTests.cs` (Staging + Production theory composing `CheatModule` explicitly, exact
+  endpoint and command lines; new theory: `FullGame` in Staging/Production has no Dev line),
+  `tests/GameServer.Platform.Web.Tests/StartupValidationTests.cs` (new text). Re-checked unchanged:
+  `IapStartupValidationTests` (prefix filter), `GmAuthTests`, `SsoTests`, `GmTestHost`, `ObservedHost`, `AccountPurgeTests`,
+  `AnalyticsSeamTests`, Client tests, `TelemetryTests`, `FileStoreProcessKillTests` (all Development/Test) and Couchbase
+  `CouchbaseGameHost` (deployment environment from `TestHost.DefaultSettings()` = Test). Full suite in memory 1245 total,
+  1160 passed, 85 skipped, 0 failed at that point.
+- [X] T015 [US1] Middleware host tests, validator bypassed, in `tests/GameServer.Platform.Web.Tests/DevProfileMiddlewareTests.cs`
   (host part, after T012, T014; research R5): Development `TestHost` with `CheatModule` + Identity + Economy + GM, flip
   the singleton deployment environment to `Staging` after startup, then `POST /api/v1/cheat/grant` with (a) a real guest
   bearer token (guest login before the flip), (b) test-authentication headers, (c) a GM test header and (d) a GM session
@@ -195,7 +264,10 @@ Depends on: T001, T007 only. T010, T011 and T014 must land in the same change (t
   `host.Analytics` has no `login`/resume record from these requests, one Warning per request naming route and
   `Staging` and containing no token, cookie or header value.
   Done when: green; 4/4 cases with 0 state changes. (FR-003, FR-007, US1-3, SC-001 middleware part)
-- [ ] T016 [US1] Flavor matrix in a new file `tests/GameServer.Platform.Web.Tests/DevProfileFlavorMatrixTests.cs` (after
+  Note: state check = every document of every registered collection + `sessions` serialized before and after (wallet,
+  receipts, ledger, player and GM sessions); analytics `login` records counted before/after a flush; Warnings captured by
+  an extra `ILoggerProvider` (category, level) and scanned for the bearer token, GM cookie values and CSRF token.
+- [X] T016 [US1] Flavor matrix in a new file `tests/GameServer.Platform.Web.Tests/DevProfileFlavorMatrixTests.cs` (after
   T010, T011, T014; research R5): `TestHost` with `CheatModule` × flavors local and dev (`Development`) and test
   (`Test`) → start and grant works for a player and for a GM actor with ledger source `cheat` (US1-5); beta, uat
   (`Staging`) and live (`Production`) with the matching environment ids → startup fails and the report contains the Dev
@@ -203,7 +275,12 @@ Depends on: T001, T007 only. T010, T011 and T014 must land in the same change (t
   the service-only and `MapPlayerApi=false` variants (command line only).
   Done when: green; the matrix covers 5 flavors × {with cheat} + 2 variants, 100% as expected. (FR-001, FR-002, FR-005
   Development part, FR-007, US1-1, US1-2, US1-5, SC-001)
-- [ ] T017 [US1] Docs of the Dev rule (FR-008; Vietnamese; stamps stay until T072): `docs/pcr/platform.md` (lines ~200
+  Note: 15 cases: local/dev/test start and grant; beta/uat/live fail with exactly the two Dev lines; service-only and
+  `MapPlayerApi=false` fail on the command line alone in beta/uat/live and start in local/dev/test. A GM actor passes the
+  pipeline on the cheat route but gets 400 `BAD_REQUEST` (a GM has no target player on a player-style route — unchanged
+  since `v0.6.0`), so the GM grant with ledger source `cheat` goes through `ICommandRunner` with a target player, as GM
+  flows do.
+- [X] T017 [US1] Docs of the Dev rule (FR-008; Vietnamese; stamps stay until T072): `docs/pcr/platform.md` (lines ~200
   and ~661: security profiles, flavors, runner rules → "Dev chỉ khi development tools được phép (local, dev, test) —
   chặt hơn OPS-09"; a "Breaking" line BC-1..BC-3 in §17); `docs/guides/module-authoring.md:99-103`;
   `docs/guides/environments-and-local-run.md` (flavor table, cheat note); HTML `docs/html/01-gioi-thieu.html` (~617,
@@ -211,16 +288,29 @@ Depends on: T001, T007 only. T010, T011 and T014 must land in the same change (t
   "Dev — forbidden in Production" statement.
   Done when: a search of `docs/` for `Dev` within 60 characters of `Production` shows no statement that Dev is allowed in
   Staging; `DocumentedConfigurationKeysTests` green. (FR-008, BC-1..BC-3)
-- [ ] T018 [US1] Release-notes draft: new file `specs/013-consumer-readiness/release-notes-draft.md` (input of the
+  Note: `docs/pcr/platform.md` §12 (runner rule + new "Profile Dev" rule), §17 (startup rule row, Staging note, new
+  "Breaking (slice 013, FG-010)" table BC-1..BC-3, deferred-switch row → "extends `AllowsDevProfile` only");
+  `docs/guides/module-authoring.md:99`; `docs/guides/environments-and-local-run.md` (dev-tools note, startup checks,
+  beta/uat note); HTML `01-gioi-thieu.html` (profile table, deny-by-default, startup checks, startup-error examples),
+  `02-them-command.html` (`MapDevCommand` row, route ↔ command note, new troubleshooting row), `03-deploy.html` (dev-tools
+  bullet). Remaining hits of the search are the new rule or the old message quoted in BC-3. Stamps untouched (T072).
+- [X] T018 [US1] Release-notes draft: new file `specs/013-consumer-readiness/release-notes-draft.md` (input of the
   `v0.7.0` tag message, FR-090): sections "Fixed (FG ids)", "Breaking changes and migration" (one subsection per BC with
   the steps of plan "Migration notes"), "Consumer workarounds now removable" (spec "Consumer impact" table rows),
   "Docs not re-checked", "Manual checks"; fill FG-010 and BC-1, BC-2, BC-3 (old and new message text) now; later stories
   append their parts.
   Done when: the file exists with the FG-010/BC-1..BC-3 content complete and the other sections as headings.
   (FR-090)
-- [ ] T019 [US1] US1 checkpoint: Release build 0 warnings; full suite in memory and with `GAMESERVER_TEST_STORE=File`.
+- [X] T019 [US1] US1 checkpoint: Release build 0 warnings; full suite in memory and with `GAMESERVER_TEST_STORE=File`.
   Done when: all green; counts = T001 + new tests (recorded as a Note); US1 is shippable alone (T007 + T010–T018).
   (FR-007, FR-091 partial)
+  Note: 2026-11-03: Debug and Release build 0 warnings/0 errors; full suite in memory 1261 total, 1176 passed, 85
+  skipped, 0 failed; with `GAMESERVER_TEST_STORE=File` the same 1261/1176/85/0. 1261 = 1190 (T001) + 71 new: Platform.Tests
+  17 (`DevProfileDecisionTests` 8, `CommitRulesTests` 9), Platform.Web.Tests 51 (`DevProfileValidationTests` 19,
+  `DevProfileMiddlewareTests` 9, `DevProfileRunnerTests` 7, `DevProfileFlavorMatrixTests` 15, `GameServerCommandLineTests`
+  +1), SampleGame.Tests +3 (`ConfigAndCheatTests`: 1 Production case → 2×2 theory cases). US1 touches no file of T008/T009
+  except `CommandRunner.cs` (T008 and T013 share it): a hotfix cherry-pick of US1 alone needs T007 + T010–T018 and the
+  `CommandRunner.cs` hunks of T013 only.
 
 **Checkpoint (MVP)**: Dev refused at startup (endpoints and commands, incl. service-only and `--provision`), in the
 pipeline before authentication, and in the runner (execute + replay) outside Development/Test; Development unchanged.

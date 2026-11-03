@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -15,8 +16,9 @@ namespace GameServer.Platform.Web.Middleware;
 
 /// <summary>
 /// Deny-by-default (SEC-08, ACC-12): an endpoint without a security profile is refused even if the startup validator
-/// was disabled. Authenticates with the schemes of the endpoint's profile only (SEC-02), enforces GM permissions
-/// (SEC-07) and the body limit of the profile (API-06).
+/// was disabled, and so is a Dev endpoint where the Dev profile is not allowed or a profile value it does not know.
+/// Authenticates with the schemes of the endpoint's profile only (SEC-02), enforces GM permissions (SEC-07) and the
+/// body limit of the profile (API-06).
 /// </summary>
 public sealed class ProfileEnforcementMiddleware(
     RequestDelegate next,
@@ -51,6 +53,20 @@ public sealed class ProfileEnforcementMiddleware(
             return;
         }
 
+        if (profile.Value == SecurityProfile.Dev && !options.AllowsDevProfile)
+        {
+            // FG-010: before any authentication scheme runs (no session touch, no resume analytics), CSRF and body
+            // handling. Only the route template is logged, never a header, cookie or token.
+            logger.LogWarning(
+                "Dev endpoint {Method} {Route} refused in deployment environment {DeploymentEnvironment} ({EnvironmentId}).",
+                context.Request.Method,
+                (endpoint as RouteEndpoint)?.RoutePattern.RawText ?? endpoint.DisplayName,
+                options.DeploymentEnvironment,
+                options.EnvironmentId);
+            await writer.WriteAsync(context, CoreErrorCodes.Forbidden);
+            return;
+        }
+
         if (profile.Value == SecurityProfile.Gm && CsrfValidation.IsUnsafe(context.Request.Method) && CsrfValidation.IsCrossSite(context.Request, csrf.Value))
         {
             // P0 part of SEC-05: a cookie-authenticated GM mutation must come from the same site.
@@ -65,22 +81,34 @@ public sealed class ProfileEnforcementMiddleware(
         }
 
         SetBodyLimit(context, profile.Value);
-        string? scheme = null;
-        if (profile.Value != SecurityProfile.Public)
+        string? scheme;
+        switch (profile.Value)
         {
-            scheme = profile.Value switch
-            {
-                SecurityProfile.Player => await AuthenticateAsync(context, schemes.Value.PlayerSchemes, ActorType.Player),
-                SecurityProfile.Gm => await AuthenticateAsync(context, schemes.Value.GmSchemes, ActorType.Gm),
-                _ => await AuthenticateAsync(context, schemes.Value.PlayerSchemes, ActorType.Player)
-                     ?? await AuthenticateAsync(context, schemes.Value.GmSchemes, ActorType.Gm),
-            };
-            if (scheme is null)
-            {
-                var (code, details) = AuthenticationFailures.Get(context);
-                await writer.WriteAsync(context, code, details: details);
+            case SecurityProfile.Public:
+                scheme = null;
+                break;
+            case SecurityProfile.Player:
+                scheme = await AuthenticateAsync(context, schemes.Value.PlayerSchemes, ActorType.Player);
+                break;
+            case SecurityProfile.Gm:
+                scheme = await AuthenticateAsync(context, schemes.Value.GmSchemes, ActorType.Gm);
+                break;
+            case SecurityProfile.Dev:
+                // Reached only where the Dev profile is allowed (refused above otherwise): either actor type.
+                scheme = await AuthenticateAsync(context, schemes.Value.PlayerSchemes, ActorType.Player)
+                    ?? await AuthenticateAsync(context, schemes.Value.GmSchemes, ActorType.Gm);
+                break;
+            default:
+                // SEC-08 deny-by-default (FR-004): a profile this pipeline does not handle explicitly is refused.
+                await writer.WriteAsync(context, CoreErrorCodes.Forbidden);
                 return;
-            }
+        }
+
+        if (scheme is null && profile.Value != SecurityProfile.Public)
+        {
+            var (code, details) = AuthenticationFailures.Get(context);
+            await writer.WriteAsync(context, code, details: details);
+            return;
         }
 
         var requiresCsrf = endpoint.Metadata.GetMetadata<CsrfRequiredMetadata>() is not null;
