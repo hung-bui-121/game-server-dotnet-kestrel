@@ -157,7 +157,12 @@ public sealed class GmAuthTests : IAsyncLifetime
     public async Task Gm_endpoint_with_a_permission_outside_the_catalog_fails_startup()
     {
         var ex = await Should.ThrowAsync<GameServerStartupException>(() => SampleTestHost.StartAsync(
-            b => GameHttp.FullGame(b.AddModule<GmModule>()),
+            b =>
+            {
+                GameHttp.FullGame(b.AddModule<GmModule>());
+                b.DeclareRoutes(GameServer.Routing.RouteDeclaration.Get(
+                    "test.rogue", "/gm/v1/rogue", GameServer.Actors.SecurityProfile.Gm, GameServer.Routing.RouteSurface.GmApi, "rogue.permission"));
+            },
             beforeUseGameServer: app => app.MapGet("/gm/v1/rogue", () => Results.Ok()).AsGmEndpoint("rogue.permission")));
         ex.Message.ShouldContain("rogue.permission");
     }

@@ -126,5 +126,6 @@ public static class IapModuleDefinition
         RequiredConfigFiles = [IapCatalog.ConfigFile],
         Commands = [Command.Define<IapPurchaseCommand, IapPurchaseResult>(IapPurchaseHandler.Descriptor).HandledBy<IapPurchaseHandler>()],
         ErrorCodes = IapErrors.All,
+        Routes = [IapRoutes.Purchase],
     };
 }

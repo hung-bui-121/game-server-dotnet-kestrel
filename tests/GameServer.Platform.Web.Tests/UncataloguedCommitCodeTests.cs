@@ -3,6 +3,7 @@ using GameServer.Commands;
 using GameServer.Errors;
 using GameServer.Modules;
 using GameServer.Platform.Web.Commands;
+using GameServer.Routing;
 using GameServer.Tests.Shared;
 using Microsoft.Extensions.DependencyInjection;
 using Sample.Counter;
@@ -19,6 +20,8 @@ public sealed class UncataloguedCommitCodeTests
 {
     private const string Route = "/api/v1/test/uncatalogued";
 
+    private static readonly RouteDeclaration Uncatalogued = RouteDeclaration.Command(UncataloguedHandler.Descriptor, Route);
+
     [Fact]
     public async Task Commit_with_an_uncatalogued_code_is_internal_commits_nothing_and_logs_the_code()
     {
@@ -28,10 +31,10 @@ public sealed class UncataloguedCommitCodeTests
             {
                 SampleTestHost.DefaultModules(b);
                 b.AddModule(new UncataloguedModule());
+                b.DeclareRoutes(Uncatalogued);
             },
             beforeUseGameServer: app => app.MapPlayerCommand<Wire.IncrementRequest, IncrementCommand, IncrementResult>(
-                Route,
-                UncataloguedHandler.Operation,
+                Uncatalogued,
                 request => new IncrementCommand(request.By, null),
                 result => new Wire.IncrementResult { Value = result.Value }));
 

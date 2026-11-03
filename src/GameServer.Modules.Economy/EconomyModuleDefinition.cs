@@ -29,6 +29,7 @@ public static class EconomyModuleDefinition
         ],
         ErrorCodes = EconomyErrors.All,
         OutboxProjections = [new OutboxProjection(EconomyOperations.LedgerKind, EconomyOperations.LedgerCollection)],
+        Routes = EconomyRoutes.All,
     };
 }
 
@@ -66,5 +67,6 @@ public static class CheatModuleDefinition
         Version = "0.1.0",
         DependsOn = [EconomyModuleDefinition.ModuleName],
         Commands = [Command.Define<CheatGrantCommand, CheatGrantResult>(CheatGrantHandler.Descriptor).HandledBy<CheatGrantHandler>()],
+        Routes = [CheatRoutes.Grant],
     };
 }

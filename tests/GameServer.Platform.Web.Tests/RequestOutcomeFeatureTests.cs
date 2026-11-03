@@ -1,8 +1,10 @@
 using System.Collections.Concurrent;
+using GameServer.Actors;
 using GameServer.Platform.Web.Commands;
 using GameServer.Platform.Web.Middleware;
 using GameServer.Platform.Web.Requests;
 using GameServer.Platform.Web.Routing;
+using GameServer.Routing;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Sample.Counter;
@@ -21,6 +23,10 @@ public sealed class RequestOutcomeFeatureTests
     private const string CodedRoute = "/api/v1/consumer/coded";
     private const string TeapotRoute = "/api/v1/consumer/teapot";
     private const string HookedRoute = "/api/v1/consumer/increment-hooked";
+
+    private static readonly RouteDeclaration Coded = RouteDeclaration.Post("consumer.coded", CodedRoute, SecurityProfile.Player);
+    private static readonly RouteDeclaration Teapot = RouteDeclaration.Post("consumer.teapot", TeapotRoute, SecurityProfile.Player);
+    private static readonly RouteDeclaration Hooked = RouteDeclaration.Command(IncrementHandler.Descriptor, HookedRoute, name: "consumer.increment_hooked");
 
     private sealed record Observed(string? ResultCode, int? StatusCode, string? Operation, bool Replayed, bool NotModified, bool Aborted, bool Completed);
 
@@ -90,9 +96,10 @@ public sealed class RequestOutcomeFeatureTests
         var observed = new ConcurrentDictionary<string, Observed>();
         await using var session = await RequestLogHost.StartAsync(
             beforeUseGameServer: app => app.Use(Recorder(observed)),
+            routes: [Coded, Teapot],
             afterUseGameServer: app =>
             {
-                app.MapPost(CodedRoute, (HttpContext http) =>
+                app.MapDeclared(Coded, (HttpContext http) =>
                     {
                         var outcome = http.RequestOutcome();
                         outcome.ResultCode = "CONSUMER_CODED";
@@ -100,7 +107,7 @@ public sealed class RequestOutcomeFeatureTests
                         return Results.Ok();
                     })
                     .AsPlayerEndpoint();
-                app.MapPost(TeapotRoute, () => Results.StatusCode(StatusCodes.Status418ImATeapot)).AsPlayerEndpoint();
+                app.MapDeclared(Teapot, () => Results.StatusCode(StatusCodes.Status418ImATeapot)).AsPlayerEndpoint();
             });
         var player = session.Host.PlayerClient("p_consumer");
 
@@ -121,10 +128,9 @@ public sealed class RequestOutcomeFeatureTests
     public async Task An_afterExecute_hook_reads_the_values_set_so_far()
     {
         Observed? inHook = null;
-        await using var session = await RequestLogHost.StartAsync(afterUseGameServer: app =>
+        await using var session = await RequestLogHost.StartAsync(routes: [Hooked], afterUseGameServer: app =>
             app.MapPlayerCommand<Wire.IncrementRequest, IncrementCommand, IncrementResult>(
-                HookedRoute,
-                IncrementHandler.Operation,
+                Hooked,
                 request => new IncrementCommand(request.By, null),
                 result => new Wire.IncrementResult { Value = result.Value },
                 (_, http) =>

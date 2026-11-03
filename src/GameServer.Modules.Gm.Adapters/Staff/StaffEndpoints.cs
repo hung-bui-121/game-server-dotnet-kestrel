@@ -51,21 +51,21 @@ public static class StaffEndpoints
     public static void Map(IEndpointRouteBuilder routes)
     {
         // Explicit delegate types: a lambda taking only HttpContext would bind to RequestDelegate and drop its result.
-        routes.MapGet(ListRoute, (Func<HttpContext, Task<IResult>>)(async http =>
+        routes.MapDeclared(GmRoutes.StaffList, (Func<HttpContext, Task<IResult>>)(async http =>
                 GmHttp.Json(await GmHttp.QueryAsync(http, StaffDirectory.Collection, "type", StaffRecord.DocumentType, "staffId", descending: false, d => View(http, StaffDirectory.Parse(d)!)))))
             .Produces<GmPage<StaffView>>()
             .AsGmEndpoint(GmPermissions.StaffRead);
 
-        routes.MapGet(StaffRoute, async (HttpContext http, string staffId) =>
+        routes.MapDeclared(GmRoutes.Staff, async (HttpContext http, string staffId) =>
                 GmHttp.Json(View(http, await GetAsync(http, RequireStaffId(staffId)))))
             .Produces<StaffView>()
             .AsGmEndpoint(GmPermissions.StaffRead);
 
-        routes.MapGet(AuditRoute, async (HttpContext http, string staffId) =>
+        routes.MapDeclared(GmRoutes.StaffAudit, async (HttpContext http, string staffId) =>
                 GmHttp.Json(await GmHttp.QueryAsync(http, GmModule.AuditCollection, "targetStaffId", RequireStaffId(staffId), "committedAtUtc", descending: true, d => d.Content)))
             .AsGmEndpoint(GmPermissions.StaffRead);
 
-        routes.MapPost(ListRoute, (Func<HttpContext, Task<IResult>>)(async http =>
+        routes.MapDeclared(GmRoutes.StaffCreate, (Func<HttpContext, Task<IResult>>)(async http =>
             {
                 var body = await GmHttp.ReadJsonAsync<CreateStaffBody>(http);
                 var staffId = RequireStaffId(body.StaffId);
@@ -101,7 +101,7 @@ public static class StaffEndpoints
             .Produces<StaffView>(StatusCodes.Status201Created)
             .AsGmEndpoint(GmPermissions.StaffManage);
 
-        routes.MapPut(GrantRoute, async (HttpContext http, string staffId) =>
+        routes.MapDeclared(GmRoutes.StaffGrant, async (HttpContext http, string staffId) =>
             {
                 var body = await GmHttp.ReadJsonAsync<StaffGrantBody>(http);
                 var result = await Service(http).SetGrantAsync(Change(http, body.Reason), RequireStaffId(staffId), body.Roles ?? [], body.Permissions ?? [], http.RequestAborted);
@@ -111,13 +111,13 @@ public static class StaffEndpoints
             .Produces<StaffView>()
             .AsGmEndpoint(GmPermissions.StaffManage);
 
-        routes.MapPost(DisableRoute, (HttpContext http, string staffId) => SetDisabledAsync(http, staffId, disabled: true))
+        routes.MapDeclared(GmRoutes.StaffDisable, (HttpContext http, string staffId) => SetDisabledAsync(http, staffId, disabled: true))
             .Accepts<StaffReasonBody>(GmHttp.JsonContentType).Produces<StaffView>().AsGmEndpoint(GmPermissions.StaffManage);
-        routes.MapPost(EnableRoute, (HttpContext http, string staffId) => SetDisabledAsync(http, staffId, disabled: false))
+        routes.MapDeclared(GmRoutes.StaffEnable, (HttpContext http, string staffId) => SetDisabledAsync(http, staffId, disabled: false))
             .Accepts<StaffReasonBody>(GmHttp.JsonContentType).Produces<StaffView>().AsGmEndpoint(GmPermissions.StaffManage);
 
         // gm.access: revoking one's own sessions needs no management permission; anyone else's does (checked below).
-        routes.MapPost(RevokeSessionsRoute, async (HttpContext http, string staffId) =>
+        routes.MapDeclared(GmRoutes.StaffRevokeSessions, async (HttpContext http, string staffId) =>
             {
                 var target = RequireStaffId(staffId);
                 var actor = http.RequestServices.GetRequiredService<ActorContextAccessor>().GetActor(http);

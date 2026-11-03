@@ -1,8 +1,10 @@
 using System.Diagnostics;
+using GameServer.Actors;
 using GameServer.Modules.Gm;
 using GameServer.Platform.Observability;
 using GameServer.Platform.Web.Hosting;
 using GameServer.Platform.Web.Routing;
+using GameServer.Routing;
 using GameServer.Tests.Shared;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -21,6 +23,9 @@ namespace GameServer.Observability.Tests;
 public sealed class ObservedHost : IAsyncDisposable
 {
     public const string ProbeRoute = "/v1/test/log-probe";
+
+    /// <summary>The log probe is a host endpoint: declared by the test host (BC-1) and allowlisted as Public (SEC-09).</summary>
+    public static RouteDeclaration Probe { get; } = RouteDeclaration.Get("test.log_probe", ProbeRoute, SecurityProfile.Public, RouteSurface.Host);
     public const string Pepper = "pepper-SECRET-9f3a71";
     public const string StaffPassword = "staff-PASSWORD-77e1";
 
@@ -81,6 +86,7 @@ public sealed class ObservedHost : IAsyncDisposable
             {
                 GameHttp.FullGame(b.AddModule<GmModule>());
                 b.AddObservability();
+                b.DeclareRoutes(Probe);
                 extra?.Invoke(b);
             },
             values =>
@@ -99,7 +105,7 @@ public sealed class ObservedHost : IAsyncDisposable
             },
             beforeUseGameServer: app =>
             {
-                app.MapGet(ProbeRoute, (ILogger<ObservedHost> logger, string? value) =>
+                app.MapDeclared(Probe, (ILogger<ObservedHost> logger, string? value) =>
                     {
                         // Sensitive-looking property names must be masked by the redactor (LOG-05).
                         logger.LogInformation(

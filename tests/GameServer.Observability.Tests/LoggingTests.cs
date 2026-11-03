@@ -117,6 +117,7 @@ public sealed class LoggingTests
         entry["EventId"]!["Name"]!.GetValue<string>().ShouldBe("Request");
         entry["HttpMethod"]!.GetValue<string>().ShouldBe("POST");
         entry["Route"]!.GetValue<string>().ShouldBe("/api/v1/counter/increment");
+        entry["RouteName"]!.GetValue<string>().ShouldBe("counter.increment");
         entry["Profile"]!.GetValue<string>().ShouldBe("Player");
         entry["Operation"]!.GetValue<string>().ShouldBe("counter.increment");
         entry["ActorType"]!.GetValue<string>().ShouldBe("player");
@@ -150,7 +151,7 @@ public sealed class LoggingTests
 
         entry["@l"]!.GetValue<string>().ShouldBe("Warning");
         entry["ResultCode"]!.GetValue<string>().ShouldBe("NOT_FOUND");
-        foreach (var name in new[] { "Profile", "Operation", "ActorType", "ActorId" })
+        foreach (var name in new[] { "RouteName", "Profile", "Operation", "ActorType", "ActorId" })
         {
             entry.ContainsKey(name).ShouldBeTrue(name);
             entry[name].ShouldBeNull(name);

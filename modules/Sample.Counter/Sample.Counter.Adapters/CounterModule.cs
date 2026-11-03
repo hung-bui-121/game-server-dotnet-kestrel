@@ -36,12 +36,11 @@ public sealed class CounterModule : IGameModule, IPlayerApiModule, IGmApiModule
     public void MapPlayerApi(IEndpointRouteBuilder routes)
     {
         routes.MapPlayerCommand<Wire.IncrementRequest, IncrementCommand, IncrementResult>(
-            "/api/v1/counter/increment",
-            IncrementHandler.Operation,
+            CounterRoutes.Increment,
             ToDomain,
             result => new Wire.IncrementResult { Value = result.Value });
 
-        routes.MapPost("/api/v1/counter/get", async (HttpContext http) =>
+        routes.MapDeclared(CounterRoutes.Get, async (HttpContext http) =>
             {
                 var services = http.RequestServices;
                 var actor = services.GetRequiredService<ActorContextAccessor>().GetActor(http);
@@ -57,7 +56,7 @@ public sealed class CounterModule : IGameModule, IPlayerApiModule, IGmApiModule
     }
 
     public void MapGmApi(IEndpointRouteBuilder routes) =>
-        routes.MapGet("/gm/v1/counter/{playerId}", async (string playerId, ICounterService counters, CancellationToken cancellationToken) =>
+        routes.MapDeclared(CounterRoutes.GmRead, async (string playerId, ICounterService counters, CancellationToken cancellationToken) =>
             {
                 var reading = await counters.GetAsync(playerId, cancellationToken);
                 return Results.Json(new { playerId, value = reading.Value, rev = reading.Rev });

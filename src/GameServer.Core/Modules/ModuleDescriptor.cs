@@ -1,6 +1,7 @@
 using GameServer.Aggregates;
 using GameServer.Commands;
 using GameServer.Errors;
+using GameServer.Routing;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GameServer.Modules;
@@ -33,7 +34,10 @@ public sealed class ModuleDescriptor
 
     public ErrorCodeSet ErrorCodes { get; init; } = ErrorCodeSet.None;
 
-    /// <summary>Public routes of the module (SEC-09); added to the allowlist and listed in the module PCR.</summary>
+    /// <summary>HTTP routes of the module (FG-026). Public declarations also count as public endpoints (SEC-09).</summary>
+    public IReadOnlyList<RouteDeclaration> Routes { get; init; } = [];
+
+    /// <summary>Still accepted (SEC-09); a listed route whose declaration has another profile fails startup (FR-006).</summary>
     public IReadOnlyList<string> PublicEndpoints { get; init; } = [];
 
     /// <summary>Outbox kinds projected into a collection by the default projection consumer.</summary>

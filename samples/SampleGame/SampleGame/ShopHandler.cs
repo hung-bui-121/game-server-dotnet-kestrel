@@ -84,5 +84,6 @@ public static class SampleGameModuleDefinition
             Command.Define<SetProgressionCommand, SetProgressionResult>(SetProgressionHandler.Descriptor).HandledBy<SetProgressionHandler>(),
         ],
         ErrorCodes = SampleGameErrors.All,
+        Routes = SampleGameRoutes.All,
     };
 }

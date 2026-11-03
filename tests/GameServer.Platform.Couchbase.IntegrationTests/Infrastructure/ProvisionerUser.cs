@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Couchbase.Core.Exceptions.KeyValue;
 using Couchbase.Management.Collections;
+using GameServer.Tests.Shared;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace GameServer.Platform.Couchbase.IntegrationTests.Infrastructure;

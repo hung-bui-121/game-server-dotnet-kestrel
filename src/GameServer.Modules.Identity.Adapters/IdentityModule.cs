@@ -66,7 +66,7 @@ public sealed partial class IdentityModule : IGameModule, IPlayerApiModule, IGmA
                 IdentityAggregates.ProfileDescriptor.Collection,
                 [new IndexSpec(ProfileDeletionDueIndex, "`state`.`deleted`.`purgeAfterUtc`, META().id", "`state`.`deleted`.`purgeStartedAtUtc` IS NOT VALUED")]),
         ],
-        PublicEndpoints = [LoginRoute, ProviderLoginRoute],
+        Routes = IdentityRoutes.All,
 
         // PRIV-01: purges accounts whose deletion grace period is over (research R7).
         Jobs = [new JobDescriptor(AccountPurgeJob.JobName, typeof(AccountPurgeJob), AccountPurgeJob.DefaultIntervalSeconds)],
@@ -109,7 +109,7 @@ public sealed partial class IdentityModule : IGameModule, IPlayerApiModule, IGmA
         // Built now so a duplicate or misnamed provider adapter fails startup (EXT-01).
         routes.ServiceProvider.GetRequiredService<IdentityProviders>();
 
-        routes.MapPost(LoginRoute, async (HttpContext http) =>
+        routes.MapDeclared(IdentityRoutes.LoginGuest, async (HttpContext http) =>
             {
                 var services = http.RequestServices;
                 var options = services.GetRequiredService<GameServerOptions>();
@@ -120,7 +120,7 @@ public sealed partial class IdentityModule : IGameModule, IPlayerApiModule, IGmA
             })
             .AsPublicPlayerEndpoint();
 
-        routes.MapPost(ProviderLoginRoute, async (HttpContext http) =>
+        routes.MapDeclared(IdentityRoutes.LoginProvider, async (HttpContext http) =>
             {
                 var services = http.RequestServices;
                 var options = services.GetRequiredService<GameServerOptions>();
@@ -136,12 +136,11 @@ public sealed partial class IdentityModule : IGameModule, IPlayerApiModule, IGmA
             .AsPublicPlayerEndpoint();
 
         routes.MapPlayerCommand<Wire.LinkIdentityRequest, LinkIdentityCommand, LinkIdentityResult>(
-            LinkRoute,
-            LinkIdentityHandler.Operation,
+            IdentityRoutes.Link,
             VerifyLinkAsync,
             result => new Wire.LinkIdentityResult { Provider = result.Provider, AlreadyLinked = result.AlreadyLinked });
 
-        routes.MapPost(LogoutRoute, async (HttpContext http) =>
+        routes.MapDeclared(IdentityRoutes.Logout, async (HttpContext http) =>
             {
                 var sessionKey = http.User.FindFirst(PlayerBearerAuthenticationHandler.SessionClaim)?.Value;
                 if (sessionKey is not null)
@@ -157,14 +156,12 @@ public sealed partial class IdentityModule : IGameModule, IPlayerApiModule, IGmA
             .AsPlayerEndpoint();
 
         routes.MapPlayerCommand<Wire.SetDisplayNameRequest, SetDisplayNameCommand, SetDisplayNameResult>(
-            DisplayNameRoute,
-            SetDisplayNameHandler.Operation,
+            IdentityRoutes.SetDisplayName,
             wire => new SetDisplayNameCommand(wire.DisplayName),
             result => new Wire.SetDisplayNameResult { DisplayName = result.DisplayName });
 
         routes.MapPlayerCommand<Wire.RequestAccountDeletionRequest, RequestDeletionCommand, RequestDeletionResult>(
-            DeleteAccountRoute,
-            RequestDeletionHandler.Operation,
+            IdentityRoutes.RequestDeletion,
             _ => new RequestDeletionCommand(),
             result => new Wire.RequestAccountDeletionResult
             {
@@ -183,9 +180,7 @@ public sealed partial class IdentityModule : IGameModule, IPlayerApiModule, IGmA
             .Append(BanInfo.LoginScope)
             .ToHashSet(StringComparer.Ordinal);
         routes.MapGmCommand<BanBody, BanPlayerCommand, BanResult>(
-            BanRoute,
-            BanPlayerHandler.Operation,
-            IdentityPermissions.PlayerBan,
+            IdentityRoutes.Ban,
             body =>
             {
                 // Omitted scope = login ban; an explicit empty list is a client bug, not "ban everything".
@@ -206,16 +201,12 @@ public sealed partial class IdentityModule : IGameModule, IPlayerApiModule, IGmA
                 return new BanPlayerCommand(body.Reason!, body.UntilUtc?.ToUniversalTime(), scope);
             });
         routes.MapGmCommand<UnbanBody, UnbanPlayerCommand, BanResult>(
-            UnbanRoute,
-            UnbanPlayerHandler.Operation,
-            IdentityPermissions.PlayerBan,
+            IdentityRoutes.Unban,
             body => new UnbanPlayerCommand(body.Reason!));
 
         // PRIV-01, FR-011: GM cancels a pending account deletion while the grace period runs.
         routes.MapGmCommand<CancelDeletionBody, CancelDeletionCommand, CancelDeletionResult>(
-            CancelDeletionRoute,
-            CancelDeletionHandler.Operation,
-            IdentityPermissions.PlayerBan,
+            IdentityRoutes.CancelDeletion,
             body => new CancelDeletionCommand(body.Reason!),
             AfterDeletionCancelAsync);
     }

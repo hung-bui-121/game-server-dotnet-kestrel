@@ -17,11 +17,11 @@ namespace SampleGame.Adapters;
 /// </summary>
 public sealed class SampleGameModule : IGameModule, IPlayerApiModule, IGmApiModule
 {
-    public const string GmProgressionRoute = "/gm/v1/players/{playerId}/progression";
+    public const string GmProgressionRoute = SampleGameRoutes.GmProgressionTemplate;
 
-    public const string StartRoute = "/api/v1/battle/start";
-    public const string EndRoute = "/api/v1/battle/end";
-    public const string BuyRoute = "/api/v1/shop/buy";
+    public const string StartRoute = SampleGameRoutes.StartTemplate;
+    public const string EndRoute = SampleGameRoutes.EndTemplate;
+    public const string BuyRoute = SampleGameRoutes.BuyTemplate;
 
     public ModuleDescriptor Describe() => SampleGameModuleDefinition.Describe();
 
@@ -40,9 +40,7 @@ public sealed class SampleGameModule : IGameModule, IPlayerApiModule, IGmApiModu
 
     public void MapGmApi(IEndpointRouteBuilder routes) =>
         routes.MapGmCommand<SetProgressionBody, SetProgressionCommand, SetProgressionResult>(
-            GmProgressionRoute,
-            SetProgressionHandler.Operation,
-            SampleGamePermissions.ProgressionEdit,
+            SampleGameRoutes.ProgressionSet,
             body =>
             {
                 if (body is { Level: null, Xp: null, Stage: null } || body.Level < 1 || body.Xp < 0 || body.Stage < 1)
@@ -56,8 +54,7 @@ public sealed class SampleGameModule : IGameModule, IPlayerApiModule, IGmApiModu
     public void MapPlayerApi(IEndpointRouteBuilder routes)
     {
         routes.MapPlayerCommand<Wire.StartBattleRequest, StartBattleCommand, StartBattleResult>(
-            StartRoute,
-            StartBattleHandler.Operation,
+            SampleGameRoutes.BattleStart,
             request => new StartBattleCommand(request.Stage),
             result => new Wire.StartBattleResult
             {
@@ -67,8 +64,7 @@ public sealed class SampleGameModule : IGameModule, IPlayerApiModule, IGmApiModu
             });
 
         routes.MapPlayerCommand<Wire.EndBattleRequest, EndBattleCommand, EndBattleResult>(
-            EndRoute,
-            EndBattleHandler.Operation,
+            SampleGameRoutes.BattleEnd,
             request => string.IsNullOrEmpty(request.BattleId) || request.BattleId.Length > 64
                 ? throw new GameServerException(CoreErrorCodes.BadRequest, "battle_id is required (≤ 64 chars).")
                 : new EndBattleCommand(request.BattleId, request.Won),
@@ -80,8 +76,7 @@ public sealed class SampleGameModule : IGameModule, IPlayerApiModule, IGmApiModu
             });
 
         routes.MapPlayerCommand<Wire.BuyItemRequest, BuyItemCommand, BuyItemResult>(
-            BuyRoute,
-            BuyItemHandler.Operation,
+            SampleGameRoutes.ShopBuy,
             request => string.IsNullOrEmpty(request.ShopItemId) || request.ShopItemId.Length > 64
                 ? throw new GameServerException(CoreErrorCodes.BadRequest, "shop_item_id is required (≤ 64 chars).")
                 : new BuyItemCommand(request.ShopItemId, request.Quantity),

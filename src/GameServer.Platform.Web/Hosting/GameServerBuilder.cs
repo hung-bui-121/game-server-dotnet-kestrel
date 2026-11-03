@@ -13,10 +13,12 @@ using GameServer.Platform.Privacy;
 using GameServer.Platform.Registry;
 using GameServer.Platform.Web.Aggregates;
 using GameServer.Platform.Web.Auth;
+using GameServer.Platform.Web.Catalog;
 using GameServer.Platform.Web.Errors;
 using GameServer.Platform.Web.Middleware;
 using GameServer.Platform.Web.Routing;
 using GameServer.Platform.Web.Security;
+using GameServer.Routing;
 using GameServer.Time;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
@@ -49,12 +51,15 @@ public sealed class ModuleRegistrationOptions
 /// <summary>Composition root API of the framework (ARC-03): one call per module.</summary>
 public sealed class GameServerBuilder
 {
-    internal GameServerBuilder(WebApplicationBuilder host, GameServerOptions options, ModuleRegistry registry, GameServerRuntimeInfo runtime)
+    private readonly HostRouteDeclarations _hostRoutes;
+
+    internal GameServerBuilder(WebApplicationBuilder host, GameServerOptions options, ModuleRegistry registry, GameServerRuntimeInfo runtime, HostRouteDeclarations hostRoutes)
     {
         Host = host;
         Options = options;
         Registry = registry;
         Runtime = runtime;
+        _hostRoutes = hostRoutes;
     }
 
     public WebApplicationBuilder Host { get; }
@@ -90,6 +95,17 @@ public sealed class GameServerBuilder
             Services.TryAddTransient(step.StepType);
         }
 
+        return this;
+    }
+
+    /// <summary>
+    /// Routes the host maps itself outside any module (owner <c>host</c>, FG-026): every endpoint must be declared (BC-1). Public
+    /// host routes still need <c>GameServer:PublicEndpointAllowlist</c> (SEC-09).
+    /// </summary>
+    public GameServerBuilder DeclareRoutes(params RouteDeclaration[] routes)
+    {
+        ArgumentNullException.ThrowIfNull(routes);
+        _hostRoutes.Add(routes);
         return this;
     }
 
@@ -138,6 +154,9 @@ public static class GameServerBuilderExtensions
         var services = builder.Services;
         var runtime = ResolveRuntime(builder, options);
 
+        // First hosted service (FR-012, VERIFY V1): its StartingAsync validates the final endpoint set before any other start work.
+        services.AddSingleton<EndpointValidationState>();
+        services.AddHostedService<EndpointSetValidationService>();
         services.AddSingleton(options);
         services.AddSingleton(deployment);
         services.AddSingleton(runtime);
@@ -177,6 +196,12 @@ public static class GameServerBuilderExtensions
             return FileGameConfigLoader.Load(root, options.DeploymentEnvironment);
         });
         services.AddSingleton<AggregateWireMapperRegistry>();
+
+        // FG-026: the route and section catalog, built on first use from registrations only (export mode, the endpoint check).
+        var hostRoutes = new HostRouteDeclarations();
+        services.AddSingleton(hostRoutes);
+        services.AddSingleton<WireCatalog>(WireCatalogBuilder.Build);
+        services.AddRouteCondition(RouteConditions.DevelopmentTools, _ => options.AllowsDevelopmentTools);
         services.AddSingleton<ErrorResponseWriter>();
         services.AddSingleton<ActorContextAccessor>();
         services.TryAddSingleton<IGateEvaluator, StoreGateEvaluator>();
@@ -200,7 +225,7 @@ public static class GameServerBuilderExtensions
         services.AddHostedService<DrainDelayService>();
 
         AddLimits(builder, options);
-        return new GameServerBuilder(builder, options, registry, runtime);
+        return new GameServerBuilder(builder, options, registry, runtime, hostRoutes);
     }
 
     /// <summary>

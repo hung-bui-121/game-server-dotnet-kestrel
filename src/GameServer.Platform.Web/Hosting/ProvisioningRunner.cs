@@ -1,6 +1,7 @@
 using System.Globalization;
 using GameServer.Platform.Persistence;
 using GameServer.Platform.Registry;
+using GameServer.Platform.Web.Catalog;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -23,6 +24,9 @@ internal static class ProvisioningRunner
         var services = app.Services;
         var options = services.GetRequiredService<GameServerOptions>();
         var errors = services.GetRequiredService<ModuleRegistry>().Validate(options, config: null).ToList();
+
+        // Declarations are checked even though nothing is mapped here (spec edge case --provision): duplicate names, templates, mappers.
+        errors.AddRange(services.GetRequiredService<WireCatalog>().Validate());
 
         // The provisioning credential is a secret as well: refused from JSON files outside Development/Test (OPS-08).
         DeploymentChecks.ValidateSecretSources(app.Configuration, options, errors);

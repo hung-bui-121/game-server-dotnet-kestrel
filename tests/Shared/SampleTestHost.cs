@@ -2,6 +2,7 @@ using GameServer.Config;
 using GameServer.Modules.Identity;
 using GameServer.Platform.Testing;
 using GameServer.Platform.Web.Hosting;
+using GameServer.Routing;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Sample.Counter.Adapters;
@@ -27,6 +28,17 @@ public static class SampleTestHost
 
     /// <summary>Default modules: Identity + Sample.Counter.</summary>
     public static void DefaultModules(GameServerBuilder builder) => builder.AddModule<IdentityModule>().AddModule<CounterModule>();
+
+    /// <summary>
+    /// Default modules plus <paramref name="routes"/> declared by the host (owner <c>host</c>): an endpoint a test maps itself is declared
+    /// like any other (BC-1, BC-2). Passing a <c>modules</c> callback replaces the defaults, so use this instead of declaring alone.
+    /// </summary>
+    public static Action<GameServerBuilder> WithRoutes(params RouteDeclaration[] routes) =>
+        builder =>
+        {
+            DefaultModules(builder);
+            builder.DeclareRoutes(routes);
+        };
 
     public static Task<TestHost> StartAsync(
         Action<GameServerBuilder>? modules = null,

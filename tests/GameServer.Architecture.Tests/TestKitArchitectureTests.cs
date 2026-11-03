@@ -19,6 +19,7 @@ public sealed class TestKitArchitectureTests
 
     private static readonly Assembly TestKit = typeof(CommandContextDouble).Assembly;
     private static readonly Assembly Platform = typeof(CommandRunner).Assembly;
+    private static readonly Assembly PlatformWeb = typeof(GameServer.Platform.Web.Aggregates.AggregateWireMapperRegistry).Assembly;
     private static readonly string Root = RepositoryRoot();
 
     /// <summary>Platform internals the kit may use: the runner's context, the commit rules and the loaded-aggregate constructor.</summary>
@@ -26,6 +27,20 @@ public sealed class TestKitArchitectureTests
         ["GameServer.Platform.Commands.CommandContext", "GameServer.Platform.Commands.CommitRules"];
 
     private const string AllowedInternalMember = "GameServer.Platform.Aggregates.LoadedAggregate::.ctor";
+
+    /// <summary>Platform.Web internals the kit may use: the member tree of aggregate states shared with the startup hidden-member check (slice 014, FG-027).</summary>
+    private static readonly string[] AllowedWebInternalTypes =
+    [
+        "GameServer.Platform.Web.Aggregates.StateMembers",
+        "GameServer.Platform.Web.Aggregates.StateMember",
+        "GameServer.Platform.Web.Aggregates.StateNode",
+        "GameServer.Platform.Web.Aggregates.StateLeaf",
+        "GameServer.Platform.Web.Aggregates.StateObject",
+        "GameServer.Platform.Web.Aggregates.StateNullable",
+        "GameServer.Platform.Web.Aggregates.StateCollection",
+        "GameServer.Platform.Web.Aggregates.StateDictionary",
+        "GameServer.Platform.Web.Aggregates.StateUnfillable",
+    ];
 
     [Fact]
     public void The_kit_references_no_test_framework_sample_or_test_assembly()
@@ -64,7 +79,7 @@ public sealed class TestKitArchitectureTests
     [Fact]
     public void The_kit_uses_only_the_platform_internals_shared_with_the_runner()
     {
-        var used = PlatformInternalsUsedByKit();
+        var used = InternalsUsedByKit(Platform);
 
         used.ShouldContain(AllowedInternalTypes[0], "the rule must see the kit's use of the runner's context");
         used.ShouldContain(AllowedInternalTypes[1]);
@@ -75,13 +90,24 @@ public sealed class TestKitArchitectureTests
                 "internals (InternalsVisibleTo for the command-context double, FR-025); anything else needs a review and a new entry here");
     }
 
-    /// <summary>Non-public Platform types and members the kit's IL refers to (type references and member references).</summary>
-    private static SortedSet<string> PlatformInternalsUsedByKit()
+    [Fact]
+    public void The_kit_uses_only_the_state_member_tree_of_the_web_platform_internals()
+    {
+        var used = InternalsUsedByKit(PlatformWeb);
+
+        used.Where(u => !AllowedWebInternalTypes.Any(t => u == t || u.StartsWith(t + "::", StringComparison.Ordinal)))
+            .ShouldBeEmpty(
+                "GameServer.TestKit may use only the state member tree (StateMembers and its node types) of GameServer.Platform.Web's " +
+                "internals (InternalsVisibleTo for the conformance check, FG-027); anything else needs a review and a new entry here");
+    }
+
+    /// <summary>Non-public types and members of <paramref name="target"/> the kit's IL refers to (type references and member references).</summary>
+    private static SortedSet<string> InternalsUsedByKit(Assembly target)
     {
         var resolver = new DefaultAssemblyResolver();
         resolver.AddSearchDirectory(Path.GetDirectoryName(TestKit.Location)!);
         using var module = ModuleDefinition.ReadModule(TestKit.Location, new ReaderParameters { AssemblyResolver = resolver });
-        var platform = Platform.GetName().Name;
+        var platform = target.GetName().Name;
         var used = new SortedSet<string>(StringComparer.Ordinal);
         foreach (var reference in module.GetTypeReferences().Where(r => r.Scope.Name == platform))
         {

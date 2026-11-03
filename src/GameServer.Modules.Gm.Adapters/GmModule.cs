@@ -5,6 +5,7 @@ using GameServer.Platform;
 using GameServer.Platform.Commands;
 using GameServer.Platform.Web.Commands;
 using GameServer.Platform.Web.Auth;
+using GameServer.Platform.Web.Catalog;
 using GameServer.Platform.Web.Endpoints;
 using GameServer.Platform.Web.Middleware;
 using GameServer.Platform.Web.Routing;
@@ -90,7 +91,7 @@ public sealed class GmModule : IGameModule, IGmApiModule
                 [new IndexSpec("ix_profile_display_name", "`state`.`displayName`, playerId, META().id")]),
         ],
         OutboxProjections = [new OutboxProjection(AuditExtensions.OutboxKind, AuditCollection)],
-        PublicEndpoints = [CsrfRoute, LoginRoute, UiRoute, GmSso.StartRoute, GmSso.CallbackRoute],
+        Routes = GmRoutes.All,
     };
 
     public void ConfigureServices(IServiceCollection services, ModuleContext context)
@@ -109,6 +110,7 @@ public sealed class GmModule : IGameModule, IGmApiModule
         GmCookies.Configure(services);
         GmCors.Add(services);
         GmSso.Add(services);
+        services.AddRouteCondition(GmRoutes.SsoCondition, sp => sp.GetRequiredService<IOptions<GmOptions>>().Value.Oidc.IsConfigured);
     }
 
     public void MapGmApi(IEndpointRouteBuilder routes)
@@ -117,7 +119,7 @@ public sealed class GmModule : IGameModule, IGmApiModule
         if (services.GetRequiredService<GameServerOptions>().AllowsDevelopmentTools)
         {
             // Local accounts exist only in Development/Test; other environments sign in through SSO (SEC-03).
-            routes.MapPost(LoginRoute, (Func<HttpContext, Task<IResult>>)LoginAsync)
+            routes.MapDeclared(GmRoutes.AuthLogin, (Func<HttpContext, Task<IResult>>)LoginAsync)
                 .Accepts<GmLoginRequest>(GmHttp.JsonContentType)
                 .Produces<GmMeResponse>()
                 .AsPublicEndpoint(protobuf: false)
@@ -131,17 +133,17 @@ public sealed class GmModule : IGameModule, IGmApiModule
             GmSso.Map(routes);
         }
 
-        routes.MapGet(CsrfRoute, (Func<HttpContext, Task<IResult>>)CsrfAsync)
+        routes.MapDeclared(GmRoutes.AuthCsrf, (Func<HttpContext, Task<IResult>>)CsrfAsync)
             .Produces<GmCsrfResponse>()
             .AsPublicEndpoint(protobuf: false)
             .WithRequestTimeout(ApiRouteExtensions.GmTimeoutPolicy)
             .RequireRateLimiting(ApiRouteExtensions.GmLimiterPolicy);
-        routes.MapPost(LogoutRoute, (Func<HttpContext, Task<IResult>>)LogoutAsync).Produces(StatusCodes.Status204NoContent).AsGmEndpoint(GmPermissions.Access);
-        routes.MapGet(MeRoute, (HttpContext http) => GmHttp.Json(Me(http))).Produces<GmMeResponse>().AsGmEndpoint(GmPermissions.Access);
-        routes.MapGet(UiRoute, GmUi.Serve).ExcludeFromDescription().AsPublicEndpoint(protobuf: false);
-        routes.MapGet(HealthRoute, (Func<HttpContext, Task<IResult>>)HealthAsync).Produces<GmHealthReport>().AsGmEndpoint(GmPermissions.OpsRead);
-        routes.MapGet(VersionRoute, (Func<HttpContext, IResult>)VersionOf).Produces<GmVersionResponse>().AsGmEndpoint(GmPermissions.OpsRead);
-        routes.MapPost(RotateKeysRoute, (Func<HttpContext, Task<IResult>>)RotateKeysAsync)
+        routes.MapDeclared(GmRoutes.AuthLogout, (Func<HttpContext, Task<IResult>>)LogoutAsync).Produces(StatusCodes.Status204NoContent).AsGmEndpoint(GmPermissions.Access);
+        routes.MapDeclared(GmRoutes.Me, (HttpContext http) => GmHttp.Json(Me(http))).Produces<GmMeResponse>().AsGmEndpoint(GmPermissions.Access);
+        routes.MapDeclared(GmRoutes.Ui, GmUi.Serve).ExcludeFromDescription().AsPublicEndpoint(protobuf: false);
+        routes.MapDeclared(GmRoutes.Health, (Func<HttpContext, Task<IResult>>)HealthAsync).Produces<GmHealthReport>().AsGmEndpoint(GmPermissions.OpsRead);
+        routes.MapDeclared(GmRoutes.OpsVersion, (Func<HttpContext, IResult>)VersionOf).Produces<GmVersionResponse>().AsGmEndpoint(GmPermissions.OpsRead);
+        routes.MapDeclared(GmRoutes.OpsRotateKeys, (Func<HttpContext, Task<IResult>>)RotateKeysAsync)
             .Accepts<StaffReasonBody>(GmHttp.JsonContentType)
             .Produces<GmRotateResponse>()
             .AsGmEndpoint(GmPermissions.KeysRotate);

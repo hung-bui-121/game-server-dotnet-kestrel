@@ -1,7 +1,9 @@
 using System.Net;
+using GameServer.Actors;
 using GameServer.Platform;
 using GameServer.Platform.Web.Hosting;
 using GameServer.Platform.Web.Routing;
+using GameServer.Routing;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
@@ -15,6 +17,8 @@ public sealed class DeploymentTests
 {
     private const string IpRoute = "/v1/test/ip";
 
+    private static readonly RouteDeclaration Ip = RouteDeclaration.Get("test.ip", IpRoute, SecurityProfile.Public, RouteSurface.Host);
+
     private static Task<ObservedHost> StartWithProxyAsync(Action<Dictionary<string, string?>> proxy) =>
         ObservedHost.StartAsync(
             settings: s =>
@@ -23,8 +27,9 @@ public sealed class DeploymentTests
                 s["GameServer:Hosting:ForwardedHeaders:Enabled"] = "true";
                 proxy(s);
             },
-            beforeUseGameServer: app => app.MapGet(IpRoute, (HttpContext http) => http.Connection.RemoteIpAddress?.ToString() ?? "none")
-                .AsPublicEndpoint(protobuf: false));
+            beforeUseGameServer: app => app.MapDeclared(Ip, (HttpContext http) => http.Connection.RemoteIpAddress?.ToString() ?? "none")
+                .AsPublicEndpoint(protobuf: false),
+            extra: gs => gs.DeclareRoutes(Ip));
 
     private static async Task<string> RemoteIpAsync(ObservedHost observed, string peer, string forwardedFor)
     {

@@ -23,6 +23,8 @@ internal sealed class RequestOutcome : IRequestOutcomeFeature
 
     public bool Completed { get; private set; }
 
+    public string? RouteName { get; internal set; }
+
     /// <summary>
     /// Finalization after the framework pipeline: a client gone before the response started → no status, <c>ABORTED</c>;
     /// an exception escaping the pipeline → 500 (unless the response started), <c>INTERNAL</c>; otherwise the sent status and,

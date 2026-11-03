@@ -2,6 +2,7 @@ using GameServer.Aggregates;
 using GameServer.Commands;
 using GameServer.Errors;
 using GameServer.Modules;
+using GameServer.Routing;
 
 namespace Template.Module;
 
@@ -55,6 +56,12 @@ public sealed class EarnHandler(ITemplatePolicy policy) : ICommandHandler<EarnCo
     }
 }
 
+/// <summary>HTTP routes of the module (FG-026), declared next to its commands; the adapter maps from them.</summary>
+public static class TemplateRoutes
+{
+    public static RouteDeclaration Earn { get; } = RouteDeclaration.Command(EarnHandler.Descriptor, "/api/v1/template/earn");
+}
+
 public static class TemplateModuleDefinition
 {
     public const string ModuleName = "template.module";
@@ -70,5 +77,6 @@ public static class TemplateModuleDefinition
         Aggregates = [Aggregate],
         Commands = [Command.Define<EarnCommand, EarnResult>(EarnHandler.Descriptor).HandledBy<EarnHandler>()],
         ErrorCodes = TemplateErrors.All,
+        Routes = [TemplateRoutes.Earn],
     };
 }

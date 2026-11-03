@@ -7,6 +7,7 @@ using GameServer.Platform.Web.Protobuf;
 using GameServer.Platform.Web.Requests;
 using GameServer.Platform.Web.Routing;
 using GameServer.Protocol.Core.V1;
+using GameServer.Routing;
 using GameServer.Time;
 using Google.Protobuf;
 using Microsoft.AspNetCore.Builder;
@@ -88,6 +89,71 @@ public static class CommandEndpointFactory
         routes.MapCommand<TWireRequest, TRequest, TResult>(pattern, operation, (wire, _) => Task.FromResult(toDomain(wire)), toWire)
             .AsDevEndpoint()
             .WithMetadata(ProtobufEndpointMetadata.Instance);
+
+    /// <summary>
+    /// Player command mapped from its declaration (FR-005): <c>POST {route.Template}</c> running <c>route.Operation</c>, tagged with
+    /// <see cref="RouteDeclarationMetadata"/>. Throws <see cref="ArgumentException"/> when the declaration names no operation.
+    /// </summary>
+    public static IEndpointConventionBuilder MapPlayerCommand<TWireRequest, TRequest, TResult>(
+        this IEndpointRouteBuilder routes,
+        RouteDeclaration route,
+        Func<TWireRequest, TRequest> toDomain,
+        Func<TResult, IMessage> toWire)
+        where TWireRequest : IMessage<TWireRequest>, new()
+        where TRequest : notnull
+    {
+        var operation = RequireOperation(route);
+        return routes.MapPlayerCommand<TWireRequest, TRequest, TResult>(route.Template, operation, toDomain, toWire).WithDeclaration(route);
+    }
+
+    /// <summary>Player command with async domain conversion (see the string overload), mapped from its declaration (FR-005).</summary>
+    public static IEndpointConventionBuilder MapPlayerCommand<TWireRequest, TRequest, TResult>(
+        this IEndpointRouteBuilder routes,
+        RouteDeclaration route,
+        Func<TWireRequest, HttpContext, Task<TRequest>> toDomainAsync,
+        Func<TResult, IMessage> toWire)
+        where TWireRequest : IMessage<TWireRequest>, new()
+        where TRequest : notnull
+    {
+        var operation = RequireOperation(route);
+        return routes.MapPlayerCommand(route.Template, operation, toDomainAsync, toWire).WithDeclaration(route);
+    }
+
+    /// <summary>Player command with an after-execute hook (see the string overload), mapped from its declaration (FR-005).</summary>
+    public static IEndpointConventionBuilder MapPlayerCommand<TWireRequest, TRequest, TResult>(
+        this IEndpointRouteBuilder routes,
+        RouteDeclaration route,
+        Func<TWireRequest, TRequest> toDomain,
+        Func<TResult, IMessage> toWire,
+        Func<CommandExecution, HttpContext, Task> afterExecute)
+        where TWireRequest : IMessage<TWireRequest>, new()
+        where TRequest : notnull
+    {
+        var operation = RequireOperation(route);
+        return routes.MapPlayerCommand<TWireRequest, TRequest, TResult>(route.Template, operation, toDomain, toWire, afterExecute).WithDeclaration(route);
+    }
+
+    /// <summary>Development-only command (see the string overload), mapped from its declaration (FR-005).</summary>
+    public static IEndpointConventionBuilder MapDevCommand<TWireRequest, TRequest, TResult>(
+        this IEndpointRouteBuilder routes,
+        RouteDeclaration route,
+        Func<TWireRequest, TRequest> toDomain,
+        Func<TResult, IMessage> toWire)
+        where TWireRequest : IMessage<TWireRequest>, new()
+        where TRequest : notnull
+    {
+        var operation = RequireOperation(route);
+        return routes.MapDevCommand<TWireRequest, TRequest, TResult>(route.Template, operation, toDomain, toWire).WithDeclaration(route);
+    }
+
+    /// <summary>The operation of a command route; a declaration without one is a programming error (research R4).</summary>
+    internal static string RequireOperation(RouteDeclaration route)
+    {
+        ArgumentNullException.ThrowIfNull(route);
+        return route.Operation ?? throw new ArgumentException(
+            $"Route {route} names no command operation: declare it with RouteDeclaration.Command(descriptor, template) to map it as a command.",
+            nameof(route));
+    }
 
     private static IEndpointConventionBuilder MapCommand<TWireRequest, TRequest, TResult>(
         this IEndpointRouteBuilder routes,

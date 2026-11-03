@@ -20,22 +20,20 @@ namespace GameServer.Modules.Economy;
 /// </summary>
 public sealed class EconomyModule : IGameModule, IGmApiModule
 {
-    public const string AdjustRoute = "/gm/v1/players/{playerId}/resources/adjust";
-    public const string LedgerRoute = "/gm/v1/players/{playerId}/ledger";
+    public const string AdjustRoute = EconomyRoutes.AdjustTemplate;
+    public const string LedgerRoute = EconomyRoutes.LedgerTemplate;
 
     public ModuleDescriptor Describe() => EconomyModuleDefinition.Describe();
 
     public void MapGmApi(IEndpointRouteBuilder routes)
     {
         routes.MapGmCommand<AdjustResourceBody, AdjustResourceCommand, AdjustResourceResult>(
-            AdjustRoute,
-            AdjustResourceHandler.Operation,
-            EconomyPermissions.ResourceAdjust,
+            EconomyRoutes.Adjust,
             body => string.IsNullOrWhiteSpace(body.Resource)
                 ? throw new GameServerException(CoreErrorCodes.BadRequest, "resource is required.")
                 : new AdjustResourceCommand(body.Resource, body.Delta, body.Reason!));
 
-        routes.MapGet(LedgerRoute, async (HttpContext http, string playerId) =>
+        routes.MapDeclared(EconomyRoutes.Ledger, async (HttpContext http, string playerId) =>
                 GmHttp.Json(await GmHttp.QueryAsync(
                     http,
                     EconomyOperations.LedgerCollection,
@@ -74,7 +72,7 @@ public sealed record AdjustResourceBody(string? Resource, long Delta, string? Re
 /// </summary>
 public sealed class CheatModule : IGameModule, IPlayerApiModule
 {
-    public const string GrantRoute = "/api/v1/cheat/grant";
+    public const string GrantRoute = CheatRoutes.GrantTemplate;
 
     public ModuleDescriptor Describe() => CheatModuleDefinition.Describe();
 
@@ -84,8 +82,7 @@ public sealed class CheatModule : IGameModule, IPlayerApiModule
 
     public void MapPlayerApi(IEndpointRouteBuilder routes) =>
         routes.MapDevCommand<Wire.CheatGrantRequest, CheatGrantCommand, CheatGrantResult>(
-            GrantRoute,
-            CheatGrantHandler.Operation,
+            CheatRoutes.Grant,
             request => string.IsNullOrWhiteSpace(request.Resource)
                 ? throw new GameServerException(CoreErrorCodes.BadRequest, "resource is required.")
                 : new CheatGrantCommand(request.Resource, request.Quantity),

@@ -93,7 +93,7 @@ public static class GmPlayerEndpoints
 
     public static void Map(IEndpointRouteBuilder routes)
     {
-        routes.MapGet(MappingRoute, async (HttpContext http, string mappingKey) =>
+        routes.MapDeclared(GmRoutes.PlayerByMapping, async (HttpContext http, string mappingKey) =>
             {
                 if (mappingKey.Length is 0 or > 256)
                 {
@@ -108,7 +108,7 @@ public static class GmPlayerEndpoints
             })
             .AsGmEndpoint(GmPermissions.PlayerRead);
 
-        routes.MapGet(SearchRoute, async (HttpContext http) =>
+        routes.MapDeclared(GmRoutes.PlayerSearch, async (HttpContext http) =>
             {
                 var displayName = http.Request.Query["displayName"].ToString();
                 if (displayName.Length is 0 or > 64)
@@ -129,10 +129,10 @@ public static class GmPlayerEndpoints
             })
             .AsGmEndpoint(GmPermissions.PlayerRead);
 
-        routes.MapGet(PlayerRoute, async (HttpContext http, string playerId) => GmHttp.Json(await LookupAsync(http, ValidPlayerId(playerId))))
+        routes.MapDeclared(GmRoutes.Player, async (HttpContext http, string playerId) => GmHttp.Json(await LookupAsync(http, ValidPlayerId(playerId))))
             .AsGmEndpoint(GmPermissions.PlayerRead);
 
-        routes.MapGet(ReceiptsRoute, async (HttpContext http, string playerId) =>
+        routes.MapDeclared(GmRoutes.PlayerReceipts, async (HttpContext http, string playerId) =>
                 GmHttp.Json(await GmHttp.QueryAsync(
                     http,
                     ReceiptDocument.Collection,
@@ -143,7 +143,7 @@ public static class GmPlayerEndpoints
                     d => Summarize(ReceiptDocument.FromJson(d.Content)))))
             .AsGmEndpoint(GmPermissions.PlayerRead);
 
-        routes.MapGet(AuditRoute, async (HttpContext http, string playerId) =>
+        routes.MapDeclared(GmRoutes.PlayerAudit, async (HttpContext http, string playerId) =>
                 GmHttp.Json(await GmHttp.QueryAsync(
                     http,
                     GmModule.AuditCollection,
@@ -154,7 +154,7 @@ public static class GmPlayerEndpoints
                     d => d.Content)))
             .AsGmEndpoint(GmPermissions.PlayerRead);
 
-        routes.MapGet(ReceiptRoute, async (HttpContext http, string receiptId) =>
+        routes.MapDeclared(GmRoutes.Receipt, async (HttpContext http, string receiptId) =>
             {
                 if (receiptId.Length is 0 or > 128)
                 {

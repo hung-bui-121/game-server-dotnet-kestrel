@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
-namespace GameServer.Platform.Couchbase.IntegrationTests.Infrastructure;
+namespace GameServer.Tests.Shared;
 
 /// <summary>
 /// Believable, freshly generated secrets for a Staging or Production sample host (data-model §3 "required from the

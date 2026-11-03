@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using GameServer.Actors;
 using GameServer.Modules.Gm;
 using GameServer.Modules.Identity;
 using GameServer.Platform.Diagnostics;
@@ -9,6 +10,7 @@ using GameServer.Platform.Web.Hosting;
 using GameServer.Platform.Web.Middleware;
 using GameServer.Platform.Web.Requests;
 using GameServer.Platform.Web.Routing;
+using GameServer.Routing;
 using GameServer.Tests.Shared;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -27,6 +29,11 @@ public sealed class RequestLogHost : IAsyncDisposable
 {
     public const string FailRoute = "/api/v1/probe/fail";
     public const string WaitRoute = "/api/v1/probe/wait";
+
+    /// <summary>Host declarations of the two probes (BC-1): a failing endpoint and one that waits until the client cancels.</summary>
+    public static RouteDeclaration Fail { get; } = RouteDeclaration.Post("probe.fail", FailRoute, SecurityProfile.Player);
+
+    public static RouteDeclaration Wait { get; } = RouteDeclaration.Post("probe.wait", WaitRoute, SecurityProfile.Player);
     public const string StaffPassword = "staff-PASSWORD-5c2e";
     public const string AdminId = "admin";
 
@@ -64,7 +71,8 @@ public sealed class RequestLogHost : IAsyncDisposable
         Action<Dictionary<string, string?>>? settings = null,
         Action<WebApplication>? beforeUseGameServer = null,
         Action<WebApplication>? afterUseGameServer = null,
-        Action<GameServerBuilder>? modules = null)
+        Action<GameServerBuilder>? modules = null,
+        IReadOnlyList<RouteDeclaration>? routes = null)
     {
         var measurements = new ConcurrentQueue<(string? TraceId, string Code)>();
         var listener = new MeterListener
@@ -106,6 +114,7 @@ public sealed class RequestLogHost : IAsyncDisposable
                     }
 
                     b.AddModule<GmModule>().AddModule<ObservabilityModule>();
+                    b.DeclareRoutes([Fail, Wait, .. routes ?? []]);
                 },
                 values =>
                 {
@@ -116,9 +125,9 @@ public sealed class RequestLogHost : IAsyncDisposable
                 },
                 beforeUseGameServer: app =>
                 {
-                    app.MapPost(FailRoute, (Func<HttpContext, Task<IResult>>)(_ => throw new InvalidOperationException("injected failure")))
+                    app.MapDeclared(Fail, (Func<HttpContext, Task<IResult>>)(_ => throw new InvalidOperationException("injected failure")))
                         .AsPlayerEndpoint();
-                    app.MapPost(WaitRoute, (Func<HttpContext, Task<IResult>>)(async http =>
+                    app.MapDeclared(Wait, (Func<HttpContext, Task<IResult>>)(async http =>
                         {
                             waitStarted.TrySetResult();
                             await Task.Delay(Timeout.Infinite, http.RequestAborted);

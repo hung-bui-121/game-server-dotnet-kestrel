@@ -2,6 +2,7 @@ using System.Diagnostics;
 using GameServer.Actors;
 using GameServer.Platform.Diagnostics;
 using GameServer.Platform.Web.Auth;
+using GameServer.Platform.Web.Catalog;
 using GameServer.Platform.Web.Middleware;
 using GameServer.Platform.Web.Routing;
 using Microsoft.AspNetCore.Http;
@@ -15,7 +16,7 @@ namespace GameServer.Platform.Web.Requests;
 /// pipeline, finalizes the outcome and writes one request event (FR-080..FR-085). It never touches the request or response
 /// body, and a failure while writing the event never changes the response.
 /// </summary>
-internal sealed class RequestLogMiddleware(RequestDelegate next, GameServerOptions options, PlatformMetrics metrics, ILoggerFactory loggerFactory)
+internal sealed class RequestLogMiddleware(RequestDelegate next, GameServerOptions options, PlatformMetrics metrics, ILoggerFactory loggerFactory, WireCatalog catalog)
 {
     public const int MaxRouteLength = 120;
     public const int MaxActorIdLength = 64;
@@ -56,6 +57,8 @@ internal sealed class RequestLogMiddleware(RequestDelegate next, GameServerOptio
                 // A command route that failed before the runner (auth, body, header) still names its operation.
                 outcome.Operation = command.Operation;
             }
+
+            outcome.RouteName = RouteNameOf(context);
 
             Write(context, outcome, started);
         }
@@ -109,6 +112,18 @@ internal sealed class RequestLogMiddleware(RequestDelegate next, GameServerOptio
         };
     }
 
+    /// <summary>FR-015: the declaration the endpoint was mapped from, else the catalog entry of its method and template; null when unmatched.</summary>
+    private string? RouteNameOf(HttpContext context)
+    {
+        if (context.GetEndpoint() is not RouteEndpoint endpoint)
+        {
+            return null;
+        }
+
+        return endpoint.Metadata.GetMetadata<RouteDeclarationMetadata>()?.Declaration.Name
+            ?? catalog.FindRouteName(context.Request.Method, endpoint.RoutePattern.RawText ?? string.Empty);
+    }
+
     private void Write(HttpContext context, RequestOutcome outcome, long started)
     {
         try
@@ -129,6 +144,7 @@ internal sealed class RequestLogMiddleware(RequestDelegate next, GameServerOptio
             var entry = new RequestLogEntry(
                 context.Request.Method,
                 route,
+                outcome.RouteName,
                 endpoint?.GetProfile()?.ToString(),
                 outcome.Operation,
                 actorType switch

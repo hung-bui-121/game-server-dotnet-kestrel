@@ -20,19 +20,19 @@ namespace GameServer.Platform.Web.Endpoints;
 /// <summary>Framework endpoints: server time (TIME-01), snapshot (PLY-02, API-10), receipt lookup (CMD-09).</summary>
 internal static class CoreEndpoints
 {
-    public const string TimeRoute = "/v1/time";
-    public const string SnapshotRoute = "/api/v1/player/snapshot";
-    public const string ReceiptRoute = "/api/v1/player/receipts/{receiptId}";
-    public const string ConfigRoute = "/api/v1/config/get";
+    public const string TimeRoute = PlatformRoutes.TimeTemplate;
+    public const string SnapshotRoute = PlatformRoutes.SnapshotTemplate;
+    public const string ReceiptRoute = PlatformRoutes.ReceiptTemplate;
+    public const string ConfigRoute = PlatformRoutes.ConfigTemplate;
 
     public static void MapPublic(IEndpointRouteBuilder routes) =>
-        routes.MapGet(TimeRoute, async (HttpContext http, IClock clock) =>
+        routes.MapDeclared(PlatformRoutes.Time, async (HttpContext http, IClock clock) =>
                 await ProtobufBinding.WriteAsync(http, new TimeResponse { ServerTimeUtcMs = clock.UtcNow.ToUnixTimeMilliseconds() }))
             .AsPublicEndpoint(protobuf: true);
 
     public static void MapPlayer(IEndpointRouteBuilder routes)
     {
-        routes.MapPost(SnapshotRoute, async (HttpContext http) =>
+        routes.MapDeclared(PlatformRoutes.Snapshot, async (HttpContext http) =>
             {
                 var services = http.RequestServices;
                 var options = services.GetRequiredService<GameServerOptions>();
@@ -56,7 +56,7 @@ internal static class CoreEndpoints
             })
             .AsPlayerEndpoint();
 
-        routes.MapPost(ConfigRoute, async (HttpContext http) =>
+        routes.MapDeclared(PlatformRoutes.Config, async (HttpContext http) =>
             {
                 var services = http.RequestServices;
                 var options = services.GetRequiredService<GameServerOptions>();
@@ -84,7 +84,7 @@ internal static class CoreEndpoints
             })
             .AsPlayerEndpoint();
 
-        routes.MapGet(ReceiptRoute, async (HttpContext http, string receiptId) =>
+        routes.MapDeclared(PlatformRoutes.Receipt, async (HttpContext http, string receiptId) =>
             {
                 var services = http.RequestServices;
                 var actor = services.GetRequiredService<ActorContextAccessor>().GetActor(http);

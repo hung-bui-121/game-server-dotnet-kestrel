@@ -1,10 +1,12 @@
 using System.Collections.Concurrent;
+using GameServer.Actors;
 using GameServer.Aggregates;
 using GameServer.Modules;
 using GameServer.Modules.Identity;
 using GameServer.Platform.Outbox;
 using GameServer.Platform.Web.Commands;
 using GameServer.Platform.Web.Routing;
+using GameServer.Routing;
 using GameServer.Tests.Shared;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
@@ -25,18 +27,25 @@ public sealed class StartupValidationTests
         Action<WebApplication>? endpoints = null,
         Action<Dictionary<string, string?>>? settings = null,
         Action<GameServer.Platform.Web.Hosting.GameServerBuilder>? modules = null,
-        bool testAuthentication = true)
+        bool testAuthentication = true,
+        params RouteDeclaration[] routes)
     {
+        // An endpoint a test maps itself is declared by the host (BC-1), consistently with what the test checks.
+        var composition = routes.Length == 0 ? modules : gs =>
+        {
+            (modules ?? SampleTestHost.DefaultModules)(gs);
+            gs.DeclareRoutes(routes);
+        };
         return await Should.ThrowAsync<GameServerStartupException>(async () =>
         {
-            await using var host = await SampleTestHost.StartAsync(modules, settings, endpoints, testAuthentication);
+            await using var host = await SampleTestHost.StartAsync(composition, settings, endpoints, testAuthentication);
         });
     }
 
     [Fact]
     public async Task Endpoint_without_profile_fails()
     {
-        var ex = await StartupFails(app => app.MapGet("/api/v1/naked", () => "x"));
+        var ex = await StartupFails(app => app.MapGet("/api/v1/naked", () => "x"), routes: RouteDeclaration.Get("test.naked", "/api/v1/naked", SecurityProfile.Player));
 
         ex.Message.ShouldContain("GET /api/v1/naked] has 0 security profiles");
     }
@@ -44,7 +53,9 @@ public sealed class StartupValidationTests
     [Fact]
     public async Task Endpoint_with_two_profiles_fails()
     {
-        var ex = await StartupFails(app => app.MapGet("/api/v1/both", () => "x").AsPlayerEndpoint().AsDevEndpoint());
+        var ex = await StartupFails(
+            app => app.MapGet("/api/v1/both", () => "x").AsPlayerEndpoint().AsDevEndpoint(),
+            routes: RouteDeclaration.Get("test.both", "/api/v1/both", SecurityProfile.Player));
 
         ex.Message.ShouldContain("has 2 security profiles");
     }
@@ -52,7 +63,7 @@ public sealed class StartupValidationTests
     [Fact]
     public async Task Unversioned_route_fails()
     {
-        var ex = await StartupFails(app => app.MapGet("/api/counter", () => "x").AsPlayerEndpoint());
+        var ex = await StartupFails(app => app.MapGet("/api/counter", () => "x").AsPlayerEndpoint(), routes: RouteDeclaration.Get("test.unversioned", "/api/counter", SecurityProfile.Player));
 
         ex.Message.ShouldContain("no version segment");
     }
@@ -68,7 +79,9 @@ public sealed class StartupValidationTests
     [Fact]
     public async Task Public_endpoint_outside_allowlist_fails()
     {
-        var ex = await StartupFails(app => app.MapGet("/v1/open", () => "x").AsPublicEndpoint(protobuf: false));
+        var ex = await StartupFails(
+            app => app.MapGet("/v1/open", () => "x").AsPublicEndpoint(protobuf: false),
+            routes: RouteDeclaration.Get("test.open", "/v1/open", SecurityProfile.Public, RouteSurface.Host));
 
         ex.Message.ShouldContain("not in GameServer:PublicEndpointAllowlist");
     }
@@ -78,7 +91,8 @@ public sealed class StartupValidationTests
     {
         var ex = await StartupFails(
             app => app.MapPost("/api/v1/cheat/gold", () => "x").AsDevEndpoint(),
-            s => s["GameServer:DeploymentEnvironment"] = "Production");
+            s => s["GameServer:DeploymentEnvironment"] = "Production",
+            routes: RouteDeclaration.Post("test.cheat_gold", "/api/v1/cheat/gold", SecurityProfile.Dev));
 
         ex.Message.ShouldContain("[endpoint POST /api/v1/cheat/gold] uses profile Dev in deployment environment 'Production' (environment id 'test').");
         ex.Message.ShouldContain("test authentication is enabled in 'Production'");
@@ -144,7 +158,8 @@ public sealed class StartupValidationTests
             "/api/v1/counter/ghost",
             "counter.ghost",
             request => new IncrementCommand(request.By, null),
-            result => new Wire.IncrementResult { Value = result.Value }));
+            result => new Wire.IncrementResult { Value = result.Value }),
+            routes: new RouteDeclaration("counter.ghost", ["POST"], "/api/v1/counter/ghost", SecurityProfile.Player, RouteSurface.PlayerApi, "counter.ghost"));
 
         ex.Violations.ShouldContain(
             "[endpoint POST /api/v1/counter/ghost] runs command 'counter.ghost' which no registered module declares. " +
@@ -159,7 +174,9 @@ public sealed class StartupValidationTests
             "/gm/v1/players/{playerId}/ghost",
             "counter.gm_ghost",
             CounterModuleDefinition.ReadPermission,
-            _ => new IncrementCommand(1, null)));
+            _ => new IncrementCommand(1, null)),
+            routes: new RouteDeclaration(
+                "counter.gm_ghost", ["POST"], "/gm/v1/players/{playerId}/ghost", SecurityProfile.Gm, RouteSurface.GmApi, "counter.gm_ghost", CounterModuleDefinition.ReadPermission));
 
         ex.Violations.ShouldHaveSingleItem().ShouldStartWith(
             "[endpoint POST /gm/v1/players/{playerId}/ghost] runs command 'counter.gm_ghost' which no registered module declares.");
@@ -173,7 +190,9 @@ public sealed class StartupValidationTests
             "/api/v1/counter/dev-increment",
             IncrementHandler.Operation,
             request => new IncrementCommand(request.By, null),
-            result => new Wire.IncrementResult { Value = result.Value }));
+            result => new Wire.IncrementResult { Value = result.Value }),
+            routes: new RouteDeclaration(
+                "test.dev_increment", ["POST"], "/api/v1/counter/dev-increment", SecurityProfile.Dev, RouteSurface.PlayerApi, IncrementHandler.Operation));
 
         ex.Violations.ShouldHaveSingleItem().ShouldBe(
             "[endpoint POST /api/v1/counter/dev-increment] has profile Dev but runs command 'counter.increment' declared with profile Player. " +
@@ -188,7 +207,9 @@ public sealed class StartupValidationTests
             "/gm/v1/players/{playerId}/ban-with-read",
             "identity.ban",
             CounterModuleDefinition.ReadPermission,
-            body => new BanPlayerCommand(body.Reason!, null, [])));
+            body => new BanPlayerCommand(body.Reason!, null, [])),
+            routes: new RouteDeclaration(
+                "test.ban_with_read", ["POST"], "/gm/v1/players/{playerId}/ban-with-read", SecurityProfile.Gm, RouteSurface.GmApi, "identity.ban", CounterModuleDefinition.ReadPermission));
 
         ex.Violations.ShouldHaveSingleItem().ShouldBe(
             "[endpoint POST /gm/v1/players/{playerId}/ban-with-read] requires permission 'counter.read' but runs GM command 'identity.ban' " +

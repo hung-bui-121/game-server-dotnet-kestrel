@@ -19,7 +19,7 @@ namespace GameServer.Modules.Iap;
 /// </summary>
 public sealed class IapModule : IGameModule, IPlayerApiModule
 {
-    public const string PurchaseRoute = "/api/v1/iap/purchase";
+    public const string PurchaseRoute = IapRoutes.PurchaseTemplate;
 
     public ModuleDescriptor Describe() => IapModuleDefinition.Describe();
 
@@ -36,8 +36,7 @@ public sealed class IapModule : IGameModule, IPlayerApiModule
 
     public void MapPlayerApi(IEndpointRouteBuilder routes) =>
         routes.MapPlayerCommand<Wire.IapPurchaseRequest, IapPurchaseCommand, IapPurchaseResult>(
-            PurchaseRoute,
-            IapPurchaseHandler.Operation,
+            IapRoutes.Purchase,
             VerifyAsync,
             result =>
             {

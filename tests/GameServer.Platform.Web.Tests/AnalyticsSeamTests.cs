@@ -9,6 +9,7 @@ using GameServer.Platform.Outbox;
 using GameServer.Platform.Testing;
 using GameServer.Platform.Web.Commands;
 using GameServer.Protocol.Core.V1;
+using GameServer.Routing;
 using GameServer.Tests.Shared;
 using Microsoft.Extensions.DependencyInjection;
 using Sample.Counter;
@@ -26,16 +27,18 @@ public sealed class AnalyticsSeamTests
 {
     private const string Route = "/api/v1/test/seam-emit";
 
+    private static readonly RouteDeclaration Seam = RouteDeclaration.Command(SeamHandler.Descriptor, Route);
+
     private static Task<TestHost> StartAsync(InMemoryAnalyticsSink second) =>
         SampleTestHost.StartAsync(
             modules: b =>
             {
                 GameHttp.FullGame(b);
                 b.AddModule(new SeamModule());
+                b.DeclareRoutes(Seam);
             },
             afterUseGameServer: app => app.MapPlayerCommand<Wire.IncrementRequest, SeamCommand, SeamResult>(
-                Route,
-                SeamHandler.Operation,
+                Seam,
                 request => new SeamCommand(request.By),
                 result => new Wire.IncrementResult { Value = result.Level }),
             services: s => s.AddSingleton<IAnalyticsSink>(second));

@@ -4,12 +4,12 @@ using GameServer.Platform.Outbox;
 using GameServer.Platform.Persistence;
 using GameServer.Platform.Registry;
 using GameServer.Platform.Web.Aggregates;
+using GameServer.Platform.Web.Catalog;
 using GameServer.Platform.Web.Endpoints;
 using GameServer.Platform.Web.Middleware;
 using GameServer.Platform.Web.Requests;
 using GameServer.Platform.Web.Routing;
 using GameServer.Platform.Web.Security;
-using GameServer.Platform.Web.Validation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
@@ -47,6 +47,7 @@ public static class GameServerApplicationExtensions
         }
 
         errors.AddRange(registry.Validate(options, config));
+        errors.AddRange(services.GetRequiredService<WireCatalog>().Validate());
         ValidateServices(services, options, registry, errors);
 
         DeploymentChecks.ValidateSecretSources(app.Configuration, options, errors);
@@ -103,25 +104,20 @@ public static class GameServerApplicationExtensions
             }
         }
 
-        var platformPublic = new List<string>();
         if (options.AllowsDevelopmentTools && options.Hosting.MapGmApi)
         {
             GameServer.Platform.Web.OpenApi.GmOpenApi.Map(app);
-            platformPublic.Add(GameServer.Platform.Web.OpenApi.GmOpenApi.Route);
         }
 
         var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints).ToArray();
-        errors.AddRange(EndpointSecurityValidator.Validate(
-            endpoints,
-            options,
-            registry.Modules.SelectMany(m => m.Descriptor.PublicEndpoints).Concat(platformPublic),
-            registry.Modules.SelectMany(m => m.Descriptor.Permissions)));
-        errors.AddRange(CommandRouteValidator.Validate(endpoints, registry.Commands));
+        errors.AddRange(EndpointValidation.Run(endpoints, services, includeUnmapped: false));
         if (errors.Count > 0)
         {
             throw new GameServerStartupException(errors);
         }
 
+        // Endpoints mapped from now on are validated again, with every mapped one, before the server listens (FR-012).
+        services.GetRequiredService<EndpointValidationState>().Validated(app);
         LogStartup(services);
         return app;
     }

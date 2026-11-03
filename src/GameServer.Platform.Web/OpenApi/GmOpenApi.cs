@@ -60,5 +60,5 @@ public static class GmOpenApi
 
     /// <summary>Maps the document (Development/Test only) as a Public GM endpoint.</summary>
     public static void Map(IEndpointRouteBuilder routes) =>
-        routes.MapOpenApi(Route).AsPublicEndpoint(protobuf: false);
+        routes.MapOpenApi(Route).AsPublicEndpoint(protobuf: false).WithDeclaration(PlatformRoutes.GmOpenApi);
 }

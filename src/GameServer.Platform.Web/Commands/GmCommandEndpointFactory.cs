@@ -7,6 +7,7 @@ using GameServer.Platform.Web.Endpoints;
 using GameServer.Platform.Web.Middleware;
 using GameServer.Platform.Web.Protobuf;
 using GameServer.Platform.Web.Routing;
+using GameServer.Routing;
 using GameServer.Time;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -88,6 +89,47 @@ public static class GmCommandEndpointFactory
         ArgumentNullException.ThrowIfNull(afterExecute);
         return routes.MapGmCommandCore<TBody, TRequest, TResult>(pattern, operation, permission, toDomain, afterExecute);
     }
+
+    /// <summary>
+    /// GM command mapped from its declaration (FR-005): operation and permission from <paramref name="route"/>; the template must
+    /// contain <c>{playerId}</c>. Throws <see cref="ArgumentException"/> when the declaration names no operation or permission.
+    /// </summary>
+    public static IEndpointConventionBuilder MapGmCommand<TBody, TRequest, TResult>(
+        this IEndpointRouteBuilder routes,
+        RouteDeclaration route,
+        Func<TBody, TRequest> toDomain)
+        where TBody : IGmCommandBody
+        where TRequest : notnull
+    {
+        var operation = CommandEndpointFactory.RequireOperation(route);
+        return routes.MapGmCommandCore<TBody, TRequest, TResult>(route.Template, operation, RequirePermission(route), toDomain, afterExecute: null)
+            .WithDeclaration(route);
+    }
+
+    /// <summary>GM command with an after-execute hook (see the string overload), mapped from its declaration (FR-005).</summary>
+    public static IEndpointConventionBuilder MapGmCommand<TBody, TRequest, TResult>(
+        this IEndpointRouteBuilder routes,
+        RouteDeclaration route,
+        Func<TBody, TRequest> toDomain,
+        Func<CommandExecution, HttpContext, Task> afterExecute)
+        where TBody : IGmCommandBody
+        where TRequest : notnull
+    {
+        ArgumentNullException.ThrowIfNull(afterExecute);
+        var operation = CommandEndpointFactory.RequireOperation(route);
+        return routes.MapGmCommandCore<TBody, TRequest, TResult>(
+                route.Template,
+                operation,
+                RequirePermission(route),
+                toDomain,
+                afterExecute)
+            .WithDeclaration(route);
+    }
+
+    private static string RequirePermission(RouteDeclaration route) =>
+        route.Permission ?? throw new ArgumentException(
+            $"GM command route {route} names no permission: declare it with RouteDeclaration.Command(descriptor, template) of a GM command.",
+            nameof(route));
 
     private static RouteHandlerBuilder MapGmCommandCore<TBody, TRequest, TResult>(
         this IEndpointRouteBuilder routes,

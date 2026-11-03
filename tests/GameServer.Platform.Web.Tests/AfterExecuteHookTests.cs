@@ -2,6 +2,7 @@ using System.Net;
 using GameServer.Platform.Commands;
 using GameServer.Platform.Web.Commands;
 using GameServer.Protocol.Core.V1;
+using GameServer.Routing;
 using GameServer.Tests.Shared;
 using Sample.Counter;
 using Shouldly;
@@ -17,13 +18,14 @@ public sealed class AfterExecuteHookTests
 {
     private const string Route = "/api/v1/test/increment-with-failing-hook";
 
+    private static readonly RouteDeclaration Hooked = RouteDeclaration.Command(IncrementHandler.Descriptor, Route, name: "test.increment_failing_hook");
+
     [Fact]
     public async Task A_failing_hook_is_logged_and_the_committed_command_still_answers_ok()
     {
         var calls = 0;
-        await using var host = await SampleTestHost.StartAsync(afterUseGameServer: app => app.MapPlayerCommand<Wire.IncrementRequest, IncrementCommand, IncrementResult>(
-            Route,
-            IncrementHandler.Operation,
+        await using var host = await SampleTestHost.StartAsync(SampleTestHost.WithRoutes(Hooked), afterUseGameServer: app => app.MapPlayerCommand<Wire.IncrementRequest, IncrementCommand, IncrementResult>(
+            Hooked,
             request => new IncrementCommand(request.By, null),
             result => new Wire.IncrementResult { Value = result.Value },
             (_, _) =>

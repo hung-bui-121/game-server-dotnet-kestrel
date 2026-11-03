@@ -33,7 +33,7 @@ public static class GateEndpoints
 
     public static void Map(IEndpointRouteBuilder routes)
     {
-        routes.MapGet(GateRoute, (Func<HttpContext, Task<IResult>>)(async http =>
+        routes.MapDeclared(GmRoutes.OpsGate, (Func<HttpContext, Task<IResult>>)(async http =>
             {
                 var gate = GateDocument.Parse(await http.RequestServices.GetRequiredService<IKeyValueStore>().GetAsync(GateDocument.Key, http.RequestAborted));
                 return GmHttp.Json(View(gate));
@@ -41,7 +41,7 @@ public static class GateEndpoints
             .Produces<GateView>()
             .AsGmEndpoint(GmPermissions.OpsRead);
 
-        routes.MapPut(MaintenanceRoute, (Func<HttpContext, Task<IResult>>)(async http =>
+        routes.MapDeclared(GmRoutes.OpsGateMaintenance, (Func<HttpContext, Task<IResult>>)(async http =>
             {
                 var body = await GmHttp.ReadJsonAsync<MaintenanceBody>(http);
                 if (body.Message is { Length: > 500 })
@@ -61,7 +61,7 @@ public static class GateEndpoints
             .Produces<GateView>()
             .AsGmEndpoint(GmPermissions.OpsMaintenance);
 
-        routes.MapPut(MinClientVersionRoute, (Func<HttpContext, Task<IResult>>)(async http =>
+        routes.MapDeclared(GmRoutes.OpsGateMinClientVersion, (Func<HttpContext, Task<IResult>>)(async http =>
             {
                 var body = await GmHttp.ReadJsonAsync<MinClientVersionBody>(http);
                 var platform = body.Platform?.Trim().ToLowerInvariant();

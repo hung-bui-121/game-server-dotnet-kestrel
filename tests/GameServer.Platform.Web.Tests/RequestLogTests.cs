@@ -297,7 +297,8 @@ public sealed class RequestLogTests
         entry.EventId.Name.ShouldBe("Request", kind);
         entry.Level.ShouldBe(expected.Level, kind);
         p["{OriginalFormat}"].ShouldBe("{HttpMethod} {Route} -> {Status} {ResultCode} in {DurationMs} ms", kind);
-        p.Count.ShouldBe(15, kind);
+        p.Count.ShouldBe(16, kind);
+        p.ShouldContainKey("RouteName", kind);
         p["HttpMethod"].ShouldBe(expected.Method, kind);
         p["Route"].ShouldBe(expected.Route, kind);
         p["Profile"].ShouldBe(expected.Profile, kind);

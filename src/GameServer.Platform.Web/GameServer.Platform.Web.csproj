@@ -12,6 +12,8 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="GameServer.Platform.Web.Tests" />
+    <!-- The member tree of aggregate states (StateMembers): the startup hidden-member check and the conformance check share it (FG-027). -->
+    <InternalsVisibleTo Include="GameServer.TestKit" />
   </ItemGroup>
   <ItemGroup>
     <Protobuf Include="..\..\proto\gameserver\core\v1\core.proto" ProtoRoot="..\..\proto" GrpcServices="None" Link="Protos\core.proto" />

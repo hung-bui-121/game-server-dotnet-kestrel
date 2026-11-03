@@ -26,7 +26,7 @@ public sealed class ObservabilityModule : IGameModule, IHostEndpointsModule
     {
         Name = ModuleName,
         Version = "0.5.0",
-        PublicEndpoints = [LiveRoute, ReadyRoute],
+        Routes = [ObservabilityRoutes.Live, ObservabilityRoutes.Ready],
     };
 
     public void ConfigureServices(IServiceCollection services, ModuleContext context)
@@ -43,8 +43,9 @@ public sealed class ObservabilityModule : IGameModule, IHostEndpointsModule
     public void MapHostEndpoints(IEndpointRouteBuilder routes)
     {
         routes.MapHealthChecks(LiveRoute, new HealthCheckOptions { Predicate = _ => false, ResponseWriter = WriteStatusOnly })
-            .AsPublicEndpoint(protobuf: false);
-        routes.MapGet(ReadyRoute, async (HttpContext http, HealthReportCache cache) =>
+            .AsPublicEndpoint(protobuf: false)
+            .WithDeclaration(ObservabilityRoutes.Live);
+        routes.MapDeclared(ObservabilityRoutes.Ready, async (HttpContext http, HealthReportCache cache) =>
             {
                 var report = await cache.GetReadyAsync();
                 http.Response.StatusCode = report.Status == HealthStatus.Unhealthy

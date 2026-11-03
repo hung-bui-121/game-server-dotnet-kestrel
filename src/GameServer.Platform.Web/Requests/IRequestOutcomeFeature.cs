@@ -37,6 +37,12 @@ public interface IRequestOutcomeFeature
 
     /// <summary>The framework pipeline finished and every member is final.</summary>
     bool Completed { get; }
+
+    /// <summary>
+    /// Name of the matched catalog route (FG-026, e.g. <c>platform.config</c>): compare with <c>PlatformRoutes.Config.Name</c> instead of a
+    /// copied route string. Null for unmatched paths; final once <see cref="Completed"/>.
+    /// </summary>
+    string? RouteName => null;
 }
 
 public static class RequestOutcomeExtensions

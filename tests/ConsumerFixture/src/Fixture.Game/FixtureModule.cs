@@ -11,7 +11,7 @@ namespace Fixture.Game;
 /// <summary>Adapter half of the fixture module: one player command over a well-known Protobuf type (no game proto needed).</summary>
 public sealed class FixtureModule : IGameModule, IPlayerApiModule
 {
-    public const string SaveRoute = "/api/v1/fixture/save";
+    public const string SaveRoute = FixtureRoutes.SaveTemplate;
 
     public ModuleDescriptor Describe() => FixtureModuleDefinition.Describe();
 
@@ -21,8 +21,7 @@ public sealed class FixtureModule : IGameModule, IPlayerApiModule
 
     public void MapPlayerApi(IEndpointRouteBuilder routes) =>
         routes.MapPlayerCommand<StringValue, SaveNote, SaveNoteResult>(
-            SaveRoute,
-            SaveNoteHandler.Operation,
+            FixtureRoutes.Save,
             ToDomain,
             result => new StringValue { Value = result.Text });
 

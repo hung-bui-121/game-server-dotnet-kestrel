@@ -59,7 +59,7 @@ rule).
 
 ## Phase 1: Setup
 
-- [ ] T001 Baseline on branch `014-wire-contract` (base `2999a20`): Debug and Release build of `GameServer.slnx`; full
+- [X] T001 Baseline on branch `014-wire-contract` (base `2999a20`): Debug and Release build of `GameServer.slnx`; full
   suite in memory (no `COUCHBASE_*`) and with `GAMESERVER_TEST_STORE=File`. Also record, into the scratch folder (not
   committed): (a) SHA-256 of every file under `sdk/unity/com.gameserver.client/Runtime/Generated/` and of
   `samples/SampleGame/KestrelDemo/Assets/SampleGame/Generated/SampleGame.cs`; (b) the GUID of every `.meta` under
@@ -67,7 +67,13 @@ rule).
   (`sdk/GameServer.Client` Release build: every public type and member signature, sorted; input of SC-008 in T063).
   Done when: 0 warnings in both configurations, 0 failures; total/passed/skipped counts, the three scratch file paths and
   the `git status` of the tree recorded as a Note (reference for T038, T054, T064, T069, T083).
-- [ ] T002 **[VERIFY] V1 and V3 — decision gate for FR-012** in a throw-away web project under the scratch folder that
+  Note (2026-11-03): Debug and Release 0 warnings, 0 errors. In-memory and `GAMESERVER_TEST_STORE=File`: 1482 total, 1387
+  passed, 95 skipped, 0 failed (same as after 013). `git status`: only the owner's untracked `tasks/`. Scratch (not
+  committed, session scratchpad `t001/`): `generated-sha256.txt` (11 package files incl. `.meta` + KestrelDemo
+  `SampleGame.cs`), `meta-guids.txt` (27 `.meta` under `sdk/unity/com.gameserver.client/`), `sdk-public-api.txt` (875
+  sorted lines, reflection over `sdk/GameServer.Client` Release). These are session-local: T063 must re-derive the GUID
+  list from `git show 597030e:<path>` if the scratchpad is gone.
+- [X] T002 **[VERIFY] V1 and V3 — decision gate for FR-012** in a throw-away web project under the scratch folder that
   references `src/GameServer.Platform.Web` (nothing committed): register an `IHostedLifecycleService` first in the service
   collection; after `UseGameServer`-like code, map one endpoint directly and one inside `MapGroup("/g")`; in
   `StartingAsync` enumerate `((IEndpointRouteBuilder)app).DataSources.SelectMany(d => d.Endpoints)` and throw a
@@ -80,7 +86,16 @@ rule).
   port stayed free; and the **decision** for T033: `StartingAsync` (primary), else fallback 1 `IStartupFilter` (repeat
   (a)–(c) with it), else fallback 2 first-request refusal + `StopApplication` (exit 1 via `ServeAsync`). If a fallback is
   chosen, the Note lists the doc/contract lines to change (plan D8, research R8, PCR platform §20). (FR-012, BC-2)
-- [ ] T003 [P] **[VERIFY] V12 and V13**: (V12) throw-away app with `MapHealthChecks("/health/live")` and
+  Note (2026-11-03, ASP.NET Core 10.0.14 shared framework, SDK 10.0.403): spike = Web app referencing Platform.Web, an
+  `IHostedLifecycleService` registered first, one endpoint mapped before the hand-over, one `MapPost` after it and one
+  `MapGroup("/g").MapGet(...)` after it, each with a custom metadata object. In all three runs `StartingAsync` ran before
+  the server started (`IServerAddressesFeature` empty, the fixed port bindable from inside `StartingAsync`), saw the direct
+  and the grouped late endpoint in two consecutive enumerations with identical `HttpMethodMetadata` and custom metadata (V3
+  holds), and the service's `StartAsync`/`StartedAsync` never ran. (a) `RunAsync` on Kestrel: `GameServerStartupException`
+  surfaced unwrapped (no inner exception), the port was free afterwards. (b) `UseTestServer` + `StartAsync`: same exception
+  type. (c) `WebApplicationFactory<Program>.CreateClient()`: same exception type, unwrapped. **Decision for T033: primary
+  hook (`IHostedLifecycleService.StartingAsync`, registered first in `AddGameServer`)**; no fallback, no doc/contract change.
+- [X] T003 [P] **[VERIFY] V12 and V13**: (V12) throw-away app with `MapHealthChecks("/health/live")` and
   `MapOpenApi("/gm/v1/openapi/{documentName}.json")`, each followed by `.WithMetadata(new object())` (stand-in for
   `WithDeclaration`); dump `RouteEndpoint.RoutePattern.RawText`, `HttpMethodMetadata` and the custom metadata. (V13)
   in a throw-away library with the framework's `Directory.Build.props` settings (`AnalysisLevel latest-recommended`,
@@ -88,7 +103,14 @@ rule).
   implementing it.
   Done when: a Note records the raw texts, the method metadata (none / GET) and that the custom metadata is visible
   (V12), and whether the build is clean (V13); fallbacks chosen for T010/T020/T036 if needed.
-- [ ] T004 [P] **[VERIFY] V4 (composition part), V5 and V15**: (V4) with no `COUCHBASE_*`, no user secrets and the
+  Note (2026-11-03): V12 holds. `MapHealthChecks("/health/live")` → `RouteEndpoint`, raw text `/health/live`, no
+  `HttpMethodMetadata` (any method); `MapOpenApi("/gm/v1/openapi/{documentName}.json")` → raw text
+  `/gm/v1/openapi/{documentName}.json`, `HttpMethodMetadata` GET; `.WithMetadata(...)` visible on both. (A scratch Web app
+  using `AddOpenApi` needs `InterceptorsNamespaces` += `Microsoft.AspNetCore.OpenApi.Generated` for the OpenAPI source
+  generator; Platform.Web already builds without it, irrelevant for the slice.) V13 holds: a public interface with
+  `string? RouteName => null;` and a sealed implementer build clean under `AnalysisLevel latest-recommended`,
+  `TreatWarningsAsErrors`, banned API analyzer. No fallback for T010/T020/T036.
+- [X] T004 [P] **[VERIFY] V4 (composition part), V5 and V15**: (V4) with no `COUCHBASE_*`, no user secrets and the
   network adapter unchanged, build the SampleHost and Fixture.Host compositions only (a scratch copy of each `Program`
   that stops after `builder.Build()` and disposes; `--provision` is not usable here because it opens the store) in the
   Local flavor; list every file and folder created under `samples/SampleHost/` and
@@ -100,7 +122,19 @@ rule).
   `--environment Local` selects the Local flavor through `GameServerCommandLine.Parse` → `CreateBuilder(HostArgs)`, and
   the `DOTNET_HOST_PATH` values; fallbacks chosen for T039/T042. Nothing written outside the scratch folder except
   gitignored log files (deleted afterwards).
-- [ ] T005 [P] **[VERIFY] V6, V7 and V8**: inspect the restored `Grpc.Tools` 2.84.0 package folder (`tools/*`,
+  Note (2026-11-03): scratch copies of both `Program`s (same modules and store switch, stop after `Build()` + dispose),
+  `--environment Local --contentRoot <host folder>`, no `COUCHBASE_*`, no user secrets. **V4 (composition)**: no file or
+  folder created or modified under `samples/SampleHost/`, `samples/_database/` or `tests/ConsumerFixture/` (`find -newer`
+  against a marker, `git status` unchanged) — `Build()` alone opens no store and writes no Serilog file. **V5 holds**:
+  `GameServerCommandLine.Parse` passes `--environment Local` through unchanged, `CreateBuilder(HostArgs)` →
+  `EnvironmentName=Local`, `GameServer:EnvironmentId=local`, store File. **Caution for T039/T053**: the fixture's
+  `appsettings.Local.json` sets `Urls http://localhost:5180` (the owner's port): export mode must never listen, and any
+  test serving the fixture host must override `Urls`. **V15**: `DOTNET_HOST_PATH` and `DOTNET_ROOT` are **not set** under
+  `dotnet test` (Microsoft.Testing.Platform runner, the test runs as an apphost `.exe`) nor in a child of `dotnet run`;
+  the resolution order then falls to PATH, which works on this machine only because `C:\Program Files\dotnet` also has SDK
+  10.0.403. T042 keeps the documented `--dotnet <path>` option as the fallback and the e2e tests must pass the resolved
+  path explicitly (no reliance on `DOTNET_HOST_PATH`).
+- [X] T005 [P] **[VERIFY] V6, V7 and V8**: inspect the restored `Grpc.Tools` 2.84.0 package folder (`tools/*`,
   `build/native/include/google/protobuf/`), run `protoc --version`; with that protoc and the same `-I` roots as
   `sdk/GameServer.Client/GameServer.Client.csproj` (`proto/`, each module `Protos` folder, `proto` as extra import dir),
   run one `--csharp_out` per framework proto and for `samples/SampleGame/SampleGame.Adapters/Protos/sample_game.proto`
@@ -110,7 +144,23 @@ rule).
   the rule with the generated C#.
   Done when: a Note records the protoc path per OS folder name, the version line, the exec-bit state (Windows: n/a),
   byte equality per file (or the exact diff, then the V7 fallback is recorded for T059/T070), and the V8 name pairs.
-- [ ] T006 [P] **[VERIFY] V9** in a throw-away test project referencing `src/GameServer.Platform` (for
+  Note (2026-11-03): **V6** package root = `NUGET_PACKAGES` (`D:\devcache\nuget` here, not `~/.nuget/packages`)
+  `/grpc.tools/2.84.0`; `$(PkgGrpc_Tools)` = that folder under CPM with `GeneratePathProperty="true"` (scratch project
+  importing the framework `Directory.Packages.props`). OS folders: `windows_x64`, `windows_x86`, `linux_x64`, `linux_x86`,
+  `linux_arm64`, **`macosx_universal`** (not `macosx_x64` as research R11 says: T045 maps every macOS arch to
+  `macosx_universal`), each with `protoc[.exe]` + `grpc_csharp_plugin[.exe]`; well-known types under
+  `build/native/include/google/protobuf/` (any, api, descriptor, duration, empty, field_mask, source_context, struct,
+  timestamp, type, wrappers). `protoc --version` = `libprotoc 35.1`. Exec bit: n/a on Windows (files show `-rw-` under Git
+  Bash; the Unix bit must be set by the tool, V6 fallback `File.SetUnixFileMode`). **V7 holds**: one protoc run per proto
+  with the csproj's `-I` roots (`proto/` for core, `<module>/Protos` + `proto/` for the others, plus the include folder)
+  reproduces `Core.cs` (into `gameserver/core/v1/`), `Identity.cs`, `Economy.cs`, `Iap.cs` and KestrelDemo `SampleGame.cs`
+  byte for byte (`cmp`). **V8 holds** (protoc C# rule): no `csharp_namespace`, `package fixture.v1` → `namespace
+  Fixture.V1`; `package my_game.v2beta` → `MyGame.V2Beta` (underscores removed, the letter after `_` **or after a digit**
+  upper-cased: T045/T051 must implement protoc's `UnderscoresToCamelCase(…, true)` per dot segment, not a plain
+  first-letter rule); class = message name verbatim (`Thing_state`); nested message `CardState.Types.Inner`; file name
+  `fixture_game.proto` → `FixtureGame.cs`; `csharp_namespace` wins when set (`SampleGame.Protocol.V1`,
+  `Sample.Counter.Protocol.V1`, `GameServer.Protocol.Core.V1`). protoc warns (stderr, exit 0) on an unused import.
+- [X] T006 [P] **[VERIFY] V9** in a throw-away test project referencing `src/GameServer.Platform` (for
   `GameServerJson.Options`): zh-pvp-shaped states copied as plain records into the scratch project (`init` properties,
   `required` members, a positional record `PendingChest(string Tier, int Chapter)`, `IReadOnlyDictionary`,
   `IReadOnlyList`, nullable record, `DateTimeOffset?`, an enum, a computed get-only property); print for every
@@ -118,14 +168,28 @@ rule).
   built from those names.
   Done when: a Note records which members expose a setter or an associated parameter, that the computed property has
   neither, and that deserialization of `required`/`init`/positional members succeeds; fallback chosen for T013 if needed.
-- [ ] T007 [P] **[VERIFY] V10 and V11**: `dotnet msbuild samples/SampleHost/SampleHost.csproj -getItem:PackageVersion`
+  Note (2026-11-03): V9 holds under `GameServerJson.Options` (.NET 10.0.14). Every `init` property (incl. `required`,
+  nullable record, `IReadOnlyDictionary`, `IReadOnlyList`, enum, `DateTimeOffset?`) has `Set != null`, no
+  `AssociatedParameter`, `AttributeProvider` = the C# property (name = member name, JSON name camelCase); positional record
+  members (`PendingChest(string Tier, int Chapter)`, `Slot(DateTimeOffset? UnlockEndUtc)`) have `Set != null` **and**
+  `AssociatedParameter` = the constructor parameter; the computed `int DoubleCash => Cash * 2` has neither (but **is
+  serialized**: the member rule, not serialization, excludes it). Deserialization of `required`/`init`/positional members
+  and enums (camelCase) succeeds. No fallback for T013.
+- [X] T007 [P] **[VERIFY] V10 and V11**: `dotnet msbuild samples/SampleHost/SampleHost.csproj -getItem:PackageVersion`
   and the same on `tests/ConsumerFixture/src/Fixture.Host/Fixture.Host.csproj` and on a scratch project without CPM;
   `FileVersionInfo.GetVersionInfo("sdk/unity/com.gameserver.client/Runtime/Plugins/Google.Protobuf.dll")` (product,
   file) and `AssemblyName.GetAssemblyName(...)`.
   Done when: a Note records the JSON shape (item `Identity`, `Version` metadata; remember 013 V2: one switch may print
   plain text, JSON escapes `+`), the result without CPM, and the dll's product/file/assembly versions; fallbacks chosen
   for T043/T044.
-- [ ] T008 [P] **[VERIFY] V14**: in a scratch copy of the consumer-fixture layout (its `Directory.Build.props` and
+  Note (2026-11-03): **V10 holds**: `dotnet msbuild <proj> -getItem:PackageVersion` prints JSON `{"Items":{"PackageVersion":
+  [{"Identity":"Google.Protobuf","Version":"3.36.2",…,"DefiningProjectFullPath":"…\Directory.Packages.props"}, …]}}` for
+  SampleHost and Fixture.Host (Fixture.Host resolves through `tests/ConsumerFixture/Directory.Packages.props` → framework
+  props: `Grpc.Tools` 2.84.0, `Google.Protobuf` 3.36.2); a project without CPM prints `"PackageVersion": []` (empty array,
+  not absent). **V11 deviates in detail**: product version `3.36.2+2c74169b34066ceb8ddb6b882fcb3fb32d737a55` (has a `+sha`
+  suffix), file version `3.36.2.0`, assembly version **`3.36.2.0`** (not `3.0.0.0` as research says). T044 compares the
+  product version up to `+` (or the file version's first three parts) with the CPM version.
+- [X] T008 [P] **[VERIFY] V14**: in a scratch copy of the consumer-fixture layout (its `Directory.Build.props` and
   `Directory.Packages.props` imports), a `netstandard2.1` / `LangVersion 9.0` / `ImplicitUsings disable` project
   referencing `sdk/GameServer.Client/GameServer.Client.csproj`, containing the T005 protoc outputs plus hand-written
   copies of the route and section file examples of [generated-files.md](contracts/generated-files.md) §3–§4 (with a
@@ -133,6 +197,15 @@ rule).
   Done when: a Note records a clean build (0 warnings) or each diagnostic with the renderer rule that avoids it
   (expected traps: `ImplicitUsings enable` from the fixture props → CS8773 global usings under C# 9; Banned API analyzer
   on generated code); the property overrides `Fixture.Client.csproj` needs are listed for T052.
+  Note (2026-11-03): scratch layout importing `tests/ConsumerFixture/Directory.Build.props` and `Directory.Packages.props`;
+  `Fixture.Client.csproj` (netstandard2.1, `LangVersion 9.0`, `ImplicitUsings disable`, `EnableDefaultCompileItems false`,
+  `Compile Include="Assets/**/*.cs"`, reference `sdk/GameServer.Client`) with the V8 protoc output `FixtureGame.cs`, a
+  stand-in `SectionKey`/`SectionKey<T>`/`SectionTable`, and hand-written route (const, `…Method`, parameter helper with a
+  `{id}.json`-style segment and an `@class` parameter) and section (typed key, untyped id, `Table`) files in the
+  generated-files.md §3–§4 shape: **0 warnings, 0 errors** with the fixture's analyzers (effective `AnalysisLevel
+  latest-recommended`, `Nullable enable`, `TreatWarningsAsErrors true`, banned API analyzer). Without the `ImplicitUsings`
+  override: `CS8773` (global using needs C# 10). Overrides T052 needs: `TargetFramework netstandard2.1`, `LangVersion 9.0`,
+  `ImplicitUsings disable`, `EnableDefaultCompileItems false` + explicit `Compile` glob; no renderer rule change.
 
 **Checkpoint**: baseline counts known; V1 decided (primary hook or fallback) with its consequences; V3–V15 confirmed or
 their fallbacks recorded. V2 is measured by T035.
@@ -143,7 +216,7 @@ Nothing in this phase changes what a host accepts: no declaration exists yet, th
 the untyped mapper is not marked obsolete (CS0618 would break the build until every call site migrates, T057) and the
 registry keeps its winner. Each task ends with the full suite green and unchanged.
 
-- [ ] T009 Core declarations in a new file `src/GameServer.Core/Routing/RouteDeclaration.cs` (research R1, D1,
+- [X] T009 Core declarations in a new file `src/GameServer.Core/Routing/RouteDeclaration.cs` (research R1, D1,
   contracts/public-api.md §1): `RouteSurface`, `RouteConditions.DevelopmentTools`, sealed `RouteDeclaration` (constructor
   canonicalizes only: exactly one leading `/`, methods upper-cased, distinct, ordinal-sorted; never validates), factories
   `Get/Post/Put/Delete/AnyMethod/Command` (`Command`: name = operation unless given, POST, profile/permission from the
@@ -156,7 +229,9 @@ registry keeps its winner. Each task ends with the full suite green and unchange
   identical declarations are not `Equals` (reference type, R1). `tests/GameServer.Architecture.Tests/ArchitectureTests.cs`
   ARC-01 rule green unchanged (Core still free of ASP.NET/Protobuf).
   Done when: green; nothing reads `Routes` yet. (FR-001, FR-003, FR-004, FR-008)
-- [ ] T010 [P] Platform.Web routing types (after T003, T009; research R2, R4): new files
+  Note: also public `RouteDeclaration.MethodLabel` (`GET,HEAD`, `*` for any) and `RouteDeclaration.CanonicalTemplate(string)`
+  (the one canonicalization rule, reused by the catalog lookups and the endpoint check); additive, not in public-api.md §1.
+- [X] T010 [P] Platform.Web routing types (after T003, T009; research R2, R4): new files
   `src/GameServer.Platform.Web/Routing/RouteDeclarationMetadata.cs` (`sealed record RouteDeclarationMetadata`),
   `src/GameServer.Platform.Web/Routing/DeclaredRouteExtensions.cs` (`MapDeclared` → `MapMethods(template, methods, …)`
   or `Map(template, …)` for any-method + metadata, returns `RouteHandlerBuilder`; `WithDeclaration<TBuilder>` adds the
@@ -168,7 +243,9 @@ registry keeps its winner. Each task ends with the full suite green and unchange
   (absent for any), `RouteDeclarationMetadata` present; `WithDeclaration` on `MapHealthChecks` and `MapOpenApi` (V12);
   `PlatformRoutes.All` = the five declarations with the data-model names.
   Done when: green. (FR-002 platform part, FR-005)
-- [ ] T011 Command mapping overloads (after T010; research R4, contracts/public-api.md §2.2):
+  Note: the platform template strings live once, as `internal const` in `PlatformRoutes` (`TimeTemplate` …); the GM OpenAPI
+  template stays `GmOpenApi.Route` (public). `CoreEndpoints` constants become aliases in T019.
+- [X] T011 Command mapping overloads (after T010; research R4, contracts/public-api.md §2.2):
   `src/GameServer.Platform.Web/Commands/CommandEndpointFactory.cs` (3 `MapPlayerCommand`, 1 `MapDevCommand`) and
   `src/GameServer.Platform.Web/Commands/GmCommandEndpointFactory.cs` (2 `MapGmCommand`) gain `RouteDeclaration route`
   overloads that map `route.Template`, attach `CommandOperationMetadata(route.Operation)` and `RouteDeclarationMetadata`,
@@ -178,7 +255,9 @@ registry keeps its winner. Each task ends with the full suite green and unchange
   metadata objects and the declared template; null operation/permission → `ArgumentException` naming the route;
   profile/permission conflicts are **not** thrown (the check reports them, R4).
   Done when: green; existing command endpoint tests green unchanged. (FR-005)
-- [ ] T012 [P] Typed wire mapper types (research R15, contracts/public-api.md §2.5) in
+  Note: the six overloads evaluate the operation (and GM permission) before touching the template, so a null declaration is an
+  `ArgumentNullException` and a declaration without operation an `ArgumentException` naming `ToString()` of the route.
+- [X] T012 [P] Typed wire mapper types (research R15, contracts/public-api.md §2.5) in
   `src/GameServer.Platform.Web/Aggregates/AggregateWireMapperRegistry.cs` (or sibling files in the same folder):
   `IAggregateWireContract`, `AggregateWireMapper<TState, TWire>` (`Message` = `new TWire().Descriptor`, `Parser`,
   `Map`, `ToPayload` through the typed delegate), `WireMapperOptions.Hidden/MayStayDefault` (ordinal-sorted, distinct),
@@ -189,7 +268,9 @@ registry keeps its winner. Each task ends with the full suite green and unchange
   payload equals the untyped mapper's payload for the same function; contract exposes message full name, parser, hidden
   and may-stay-default lists; untyped mapper has no contract; `Duplicates` lists an id registered twice.
   Done when: green; every existing mapper test green unchanged. (FR-050, FR-060 registration part)
-- [ ] T013 State member tree (after T006; research R16, data-model §7.1): new internal
+  Note: `Duplicates` is `IReadOnlyList<DuplicateWireMapper(AggregateId, Count)>` (the startup line needs the count); the registry
+  still keeps the last mapper per id (unchanged until T058).
+- [X] T013 State member tree (after T006; research R16, data-model §7.1): new internal
   `src/GameServer.Platform.Web/Aggregates/StateMembers.cs` (members = `JsonPropertyInfo` with `Set != null` or an
   `AssociatedParameter` under `GameServerJson.Options`; C# member names from `AttributeProvider`; node kinds scalar,
   object (depth limit 8, cycle → not fillable), nullable, collection (transparent), dictionary (key attributed to the
@@ -201,7 +282,12 @@ registry keeps its winner. Each task ends with the full suite green and unchange
   paths for nested records, list elements (`Slots.UnlockEndUtc`), dictionary values, nullable members; computed
   properties absent; `Resolve` of an unknown path = false.
   Done when: green; `TestKitArchitectureTests` green with the new allowed types. (FR-060, FR-062 groundwork)
-- [ ] T014 Catalog build (after T009, T012, T013; research R5, R6, data-model §1.2): new files under
+  Note: node types `StateLeaf`, `StateObject`, `StateNullable` (`Nullable<T>` only; reference nullability is not modelled),
+  `StateCollection`, `StateDictionary`, `StateUnfillable` (cycle / depth > 8), `StateMember(Name, JsonName, Path, Node)`;
+  `StateMembers.Of(type)` is cached. Leaves are every `JsonTypeInfoKind.None` type (incl. `object`/`JsonNode`): which leaves the
+  conformance can fill is decided by T065. `TestKitArchitectureTests` gained a second rule for Platform.Web internals (allowed:
+  exactly these nine types); the Platform rule is unchanged.
+- [X] T014 Catalog build (after T009, T012, T013; research R5, R6, data-model §1.2): new files under
   `src/GameServer.Platform.Web/Catalog/`: `WireCatalog.cs` (public: `Routes` ordinal by name, `Sections` ordinal by id,
   `TryGetRoute`, `TryGetSection`, `FindRouteName(method, template)` with any-method matching), `RouteEntry.cs`
   (`PlatformOwner`, `HostOwner`), `SectionEntry.cs`, `CatalogOrigin`, `RouteConditions.cs` (`RouteConditionRegistration`,
@@ -217,7 +303,11 @@ registry keeps its winner. Each task ends with the full suite green and unchange
   full name, untyped section without message, `FindRouteName` for an any-method declaration, resolving the catalog
   starts nothing (no hosted service started, store untouched).
   Done when: green. (FR-001, FR-003, FR-030 groundwork, FR-050 catalog part)
-- [ ] T015 Catalog validation (after T014; research R3, R5, data-model §2.1): internal
+  Note: test probe `tests/GameServer.Platform.Web.Tests/CatalogProbeModule.cs` (typed client-visible aggregate `probe_card`,
+  hidden `Note`) is reused by T015–T017. A module of a test assembly named `GameServer.*` has origin **framework** by the
+  documented prefix rule (asserted); `sample.counter` is game. The catalog is a lazy singleton registered right after the
+  mapper registry; `HostRouteDeclarations` is an instance owned by `AddGameServer` and filled by `DeclareRoutes`.
+- [X] T015 Catalog validation (after T014; research R3, R5, data-model §2.1): internal
   `src/GameServer.Platform.Web/Catalog/WireCatalogRules.cs` and `WireCatalog.Validate(GameServerOptions)` returning one
   line per fault, exact texts of data-model §2.1: bad name (regex + ≤ 64), duplicate name (both owners), duplicate method
   + template (any-method overlaps every method; both names and owners), invalid template (`RoutePatternFactory.Parse`
@@ -229,7 +319,13 @@ registry keeps its winner. Each task ends with the full suite green and unchange
   test per line above with the exact text, each fault seeded once in an otherwise valid composition → exactly one line;
   a valid composition → empty.
   Done when: green; still not called at startup. (FR-006, FR-007, FR-054 line, FR-060 startup line)
-- [ ] T016 Catalog export (after T015; research R5, data-model §3, contracts/generated-files.md §1):
+  Note (deviation): `WireCatalog.Validate()` takes **no** `GameServerOptions` — no rule reads options (plan text writes
+  `catalog.Validate()`; public-api.md §2.3 and tasks wrote `Validate(options)`). Rules: an invalid template skips the version
+  check (one line per fault); a duplicate method+template is one line per pair of declarations, labelled with the shared
+  methods; the BC-5 check compares the canonical `PublicEndpoints` template ordinally with every declaration at it. The
+  BC-4 line names `ReplaceWireMapper`, which lands only in T058 (US3): until then the line's fix points to an API that does
+  not exist yet (open item if US1 ships alone). Warnings: internal `WireCatalog.ValidationWarnings`.
+- [X] T016 Catalog export (after T015; research R5, data-model §3, contracts/generated-files.md §1):
   `src/GameServer.Platform.Web/Catalog/WireCatalogExport.cs` (`Format = "gameserver.wire-contract/1"`) and
   `WireCatalog.ToExportJson()` (UTF-8 without BOM, LF, 2-space indent, property order of data-model §3, nulls and empty
   arrays omitted, `serviceOnly` only when true, `methods` omitted for any, routes by name, sections by id,
@@ -239,7 +335,11 @@ registry keeps its winner. Each task ends with the full suite green and unchange
   match the generated-files.md §1 example for the same declarations; two builds give identical bytes; no `\r`, no BOM;
   no timestamp, path, machine or environment value; hidden and may-stay-default lists exported.
   Done when: green. (FR-030, FR-065 export part)
-- [ ] T017 Endpoint validation entry point (behaviour-neutral; research R8): new internal
+  Note: hand-written writer (string arrays on one line as in generated-files.md §1; `Utf8JsonWriter` cannot), strings escaped
+  with `UnsafeRelaxedJsonEscaping`, file ends with one LF. `protobufVersion` = SemVer core of the loaded `Google.Protobuf`
+  (`GameServerVersion.Of`, `3.36.2`), not the raw informational version (`3.36.2+sha`, V11), matching the contract example
+  and the tool's comparison.
+- [X] T017 Endpoint validation entry point (behaviour-neutral; research R8): new internal
   `src/GameServer.Platform.Web/Hosting/EndpointValidation.cs` running `EndpointSecurityValidator.Validate` and
   `CommandRouteValidator.Validate` over a given endpoint set with the same inputs `UseGameServer` passes today
   (`src/GameServer.Platform.Web/Hosting/GameServerApplicationExtensions.cs:113-119`); `UseGameServer` calls it. The Public
@@ -250,7 +350,11 @@ registry keeps its winner. Each task ends with the full suite green and unchange
   `tests/GameServer.Platform.Web.Tests/EndpointValidationTests.cs`: a module Public declaration allowlists its template; a
   host Public declaration does not (the operator allowlist still must list it).
   Done when: green. (FR-006, FR-012 groundwork, SEC-09)
-- [ ] T018 [P] SDK section key types (moved from the plan's phase 6: the generated section files of T048/T052 compile
+  Note: the separate `platformPublic` list (GM OpenAPI when mapped) is gone: `PlatformRoutes.GmOpenApi` and `PlatformRoutes.Time`
+  are Public platform declarations and always count. Consequence (not breaking): `/v1/time` no longer needs
+  `GameServer:PublicEndpointAllowlist` (its default value stays). `EndpointValidation.Run(endpoints, services)` has no
+  `includeUnmapped` yet (added with the catalog validator in T032).
+- [X] T018 [P] SDK section key types (moved from the plan's phase 6: the generated section files of T048/T052 compile
   against them; research R14, contracts/public-api.md §5): new file
   `sdk/unity/com.gameserver.client/Runtime/Core/SectionKey.cs` (`SectionKey`, `SectionKey<T>` with `TypedParser`,
   `SectionTable` (duplicate id → `ArgumentException`, `TryGet`, `Keys`), `SectionRead`), C# 9 only, no reflection; a
@@ -260,6 +364,8 @@ registry keeps its winner. Each task ends with the full suite green and unchange
   duplicate id throws, `Parser` of `SectionKey<T>` parses the same bytes as `TypedParser`.
   Done when: green; `dotnet build sdk/GameServer.Client -c Release` 0 warnings; the new GUID is not used by any other
   `.meta` under `sdk/unity/`. (FR-053 groundwork, FR-034)
+  Note: GUID `c1908bd6e63244f6895a7e4cd3473f0c` (unique under `sdk/unity/`). Phase 2 checkpoint: Release 0 warnings; full suite
+  in memory 1560 total, 1465 passed, 95 skipped, 0 failed (+78 new tests).
 
 **Checkpoint**: Release build 0 warnings; full suite green with the T001 counts plus the new tests; startup behaviour
 unchanged (no declaration, no catalog validation at startup).
@@ -277,7 +383,7 @@ permission or profile, the code wins and the task records the difference as a No
 
 ### Declarations (behaviour-neutral until T032)
 
-- [ ] T019 [US1] Platform routes (after T010): `src/GameServer.Platform.Web/Endpoints/CoreEndpoints.cs` maps time,
+- [X] T019 [US1] Platform routes (after T010): `src/GameServer.Platform.Web/Endpoints/CoreEndpoints.cs` maps time,
   snapshot, receipt and config with `MapDeclared(PlatformRoutes.X, …)` and the same `As*Endpoint` calls as today; its
   route constants become aliases of the `PlatformRoutes` templates (still `internal`; `PlatformRoutes` is the public
   source, FR-002). `src/GameServer.Platform.Web/OpenApi/GmOpenApi.cs`: `.WithDeclaration(PlatformRoutes.GmOpenApi)`.
@@ -285,32 +391,36 @@ permission or profile, the code wins and the task records the difference as a No
   unchanged; `DeclaredRouteMappingTests` gains "every endpoint mapped by `CoreEndpoints` carries its
   `RouteDeclarationMetadata`".
   Done when: green; `docs/api/gm-openapi.json` unchanged. (FR-002, FR-005)
-- [ ] T020 [P] [US1] Observability (after T010): new file `src/GameServer.Platform.Observability/ObservabilityRoutes.cs`
+  Note: `CoreEndpoints` constants are aliases of the `PlatformRoutes` internal template consts; GM OpenAPI tagged with
+  `WithDeclaration(PlatformRoutes.GmOpenApi)`. `OpenApiTests` green, `docs/api/gm-openapi.json` unchanged.
+- [X] T020 [P] [US1] Observability (after T010): new file `src/GameServer.Platform.Observability/ObservabilityRoutes.cs`
   (`Live` = `AnyMethod("platform.health_live", "/health/live", Public, Host)`, `Ready` = GET
   `platform.health_ready`, per V12); `src/GameServer.Platform.Observability/ObservabilityModule.cs`: `Routes = [Live,
   Ready]`, `.WithDeclaration(...)` on both `MapHealthChecks`, `PublicEndpoints` removed (the module Public declarations
   allowlist them through T017).
   Done when: `tests/GameServer.Observability.Tests` green; probes still answer without authentication. (FR-002, FR-006)
-- [ ] T021 [P] [US1] Identity (after T011): new file `src/GameServer.Modules.Identity.Adapters/IdentityRoutes.cs` (9
+- [X] T021 [P] [US1] Identity (after T011): new file `src/GameServer.Modules.Identity.Adapters/IdentityRoutes.cs` (9
   declarations of data-model §1.3; command routes via `RouteDeclaration.Command(<Handler>.Descriptor, template)`; GM
   ban/unban/cancel carry the permission the mapping passes today); `src/GameServer.Modules.Identity.Adapters/IdentityModule.cs`:
   `Routes`, map every route from its declaration (`MapPlayerCommand`/`MapGmCommand` overloads, `MapDeclared` + the
   existing `AsPublicEndpoint`/`AsPlayerEndpoint` for login/logout), `PublicEndpoints` removed (`:69`), constants `:32-40`
   kept as aliases.
   Done when: identity, provider, link, deletion and GM ban tests green unchanged. (FR-002, FR-005, FR-006)
-- [ ] T022 [P] [US1] Economy and cheat (after T011): new files `src/GameServer.Modules.Economy/EconomyRoutes.cs`
+- [X] T022 [P] [US1] Economy and cheat (after T011): new files `src/GameServer.Modules.Economy/EconomyRoutes.cs`
   (`economy.adjust` command, `economy.ledger` GET, template consts) and `src/GameServer.Modules.Economy/CheatRoutes.cs`
   (`cheat.grant` Dev command) next to the business-project descriptors (`EconomyModuleDefinition.cs` and the cheat
   definition) with `Routes`; `src/GameServer.Modules.Economy.Adapters/EconomyModule.cs`: `AdjustRoute`/`LedgerRoute`
   (`:23-24`) and `CheatModule.GrantRoute` (`:77`) become aliases of the template consts; map from declarations.
   Done when: economy GM, ledger and cheat tests green unchanged; ARC-01 green (no ASP.NET/Protobuf in the business
   project). (FR-002, FR-004, FR-005)
-- [ ] T023 [P] [US1] IAP (after T011): new file `src/GameServer.Modules.Iap/IapRoutes.cs` (`iap.purchase`,
+- [X] T023 [P] [US1] IAP (after T011): new file `src/GameServer.Modules.Iap/IapRoutes.cs` (`iap.purchase`,
   `PurchaseTemplate`), descriptor `Routes` in `src/GameServer.Modules.Iap/IapModel.cs` (or wherever the IAP descriptor
   is built — research says the adapter: then `Routes` goes there and only the declaration class sits in the business
   project); `src/GameServer.Modules.Iap.Adapters/IapModule.cs:22` `PurchaseRoute` = alias; map from the declaration.
   Done when: IAP tests green unchanged; a Note records where the descriptor lives. (FR-002, FR-005)
-- [ ] T024 [US1] GM part 1 (after T011): new file `src/GameServer.Modules.Gm.Adapters/GmRoutes.cs` with all 27 `gm.*`
+  Note: the IAP descriptor is built in the business project (`IapModel.cs`, `IapModuleDefinition`), not in the adapter as
+  research says: `IapRoutes` and `Routes` both live in `GameServer.Modules.Iap`.
+- [X] T024 [US1] GM part 1 (after T011): new file `src/GameServer.Modules.Gm.Adapters/GmRoutes.cs` with all 27 `gm.*`
   declarations of data-model §1.3 (permissions copied from each `AsGmEndpoint(...)` call; `gm.auth_login` condition
   `development_tools`; `gm.sso_start`/`gm.sso_callback` condition `gm.sso`); `src/GameServer.Modules.Gm.Adapters/GmModule.cs`:
   `Routes = GmRoutes.All`, map auth/CSRF/login/logout/me/UI/health/rotate/version (`:54-61`) from declarations,
@@ -319,7 +429,10 @@ permission or profile, the code wins and the task records the difference as a No
   `GmRoutes.SsoStart/SsoCallback`.
   Done when: `tests/GameServer.Gm.Tests` auth, CSRF, SSO (`SsoTests`, configured and not configured), UI and ops tests
   green unchanged. (FR-002, FR-005, FR-006, FR-011 conditions)
-- [ ] T025 [US1] GM part 2 (after T024, same `GmRoutes.cs`): `src/GameServer.Modules.Gm.Adapters/GmPlayerEndpoints.cs`
+  Note: permissions copied from each `AsGmEndpoint` call; data-model §1.3 has no permission column. One permission worth
+  recording for the PCR (T078): `gm.staff_revoke_sessions` requires `gm.access` (the handler checks `staff.manage` for
+  another staff member), not `staff.manage`. Methods match the table.
+- [X] T025 [US1] GM part 2 (after T024, same `GmRoutes.cs`): `src/GameServer.Modules.Gm.Adapters/GmPlayerEndpoints.cs`
   (`:85-90`), `src/GameServer.Modules.Gm.Adapters/Ops/GateEndpoints.cs` (`:30-32`),
   `src/GameServer.Modules.Gm.Adapters/Staff/StaffEndpoints.cs` (`:43-49`; `/gm/v1/staff` GET and POST = two declarations
   `gm.staff_list`, `gm.staff_create`) map from `GmRoutes`. Run `tests/GameServer.Gm.Tests/OpenApiTests.cs`: GM route
@@ -327,26 +440,33 @@ permission or profile, the code wins and the task records the difference as a No
   (e.g. operation order), review it, regenerate with `UPDATE_OPENAPI=1` and record why in a Note; any change of path,
   method, permission, CSRF flag or schema is a defect to fix, not to commit.
   Done when: GM tests green; `docs/api/gm-openapi.json` unchanged or the reviewed regeneration recorded. (FR-002, FR-005)
-- [ ] T026 [P] [US1] Sample counter (after T011): declarations `counter.increment` (command), `counter.get` (POST,
+  Note: `docs/api/gm-openapi.json` unchanged (no regeneration: `MapDeclared` uses `MapMethods`, as `MapGet`/`MapPost` do).
+- [X] T026 [P] [US1] Sample counter (after T011): declarations `counter.increment` (command), `counter.get` (POST,
   Player), `counter.gm_read` (GET, Gm + its permission) in `modules/Sample.Counter/Sample.Counter/CounterModuleDefinition.cs`
   (`Routes`); `modules/Sample.Counter/Sample.Counter.Adapters/CounterModule.cs:39,44,60` lose their inline literals and
   map from the declarations (`MapPlayerCommand(decl, …)`, `MapDeclared(decl, (Func<HttpContext, Task<IResult>>)…)`).
   Done when: `tests/Sample.Counter.Tests` and every test using `SampleTestHost` defaults green; `grep -n '"/api/\|"/gm/'
   CounterModule.cs` = 0. (FR-002 scope, FR-003, FR-005)
-- [ ] T027 [P] [US1] Sample game (after T011): declarations `battle.start`, `battle.end`, `shop.buy`, `progression.set`
+  Note: the declarations sit in a new `modules/Sample.Counter/Sample.Counter/CounterRoutes.cs` (static class, same pattern as the
+  framework `*Routes`), referenced by `CounterModuleDefinition.Routes`; literal grep = 0.
+- [X] T027 [P] [US1] Sample game (after T011): declarations `battle.start`, `battle.end`, `shop.buy`, `progression.set`
   (GM command) in the business project `samples/SampleGame/SampleGame/SampleGameModel.cs` (or a new
   `SampleGameRoutes.cs` there — server namespace `SampleGame`, distinct from the client's `SampleGame.Client`) and the
   descriptor `Routes`; `samples/SampleGame/SampleGame.Adapters/SampleGameModule.cs:20-24` constants become aliases; map
   from declarations.
   Done when: `tests/SampleGame.Tests` green. (FR-003, FR-005)
-- [ ] T028 [P] [US1] Template (after T011): `template.earn` in `templates/module/Template.Module/TemplateModuleDefinition.cs`
+  Note: new `samples/SampleGame/SampleGame/SampleGameRoutes.cs` (namespace `SampleGame`); the descriptor
+  (`SampleGameModuleDefinition`) lives in `ShopHandler.cs`.
+- [X] T028 [P] [US1] Template (after T011): `template.earn` in `templates/module/Template.Module/TemplateModuleDefinition.cs`
   (`Routes`), `templates/module/Template.Module.Adapters/TemplateModule.cs:26` maps from it (no inline literal).
   Done when: Release build 0 warnings (the template has no test project; it is exercised in T066). (FR-003, FR-005)
-- [ ] T029 [P] [US1] Consumer fixture (after T011): `fixture.save` = `RouteDeclaration.Command(SaveNoteHandler.Descriptor,
+  Note: `TemplateRoutes.Earn` sits in `TemplateModuleDefinition.cs` (one file to copy).
+- [X] T029 [P] [US1] Consumer fixture (after T011): `fixture.save` = `RouteDeclaration.Command(SaveNoteHandler.Descriptor,
   "/api/v1/fixture/save")` in `tests/ConsumerFixture/src/Fixture.Game/FixtureModuleDefinition.cs` (`Routes`);
   `tests/ConsumerFixture/src/Fixture.Game/FixtureModule.cs`: `SaveRoute` alias, `MapPlayerCommand(FixtureRoutes.Save, …)`.
   Done when: `tests/ConsumerFixture/tests/Fixture.Tests` green. (FR-003, FR-005; BC-1 shape for games)
-- [ ] T030 [US1] Framework tests that map endpoints outside modules declare them (research code facts, BC-1/BC-2;
+  Note: `FixtureRoutes` (with `SaveTemplate`) sits in `FixtureModuleDefinition.cs`.
+- [X] T030 [US1] Framework tests that map endpoints outside modules declare them (research code facts, BC-1/BC-2;
   before T032): ad-hoc `MapGet/MapPost` in `tests/GameServer.Platform.Web.Tests/ErrorContractTests.cs` (4),
   `RequestLogHost.cs` (2), `RequestOutcomeFeatureTests.cs` (2), `StartupValidationTests.cs` (6),
   `tests/GameServer.Observability.Tests/DeploymentTests.cs` (1), `ObservedHost.cs` (1), `tests/GameServer.Gm.Tests/GmAuthTests.cs`
@@ -363,6 +483,13 @@ permission or profile, the code wins and the task records the difference as a No
   is left for T033 (it changes meaning under FR-012).
   Done when: full suite green (check not yet on); `git grep -n "afterUseGameServer:\|beforeUseGameServer:" tests` lists
   only call sites whose routes are declared (Note lists every file changed). (BC-1, BC-2, FR-014 groundwork)
+  Note: helper `SampleTestHost.WithRoutes(params RouteDeclaration[])` (default modules + host declarations). Found by switching
+  T031/T032 on and running the suite (53 failures, all in these test files, none in framework code), then declared: Platform.Web
+  `ErrorContractTests` (block, boom, slow; the late-endpoint test moved to T033), `RequestLogHost` (`Fail`, `Wait` + a `routes`
+  parameter), `RequestOutcomeFeatureTests` (coded, teapot, hooked command), `StartupValidationTests` (`StartupFails(...,
+  routes)`, 9 declarations; the three `ShouldHaveSingleItem` tests still get exactly their one line, the others use
+  `ShouldContain`), `AfterExecuteHookTests`, `AnalyticsSeamTests`, `UncataloguedCommitCodeTests`; Observability `ObservedHost`
+  (`Probe`) and `DeploymentTests` (`Ip`); Gm `GmAuthTests` (rogue GM endpoint). `RunLocalScriptTests` unaffected.
 
 **Checkpoint**: every route the framework, samples, template and fixture map has a declaration (`WireCatalog.Routes` of
 the SampleHost Local composition lists the 47 framework names of data-model §1.3 plus the sample ones); behaviour
@@ -370,7 +497,7 @@ unchanged.
 
 ### Endpoint check
 
-- [ ] T031 [US1] `EndpointCatalogValidator` (research R7, data-model §2.2): new file
+- [X] T031 [US1] `EndpointCatalogValidator` (research R7, data-model §2.2): new file
   `src/GameServer.Platform.Web/Validation/EndpointCatalogValidator.cs` (public `Validate(endpoints, catalog, context,
   includeUnmapped)`, `EndpointCheckContext`): expand endpoints into (method | `*`, canonical template) pairs; bind by
   `RouteDeclarationMetadata`, else exact pair, else "method differs" when the template is declared with other methods,
@@ -387,7 +514,7 @@ unchanged.
   `MapPlayerApi=false`, `MapGmApi=false` and a condition that does not hold → no unmapped line; leading-slash and case
   differences in the mapped template → compared after leading-slash normalization, case-sensitive.
   Done when: green. (FR-010, FR-011, FR-014, edge cases)
-- [ ] T032 [US1] Switch the check on in `UseGameServer` and `--provision` (after T019–T031): in
+- [X] T032 [US1] Switch the check on in `UseGameServer` and `--provision` (after T019–T031): in
   `src/GameServer.Platform.Web/Hosting/GameServerApplicationExtensions.cs` add `catalog.Validate(options)` and
   `EndpointCatalogValidator` (through `EndpointValidation`, `includeUnmapped: false`) to the aggregated report;
   `src/GameServer.Platform.Web/Hosting/ProvisioningRunner.cs` runs `catalog.Validate(options)` only (spec edge case
@@ -401,7 +528,10 @@ unchanged.
   → exit 1 and the provisioner is never called (`GameServerCommandLineTests` style fake `IStoreProvisioner`).
   Done when: green; full suite green (any newly failing test is a missed declaration from T030 → fix there, Note).
   (FR-006, FR-007, FR-010, FR-012, FR-013, FR-014, FR-054, SC-001, BC-1, BC-4, BC-5, US1-3, US1-4, US1-7)
-- [ ] T033 [US1] Pre-serving validation of the final endpoint set (after T002 decision, T032; research R8): new internal
+  Note: 17 fault tests; the Staging/Production variants assert `ShouldContain` (those environments also report the test
+  authentication and in-memory store lines). The BC-4 duplicate-mapper line is live from here although `ReplaceWireMapper`
+  arrives with T058.
+- [X] T033 [US1] Pre-serving validation of the final endpoint set (after T002 decision, T032; research R8): new internal
   `src/GameServer.Platform.Web/Hosting/EndpointValidationState.cs` (written once by `UseGameServer` after its own
   validation succeeded) and `src/GameServer.Platform.Web/Hosting/EndpointSetValidationService.cs`
   (`IHostedLifecycleService`, registered **first** in `AddGameServer`; `StartingAsync` runs `EndpointValidation.Run(final
@@ -418,7 +548,14 @@ unchanged.
   into "is refused at startup" (moved here) and keep one test for the 013 request-time Dev refusal (settings flipped after
   start, as `DevProfileMiddlewareTests` does).
   Done when: green; full suite green. (FR-012, FR-013, FR-014, SC-001 late-mapped class, BC-2, US1-5, US1-6)
-- [ ] T034 [US1] Composition matrix, completeness and consumer read (after T033): new file
+  Note: primary hook (T002). `EndpointValidationState.Validated(app)` after `UseGameServer` succeeded (a second call throws);
+  `EndpointSetValidationService` is the first hosted service of `AddGameServer`. Tests: 5 late fault classes give exactly the
+  in-pipeline lines (compared list to list), late undeclared endpoint without profile (ex-`ErrorContractTests`), late Dev
+  endpoint after flipping the options to Staging, declared-but-unmapped only before serving, Kestrel host via `ServeAsync` on a
+  free loopback port (exit 1, stderr, port bindable after), `LocalFlavorFactory` start fails (forcing `gm.sso` to hold).
+  Finding: after a failed start the factory's `DisposeAsync` throws `ObjectDisposedException` (the entry point's `RunAsync`
+  already disposed the host); pre-existing for any start failure (e.g. a store that cannot open), handled in the test.
+- [X] T034 [US1] Composition matrix, completeness and consumer read (after T033): new file
   `tests/SampleGame.Tests/CatalogCompositionTests.cs`: SampleHost through the kit's `LocalFlavorFactory<Program>` for
   flavors local, dev, beta, uat, live (store overridden to in-memory as `SampleHostFlavorTests` do) × `Hosting:MapPlayerApi`
   on/off × `Hosting:MapGmApi` on/off, plus one composition with a module added `ServiceOnly()`: host starts, every mapped
@@ -429,6 +566,11 @@ unchanged.
   `PlatformRoutes.Config.Template`, `IdentityRoutes.LoginGuest`, the fixture host's `WireCatalog` (public API only) and
   checks `fixture.save` owner/origin `game`.
   Done when: green. (FR-001, FR-002, FR-011, FR-013, FR-014, SC-001, US1-1, US1-2, US1-5)
+  Note (deviation): `SampleHostFlavorTests` run on a real Couchbase, not on an in-memory override. Here Local runs on its file
+  store, Dev on the in-memory store, Beta/Uat/Live on the test-only `tests/SampleGame.Tests/StagingInMemoryStore.cs` (the
+  in-memory store without its Development/Test marker) with generated secrets (`StagingSecrets` moved from the Couchbase
+  integration tests to `tests/Shared`). All 20 flavor x hosting variants start; the service-only composition uses
+  `SampleTestHost`; framework completeness = the 47 names.
 - [ ] T035 [P] [US1] Opt-in performance check (after T033; V2, SC-007): new file
   `tests/GameServer.Platform.Web.Tests/EndpointCheckPerformanceTests.cs` (skips unless `GAMESERVER_PERF=1`): a synthetic
   module declaring and mapping 200 endpoints; measure `EndpointValidation.Run` over the final set (median of 5 after one
@@ -436,7 +578,17 @@ unchanged.
   Done when: a Note records the median on the reference machine; ≤ 50 ms, or the V2 fallback (skip re-validation of
   endpoints already checked in `UseGameServer`, key `METHOD template`) is implemented in T033's service with a test and
   re-measured. (SC-007)
-- [ ] T036 [US1] Route name on the request outcome and event (after T003, T032; FR-015, data-model §6):
+  Note (2026-11-03, OPEN -- needs a decision): `GAMESERVER_PERF=1`, Release, 200 synthetic + 17 default endpoints (217): median
+  **439.9 ms = materialization 439.2 ms + validation 1.0 ms** (5 samples after one warm-up). SC-007 (<= 50 ms added to
+  startup) is not met, and the V2 fallback cannot meet it: the cost is not the validation but enumerating
+  `DataSources.Endpoints` again, which runs ASP.NET Core's `RequestDelegateFactory` for every endpoint (about 2 ms each; the
+  in-pipeline run of `UseGameServer`, unchanged since 013, pays the same once). Options for the owner/orchestrator: (a) accept
+  and restate SC-007 as "validation <= 50 ms; one extra materialization, about 2 ms per endpoint"; (b) validate endpoints once,
+  before serving only, when `UseGameServer` found no other error (keeps one aggregated report; changes when endpoint lines
+  appear and the 013 start-line order); (c) let `UseGameServer` hand its materialized endpoints to the pre-serving run and
+  re-materialize only data sources added later (needs a data-source swap; fragile, like the rejected `IServer` decoration).
+  Not changed here (design decision). The opt-in test asserts the SC and prints both parts.
+- [X] T036 [US1] Route name on the request outcome and event (after T003, T032; FR-015, data-model §6):
   `src/GameServer.Platform.Web/Requests/IRequestOutcomeFeature.cs` default member `string? RouteName => null;` (V13, else
   the fallback extension), `RequestOutcome.cs` implements it, `RequestLogMiddleware.cs` sets it at finalization from the
   endpoint's `RouteDeclarationMetadata`, else `WireCatalog.FindRouteName(method, template)`; `RequestLogEntry.cs` event
@@ -445,7 +597,10 @@ unchanged.
   plain-mapped declared route (catalog lookup), unmatched path (null); update the 013 request-event field-list
   assertions (`RequestLogTests`, `RequestOutcomeFeatureTests`, consumer-fixture outcome tests) for the new property only.
   Done when: green; no 013 field changed. (FR-015)
-- [ ] T037 [US1] Release notes draft (FR-090): new file `specs/014-wire-contract/release-notes-draft.md` with the slice
+  Note: lookup order metadata, then `WireCatalog.FindRouteName`; `RouteDeclaration.CanonicalTemplate` returns the input unchanged
+  when it is already canonical (no allocation on the request path). Event: 16 properties (`RouteName` index 2); updated only
+  the field-count assertion in `RequestLogTests` and the file-log assertions in Observability `LoggingTests`.
+- [X] T037 [US1] Release notes draft (FR-090): new file `specs/014-wire-contract/release-notes-draft.md` with the slice
   header (framework `0.7.0`, unreleased), "FG-026 (1), (3)" section: what is new (catalog, declarations, endpoint check,
   late-mapped validation, `RouteName`), **BC-1**, **BC-2**, **BC-5** with the plan's migration steps; zh-pvp specifics:
   declare `account.init` (`src/ZhPvp.Game.Adapters/GameModule.cs:20` `InitAccountRoute`) as
@@ -455,8 +610,16 @@ unchanged.
   declare host-only endpoints (`DeclareRoutes`) and that host Public routes still need `GameServer:PublicEndpointAllowlist`.
   Done when: the file exists with those sections; every BC line names how it surfaces (exit 1 + report line) and the
   fix. (FR-090, BC-1, BC-2, BC-5)
-- [ ] T038 [US1] US1 checkpoint: Debug and Release build; full suite in memory and with `GAMESERVER_TEST_STORE=File`.
+- [X] T038 [US1] US1 checkpoint: Debug and Release build; full suite in memory and with `GAMESERVER_TEST_STORE=File`.
   Done when: 0 warnings, 0 failures; counts vs T001 recorded (new tests listed by class); US1 can ship alone (MVP).
+  Note (2026-11-03): Debug and Release 0 warnings. In memory and `GAMESERVER_TEST_STORE=File`: 1632 total, 1536 passed, 96
+  skipped, 0 failed (T001: 1482 / 1387 / 95; +150 tests, +1 skipped = the opt-in T035 perf test). New classes: Platform.Web
+  `RouteDeclarationTests`, `DeclaredRouteMappingTests`, `DeclaredCommandMappingTests`, `WireMapperRegistrationTests`,
+  `StateMembersTests`, `WireCatalogTests`, `EndpointValidationTests`, `EndpointCatalogValidatorTests`, `EndpointCatalogCheckTests`,
+  `LateEndpointValidationTests`, `EndpointCheckPerformanceTests` (opt-in), `RouteNameOutcomeTests`; Client `SectionTableTests`;
+  SampleGame `CatalogCompositionTests`; fixture `FixtureCatalogTests`; Architecture `TestKitArchitectureTests` +1 rule. The known
+  flaky `TelemetryTests.A_command_is_one_trace...` failed once in an intermediate full run and passed 3/3 alone. US1 ships
+  alone except for the open SC-007 decision (T035) and the BC-4 line naming `ReplaceWireMapper` before T058.
   (FR-091 partial)
 
 **Checkpoint (MVP)**: the catalog is complete and public; undeclared, mismatching and late-mapped endpoints stop the host

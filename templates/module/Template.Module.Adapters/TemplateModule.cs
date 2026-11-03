@@ -23,8 +23,7 @@ public sealed class TemplateModule : IGameModule, IPlayerApiModule
 
     public void MapPlayerApi(IEndpointRouteBuilder routes) =>
         routes.MapPlayerCommand<Wire.EarnRequest, EarnCommand, EarnResult>(
-            "/api/v1/template/earn",
-            EarnHandler.Operation,
+            TemplateRoutes.Earn,
             ToDomain,
             result => new Wire.EarnResult { Points = result.Points });
 

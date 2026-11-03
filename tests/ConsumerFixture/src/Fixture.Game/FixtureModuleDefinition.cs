@@ -2,6 +2,7 @@ using GameServer.Aggregates;
 using GameServer.Commands;
 using GameServer.Errors;
 using GameServer.Modules;
+using GameServer.Routing;
 
 namespace Fixture.Game;
 
@@ -60,6 +61,14 @@ public sealed class SaveNoteHandler : ICommandHandler<SaveNote, SaveNoteResult>
     }
 }
 
+/// <summary>HTTP routes of the game module (FG-026), declared in the business code next to the commands.</summary>
+public static class FixtureRoutes
+{
+    public const string SaveTemplate = "/api/v1/fixture/save";
+
+    public static RouteDeclaration Save { get; } = RouteDeclaration.Command(SaveNoteHandler.Descriptor, SaveTemplate);
+}
+
 public static class FixtureModuleDefinition
 {
     public const string ModuleName = "fixture";
@@ -77,5 +86,6 @@ public static class FixtureModuleDefinition
         Aggregates = [Aggregate],
         Commands = [Command.Define<SaveNote, SaveNoteResult>(SaveNoteHandler.Descriptor).HandledBy<SaveNoteHandler>()],
         ErrorCodes = FixtureErrors.All,
+        Routes = [FixtureRoutes.Save],
     };
 }

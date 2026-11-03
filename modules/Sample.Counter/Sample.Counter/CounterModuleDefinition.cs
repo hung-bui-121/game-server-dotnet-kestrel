@@ -30,5 +30,6 @@ public static class CounterModuleDefinition
         Commands = [Command.Define<IncrementCommand, IncrementResult>(IncrementHandler.Descriptor).HandledBy<IncrementHandler>()],
         ErrorCodes = CounterErrors.All,
         OutboxProjections = [new OutboxProjection(IncrementHandler.LogKind, LogCollection)],
+        Routes = CounterRoutes.All,
     };
 }

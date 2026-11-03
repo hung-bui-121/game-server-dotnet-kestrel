@@ -1,6 +1,7 @@
 using System.Net;
 using GameServer.Platform.Couchbase.IntegrationTests.Infrastructure;
 using GameServer.Platform.Observability;
+using GameServer.Tests.Shared;
 using Shouldly;
 
 namespace GameServer.Platform.Couchbase.IntegrationTests;

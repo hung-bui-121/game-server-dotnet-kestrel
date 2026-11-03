@@ -1,7 +1,9 @@
 using System.Net;
 using System.Text.Json;
+using GameServer.Actors;
 using GameServer.Platform.Web.Routing;
 using GameServer.Protocol.Core.V1;
+using GameServer.Routing;
 using GameServer.Tests.Shared;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -13,6 +15,10 @@ namespace GameServer.Platform.Web.Tests;
 /// <summary>US5: ErrorEnvelope / Problem Details, limits, time (ACC-09, ACC-40, ACC-43, ACC-52).</summary>
 public sealed class ErrorContractTests
 {
+    private static readonly RouteDeclaration Block = RouteDeclaration.Post("test.block", "/api/v1/test/block", SecurityProfile.Player);
+    private static readonly RouteDeclaration Boom = RouteDeclaration.Post("test.boom", "/api/v1/test/boom", SecurityProfile.Player);
+    private static readonly RouteDeclaration Slow = RouteDeclaration.Post("test.slow", "/api/v1/test/slow", SecurityProfile.Player);
+
     private static async Task AssertEnvelope(HttpResponseMessage response, HttpStatusCode status, string code, bool retryable = false)
     {
         response.StatusCode.ShouldBe(status);
@@ -57,7 +63,8 @@ public sealed class ErrorContractTests
                 s["GameServer:Limits:CommandConcurrency"] = "1";
                 s["GameServer:Limits:QueueFactor"] = "0";
             },
-            beforeUseGameServer: app => app.MapPost("/api/v1/test/block", async () =>
+            modules: SampleTestHost.WithRoutes(Block),
+            beforeUseGameServer: app => app.MapDeclared(Block, async () =>
             {
                 entered.TrySetResult();
                 await release.Task;
@@ -79,7 +86,8 @@ public sealed class ErrorContractTests
     public async Task Unhandled_exception_is_500_without_details()
     {
         await using var host = await SampleTestHost.StartAsync(
-            beforeUseGameServer: app => app.MapPost("/api/v1/test/boom", (Func<IResult>)(() => throw new InvalidOperationException("secret detail")))
+            modules: SampleTestHost.WithRoutes(Boom),
+            beforeUseGameServer: app => app.MapDeclared(Boom, (Func<IResult>)(() => throw new InvalidOperationException("secret detail")))
                 .AsPlayerEndpoint());
 
         var response = await host.PlayerClient("p1").PostAsync("/api/v1/test/boom", null);
@@ -93,7 +101,8 @@ public sealed class ErrorContractTests
     {
         await using var host = await SampleTestHost.StartAsync(
             settings: s => s["GameServer:Limits:PlayerTimeoutSeconds"] = "1",
-            beforeUseGameServer: app => app.MapPost("/api/v1/test/slow", async (HttpContext http) =>
+            modules: SampleTestHost.WithRoutes(Slow),
+            beforeUseGameServer: app => app.MapDeclared(Slow, async (HttpContext http) =>
             {
                 await Task.Delay(TimeSpan.FromSeconds(10), http.RequestAborted);
                 return Results.Ok();
@@ -144,15 +153,5 @@ public sealed class ErrorContractTests
         var response = await host.GmClient("staff", "counter.read").PostProtobufAsync("/api/v1/player/snapshot", new SnapshotRequest());
 
         await AssertEnvelope(response, HttpStatusCode.Unauthorized, "UNAUTHENTICATED");
-    }
-
-    [Fact]
-    public async Task Endpoint_added_after_validation_without_profile_is_denied()
-    {
-        await using var host = await SampleTestHost.StartAsync(afterUseGameServer: app => app.MapGet("/api/v1/late", () => "leak"));
-
-        var response = await host.PlayerClient("p1").GetAsync("/api/v1/late");
-
-        await AssertEnvelope(response, HttpStatusCode.Forbidden, "FORBIDDEN");
     }
 }

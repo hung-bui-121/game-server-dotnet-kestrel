@@ -4,14 +4,14 @@ using System.Globalization;
 namespace GameServer.Platform.Web.Requests;
 
 /// <summary>
-/// State of one request event (data-model §1): the 14 fields as properties plus <c>{OriginalFormat}</c>, so Serilog keeps the
+/// State of one request event (data-model §1): the 15 fields as properties plus <c>{OriginalFormat}</c>, so Serilog keeps the
 /// template as <c>@mt</c> and every field as a property (research V5). Built once per logged request; no LINQ, no closures.
 /// </summary>
 internal readonly struct RequestLogEntry : IReadOnlyList<KeyValuePair<string, object?>>
 {
     public const string Template = "{HttpMethod} {Route} -> {Status} {ResultCode} in {DurationMs} ms";
 
-    private const int FieldCount = 15;
+    private const int FieldCount = 16;
 
     private static readonly object True = true;
     private static readonly object False = false;
@@ -19,6 +19,7 @@ internal readonly struct RequestLogEntry : IReadOnlyList<KeyValuePair<string, ob
     public RequestLogEntry(
         string httpMethod,
         string route,
+        string? routeName,
         string? profile,
         string? operation,
         string? actorType,
@@ -34,6 +35,7 @@ internal readonly struct RequestLogEntry : IReadOnlyList<KeyValuePair<string, ob
     {
         HttpMethod = httpMethod;
         Route = route;
+        RouteName = routeName;
         Profile = profile;
         Operation = operation;
         ActorType = actorType;
@@ -51,6 +53,9 @@ internal readonly struct RequestLogEntry : IReadOnlyList<KeyValuePair<string, ob
     public string HttpMethod { get; }
 
     public string Route { get; }
+
+    /// <summary>Name of the matched catalog route (FR-015, slice 014); not part of the console line.</summary>
+    public string? RouteName { get; }
 
     public string? Profile { get; }
 
@@ -82,19 +87,20 @@ internal readonly struct RequestLogEntry : IReadOnlyList<KeyValuePair<string, ob
     {
         0 => new("HttpMethod", HttpMethod),
         1 => new("Route", Route),
-        2 => new("Profile", Profile),
-        3 => new("Operation", Operation),
-        4 => new("ActorType", ActorType),
-        5 => new("ActorId", ActorId),
-        6 => new("RequestId", RequestId),
-        7 => new("TraceId", TraceId),
-        8 => new("Status", Status),
-        9 => new("ResultCode", ResultCode),
-        10 => new("Replayed", Replayed ? True : False),
-        11 => new("NotModified", NotModified ? True : False),
-        12 => new("Aborted", Aborted ? True : False),
-        13 => new("DurationMs", DurationMs),
-        14 => new("{OriginalFormat}", Template),
+        2 => new("RouteName", RouteName),
+        3 => new("Profile", Profile),
+        4 => new("Operation", Operation),
+        5 => new("ActorType", ActorType),
+        6 => new("ActorId", ActorId),
+        7 => new("RequestId", RequestId),
+        8 => new("TraceId", TraceId),
+        9 => new("Status", Status),
+        10 => new("ResultCode", ResultCode),
+        11 => new("Replayed", Replayed ? True : False),
+        12 => new("NotModified", NotModified ? True : False),
+        13 => new("Aborted", Aborted ? True : False),
+        14 => new("DurationMs", DurationMs),
+        15 => new("{OriginalFormat}", Template),
         _ => throw new ArgumentOutOfRangeException(nameof(index)),
     };
 

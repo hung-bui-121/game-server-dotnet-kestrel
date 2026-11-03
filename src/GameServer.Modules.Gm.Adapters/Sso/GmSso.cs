@@ -73,7 +73,7 @@ public static class GmSso
 
     public static void Map(IEndpointRouteBuilder routes)
     {
-        routes.MapGet(StartRoute, async (HttpContext http, string? returnUrl) =>
+        routes.MapDeclared(GmRoutes.SsoStart, async (HttpContext http, string? returnUrl) =>
             {
                 await http.ChallengeAsync(SchemeName, new AuthenticationProperties { RedirectUri = SafeReturnUrl(returnUrl) });
                 return Results.Empty;
@@ -84,7 +84,7 @@ public static class GmSso
 
         // The pipeline has no authentication middleware: the callback is an explicit Public endpoint that hands the
         // request to the OIDC handler (state, nonce, PKCE and the id_token are validated there).
-        routes.MapGet(CallbackRoute, (Func<HttpContext, Task<IResult>>)(async http =>
+        routes.MapDeclared(GmRoutes.SsoCallback, (Func<HttpContext, Task<IResult>>)(async http =>
             {
                 var handlers = http.RequestServices.GetRequiredService<IAuthenticationHandlerProvider>();
                 if (await handlers.GetHandlerAsync(http, SchemeName) is IAuthenticationRequestHandler handler && await handler.HandleRequestAsync())
