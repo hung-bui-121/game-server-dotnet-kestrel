@@ -49,8 +49,8 @@ public sealed class ShopTests : IAsyncLifetime
         _host.Ledger(player.PlayerId).ShouldBeEmpty();
     }
 
+    // ("broken", 1, "UNKNOWN_ITEM") moved to BuyItemHandlerTests: the sample.shop rule refuses that item at startup (slice 015).
     [Theory]
-    [InlineData("broken", 1, "UNKNOWN_ITEM")]
     [InlineData("potion_pack", 0, "INVALID_QUANTITY")]
     [InlineData("potion_pack", 101, "INVALID_QUANTITY")]
     [InlineData("huge", 2, "QUANTITY_LIMIT_EXCEEDED")]

@@ -22,11 +22,22 @@ public sealed class TestKitArchitectureTests
     private static readonly Assembly PlatformWeb = typeof(GameServer.Platform.Web.Aggregates.AggregateWireMapperRegistry).Assembly;
     private static readonly string Root = RepositoryRoot();
 
-    /// <summary>Platform internals the kit may use: the runner's context, the commit rules and the loaded-aggregate constructor.</summary>
+    /// <summary>
+    /// Platform internals the kit may use: the runner's context, the commit rules and the loaded-aggregate constructor; and the
+    /// config declaration engine with the registry's required-file lines, so ConfigDeclarationCheck reports the host's lines
+    /// (slice 015, FR-018).
+    /// </summary>
     private static readonly string[] AllowedInternalTypes =
-        ["GameServer.Platform.Commands.CommandContext", "GameServer.Platform.Commands.CommitRules"];
+    [
+        "GameServer.Platform.Commands.CommandContext",
+        "GameServer.Platform.Commands.CommitRules",
+        "GameServer.Platform.Config.ConfigDeclarationRunner",
+        "GameServer.Platform.Config.ConfigDeclarationResult",
+        "GameServer.Platform.Config.CatalogBinding",
+    ];
 
-    private const string AllowedInternalMember = "GameServer.Platform.Aggregates.LoadedAggregate::.ctor";
+    private static readonly string[] AllowedInternalMembers =
+        ["GameServer.Platform.Aggregates.LoadedAggregate::.ctor", "GameServer.Platform.Registry.ModuleRegistry::ValidateConfig"];
 
     /// <summary>Platform.Web internals the kit may use: the member tree of aggregate states shared with the startup hidden-member check (slice 014, FG-027).</summary>
     private static readonly string[] AllowedWebInternalTypes =
@@ -83,11 +94,14 @@ public sealed class TestKitArchitectureTests
 
         used.ShouldContain(AllowedInternalTypes[0], "the rule must see the kit's use of the runner's context");
         used.ShouldContain(AllowedInternalTypes[1]);
-        used.ShouldContain(AllowedInternalMember);
-        used.Where(u => !AllowedInternalTypes.Any(t => u == t || u.StartsWith(t + "::", StringComparison.Ordinal)) && u != AllowedInternalMember)
+        used.ShouldContain(AllowedInternalTypes[2], "the rule must see the kit's use of the config declaration engine");
+        used.ShouldContain(AllowedInternalMembers[0]);
+        used.ShouldContain(AllowedInternalMembers[1]);
+        used.Where(u => !AllowedInternalTypes.Any(t => u == t || u.StartsWith(t + "::", StringComparison.Ordinal)) && !AllowedInternalMembers.Contains(u))
             .ShouldBeEmpty(
-                "GameServer.TestKit may use only CommandContext, CommitRules and the LoadedAggregate constructor of GameServer.Platform's " +
-                "internals (InternalsVisibleTo for the command-context double, FR-025); anything else needs a review and a new entry here");
+                "GameServer.TestKit may use only CommandContext, CommitRules, the LoadedAggregate constructor, the config declaration " +
+                "engine and ModuleRegistry.ValidateConfig of GameServer.Platform's internals (InternalsVisibleTo for the command-context " +
+                "double, FR-025, and the config check, FR-018); anything else needs a review and a new entry here");
     }
 
     [Fact]

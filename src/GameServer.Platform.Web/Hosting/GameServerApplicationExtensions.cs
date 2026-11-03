@@ -1,4 +1,5 @@
 using GameServer.Config;
+using GameServer.Platform.Config;
 using GameServer.Platform.Diagnostics;
 using GameServer.Platform.Outbox;
 using GameServer.Platform.Persistence;
@@ -35,18 +36,8 @@ public static class GameServerApplicationExtensions
         var registry = services.GetRequiredService<ModuleRegistry>();
         var errors = new List<string>();
 
-        IGameConfig? config = null;
-        try
-        {
-            config = services.GetRequiredService<IGameConfig>();
-            services.GetRequiredService<PlatformMetrics>().SetConfigVersion(config.ConfigVersion);
-        }
-        catch (GameServerStartupException ex)
-        {
-            errors.AddRange(ex.Violations);
-        }
-
-        errors.AddRange(registry.Validate(options, config));
+        // First block (R10): config, registry, module rules and declared catalogs, before anything resolves a catalog.
+        var configWarnings = ConfigStartup.Run(services, options, registry, errors);
         var catalog = services.GetRequiredService<WireCatalog>();
         errors.AddRange(catalog.Validate());
         ValidateServices(services, options, registry, errors);
@@ -60,7 +51,7 @@ public static class GameServerApplicationExtensions
         }
 
         errors.AddRange(options.RequestLog.Validate());
-        RunStartupChecks(services, errors, HostWarnings(catalog, options));
+        RunStartupChecks(services, errors, [.. configWarnings, .. HostWarnings(catalog, options)]);
         ValidateModuleOptions(services, errors);
         var forwarded = DeploymentChecks.BuildForwardedHeaders(options, errors);
 
@@ -284,9 +275,13 @@ public static class GameServerApplicationExtensions
         {
             services.GetRequiredService<IOutboxRelay>();
         }
-        catch (GameServerStartupException ex)
+        catch (GameServerStartupException ex) when (Unavailable.Find(ex) is null)
         {
             errors.AddRange(ex.Violations);
+        }
+        catch (GameServerStartupException)
+        {
+            // A consumer taking the config or a declared catalog that failed: the config phase already reported the cause.
         }
         catch (OptionsValidationException ex)
         {

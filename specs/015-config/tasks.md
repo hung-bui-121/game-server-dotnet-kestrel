@@ -71,7 +71,7 @@ literal. **Never edit `E:\ProjGits\*`** (first-consumer checks run in temp clone
 
 ## Phase 1: Setup
 
-- [ ] T001 Baseline on branch `015-config` (base `c6b133f`): Debug and Release build of `GameServer.slnx`; full suite in
+- [x] T001 Baseline on branch `015-config` (base `c6b133f`): Debug and Release build of `GameServer.slnx`; full suite in
   memory (no `COUCHBASE_*`) and with `GAMESERVER_TEST_STORE=File`. Record into the scratch folder (not committed):
   (a) SHA-256 of every file under `sdk/unity/com.gameserver.client/Runtime/Generated/` (input of T038);
   (b) the GUID of every `.meta` under `sdk/unity/com.gameserver.client/` (input of T041);
@@ -84,7 +84,10 @@ literal. **Never edit `E:\ProjGits\*`** (first-consumer checks run in temp clone
   Done when: 0 warnings in both configurations, 0 failures; total/passed/skipped, the scratch paths, the (d)/(e) values
   and `git status` (only `specs/015-config/` and the owner's `tasks/` untracked) recorded as a Note (reference for every
   checkpoint and T068). (FR-091, SC-008)
-- [ ] T002 [P] Release notes draft `specs/015-config/release-notes-draft.md` (FR-090), created now and extended by every
+  Note (2026-11-04): base e06ae05 (= c6b133f + docs). Debug and Release builds 0 warnings. Full suite in memory 1866 total / 1770 pass / 96 skip / 0 fail; `GAMESERVER_TEST_STORE=File` the same (COUCHBASE_PW unset). Scratch root `C:\Users\CPU124~1\AppData\Local\Temp\claude\89c3b1457009b599\37a82586-bda6-4849-96d3-fe5091807bc6\scratchpad`.
+  Note: (a) SHA-256 of the 15 files under `Runtime/Generated/` → `t001/generated-sha256.txt`; (b) GUIDs of the 30 `.meta` under `sdk/unity/com.gameserver.client/` → `t001/meta-guids.txt`; (c) public-API snapshot at the base: 928 lines, a superset of the committed 875-line file (+53 014 lines, 0 removed) → `tests/GameServer.Client.Tests/TestData/sdk-public-api.txt` replaced (LF, ordinal order).
+  Note: (d) full `GetConfig` response (TestHost FakeClock time 1792972800000): SampleHost config 1720 B (client-visible files 1614 B), tests/Shared config 2265 B (2161 B); files and response bytes in `t001/bundle-out/{samplehost,shared}/`. Computed by a scratch program that loads the config with `FileGameConfigLoader` and builds the response exactly like the handler (same ordering), not over HTTP. (e) `config_version`: SampleHost `sample-1+0a58d1cc006c`, tests/Shared `test-1+223d18ea9fa1` (before T015 edits shop.json). `git status` at the start: only the owner's `tasks/` untracked.
+- [x] T002 [P] Release notes draft `specs/015-config/release-notes-draft.md` (FR-090), created now and extended by every
   story (T028, T033, T040, T045, T052, T064) before the final pass (T065). Skeleton:
   - summary: fixed FG-018, FG-023, FG-024, FG-019; "no route, persisted document or GM API response shape changes; five
     additive proto fields; no existing field changes meaning (API-03); the Unity package stays 0.7.0";
@@ -99,7 +102,8 @@ literal. **Never edit `E:\ProjGits\*`** (first-consumer checks run in temp clone
   - "Known before the tag".
   Done when: the file exists; every FG id and every BC id appears; the checklist lists the 6 markers and the label rule
   of SC-009. (FR-090, SC-009)
-- [ ] T003 [P] **[VERIFY] V1 — decision gate for the duplicate-property line** in a throw-away test project referencing
+  Note: `specs/015-config/release-notes-draft.md` created (English, like the 014 draft): summary, BC-1..BC-10 table, migration checklist with every zh-pvp file:line of the spec, the 6 markers + label rule (SC-009), rolling-deploy note + wire-changes §6 table, owner confirmations 1–3 (pending), manual checks table, "Known before the tag". T008 row already filled (done).
+- [x] T003 [P] **[VERIFY] V1 — decision gate for the duplicate-property line** in a throw-away test project referencing
   `src/GameServer.Platform` (for `GameServerJson.Options`): `JsonDocument.Parse(bytes, new JsonDocumentOptions {
   AllowDuplicateProperties = false })` on six shapes: root, nested object, object inside an array, escaped `"\u0061"` vs
   `"a"`, case variants `"a"`/`"A"` (must pass), a manifest-shaped document. Then the same manifest through
@@ -108,7 +112,9 @@ literal. **Never edit `E:\ProjGits\*`** (first-consumer checks run in temp clone
   whether the escaped duplicate is detected; and the **decision** for T016: STJ option (primary) or the own
   `Utf8JsonReader` walk (fallback), with the source of `{name}`, `{jsonPath}`, `{line}` and `{byte}` of the
   startup-report §2 duplicate line. (FR-002, BC-2)
-- [ ] T004 [P] **[VERIFY] V2, V3 and V4 — decision gate for check creation** in a throw-away web project referencing
+  Note: V1 **fails on the position**: .NET 10.0.14 `JsonDocument.Parse(…, AllowDuplicateProperties = false)` throws `JsonException` "Duplicate property 'a' encountered during deserialization." for root, nested, in-array, escaped `"\u0061"` vs `"a"` (detected, unescaped), dictionary keys and deep arrays, and accepts `"a"`/`"A"` — but `Path`, `LineNumber` and `BytePositionInLine` are all null. `JsonSerializer.Deserialize<Manifest>` with a copy of `GameServerJson.Options` + `AllowDuplicateProperties = false` gives `Path=$.files Line=4 Byte=21` (0-based line, byte after the value) for the manifest only.
+  Note: **Decision for T016 = fallback**: own `Utf8JsonReader` walk (`src/GameServer.Platform/Config/JsonDuplicateProperties.cs`, frame stack + ordinal name set per object) after the unchanged `JsonDocument.Parse` (so the existing parse line keeps the STJ message). `{name}` = `reader.GetString()` (unescaped); `{jsonPath}` = path of the containing object via `ConfigJson.PathOf` (`$`, `$.products`, `$.rows[1]`); `{line}`/`{byte}` = 1-based line of the repeated name and 1-based byte of its opening quote in that line, computed from `TokenStartIndex`. Same line text as startup-report §2.
+- [x] T004 [P] **[VERIFY] V2, V3 and V4 — decision gate for check creation** in a throw-away web project referencing
   `src/GameServer.Platform.Web`:
   - (V2) an `IGameConfig` factory throwing a `GameServerStartupException` with `Data["GameServer.Unavailable"] = "game
     config"`; create a check taking `IGameConfig` with `ActivatorUtilities.CreateInstance`, with a lambda factory, and
@@ -124,14 +130,18 @@ literal. **Never edit `E:\ProjGits\*`** (first-consumer checks run in temp clone
     `FileStoreServiceCollectionExtensions` shape), (b) a closure capturing a local, (c) a method group.
   Done when: a Note records each result and the **decisions** for T029 (creation strategy, factory naming rule that
   skips `<>c…` closure classes, marker detection) and T020 (last non-keyed descriptor rule). (FR-030, FR-031, BC-10)
-- [ ] T005 [P] **[VERIFY] V5 — decision gate for `ConfigBundle`** in a throw-away project referencing
+  Note: V2 holds: a throwing `IGameConfig` factory's `GameServerStartupException` reaches the caller **unwrapped** with its `Data` marker for `ActivatorUtilities.CreateInstance`, `CreateFactory`, a lambda factory and one intermediate service (`NeedsFoo(IFoo)`, `Foo(IGameConfig)`); a throwing factory is not cached (second resolve throws again). A missing dependency gives `InvalidOperationException` without marker.
+  Note: V3 holds: DI and `ActivatorUtilities.CreateInstance` pick the same constructor for two constructors (`()`/`(IFoo)` → `(IFoo)`), an unsatisfiable longer one (→ `(IFoo)`), an optional parameter (default used) and an internal primary-constructor class. `DeploymentIdentityCheck`, `TestKitReferenceCheck(GameServerOptions, IServiceProvider)`, `ConsoleSinkCheck` have one public constructor each and are created by `ActivatorUtilities` in a real `AddGameServer` + Observability composition; `FileStoreCheck`/`CouchbaseSettingsCheck` are factory registrations (no constructor choice).
+  Note: V4 holds: the collection captured first is the same object after `Build()` (read-only) and lists every later module/host descriptor (9 checks counted). `Method.DeclaringType`: static or non-capturing lambda → `X+<>c`, closure → `X+<>c__DisplayClassN_0`, method group → `X`. **Decisions for T029**: create from the descriptor with `ActivatorUtilities.CreateInstance` (type) / the factory / the instance; marker found by `Unavailable.Find` (InnerException walk, V2 shows depth 0); factory name = first declaring type that is not `[CompilerGenerated]` and not `<…`-named (`FileStoreServiceCollectionExtensions`, `CouchbaseServiceCollectionExtensions`, `Registrations`). **Decision for T020**: Declared iff the last non-keyed descriptor of the type is reference-equal to the platform's recorded descriptor (`DeclaredCatalogBindings`).
+- [x] T005 [P] **[VERIFY] V5 — decision gate for `ConfigBundle`** in a throw-away project referencing
   `src/GameServer.Platform.Web` (generated `GetConfigResponse` with today's fields 1–4 plus a local copy of the proto
   carrying field 5, compiled in the scratch project): `Prefix{1,3}.ToByteArray()` ++ `Tail{4,5}.ToByteArray()` vs
   `Full{1,3,4,5}.ToByteArray()` for 0, 1 and 50 files, an empty client version, server time −1, 0 and `long.MinValue`;
   parse the concatenation back and compare messages.
   Done when: a Note records byte equality per case, the maximum tail length (expected: 10-byte varint for the time) and
   the **decision** for T046 (prefix + tail, or the per-request fallback). (FR-052, FR-053)
-- [ ] T006 [P] **[VERIFY] V6 and V7** in a scratch console (net10.0) and a scratch test referencing
+  Note: V5 holds on Google.Protobuf 3.36.2: `Prefix{1,3}.ToByteArray()` ++ `Tail{4,5}.ToByteArray()` is byte-equal to `Full{1,3,4,5}` and parses back equal for 0/1/50 files, empty and non-empty server and client versions, time −1, 0, `long.MinValue`, `long.MaxValue`, 1762000000000. Today's generated type (fields 1–4) parses the 5-field bytes (field 5 kept unknown) and gives today's bytes when the client version is empty. Tail = 11 B for a negative time (tag + 10-byte varint) + 2 + len(client) for a client version under 128 chars (32 B for `test-1+0123456789ab`). **Decision for T046: prefix + tail.**
+- [x] T006 [P] **[VERIFY] V6 and V7** in a scratch console (net10.0) and a scratch test referencing
   `src/GameServer.Platform.Web`:
   - (V6) three bundles serialized as `GetConfigResponse` bytes: (a) the SampleHost client-visible set (T001 d), (b) a
     synthetic zh-pvp-shaped bundle of 7 JSON row tables, about 28 KB (synthesized from the friction-log figures; never
@@ -143,7 +153,10 @@ literal. **Never edit `E:\ProjGits\*`** (first-consumer checks run in temp clone
   Done when: a Note has the V6 table and the chosen `BrQuality` and `GzipLevel` (highest levels with p95 ≤ 20 ms at
   1 MiB and ratio ≤ 30 % for all three bundles: the constants of T048 and PCR platform §1, T061), and the V7 parse
   result per value or the fallback parser decision for T048. (FR-050..FR-052, SC-005)
-- [ ] T007 [P] **[VERIFY] V12 and V13**:
+  Note: V6 (Release, 200 iterations after 20 warm-up, idle machine; ms p50/p95, ratio): sample 1720 B: gzip1 .007/.008 34.6 %, gzip6 .017/.017 27.7 %, gzip9 .025/.027 27.4 %, br1 .009/.009 32.5 %, br4 .243/.290 28.4 %, br6 .547/.673 25.2 %. zh-pvp-shaped 27 623 B: gzip1 .063/.073 24.5 %, gzip6 .222/.232 15.7 %, gzip9 .409/.435 14.5 %, br1 .056/.067 20.0 %, br4 .405/.485 15.2 %, br6 1.268/1.449 13.9 %. Synthetic 1 MiB (1 045 221 B): gzip1 2.1/2.5 23.0 %, gzip6 8.6/8.9 14.0 %, gzip9 17.5/18.5 12.9 %, br1 2.4/2.6 16.0 %, br4 7.2/7.6 14.2 %, br6 17.4/18.3 12.9 % (two reruns: gzip9 p95 18.1, br6 p95 18.1/18.3).
+  Note: The documented rule (highest levels with p95 ≤ 20 ms at 1 MiB and ratio ≤ 30 % for all three) gives **GzipLevel = 9, BrQuality = 6** (level 1/quality 1 miss 30 % on the sample bundle), not the expected 6/4. Margin to the 20 ms budget is under 10 %, and gzip 6 / br 4 cost half the time for ~1 point of ratio: T048/T050 should re-measure on the real path and take the documented fallback (lower level) if p95 exceeds 20 ms; recorded here for the owner/T048 decision.
+  Note: V7 holds: `GetTypedHeaders().AcceptEncoding` never threw for the §5 rows, `GZIP`, empty, `gzip;q=abc`, `;;`, `*;q=0`, `gzip;q=1.5`, `gzip, , br`, `"gzip"`. q absent = `null` (treat as 1); names keep their case (compare `OrdinalIgnoreCase`). Malformed elements are not dropped but re-tokenised (`gzip;q=abc` → `abc`, `gzip;q=1.5` → `1.5`, `gzip;level=1` → `1`, `"gzip"` → none), so they never name br/gzip and read as identity, as §5 wants. **Decision for T048: no own parser.**
+- [x] T007 [P] **[VERIFY] V12 and V13**:
   - (V12) read every constructor in `src/`, `templates/`, `samples/SampleGame/SampleGame`,
     `samples/SampleGame/SampleGame.Adapters` and `samples/SampleHost` (by project folder, never `samples/` as a root)
     that takes `ResourceCatalog`, `IapCatalog`, `BattleCatalog` or `ShopCatalog`; for each, record how it is registered
@@ -154,7 +167,9 @@ literal. **Never edit `E:\ProjGits\*`** (first-consumer checks run in temp clone
     replaces the registration with an instance (so it bypasses `GameConfigLoad`, R8).
   Done when: a Note lists every catalog consumer with its lifetime (expected: handlers created per command, no eager
   resolver) and the consequences for T014, T020, T021, T026, T031 and T032. (FR-021, FR-033)
-- [ ] T008 **[VERIFY] V8 on Editor and Windows player — decision gate for FR-055 (agent-run Unity)**: a scratch Kestrel
+  Note: V12 holds. Every catalog consumer in `src/`, `templates/`, `samples/SampleGame/SampleGame`, `SampleGame.Adapters`, `samples/SampleHost` is a command handler created per command with `ActivatorUtilities.CreateInstance` (`CommandRunner.cs:296`): `AdjustResourceHandler`, `CheatGrantHandler` (ResourceCatalog), `IapPurchaseHandler` (IapCatalog, ResourceCatalog), `StartBattleHandler`, `EndBattleHandler`, `SetProgressionHandler` (BattleCatalog [+ ResourceCatalog]), `BuyItemHandler` (ShopCatalog, ResourceCatalog). `EconomyOperations` takes the catalog as a parameter. No singleton, hosted service, outbox consumer, GM or analytics component takes one; the templates have none. Consequences: T020/T021 need no extra ordering; T021 still tests an outbox consumer taking a catalog (V12 fallback not needed).
+  Note: V13 holds: `SampleTestHost` sets `GameServer:ConfigPath` before the test's settings callback (`WithSampleConfig`), `TestHost.Compose` uses the loader when `config` is null and the key is set (`useLoader`), else `RemoveAll<IGameConfig>()` + instance (bypasses `GameConfigLoad`). A test points the host at a temp folder with `settings: s => s["GameServer:ConfigPath"] = path` (T014 `SeededConfig.Apply`); T031 tests BC-9 through the loader path.
+- [x] T008 **[VERIFY] V8 on Editor and Windows player — decision gate for FR-055 (agent-run Unity)**: a scratch Kestrel
   probe (session scratch folder, port 5091) that logs every request's headers and answers `/plain`, `/gzip` (gzip body,
   `Content-Encoding: gzip`) and `/br` (Brotli body) with a known 64 KB payload, plus `/echo` returning the received
   `Accept-Encoding`. A **temporary** editor script `samples/SampleGame/KestrelDemo/Assets/Editor/Probe015.cs` (created
@@ -169,13 +184,18 @@ literal. **Never edit `E:\ProjGits\*`** (first-consumer checks run in temp clone
   V8 holds on both → no SDK code; a platform advertises an encoding without decoding → R13 fallback (SDK gzip sniff,
   V9 on devices in T058) or the rollback switch. The probe, its `.meta` and the scratch build are gone; `git status
   samples/` shows no change. (FR-055, US5-6)
-- [ ] T009 [P] **[VERIFY] V10 and V11 outside Unity** in a scratch console (net10.0) and a scratch netstandard2.1 library
+  Note (2026-11-04, agent-run, Unity 6000.3.22f1, no Editor had KestrelDemo open): probe server on **127.0.0.1:5092** (not 5091: session rule "5080 or 5092"), 64 KB payload (sha256 1d5d2d8f…f42b, gzip 16 903 B, br 15 827 B). Temporary files `Assets/Editor/Probe015.cs` and, for the player, `Assets/Probe015/{Probe015Runner.cs,Probe015Player.cs,Probe015.unity}` (a runtime script and scene are needed for a player build; task text named only the editor script).
+  Note: **Editor (Windows)** and **Windows player (Mono, development build, `-batchmode -nographics`)** give the same results: default `Accept-Encoding: deflate, gzip` (libcurl 8.20.0-DEV, `X-Unity-Version: 6000.3.22f1`); `SetRequestHeader("Accept-Encoding", "gzip")` accepted (sent as `gzip`); `/gzip` decoded before `downloadHandler.data` (65 536 B, SHA-256 equal, `Content-Encoding: gzip` still in the headers); `/br` → `result=ConnectionError`, `error=Unrecognized content-encoding` (not advertised, so the server never sends it). **Decision for T049: V8 holds on both → no SDK code**; Unity clients on these platforms get gzip from the server by default. Android/iOS stay T058.
+  Note: cleanup: probe files, their `.meta`, the scene and the folder deleted; the Windows build in scratch deleted; the probe server stopped. The Windows build changed 3 tracked files (`Assets/Settings/PC_RPAsset.asset`, `UniversalRenderPipelineGlobalSettings.asset`, `ProjectSettings/ProjectSettings.asset` Standalone batching) → restored with `git checkout`; the project was reopened once with `-buildTarget Android -quit` so `Library` is back on the Android target. `git status samples/` shows no change. Logs: scratch `v8/probe-editor.log`, `v8/probe-player.log`, `v8/probe-server.log`.
+- [x] T009 [P] **[VERIFY] V10 and V11 outside Unity** in a scratch console (net10.0) and a scratch netstandard2.1 library
   with C# 9: `File.Replace(tmp, main, null)` with `main` present (content and timestamps after), `File.Replace` with
   `main` absent (exception type), `File.Move(tmp, main)`, `FileStream.Flush(flushToDisk: true)`; a child process killed
   between flush and replace leaves `tmp` complete and `main` old; `SHA256.Create()` plus read and write of a 1 MiB
   container, 50 iterations, p95.
   Done when: a Note records the semantics, the exception types and the timings (expected ≤ 50 ms each), and the
   fallbacks chosen for T042. The Unity Mono Editor part rides on T057, devices on T058. (FR-062, FR-066, SC-006)
+  Note: V10 holds on Windows .NET 10 (netstandard2.1 / C# 9 library `CacheOps`): `File.Move(tmp, main)` when main is absent; `File.Replace(tmp, main, null)` with main present replaces content, removes tmp, keeps main's creation time and takes tmp's last-write time; `File.Replace` with main absent throws `System.IO.FileNotFoundException`; `FileStream.Flush(flushToDisk: true)` available. A child process killed after flush and before replace leaves tmp complete (hash valid, new version) and main old and valid. Fallbacks for T042: none needed on Windows .NET (Mono Editor in T057, devices in T058).
+  Note: V11 (1 MiB + SHA-256 trailer, 50 iterations after 5 warm-up): on C: (user profile / `%TEMP%`, where `persistentDataPath` lives on Windows) save p95 11.5 ms (Flush(true) + Replace), load p95 2.8 ms; on D: (repository drive) save p50 52.9 / p95 70.2 ms (dominated by `Flush(true)`), load p95 5.1 ms. SC-006 (≤ 50 ms) holds on C:, not on D:: T045 must state the drive of the reference measurement. SHA-256 on IL2CPP stays T058.
 
 **Checkpoint**: baseline counts known; V1, V2–V4, V5 and V8 (Editor, Windows) decided with their consequences; V6, V7,
 V9–V13 confirmed or their fallbacks recorded; release notes skeleton in place.
@@ -186,7 +206,7 @@ Nothing in this phase changes what a host accepts: no module declares a file or 
 at its first fault, and versions are unchanged. Each task ends with the full suite green with the T001 counts plus the
 new tests (T015 moves one test case, Note).
 
-- [ ] T010 Core declarations in a new file `src/GameServer.Core/Config/ConfigDeclarations.cs` (research R5,
+- [x] T010 Core declarations in a new file `src/GameServer.Core/Config/ConfigDeclarations.cs` (research R5,
   contracts/public-api.md §1.2): `ConfigFileDeclaration` (`Required`/`Optional`, `Name`, `IsOptional`, `Rules`),
   `ConfigRuleCheck` delegate, `ConfigRule` (`Name`, `Check`), `ConfigCatalogDeclaration.Of<T>` (`CatalogType`, `Files`,
   `Build`), `ConfigContext` and `ConfigProblems` with internal constructors (`ConfigProblems` keeps the ordered entries
@@ -202,7 +222,8 @@ new tests (T015 moves one test case, Note).
   `tests/GameServer.Architecture.Tests/ArchitectureTests.cs` ARC-01 rule green unchanged (Core free of ASP.NET Core and
   Protobuf).
   Done when: green; nothing reads the new members yet. (FR-010, FR-011, FR-012, FR-020)
-- [ ] T011 `src/GameServer.Core/Config/ConfigJson.cs` (after T010; public-api §1.2): `TryGetObject`, `TryGetArray`,
+  Note: `src/GameServer.Core/Config/ConfigDeclarations.cs` (declarations, `ConfigContext`/`ConfigProblems` with internal constructors, internal `ConfigProblem` entries, `ConfigLocation`, internal `ConfigNames` plain-name rule), `ModuleDescriptor.ConfigFiles`/`ConfigCatalogs`, Core IVT to `GameServer.Platform` and `GameServer.Platform.Tests`. `Of<T>` deduplicates its file list. ARC-01 unchanged. `ConfigDeclarationsTests`: 13 tests. **T034**: the test builds a `GameConfig` with the 4-argument constructor (add to the caller list).
+- [x] T011 `src/GameServer.Core/Config/ConfigJson.cs` (after T010; public-api §1.2): `TryGetObject`, `TryGetArray`,
   `RequiredString`, `RequiredInteger`, `OptionalInteger`, `RequireObject`, `PathOf`. Each value helper takes a trailing
   optional `string? fix = null` (Planning note 7); a missing fix gives the default "set '{property}' to {a type}". Texts
   are the startup-report §4 fragments: `'{property}' is missing`, `'{property}' is null`, `'{property}' must be a {type},
@@ -212,7 +233,8 @@ new tests (T015 moves one test case, Note).
   kind, `1.0`, `1e3`, `"5"`, below min, above max, ok); unknown properties never reported; `PathOf` for `$.a.b`,
   `$.items['key with.dot']`, `$.rows[2]` and a key with a quote; texts asserted literally.
   Done when: green; the texts equal the startup-report §4 fragments. (FR-011, FR-017)
-- [ ] T012 [P] Report lines and the unavailability marker (after T010): new internal
+  Note: `ConfigJson` with the trailing `string? fix = null` on every value helper **and** on `TryGetObject`, `TryGetArray`, `RequireObject` (they report too). Texts: `'p' is missing`, `'p' is null`, `'p' must be {an array|an object|a string}, found {object|array|string|number|boolean}`, `'p' must not be empty` (non-empty strings, not in §4), integers `'p' must be an integer[ of at least N| of at most N| from A to B], found {raw JSON}` (a string quoted, `1.0`, `1e3`, objects/arrays by kind, values over 40 chars cut), row `the row must be an object, found {kind}`; default fix `set 'p' to {type}`. A non-object owner reads as missing. 33 tests.
+- [x] T012 [P] Report lines and the unavailability marker (after T010): new internal
   `src/GameServer.Platform/Config/ConfigReportLines.cs` (every template of data-model §5.3–§5.5 and §5.4 check lines; it
   strips one trailing `.` from `{problem}` and `{fix}`; `fileRef` adds ` (config/env/{env})` for an overlaid file) and
   `src/GameServer.Platform/Config/Unavailable.cs` (`Mark(exception, value)`, `Find(exception)` over the whole
@@ -221,7 +243,8 @@ new tests (T015 moves one test case, Note).
   literal text of contracts/startup-report.md §4–§7; trailing-dot rule; overlay reference) and `UnavailableTests.cs`
   (marker at depth 0, 1, 2; no marker → null; unrelated `Data` keys ignored).
   Done when: green; no caller yet. (FR-011, FR-022, FR-031, FR-053)
-- [ ] T013 `GameConfigLoad` (after T012; research R8, data-model §3.1): new internal
+  Note: `ConfigReportLines` (all §5.3–§5.5 templates + the check lines; the not-run-c line takes the type name from the marker) and `Unavailable` (`Mark`, `Find`, `Catalog(type)`, `CatalogTypeName`). 7 + 3 tests.
+- [x] T013 `GameConfigLoad` (after T012; research R8, data-model §3.1): new internal
   `src/GameServer.Platform/Config/GameConfigLoad.cs` (thread-safe `Lazy` over `FileGameConfigLoader.Load(root, env)`;
   `Mode` `Serve` (default) | `NotLoaded`; `GetOrThrow()`: Loaded → config; Failed → a **new**
   `GameServerStartupException(violations)` marked `game config` on every call; NotLoaded → marked `provision`, no disk
@@ -233,7 +256,8 @@ new tests (T015 moves one test case, Note).
   violations and the marker on each resolve; `NotLoaded` with a missing folder gives the provision text, not a loader
   line. `StartupValidationTests` and `TestKitHostTests` green unchanged.
   Done when: green; startup report texts unchanged. (FR-001 "once per start", FR-032 groundwork)
-- [ ] T014 [P] Seeded config helper for host tests (after T007; V13): new file `tests/Shared/SeededConfig.cs` (compiled
+  Note: `GameConfigLoad` (`Lazy` ExecutionAndPublication, internal `LoadCount`, only `GameServerStartupException` is turned into violations; other exceptions keep today's behaviour). Provision text: `[config] the game config is not loaded in provision mode. Fix: take GameConfigStatus and skip when it is NotLoaded (FG-023).` **Deviation (needed by the plan's layering):** `GameServer.Platform.csproj` gains `InternalsVisibleTo` `GameServer.Platform.Web` (the config phase uses the Platform internals) and `GameServer.Platform.Web.Tests` (T020 binding tests). 3 tests; startup texts unchanged.
+- [x] T014 [P] Seeded config helper for host tests (after T007; V13): new file `tests/Shared/SeededConfig.cs` (compiled
   into the 7 test projects that link `tests/Shared/*.cs`, Couchbase and Observability included, so it uses BCL types only): copies
   `{AppContext.BaseDirectory}/config` to a fresh temp folder; `With(file, json)`, `Without(file)`,
   `Manifest(Func<JsonObject, JsonObject>)`, `EnvOverlay(env, files, manifest)`; `Path` for `GameServer:ConfigPath`;
@@ -243,7 +267,8 @@ new tests (T015 moves one test case, Note).
   existing missing-file line; the temp folder is gone after dispose.
   Done when: green in every project that links `tests/Shared` (full Release build). (test support for FR-001, SC-001,
   SC-003, SC-004)
-- [ ] T015 [P] Shared test config ready for content rules (Planning note 5): remove the `broken` item (grant resource
+  Note: `tests/Shared/SeededConfig.cs` (`With`, `Without`, `Manifest`, `EnvOverlay`, `Path`, `BasePath`, `Apply(settings)`), BCL only; full Release build of the 7 projects green. `SeededConfigTests`: 3 tests.
+- [x] T015 [P] Shared test config ready for content rules (Planning note 5): remove the `broken` item (grant resource
   `unknown_item`) from `tests/Shared/config/base/shop.json`, which the `sample.shop` rule of T024 refuses. Move the
   `("broken", 1, "UNKNOWN_ITEM")` case of `tests/SampleGame.Tests/ShopTests.cs`
   (`Invalid_purchases_are_rejected_without_side_effects`) to a host-free test in a new file
@@ -253,6 +278,8 @@ new tests (T015 moves one test case, Note).
   128-character `analytics_size_probe_…` product id, battle, shop) and record the result.
   Done when: green; `ShopTests` keeps its other five cases; the Note lists each shared file as "passes the 015 rules" or
   the edit made. (FR-015, FR-016, FR-070 groundwork, BC-1 in our own suite)
+  Note: `broken` removed from `tests/Shared/config/base/shop.json`; `ShopTests` keeps its other five cases. `BuyItemHandlerTests` (host-free, `CommandContextDouble`): rejected with `UNKNOWN_ITEM`, `CheckCommit` empty, no inventory write; the double records the staged wallet debit (the runner discards staged changes of a rejection), so "no writes" is asserted as "rejected, nothing committed".
+  Note: shared files vs data-model §2.2: `resources.json` passes (4 unique ids, kinds, maxQuantity ≥ 1, displayName); `iap.json` passes (4 keys, the probe product id is exactly 128 chars, grants gem/gold/sword within maxQuantity); `battle.json` passes (maxStage 3, battleHours 24, stages 1–3 once each, rewards/drops valid); `shop.json` passes after the edit (`huge` price 4611686018427387904 is an integer ≥ 1); `counter.json` has no rule. Phase 2 checkpoint: 1928 total / 1832 pass / 96 skip / 0 fail (+62: 59 Platform foundation tests, 3 SeededConfig, the moved case).
 
 **Checkpoint**: Release build 0 warnings; full suite green with the T001 counts plus the new tests (minus the moved
 case); startup behaviour unchanged.
@@ -265,7 +292,7 @@ factory is left in the framework or the sample.
 Independent test: T026 (seeded faults, 7-line and 3-line reports), T027 (catalogs once, 0 parses), T028 (kit = host).
 Depends on: Phase 2.
 
-- [ ] T016 [US1] Loader collects every fault (after T003, T013; research R3, contracts/startup-report.md §2):
+- [x] T016 [US1] Loader collects every fault (after T003, T013; research R3, contracts/startup-report.md §2):
   `src/GameServer.Platform/Config/FileGameConfigLoader.cs` — `Load` collects violations and throws one
   `GameServerStartupException` when any exist (BC-3). Private helpers return violations instead of throwing and keep
   their texts. Manifests and `.json` files are parsed once with duplicates refused (T003 decision); the manifest is bound
@@ -279,7 +306,8 @@ Depends on: Phase 2.
   recorded; `TestGameConfig.FromDirectory` gives the same lines.
   Done when: green; no existing loader line text changed (`git diff` of the test file shows additions only). (FR-001,
   FR-002, FR-003, US1-7, US1-8, BC-2, BC-3)
-- [ ] T017 [P] [US1] Required files from declarations (after T010; data-model §2.1):
+  Note: loader collects every fault (one exception); a manifest fault (parse or duplicate) skips its file list; label and `clientVisible ⊂ files` are checked against the listed names (a listed file that failed to read keeps one line); `clientVisible` lines are distinct and in manifest order. New internal `GameConfig.OverlaidFiles` and `OverlayEnvironment` (env name for the `(config/env/{env})` reference). `ComputeVersion` and the constructor untouched. 12 tests added (existing 6 unchanged); `TestGameConfigTests.From_directory_reports_every_loader_line_like_the_host_loader` added.
+- [x] T017 [P] [US1] Required files from declarations (after T010; data-model §2.1):
   `src/GameServer.Platform/Registry/ModuleRegistry.cs` `ValidateConfig` uses the effective required set
   `RequiredConfigFiles` ∪ required `ConfigFiles` ∪ files of `ConfigCatalogs` not declared optional by that module; one
   line per (module, file) with the existing text; a file named in both lists is one declaration. Add an internal
@@ -287,7 +315,8 @@ Depends on: Phase 2.
   Tests in `tests/GameServer.Platform.Tests/Registry/ModuleRegistryTests.cs`: each source of a required file, the union
   without duplicates, an optional declaration of a catalog file → no line, the text unchanged.
   Done when: green. (FR-010, FR-014, ARC-06)
-- [ ] T018 [US1] Declaration engine (after T011, T012, T017; research R6): new internal files
+  Note: `ModuleRegistry.RequiredConfigFiles(descriptor)` (internal static) and internal `ValidateConfig(config)` returning the lines (used by `Validate` and the kit); a file declared optional by the module is not required through its catalog; `RequiredConfigFiles` still wins over an optional declaration. 4 tests added.
+- [x] T018 [US1] Declaration engine (after T011, T012, T017; research R6): new internal files
   `src/GameServer.Platform/Config/ConfigDeclarationRunner.cs`, `ConfigDeclarationResult.cs` and `CatalogBinding.cs`
   (`Declared` | `Provided(resolve)`). Parse cache (one `JsonDocument` per `.json` file on first `Json(file)`, disposed at
   the end); rules per module and declaration order for present files (absent optional → skipped; absent required →
@@ -303,7 +332,8 @@ Depends on: Phase 2.
   resolved and its failure line; each file parsed once (count through a wrapper `IGameConfig`); `Json(file)` of an
   absent file → `KeyNotFoundException` caught as rule-throw.
   Done when: green. (FR-011, FR-012, FR-013, FR-014, FR-020, FR-022, FR-023, US1-5, US1-6)
-- [ ] T019 [US1] Test kit call (after T018; research R17, contracts/public-api.md §5): new files
+  Note: engine as R6. A problem located `InFile(other)` names and counts against that file; a rule that throws after reporting keeps its problems plus the throw line; a skipped catalog (file absent or rule error) is added to `FailedCatalogs` (store gives the marked exception). `ConfigDeclarationResult.RuleCount` counts rules run, `CatalogCount` the first declaration of each type. 12 tests.
+- [x] T019 [US1] Test kit call (after T018; research R17, contracts/public-api.md §5): new files
   `src/GameServer.TestKit/ConfigDeclarationCheck.cs` and `src/GameServer.TestKit/ConfigDeclarationReport.cs`
   (`Check(config, params IGameModule[] modules)`: a `ModuleRegistry` of the modules, the required-file lines of
   `ValidateConfig`, the engine with every catalog Declared; `Errors`, `Warnings`, `Passed`, `Catalog<T>`,
@@ -315,7 +345,8 @@ Depends on: Phase 2.
   catalog throws naming its lines; `AddCatalogsTo` then resolve returns the built instance; a missing required file gives
   the registry line; no unit-test framework, host or store referenced (existing kit architecture rules green).
   Done when: green. (FR-018, BC-8 fix)
-- [ ] T020 [US1] Catalog registration and store (after T004, T007, T010; research R7, data-model §3.3): new internal
+  Note: `ConfigDeclarationCheck`/`ConfigDeclarationReport`; `Catalog<T>()` lists every error line when not built. `TestKitArchitectureTests` allow-list extended with exactly `ConfigDeclarationRunner`, `ConfigDeclarationResult`, `CatalogBinding` and `ModuleRegistry::ValidateConfig` (members list replaces the single-member constant). 5 tests.
+- [x] T020 [US1] Catalog registration and store (after T004, T007, T010; research R7, data-model §3.3): new internal
   `src/GameServer.Platform/Config/ConfigCatalogStore.cs` (`Get(type)`: built → the instance; the phase ran and the
   catalog failed → `GameServerStartupException` with one line, marked `catalog {Type}`; the phase never ran →
   `InvalidOperationException` with the R7 text) and `src/GameServer.Platform/Config/DeclaredCatalogBindings.cs`
@@ -329,7 +360,8 @@ Depends on: Phase 2.
   `InvalidOperationException` text; a `ServiceCollection` built from `module.ConfigureServices` alone → the DI "No service
   for type" error naming the type (BC-8 surfacing).
   Done when: green. (FR-021, BC-8)
-- [ ] T021 [US1] The config phase (after T013, T016, T018, T020; research R10, contracts/startup-report.md §1): new
+  Note: `ConfigCatalogStore` (states not-run / config-failed / published; failed-catalog text `[catalog {Type}] was not built: its config files are missing or have errors (see the [module …] lines). Fix: correct the lines reported for its files (FG-018).` marked `catalog {Type}`; config-failed text marked `game config`) and `DeclaredCatalogBindings` (registers the platform descriptor only when no non-keyed descriptor of the type exists = TryAdd, records the first per type). 5 tests (both host orders, R7 text, DI "No service for type").
+- [x] T021 [US1] The config phase (after T013, T016, T018, T020; research R10, contracts/startup-report.md §1): new
   internal `src/GameServer.Platform.Web/Hosting/ConfigStartup.cs` called as the **first block** of `UseGameServer` in
   `src/GameServer.Platform.Web/Hosting/GameServerApplicationExtensions.cs` (replacing lines 38-49): (1) resolve
   `IGameConfig` (catch → violations; `SetConfigVersion` as today), (2) `registry.Validate(options, config)` unchanged,
@@ -345,7 +377,8 @@ Depends on: Phase 2.
   no extra line from `ValidateServices` (V12). `LateEndpointValidationTests` and the 014 endpoint-check tests green
   (the passing start still builds the endpoint set once).
   Done when: green. (FR-003, FR-013, FR-014, FR-021, FR-022, US1-1, US1-5, US1-7)
-- [ ] T022 [P] [US1] Economy rules and catalog (after T019, T021; data-model §2.2, startup-report §4): new file
+  Note: `ConfigStartup.Run` is the first block of `UseGameServer`; warnings join the host warnings logged by `RunStartupChecks`; `ValidateServices` skips a marked `GameServerStartupException` from the relay (also removes today's duplicate config lines for a consumer taking `IGameConfig`). 5 tests (rule + gate in one report, warning logged once, loader lines only, consumer on a failed catalog adds no line, consumer gets the phase's instance); `LateEndpointValidationTests` and the 014 endpoint tests green in the full suite.
+- [x] T022 [P] [US1] Economy rules and catalog (after T019, T021; data-model §2.2, startup-report §4): new file
   `src/GameServer.Modules.Economy/EconomyConfigRules.cs` (`EconomyConfigRules.Resources`, rule `economy.resources`,
   through `ConfigJson`); `src/GameServer.Modules.Economy/EconomyModuleDefinition.cs` declares
   `Required(resources.json, EconomyConfigRules.Resources)` and `Of<ResourceCatalog>(c => ResourceCatalog.Load(c.Config),
@@ -356,7 +389,8 @@ Depends on: Phase 2.
   type per property, duplicate id on the later row naming the first, unknown kind, integer kind, `"CURRENCY"` accepted,
   `maxQuantity` 0 / −1 / `1.0` / `"5"`, unknown property accepted, the zh-pvp shape CASH/GOLD passes).
   Done when: green; the full suite green (the shared config passes). (FR-015, FR-017, FR-024, BC-1)
-- [ ] T023 [P] [US1] IAP rules and catalog (after T019, T021): new file `src/GameServer.Modules.Iap/IapConfigRules.cs`
+  Note: `EconomyConfigRules.Resources` (`economy.resources`) and a public `ResourceReferences` helper (lenient read of `resources.json`, reused by the IAP and sample rules; not in contracts/public-api.md, additive). Descriptor declares the file and `Of<ResourceCatalog>`; `EconomyModule` lazy factory removed. `EconomyConfigRulesTests`: 20 tests (fix texts not given by §4 chosen: id `give every resource a non-empty id (ECO-07)`, displayName `give every resource a display name (ECO-07)`).
+- [x] T023 [P] [US1] IAP rules and catalog (after T019, T021): new file `src/GameServer.Modules.Iap/IapConfigRules.cs`
   (`iap.products`; reads `resources.json` leniently: references are checked only against well-formed rows, and nothing
   when that file is absent); the descriptor in `src/GameServer.Modules.Iap/IapModel.cs` (`Describe`, :121-126) declares
   `Required(iap.json, IapConfigRules.Products)` and `Of<IapCatalog>(…)`, drops `RequiredConfigFiles`;
@@ -366,7 +400,8 @@ Depends on: Phase 2.
   empty, unknown resource (path line), quantity 0, `1.0`, above `maxQuantity`, a malformed `resources.json` row → no
   reference line for that resource, `{"products": {}}` passes (zh-pvp).
   Done when: green; the full suite green. (FR-016, FR-017, FR-024, US1-2, BC-1)
-- [ ] T024 [P] [US1] Sample game rules and catalogs (after T015, T019, T021; Planning note 4): new file
+  Note: `IapConfigRules.Products` (`iap.products`, `MaxProductIdLength = 128`, stores case-sensitive `google`/`apple`); key line and grant lines both reported for one product; product not an object / grant not an object have their own lines. Descriptor + `Of<IapCatalog>`, lazy factory removed. 17 tests.
+- [x] T024 [P] [US1] Sample game rules and catalogs (after T015, T019, T021; Planning note 4): new file
   `samples/SampleGame/SampleGame/SampleGameConfigRules.cs` (`sample.battle`, `sample.shop`, data-model §2.2; the battle
   `xp` text of the startup-report §4 example); `SampleGameModuleDefinition.Describe` in
   `samples/SampleGame/SampleGame/ShopHandler.cs` (:71-77) declares both files with their rules and
@@ -378,13 +413,15 @@ Depends on: Phase 2.
   resource — the old `broken` item, grant quantity above `maxQuantity`); `samples/SampleHost/config` and
   `tests/Shared/config` pass.
   Done when: green; `ShopTests`, `BattleTests` and `SampleGameEndToEndTests` green unchanged. (FR-070, US1-3, US6-1)
-- [ ] T025 [US1] Rules never weaker than `Load` (after T022–T024; FR-024, plan risk "rules diverge from Load"): new
+  Note: `SampleGameConfigRules` (`sample.battle`, `sample.shop`; maxStage/stage capped at `int.MaxValue` like the catalog's `int`; more than 10 missing stages give one summary line so a mistyped maxStage cannot flood the report — not in data-model §2.2). Descriptor declares both files and catalogs; `SampleGameModule` lazy factories removed. `SampleConfigRulesTests`: 13 tests incl. `samples/SampleHost/config` and `tests/Shared/config` passing; `ShopTests`, `BattleTests`, `SampleGameEndToEndTests` green.
+- [x] T025 [US1] Rules never weaker than `Load` (after T022–T024; FR-024, plan risk "rules diverge from Load"): new
   file `tests/SampleGame.Tests/CatalogLoadAgreementTests.cs`: 500 generated configs per file (fixed seed, recorded),
   valid ones and single-mutation variants (type swaps, removals, extremes); for every config the kit reports with 0
   errors, `ResourceCatalog.Load`, `IapCatalog.Load`, `BattleCatalog.Load` and `ShopCatalog.Load` do not throw and the
   kit's catalog is built.
   Done when: green; a deliberately weakened rule in a scratch copy makes the test fail (Note). (FR-024)
-- [ ] T026 [US1] Host report matrix (after T014, T021–T024): new file `tests/SampleGame.Tests/ConfigStartupReportTests.cs`
+  Note: seed 15025 (+ file-name length per file), 500 configs per file, 1 in 5 valid, others one mutation (removal, renamed property, null/0/−1/long.MaxValue/int.MaxValue+1/1.5/1.0/1e3/"5"/""/unknown id/true/[]/{}, duplicated array element). **Precision:** judged on the rule (and required-file) lines only — a `Load` that throws already shows as a catalog line, so "kit passed" alone would be tautological (first weakening run proved it). Weakened rule (duplicate-id check disabled, working-tree edit, restored byte-identical) → the test fails on `resources.json` with the duplicated `gem` row; restored → green.
+- [x] T026 [US1] Host report matrix (after T014, T021–T024): new file `tests/SampleGame.Tests/ConfigStartupReportTests.cs`
   (sample game composition, `SeededConfig`): each seeded fault gives exactly one line — `resources.json` duplicate id,
   missing `maxQuantity`, `maxQuantity` as a string, unknown kind; `iap.json` unknown resource, quantity 0, key without
   store, duplicate product key (the loader line, Planning note 11); `battle.json` wrong type; a game-module rule problem
@@ -396,7 +433,8 @@ Depends on: Phase 2.
   line.
   Done when: green; every expected line is asserted literally. (FR-001..FR-003, FR-013, FR-014, SC-001, US1-1, US1-2,
   US1-3, US1-5, US1-6, US1-7, US1-8, US1-9)
-- [ ] T027 [US1] Catalogs before traffic (after T026): new file `tests/SampleGame.Tests/ConfigCatalogHostTests.cs`:
+  Note: `ConfigStartupReportTests` (19 tests, every line literal) + `SeededFaults` (14 seeded faults shared with T028). The "two missing files + invalid JSON" lines follow the manifest order of the shared config (shop.json before battle.json; the contract example lists battle first). The 7-line test uses a seeded resources.json with 5 rows (row 3 `"999"`, row 4 duplicate `gold`, sword kept at row 5 so no reference line appears) and an iap.json with `gems_100`, `google:gems_100` (quantity 0), `google:starter_pack` (`shield`). Provision (fake provisioner) and export modes with a seeded rule fault: exit 0, no rule line on stderr.
+- [x] T027 [US1] Catalogs before traffic (after T026): new file `tests/SampleGame.Tests/ConfigCatalogHostTests.cs`:
   with a valid config every declared catalog is built exactly once before the first request (a counting test catalog;
   the `ResourceCatalog` instance seen by two handlers in two requests is the same object); the first command performs 0
   `GetFile*`/`GetFileJson`/`GetFileBytes` calls (a counting `IGameConfig` wrapper passed as `config:`); a host-registered
@@ -404,12 +442,15 @@ Depends on: Phase 2.
   cat-host line, and a seeded `resources.json` fault is still reported; a second module declaring `ResourceCatalog` gives
   the cat-dup line naming both modules.
   Done when: green. (FR-021, FR-023, SC-002, US1-4)
-- [ ] T028 [US1] Kit = host, release notes, checkpoint (after T019, T026, T027): new file
+  Note: `ConfigCatalogHostTests` (7 tests): counting catalog built once before the first request; a spy handler (`ReplaceHandler` of `cheat.grant`) sees the same `ResourceCatalog` instance in two requests; a counting `IGameConfig` (`config:`) sees 0 file reads for a cheat grant and a shop buy after start; host instance before/after `AddModule` is what handlers get; throwing host factory → exactly the cat-host line; host instance with a seeded fault → the rule line; second module → the cat-dup line.
+- [x] T028 [US1] Kit = host, release notes, checkpoint (after T019, T026, T027): new file
   `tests/SampleGame.Tests/ConfigDeclarationParityTests.cs`: for every non-loader seeded fault of T026,
   `ConfigDeclarationCheck.Check(TestGameConfig.FromDirectory(seeded), modules).Errors` equals the host's lines in the same
   order. Release notes: FG-018 section, BC-1, BC-2, BC-3 and BC-8 rows with the real line texts, FG-018 rows of the
   consumer-impact table. Full suite in memory and with `GAMESERVER_TEST_STORE=File`.
   Done when: green; counts recorded against T001. (FR-018, FR-090, SC-001, US1-10)
+  Note: `ConfigDeclarationParityTests` (11 tests: 10 rule/catalog seeded faults + one 4-file order test): kit `Errors` = host lines, same order. Release notes: FG-018 section, BC-1/BC-2/BC-3/BC-8 rows with real texts, FG-018 consumer rows.
+  Note: checkpoint: Debug and Release builds 0 warnings. Full suite in memory 2063 total / 1966 pass / 96 skip / 1 fail = the known flaky `TelemetryTests.A_command_is_one_trace_from_http_to_the_runner_with_the_request_id` (passed 3/3 rerun alone); `GAMESERVER_TEST_STORE=File` 2063 / 1967 / 96 / 0. vs T001: +197 tests, skips unchanged.
 
 **Checkpoint (MVP)**: a bad config value stops the host with module, file and location; every declared catalog is built
 once before traffic; the kit reports the host's lines; no lazy catalog factory left in economy, IAP and the sample game.

@@ -1,5 +1,6 @@
 using GameServer.Actors;
 using GameServer.Commands;
+using GameServer.Config;
 using GameServer.Modules;
 
 namespace GameServer.Modules.Economy;
@@ -14,7 +15,8 @@ public static class EconomyModuleDefinition
         Name = ModuleName,
         Version = "0.2.0",
         DependsOn = ["identity"],
-        RequiredConfigFiles = [ResourceCatalog.ConfigFile],
+        ConfigFiles = [ConfigFileDeclaration.Required(ResourceCatalog.ConfigFile, EconomyConfigRules.Resources)],
+        ConfigCatalogs = [ConfigCatalogDeclaration.Of(c => ResourceCatalog.Load(c.Config), ResourceCatalog.ConfigFile)],
         Permissions = [EconomyPermissions.ResourceAdjust, EconomyPermissions.PlayerRead],
         Commands = [Command.Define<AdjustResourceCommand, AdjustResourceResult>(AdjustResourceHandler.Descriptor).HandledBy<AdjustResourceHandler>()],
         Aggregates = [EconomyAggregates.WalletDescriptor, EconomyAggregates.InventoryDescriptor],

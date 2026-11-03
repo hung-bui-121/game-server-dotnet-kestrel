@@ -82,6 +82,17 @@ public sealed class TestGameConfigTests : IDisposable
         TestGameConfig.FromDirectory(_root, "Staging").Label.ShouldBe("v1");
     }
 
+    [Fact]
+    public void From_directory_reports_every_loader_line_like_the_host_loader()
+    {
+        WriteFolder("base", "v1", new() { ["rules.json"] = "{\"a\":1,\"a\":2}", ["shop.json"] = "{ not json" }, ["shop.json", "other.json"]);
+
+        var kit = Should.Throw<GameServerStartupException>(() => TestGameConfig.FromDirectory(_root)).Violations;
+
+        kit.Count.ShouldBe(3);
+        kit.ShouldBe(Should.Throw<GameServerStartupException>(() => GameServer.Platform.Config.FileGameConfigLoader.Load(_root, "Development")).Violations);
+    }
+
     private void WriteFolder(string relative, string label, Dictionary<string, string> files, string[] clientVisible)
     {
         var folder = Path.Combine(_root, relative);

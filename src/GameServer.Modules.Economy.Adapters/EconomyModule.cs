@@ -47,7 +47,7 @@ public sealed class EconomyModule : IGameModule, IGmApiModule
 
     public void ConfigureServices(IServiceCollection services, ModuleContext context)
     {
-        services.TryAddSingleton(sp => ResourceCatalog.Load(sp.GetRequiredService<IGameConfig>()));
+        // ResourceCatalog is a declared catalog (EconomyModuleDefinition): the platform builds and registers it (FG-018).
         services.AddAggregateWireMapper<WalletState, Wire.WalletState>(EconomyAggregates.Wallet, state =>
         {
             var wire = new Wire.WalletState();

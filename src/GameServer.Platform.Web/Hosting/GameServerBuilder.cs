@@ -52,14 +52,22 @@ public sealed class ModuleRegistrationOptions
 public sealed class GameServerBuilder
 {
     private readonly HostRouteDeclarations _hostRoutes;
+    private readonly DeclaredCatalogBindings _catalogBindings;
 
-    internal GameServerBuilder(WebApplicationBuilder host, GameServerOptions options, ModuleRegistry registry, GameServerRuntimeInfo runtime, HostRouteDeclarations hostRoutes)
+    internal GameServerBuilder(
+        WebApplicationBuilder host,
+        GameServerOptions options,
+        ModuleRegistry registry,
+        GameServerRuntimeInfo runtime,
+        HostRouteDeclarations hostRoutes,
+        DeclaredCatalogBindings catalogBindings)
     {
         Host = host;
         Options = options;
         Registry = registry;
         Runtime = runtime;
         _hostRoutes = hostRoutes;
+        _catalogBindings = catalogBindings;
     }
 
     public WebApplicationBuilder Host { get; }
@@ -93,6 +101,14 @@ public sealed class GameServerBuilder
         foreach (var step in Registry.Modules[^1].Descriptor.DeletionSteps)
         {
             Services.TryAddTransient(step.StepType);
+        }
+
+        // Declared catalogs (FG-018, research R7): built by the config phase, never lazily; a registration of the host wins.
+        var bindings = _catalogBindings;
+        foreach (var catalog in Registry.Modules[^1].Descriptor.ConfigCatalogs)
+        {
+            var type = catalog.CatalogType;
+            bindings.Register(type, sp => sp.GetRequiredService<ConfigCatalogStore>().Get(type));
         }
 
         return this;
@@ -189,12 +205,17 @@ public static class GameServerBuilderExtensions
         services.AddSingleton<ReceiptReader>();
         services.AddSingleton<GameServer.Platform.Persistence.ClaimStore>();
         services.TryAddSingleton<GameServer.Platform.Persistence.IStoreHealthProbe, GameServer.Platform.Persistence.DocumentStoreHealthProbe>();
-        services.AddSingleton<IGameConfig>(sp =>
+        // One load per host (R8): a failed load is reported once and each resolve rethrows its violations, marked "game config".
+        services.AddSingleton(sp =>
         {
             var environment = sp.GetRequiredService<IHostEnvironment>();
             var root = Path.IsPathRooted(options.ConfigPath) ? options.ConfigPath : Path.Combine(environment.ContentRootPath, options.ConfigPath);
-            return FileGameConfigLoader.Load(root, options.DeploymentEnvironment);
+            return new GameConfigLoad(root, options.DeploymentEnvironment);
         });
+        services.AddSingleton<IGameConfig>(sp => sp.GetRequiredService<GameConfigLoad>().GetOrThrow());
+        var catalogBindings = new DeclaredCatalogBindings(services);
+        services.AddSingleton(catalogBindings);
+        services.AddSingleton<ConfigCatalogStore>();
         services.AddSingleton<AggregateWireMapperRegistry>();
 
         // FG-026: the route and section catalog, built on first use from registrations only (export mode, the endpoint check).
@@ -225,7 +246,7 @@ public static class GameServerBuilderExtensions
         services.AddHostedService<DrainDelayService>();
 
         AddLimits(builder, options);
-        return new GameServerBuilder(builder, options, registry, runtime, hostRoutes);
+        return new GameServerBuilder(builder, options, registry, runtime, hostRoutes, catalogBindings);
     }
 
     /// <summary>

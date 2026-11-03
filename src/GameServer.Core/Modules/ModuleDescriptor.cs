@@ -1,5 +1,6 @@
 using GameServer.Aggregates;
 using GameServer.Commands;
+using GameServer.Config;
 using GameServer.Errors;
 using GameServer.Routing;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,8 +20,17 @@ public sealed class ModuleDescriptor
     /// <summary>Names of modules that must also be registered.</summary>
     public IReadOnlyList<string> DependsOn { get; init; } = [];
 
-    /// <summary>Config files (CFG-01) that must exist in the effective config set.</summary>
+    /// <summary>Config files (CFG-01) that must exist in the effective config set (= <c>ConfigFileDeclaration.Required(name)</c> without rules).</summary>
     public IReadOnlyList<string> RequiredConfigFiles { get; init; } = [];
+
+    /// <summary>Config files the module reads and the rules for their content (FG-018). Run at every start, before traffic.</summary>
+    public IReadOnlyList<ConfigFileDeclaration> ConfigFiles { get; init; } = [];
+
+    /// <summary>
+    /// Typed objects built once from the config at startup and registered by the platform as singletons (FG-018).
+    /// Do not register them in ConfigureServices.
+    /// </summary>
+    public IReadOnlyList<ConfigCatalogDeclaration> ConfigCatalogs { get; init; } = [];
 
     /// <summary>GM permissions this module checks (SEC-07 catalog).</summary>
     public IReadOnlyList<string> Permissions { get; init; } = [];

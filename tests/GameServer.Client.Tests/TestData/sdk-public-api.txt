@@ -26,6 +26,37 @@
   GameServer.Client.ErrorCodes :: field static const System.String SwitchAccount = SWITCH_ACCOUNT
   GameServer.Client.ErrorCodes :: field static const System.String Unauthenticated = UNAUTHENTICATED
   GameServer.Client.ErrorCodes :: field static const System.String UpdateRequired = UPDATE_REQUIRED
+  GameServer.Client.FrameworkRoutes :: field static const System.String CheatGrant = api/v1/cheat/grant
+  GameServer.Client.FrameworkRoutes :: field static const System.String CheatGrantMethod = POST
+  GameServer.Client.FrameworkRoutes :: field static const System.String IapPurchase = api/v1/iap/purchase
+  GameServer.Client.FrameworkRoutes :: field static const System.String IapPurchaseMethod = POST
+  GameServer.Client.FrameworkRoutes :: field static const System.String IdentityLink = api/v1/identity/link
+  GameServer.Client.FrameworkRoutes :: field static const System.String IdentityLinkMethod = POST
+  GameServer.Client.FrameworkRoutes :: field static const System.String IdentityLoginGuest = api/v1/identity/login/guest
+  GameServer.Client.FrameworkRoutes :: field static const System.String IdentityLoginGuestMethod = POST
+  GameServer.Client.FrameworkRoutes :: field static const System.String IdentityLoginProvider = api/v1/identity/login/provider
+  GameServer.Client.FrameworkRoutes :: field static const System.String IdentityLoginProviderMethod = POST
+  GameServer.Client.FrameworkRoutes :: field static const System.String IdentityLogout = api/v1/identity/logout
+  GameServer.Client.FrameworkRoutes :: field static const System.String IdentityLogoutMethod = POST
+  GameServer.Client.FrameworkRoutes :: field static const System.String IdentityRequestDeletion = api/v1/identity/delete-account
+  GameServer.Client.FrameworkRoutes :: field static const System.String IdentityRequestDeletionMethod = POST
+  GameServer.Client.FrameworkRoutes :: field static const System.String IdentitySetDisplayName = api/v1/identity/display-name
+  GameServer.Client.FrameworkRoutes :: field static const System.String IdentitySetDisplayNameMethod = POST
+  GameServer.Client.FrameworkRoutes :: field static const System.String PlatformConfig = api/v1/config/get
+  GameServer.Client.FrameworkRoutes :: field static const System.String PlatformConfigMethod = POST
+  GameServer.Client.FrameworkRoutes :: field static const System.String PlatformReceiptMethod = GET
+  GameServer.Client.FrameworkRoutes :: field static const System.String PlatformSnapshot = api/v1/player/snapshot
+  GameServer.Client.FrameworkRoutes :: field static const System.String PlatformSnapshotMethod = POST
+  GameServer.Client.FrameworkRoutes :: field static const System.String PlatformTime = v1/time
+  GameServer.Client.FrameworkRoutes :: field static const System.String PlatformTimeMethod = GET
+  GameServer.Client.FrameworkRoutes :: static System.String PlatformReceipt<>(System.String receiptId)
+  GameServer.Client.FrameworkSections :: field static GameServer.Client.SectionKey`1[GameServer.Modules.Economy.Protocol.V1.InventoryState] Inventory
+  GameServer.Client.FrameworkSections :: field static GameServer.Client.SectionKey`1[GameServer.Modules.Economy.Protocol.V1.WalletState] Wallet
+  GameServer.Client.FrameworkSections :: field static GameServer.Client.SectionKey`1[GameServer.Modules.Identity.Protocol.V1.ProfileState] Profile
+  GameServer.Client.FrameworkSections :: field static GameServer.Client.SectionTable Table
+  GameServer.Client.FrameworkSections :: field static const System.String InventoryId = inventory
+  GameServer.Client.FrameworkSections :: field static const System.String ProfileId = profile
+  GameServer.Client.FrameworkSections :: field static const System.String WalletId = wallet
   GameServer.Client.GameServerClient :: .ctor(GameServer.Client.GameServerClientOptions options, GameServer.Client.IHttpTransport transport, GameServer.Client.IClientClock clock, GameServer.Client.IDelay delay, GameServer.Client.ISessionStore session, GameServer.Client.IConfigCache config, System.Random random)
   GameServer.Client.GameServerClient :: System.Threading.Tasks.Task LogoutAsync<>(System.Threading.CancellationToken cancellationToken=)
   GameServer.Client.GameServerClient :: System.Threading.Tasks.Task`1[GameServer.Client.CommandResult`1[GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult]] LinkProviderAsync<>(GameServer.Modules.Identity.Protocol.V1.ProviderCredential credential, System.Threading.CancellationToken cancellationToken=)
@@ -109,20 +140,36 @@
   GameServer.Client.InMemorySessionStore :: System.Void Clear<>()
   GameServer.Client.InMemorySessionStore :: prop System.String PlayerId {get;set;}
   GameServer.Client.InMemorySessionStore :: prop System.String Token {get;set;}
+  GameServer.Client.SectionKey :: prop Google.Protobuf.MessageParser Parser {get;}
+  GameServer.Client.SectionKey :: prop System.String Id {get;}
+  GameServer.Client.SectionKey`1 :: .ctor(System.String id, Google.Protobuf.MessageParser`1[T] parser)
+  GameServer.Client.SectionKey`1 :: prop Google.Protobuf.MessageParser Parser {get;}
+  GameServer.Client.SectionKey`1 :: prop Google.Protobuf.MessageParser`1[T] TypedParser {get;}
+  GameServer.Client.SectionRead :: field System.Int32 value__
+  GameServer.Client.SectionRead :: field static const GameServer.Client.SectionRead Absent = 0
+  GameServer.Client.SectionRead :: field static const GameServer.Client.SectionRead Parsed = 2
+  GameServer.Client.SectionRead :: field static const GameServer.Client.SectionRead Unknown = 1
   GameServer.Client.SectionState :: .ctor(System.String id, System.Int64 rev, Google.Protobuf.ByteString payload)
   GameServer.Client.SectionState :: prop Google.Protobuf.ByteString Payload {get;}
   GameServer.Client.SectionState :: prop System.Int64 Rev {get;}
   GameServer.Client.SectionState :: prop System.String Id {get;}
   GameServer.Client.SectionStore :: .ctor()
+  GameServer.Client.SectionStore :: GameServer.Client.SectionRead TryRead<>(System.String id, Google.Protobuf.IMessage& message)
   GameServer.Client.SectionStore :: System.Boolean Apply<>(GameServer.Protocol.Core.V1.SectionUpdate update)
+  GameServer.Client.SectionStore :: System.Boolean IsKnown<>(System.String id)
   GameServer.Client.SectionStore :: System.Boolean TryGet<>(System.String id, GameServer.Client.SectionState& section)
   GameServer.Client.SectionStore :: System.Int64 RevOf<>(System.String id)
   GameServer.Client.SectionStore :: System.Void Clear<>()
+  GameServer.Client.SectionStore :: System.Void Register<>(GameServer.Client.SectionTable table)
   GameServer.Client.SectionStore :: System.Void Set<>(GameServer.Protocol.Core.V1.Section section)
+  GameServer.Client.SectionStore :: T Get<T>(GameServer.Client.SectionKey`1[T] key)
   GameServer.Client.SectionStore :: T Get<T>(System.String id, Google.Protobuf.MessageParser`1[T] parser)
   GameServer.Client.SectionStore :: event System.Action`1[System.Exception] HandlerFailed
   GameServer.Client.SectionStore :: event System.Action`1[System.String] SectionChanged
   GameServer.Client.SectionStore :: prop System.Collections.Generic.IReadOnlyCollection`1[GameServer.Client.SectionState] All {get;}
+  GameServer.Client.SectionTable :: .ctor(GameServer.Client.SectionKey[] keys)
+  GameServer.Client.SectionTable :: System.Boolean TryGet<>(System.String id, GameServer.Client.SectionKey& key)
+  GameServer.Client.SectionTable :: prop System.Collections.Generic.IReadOnlyCollection`1[GameServer.Client.SectionKey] Keys {get;}
   GameServer.Client.SystemClientClock :: .ctor()
   GameServer.Client.SystemClientClock :: prop GameServer.Client.SystemClientClock Instance {get;}
   GameServer.Client.SystemClientClock :: prop System.DateTimeOffset UtcNow {get;}
@@ -813,6 +860,8 @@
   GameServer.Protocol.Core.V1.TimeResponse :: prop System.Int64 ServerTimeUtcMs {get;set;}
 type GameServer.Client.CommandResult`1 : System.Object []
 type GameServer.Client.ErrorCodes : System.Object []
+type GameServer.Client.FrameworkRoutes : System.Object []
+type GameServer.Client.FrameworkSections : System.Object []
 type GameServer.Client.GameServerClient : System.Object []
 type GameServer.Client.GameServerClientOptions : System.Object []
 type GameServer.Client.GameServerError : System.Object []
@@ -825,8 +874,12 @@ type GameServer.Client.IHttpTransport :  []
 type GameServer.Client.ISessionStore :  []
 type GameServer.Client.InMemoryConfigCache : System.Object [GameServer.Client.IConfigCache]
 type GameServer.Client.InMemorySessionStore : System.Object [GameServer.Client.ISessionStore]
+type GameServer.Client.SectionKey : System.Object []
+type GameServer.Client.SectionKey`1 : GameServer.Client.SectionKey []
+type GameServer.Client.SectionRead : System.Enum [System.IComparable,System.IConvertible,System.IFormattable,System.ISpanFormattable]
 type GameServer.Client.SectionState : System.Object []
 type GameServer.Client.SectionStore : System.Object []
+type GameServer.Client.SectionTable : System.Object []
 type GameServer.Client.SystemClientClock : System.Object [GameServer.Client.IClientClock]
 type GameServer.Client.TaskDelay : System.Object [GameServer.Client.IDelay]
 type GameServer.Client.TransportException : System.Exception [System.Runtime.Serialization.ISerializable]

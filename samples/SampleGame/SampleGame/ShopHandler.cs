@@ -1,4 +1,5 @@
 using GameServer.Commands;
+using GameServer.Config;
 using GameServer.Modules;
 using GameServer.Modules.Economy;
 
@@ -74,7 +75,16 @@ public static class SampleGameModuleDefinition
         Version = "0.2.0",
         DependsOn = ["identity", EconomyModuleDefinition.ModuleName],
         Permissions = [SampleGamePermissions.ProgressionEdit],
-        RequiredConfigFiles = [BattleCatalog.ConfigFile, ShopCatalog.ConfigFile],
+        ConfigFiles =
+        [
+            ConfigFileDeclaration.Required(BattleCatalog.ConfigFile, SampleGameConfigRules.Battle),
+            ConfigFileDeclaration.Required(ShopCatalog.ConfigFile, SampleGameConfigRules.Shop),
+        ],
+        ConfigCatalogs =
+        [
+            ConfigCatalogDeclaration.Of(c => BattleCatalog.Load(c.Config), BattleCatalog.ConfigFile),
+            ConfigCatalogDeclaration.Of(c => ShopCatalog.Load(c.Config), ShopCatalog.ConfigFile),
+        ],
         Aggregates = [SampleGameAggregates.ProgressionDescriptor, SampleGameAggregates.BattleDescriptor],
         Commands =
         [

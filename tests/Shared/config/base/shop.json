@@ -20,16 +20,6 @@
         "quantity": 1
       }
     },
-    "broken": {
-      "price": {
-        "resource": "gold",
-        "amount": 1
-      },
-      "grant": {
-        "resource": "unknown_item",
-        "quantity": 1
-      }
-    },
     "huge": {
       "price": {
         "resource": "gold",

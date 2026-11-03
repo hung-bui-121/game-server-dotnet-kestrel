@@ -14,5 +14,8 @@
   <ItemGroup>
     <InternalsVisibleTo Include="GameServer.Platform.Tests" />
     <InternalsVisibleTo Include="GameServer.TestKit" />
+    <!-- The config phase of UseGameServer runs the internal config load, declaration engine and catalog store (slice 015). -->
+    <InternalsVisibleTo Include="GameServer.Platform.Web" />
+    <InternalsVisibleTo Include="GameServer.Platform.Web.Tests" />
   </ItemGroup>
 </Project>

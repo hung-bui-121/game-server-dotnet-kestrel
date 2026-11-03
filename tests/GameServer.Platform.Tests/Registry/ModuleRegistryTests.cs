@@ -16,6 +16,8 @@ public sealed class ModuleRegistryTests
 {
     private static readonly GameServerOptions ValidOptions = new() { GameId = "test", EnvironmentId = "dev" };
 
+    private static readonly GameConfig EmptyConfig = new("t", "t+0", new Dictionary<string, byte[]>(), new HashSet<string>());
+
     private static ModuleRegistry Registry(params IGameModule[] modules)
     {
         var registry = new ModuleRegistry();
@@ -177,6 +179,38 @@ public sealed class ModuleRegistryTests
 
         Registry(TestModules.Identity(), needsConfig).Validate(ValidOptions, config)
             .ShouldContain(e => e.Contains("required config file 'shop.json'") && e.Contains("CFG-01"));
+    }
+
+    [Theory]
+    [InlineData("list")]
+    [InlineData("declaration")]
+    [InlineData("catalog")]
+    public void Each_source_of_a_required_file_gives_the_existing_line(string source)
+    {
+        var needsConfig = Module("needs", d => source switch
+        {
+            "list" => new ModuleDescriptor { Name = d.Name, RequiredConfigFiles = ["shop.json"] },
+            "declaration" => new ModuleDescriptor { Name = d.Name, ConfigFiles = [GameServer.Config.ConfigFileDeclaration.Required("shop.json")] },
+            _ => new ModuleDescriptor { Name = d.Name, ConfigCatalogs = [GameServer.Config.ConfigCatalogDeclaration.Of<object>(_ => null, "shop.json")] },
+        });
+
+        Registry(TestModules.Identity(), needsConfig).ValidateConfig(EmptyConfig).ShouldBe(
+            ["[module needs] required config file 'shop.json' is missing. Fix: add it to config/base/manifest.json 'files' and to config/base (CFG-01)."]);
+    }
+
+    [Fact]
+    public void A_file_named_by_every_source_is_one_line_and_an_optional_catalog_file_is_none()
+    {
+        var both = Module("both", d => new ModuleDescriptor
+        {
+            Name = d.Name,
+            RequiredConfigFiles = ["shop.json"],
+            ConfigFiles = [GameServer.Config.ConfigFileDeclaration.Required("shop.json"), GameServer.Config.ConfigFileDeclaration.Optional("extra.json")],
+            ConfigCatalogs = [GameServer.Config.ConfigCatalogDeclaration.Of<object>(_ => null, "shop.json", "extra.json")],
+        });
+
+        ModuleRegistry.RequiredConfigFiles(both.Describe()).ShouldBe(["shop.json"]);
+        Registry(TestModules.Identity(), both).ValidateConfig(EmptyConfig).Count.ShouldBe(1);
     }
 
     [Fact]

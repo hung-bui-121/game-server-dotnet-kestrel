@@ -118,7 +118,38 @@ public sealed partial class ModuleRegistry
         ValidateJobs(options, errors);
         if (config is not null)
         {
-            ValidateConfig(config, errors);
+            errors.AddRange(ValidateConfig(config));
+        }
+
+        return errors;
+    }
+
+    /// <summary>
+    /// The effective required config files of a module (data-model §2.1): <c>RequiredConfigFiles</c> ∪ required
+    /// <c>ConfigFiles</c> ∪ the files of its <c>ConfigCatalogs</c> it does not declare optional. A file named twice counts once.
+    /// </summary>
+    internal static IReadOnlyList<string> RequiredConfigFiles(ModuleDescriptor descriptor)
+    {
+        var optional = descriptor.ConfigFiles.Where(f => f.IsOptional).Select(f => f.Name).ToHashSet(StringComparer.Ordinal);
+        return descriptor.RequiredConfigFiles
+            .Concat(descriptor.ConfigFiles.Where(f => !f.IsOptional).Select(f => f.Name))
+            .Concat(descriptor.ConfigCatalogs.SelectMany(c => c.Files).Where(f => !optional.Contains(f)))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    /// <summary>One line per (module, missing required file); the only source of the required-file line (host and test kit).</summary>
+    internal IReadOnlyList<string> ValidateConfig(IGameConfig config)
+    {
+        var errors = new List<string>();
+        foreach (var module in _modules)
+        {
+            foreach (var file in RequiredConfigFiles(module.Descriptor).Where(f => !config.HasFile(f)))
+            {
+                errors.Add(
+                    $"[module {module.Descriptor.Name}] required config file '{file}' is missing. " +
+                    "Fix: add it to config/base/manifest.json 'files' and to config/base (CFG-01).");
+            }
         }
 
         return errors;
@@ -352,19 +383,6 @@ public sealed partial class ModuleRegistry
                 {
                     errors.Add($"[module {module.Descriptor.Name}] outbox kind '{projection.Kind}' is already projected by '{kinds[projection.Kind]}'.");
                 }
-            }
-        }
-    }
-
-    private void ValidateConfig(IGameConfig config, List<string> errors)
-    {
-        foreach (var module in _modules)
-        {
-            foreach (var file in module.Descriptor.RequiredConfigFiles.Where(f => !config.HasFile(f)))
-            {
-                errors.Add(
-                    $"[module {module.Descriptor.Name}] required config file '{file}' is missing. " +
-                    "Fix: add it to config/base/manifest.json 'files' and to config/base (CFG-01).");
             }
         }
     }

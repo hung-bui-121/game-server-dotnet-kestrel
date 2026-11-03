@@ -27,8 +27,7 @@ public sealed class SampleGameModule : IGameModule, IPlayerApiModule, IGmApiModu
 
     public void ConfigureServices(IServiceCollection services, ModuleContext context)
     {
-        services.TryAddSingleton(sp => BattleCatalog.Load(sp.GetRequiredService<IGameConfig>()));
-        services.TryAddSingleton(sp => ShopCatalog.Load(sp.GetRequiredService<IGameConfig>()));
+        // BattleCatalog and ShopCatalog are declared catalogs (SampleGameModuleDefinition): the platform builds them (FG-018).
         services.TryAddSingleton<IBattleStartPolicy, ReplaceActiveBattlePolicy>();
         services.TryAddSingleton<IBattleResultPolicy, EligibilityOnlyResultPolicy>();
 
