@@ -151,7 +151,7 @@ public sealed class ConfigDeclarationRunnerTests
         built.ShouldBeFalse();
         result.Catalogs[typeof(CatalogA)].ShouldBeSameAs(host);
         result.Errors.ShouldBe(
-            ["[module m] catalog CatalogB: the instance registered by the host could not be created: InvalidOperationException: no file. Fix: correct the registration or remove it to use the declared build (FG-018)."]);
+            ["[catalog CatalogB] the registration that replaces the declaration of module m could not be resolved: InvalidOperationException: no file. Fix: correct that registration (host or test), or remove it so the platform builds the declared catalog (FG-018)."]);
     }
 
     [Fact]
@@ -204,6 +204,166 @@ public sealed class ConfigDeclarationRunnerTests
             Directory.Delete(root, recursive: true);
         }
     }
+
+    // ---- slice 015 T071 M1: a catalog over an absent optional file is still built ----
+
+    private const string AbsentJsonMessage = "Config file 'absent.json' is not in the effective config. Fix: check Config.HasFile(\"absent.json\") first";
+
+    [Fact]
+    public void An_absent_optional_file_whose_build_checks_has_file_gives_the_empty_catalog_and_no_line()
+    {
+        var empty = new CatalogA();
+        var module = Module(
+            "m",
+            files: [ConfigFileDeclaration.Optional("absent.json")],
+            catalogs: [ConfigCatalogDeclaration.Of(c => c.Config.HasFile("absent.json") ? new CatalogA { X = 1 } : empty, "absent.json", "a.json")]);
+
+        var result = Run([module]);
+
+        result.Errors.ShouldBeEmpty();
+        result.FailedCatalogs.ShouldBeEmpty();
+        result.Catalogs[typeof(CatalogA)].ShouldBeSameAs(empty);
+    }
+
+    [Fact]
+    public void An_absent_optional_file_whose_build_reads_it_gives_the_optional_absent_line()
+    {
+        var module = Module(
+            "m",
+            files: [ConfigFileDeclaration.Optional("absent.json")],
+            catalogs: [ConfigCatalogDeclaration.Of(c => new CatalogA { X = c.Json("absent.json").GetArrayLength() }, "a.json", "absent.json")]);
+
+        var result = Run([module]);
+
+        result.Errors.ShouldBe(
+        [
+            $"[module m] catalog CatalogA: the build threw KeyNotFoundException: {AbsentJsonMessage}; optional config file 'absent.json' is absent. " +
+            "Fix: build an empty catalog when Config.HasFile(\"absent.json\") is false, or declare the file Required (FG-018).",
+        ]);
+        result.FailedCatalogs.ShouldBe([typeof(CatalogA)]);
+    }
+
+    [Fact]
+    public void An_absent_optional_file_whose_build_returns_null_gives_the_null_line()
+    {
+        var module = Module("m", files: [ConfigFileDeclaration.Optional("absent.json")], catalogs: [ConfigCatalogDeclaration.Of<CatalogA>(_ => null, "absent.json")]);
+
+        Run([module]).Errors.ShouldBe(
+            ["[module m] catalog CatalogA: the build returned no catalog and reported no problem. Fix: return the catalog or report why (FG-018)."]);
+    }
+
+    [Fact]
+    public void An_absent_required_catalog_file_gives_the_registry_line_only()
+    {
+        var built = false;
+        var module = Module("m", catalogs: [ConfigCatalogDeclaration.Of(_ => { built = true; return new CatalogA(); }, "absent.json")]);
+
+        var result = Run([module]);
+
+        built.ShouldBeFalse();
+        result.Errors.ShouldBeEmpty();
+        result.FailedCatalogs.ShouldBe([typeof(CatalogA)]);
+        Registry(module).ValidateConfig(Config).ShouldBe(
+            ["[module m] required config file 'absent.json' is missing. Fix: add it to config/base/manifest.json 'files' and to config/base (CFG-01)."]);
+    }
+
+    [Fact]
+    public void A_present_optional_file_with_a_rule_error_skips_the_catalog_without_a_line()
+    {
+        var built = false;
+        var module = Module(
+            "m",
+            files: [ConfigFileDeclaration.Optional("a.json", new ConfigRule("r", c => c.Problems.Error(ConfigLocation.WholeFile, "bad", "fix")))],
+            catalogs: [ConfigCatalogDeclaration.Of(_ => { built = true; return new CatalogA(); }, "a.json")]);
+
+        var result = Run([module]);
+
+        built.ShouldBeFalse();
+        result.Errors.ShouldBe(["[module m] config a.json: bad. Fix: fix."]);
+        result.FailedCatalogs.ShouldBe([typeof(CatalogA)]);
+    }
+
+    [Fact]
+    public void A_provided_catalog_over_an_absent_optional_file_is_resolved()
+    {
+        var host = new CatalogA();
+        var module = Module("m", files: [ConfigFileDeclaration.Optional("absent.json")], catalogs: [ConfigCatalogDeclaration.Of<CatalogA>(_ => null, "absent.json")]);
+
+        var result = ConfigDeclarationRunner.Run(Registry(module).Modules, Config, _ => CatalogBinding.Provided(() => host));
+
+        result.Errors.ShouldBeEmpty();
+        result.Catalogs[typeof(CatalogA)].ShouldBeSameAs(host);
+    }
+
+    public static TheoryData<string> Compositions => [.. InvariantCompositions.Keys];
+
+    /// <summary>The M1 invariant: a catalog that was not built always has a line that explains it (runner or registry).</summary>
+    [Theory]
+    [MemberData(nameof(Compositions))]
+    public void A_catalog_that_is_not_built_is_always_explained_by_a_line(string composition)
+    {
+        var modules = InvariantCompositions[composition]();
+        var registry = Registry(modules);
+
+        var result = ConfigDeclarationRunner.Run(registry.Modules, Config, _ => CatalogBinding.Declared);
+
+        if (result.FailedCatalogs.Count > 0)
+        {
+            (result.Errors.Count + registry.ValidateConfig(Config).Count).ShouldBeGreaterThan(0);
+        }
+
+        ConfigDeclarationRunner.UnexplainedFailures(result, registry.ValidateConfig(Config)).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void A_failed_catalog_that_no_line_explains_gives_the_backstop_line()
+    {
+        var result = new ConfigDeclarationResult();
+        result.FailedCatalogs.Add(typeof(CatalogB));
+        result.FailedCatalogs.Add(typeof(CatalogA));
+
+        ConfigDeclarationRunner.UnexplainedFailures(result, []).ShouldBe(
+        [
+            "[catalog CatalogA] was not built and no other line explains why (framework fault). Fix: report it with this config; the catalog would fail at its first use (FG-018).",
+            "[catalog CatalogB] was not built and no other line explains why (framework fault). Fix: report it with this config; the catalog would fail at its first use (FG-018).",
+        ]);
+        ConfigDeclarationRunner.UnexplainedFailures(result, ["[module m] required config file 'x.json' is missing. …"]).ShouldBeEmpty();
+        result.Errors.Add("[module m] config a.json: bad. Fix: fix.");
+        ConfigDeclarationRunner.UnexplainedFailures(result, []).ShouldBeEmpty();
+    }
+
+    private static readonly Dictionary<string, Func<IGameModule[]>> InvariantCompositions = new(StringComparer.Ordinal)
+    {
+        ["built"] = () => [Module("m", catalogs: [ConfigCatalogDeclaration.Of(_ => new CatalogA(), "a.json")])],
+        ["required absent"] = () => [Module("m", catalogs: [ConfigCatalogDeclaration.Of(_ => new CatalogA(), "absent.json")])],
+        ["optional absent, empty"] = () =>
+            [Module("m", files: [ConfigFileDeclaration.Optional("absent.json")], catalogs: [ConfigCatalogDeclaration.Of(_ => new CatalogA(), "absent.json")])],
+        ["optional absent, reads"] = () =>
+            [Module("m", files: [ConfigFileDeclaration.Optional("absent.json")], catalogs: [ConfigCatalogDeclaration.Of(c => new CatalogA { X = c.Json("absent.json").GetArrayLength() }, "absent.json")])],
+        ["optional absent, null"] = () =>
+            [Module("m", files: [ConfigFileDeclaration.Optional("absent.json")], catalogs: [ConfigCatalogDeclaration.Of<CatalogA>(_ => null, "absent.json")])],
+        ["rule error in another module"] = () =>
+        [
+            Module("owner", catalogs: [ConfigCatalogDeclaration.Of(_ => new CatalogA(), "a.json")]),
+            Module("other", files: [ConfigFileDeclaration.Required("a.json", new ConfigRule("o", c => c.Problems.Error(ConfigLocation.Row(1), "bad", "fix")))]),
+        ],
+        ["build problem, throw, null"] = () =>
+        [
+            Module("m", catalogs:
+            [
+                ConfigCatalogDeclaration.Of<CatalogA>(c => { c.Problems.Error(ConfigLocation.Row(2).InFile("a.json"), "no stage", "add it"); return null; }, "a.json"),
+                ConfigCatalogDeclaration.Of<CatalogB>(_ => throw new FormatException("bad"), "a.json"),
+                ConfigCatalogDeclaration.Of<CatalogC>(_ => null, "b.json"),
+            ]),
+        ],
+        ["declared twice"] = () =>
+        [
+            Module("economy", catalogs: [ConfigCatalogDeclaration.Of(_ => new CatalogA(), "a.json")]),
+            Module("game", catalogs: [ConfigCatalogDeclaration.Of(_ => new CatalogA(), "a.json")]),
+        ],
+        ["throwing rule"] = () =>
+            [Module("m", files: [ConfigFileDeclaration.Required("a.json", new ConfigRule("t", _ => throw new InvalidOperationException("x")))], catalogs: [ConfigCatalogDeclaration.Of(_ => new CatalogA(), "a.json")])],
+    };
 
     private static ConfigDeclarationResult Run(IGameModule[] modules) =>
         ConfigDeclarationRunner.Run(Registry(modules).Modules, Config, _ => CatalogBinding.Declared);

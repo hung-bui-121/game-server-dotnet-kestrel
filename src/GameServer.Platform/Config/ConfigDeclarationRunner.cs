@@ -28,13 +28,36 @@ internal static class ConfigDeclarationRunner
         var declaredBy = new Dictionary<Type, string>();
         foreach (var module in modules)
         {
+            if (module.Descriptor.ConfigCatalogs.Count == 0)
+            {
+                continue;
+            }
+
+            var required = ModuleRegistry.RequiredConfigFiles(module.Descriptor).ToHashSet(StringComparer.Ordinal);
             foreach (var catalog in module.Descriptor.ConfigCatalogs)
             {
-                BuildCatalog(module.Descriptor.Name, catalog, config, cache, fileErrors, declaredBy, binding, result);
+                BuildCatalog(module.Descriptor.Name, catalog, required, config, cache, fileErrors, declaredBy, binding, result);
             }
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// The backstop (slice 015 T071 M1): one line per catalog that was not built when no other line of this start explains it —
+    /// neither the runner's lines nor <paramref name="otherLines"/> (the registry's required-file lines; the loader's lines when the
+    /// config failed). Coarse on purpose: any line fails the start anyway; this one only keeps a lazy failure from coming back silently.
+    /// </summary>
+    public static IReadOnlyList<string> UnexplainedFailures(ConfigDeclarationResult result, IReadOnlyCollection<string> otherLines)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        ArgumentNullException.ThrowIfNull(otherLines);
+        if (result.FailedCatalogs.Count == 0 || result.Errors.Count > 0 || otherLines.Count > 0)
+        {
+            return [];
+        }
+
+        return [.. result.FailedCatalogs.Select(ConfigReportLines.CatalogUnexplained).Order(StringComparer.Ordinal)];
     }
 
     private static void RunRules(ModuleDescriptor module, IGameConfig config, ParseCache cache, Dictionary<string, int> fileErrors, ConfigDeclarationResult result)
@@ -83,6 +106,7 @@ internal static class ConfigDeclarationRunner
     private static void BuildCatalog(
         string module,
         ConfigCatalogDeclaration catalog,
+        HashSet<string> requiredFiles,
         IGameConfig config,
         ParseCache cache,
         Dictionary<string, int> fileErrors,
@@ -97,8 +121,9 @@ internal static class ConfigDeclarationRunner
             return;
         }
 
-        // Missing files are the registry's lines and rule errors are the rules' lines: no second line (FR-022).
-        if (catalog.Files.Any(f => !config.HasFile(f) || fileErrors.GetValueOrDefault(f) > 0))
+        // Missing required files are the registry's lines and rule errors are the rules' lines: no second line (FR-022). An absent
+        // optional file does not skip the build (M1): the build decides what absence means, so no declared catalog is ever lazy.
+        if (catalog.Files.Any(f => fileErrors.GetValueOrDefault(f) > 0 || (!config.HasFile(f) && requiredFiles.Contains(f))))
         {
             result.FailedCatalogs.Add(type);
             return;
@@ -129,7 +154,10 @@ internal static class ConfigDeclarationRunner
         catch (Exception ex)
         {
             AddCatalogProblems(module, type, config, problems, result);
-            result.Errors.Add(ConfigReportLines.CatalogThrew(module, type, ex));
+            var absent = catalog.Files.FirstOrDefault(f => !config.HasFile(f));
+            result.Errors.Add(absent is null
+                ? ConfigReportLines.CatalogThrew(module, type, ex)
+                : ConfigReportLines.CatalogThrewOptionalAbsent(module, type, ex, absent));
             result.FailedCatalogs.Add(type);
             return;
         }

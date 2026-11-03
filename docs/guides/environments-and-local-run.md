@@ -437,6 +437,10 @@ Code 1 in ra stderr `Game server startup validation failed:` rồi mỗi lỗi m
 `dotnet SampleHost.dll` không đặt `ASPNETCORE_ENVIRONMENT` (tên môi trường mặc định của .NET là Production) → lỗi
 `GameServer:EnvironmentId`, store in-memory, master key, pepper và SSO GM cùng lúc, không bao giờ chạy như Development.
 
+Trong test, dưới `LocalFlavorFactory<Program>` của kit: A startup failure throws GameServerStartupException from
+StartServer()/CreateClient() with the report as Violations (the real host prints it and exits 1). Không có gì in ra stderr; dispose
+factory sau một lần start lỗi không ném và vẫn xoá thư mục gốc của nó (slice 015 T071 G3).
+
 ## 7. Analytics (slice 012)
 
 Host mẫu ghi file analytics JSONL (login, payment) bằng `gameServer.AddAnalyticsFiles()`. Hợp đồng record: PCR platform mục 18;

@@ -106,7 +106,7 @@ public sealed class StartupCheckIsolationTests
 
         result.Errors.ShouldBe([
             $"[{(atCreation ? nameof(StartupCheckIsolationTests) : nameof(MarkedRunCheck))}] the startup check did not run: catalog SampleCatalog was not built " +
-            "(see the lines above). Fix: take GameConfigStatus and read the catalog only when DeclarationsPassed (FG-023).",
+            "(see the lines above). Fix: take GameConfigStatus and read the catalog with TryGetCatalog (FG-023).",
         ]);
     }
 
@@ -149,6 +149,62 @@ public sealed class StartupCheckIsolationTests
         counter.Created.ShouldBe(2);
         GameServerApplicationExtensions.CheckAll(provider, StartupCheckMode.Serve);
         counter.Created.ShouldBe(4);
+    }
+
+    // ---- slice 015 T071 m4, m5 ----
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void A_constructor_that_throws_a_startup_exception_gives_its_violations_and_the_other_checks_run(bool provision)
+    {
+        var result = Run(
+            s =>
+            {
+                s.AddSingleton<IStartupCheck, RefusingConstructorCheck>();
+                s.AddSingleton<IStartupCheck>(new ReportingCheck("[test] plain ran"));
+            },
+            provision ? StartupCheckMode.Provision : StartupCheckMode.Serve);
+
+        result.Errors.ShouldBe(["[mycheck] bad setting", "[test] plain ran"]);
+        result.Warnings.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Factories_returning_a_concrete_check_are_named_by_it_and_an_interface_factory_by_its_declaring_type()
+    {
+        var result = Run(s =>
+        {
+            s.AddSingleton<IStartupCheck, ThrowingRunCheck>(_ => new ThrowingRunCheck());
+            s.AddSingleton<IStartupCheck>(CheckFactories.Concrete);
+            s.AddSingleton<IStartupCheck>(_ => new ThrowingRunCheck());
+            s.AddSingleton<IStartupCheck, ThrowingConstructorCheck>(_ => new ThrowingConstructorCheck());
+        });
+
+        result.Errors.ShouldBe([
+            $"[{nameof(ThrowingRunCheck)}] the startup check failed: InvalidOperationException: run",
+            $"[{nameof(ThrowingRunCheck)}] the startup check failed: InvalidOperationException: run",
+            $"[{nameof(ThrowingRunCheck)}] the startup check failed: InvalidOperationException: run",
+            $"[{nameof(ThrowingConstructorCheck)}] the startup check could not be created: InvalidOperationException: boom{CreatedFix}",
+        ]);
+        var descriptors = Collection(s =>
+        {
+            s.AddSingleton<IStartupCheck, ThrowingRunCheck>(_ => new ThrowingRunCheck());
+            s.AddSingleton<IStartupCheck>(CheckFactories.Concrete);
+            s.AddSingleton<IStartupCheck>(_ => new ThrowingRunCheck());
+        }).Where(d => d.ServiceType == typeof(IStartupCheck)).ToArray();
+        descriptors.Select((d, i) => StartupCheckRegistrations.NameOf(d, i))
+            .ShouldBe([nameof(ThrowingRunCheck), nameof(ThrowingRunCheck), nameof(StartupCheckIsolationTests)]);
+    }
+
+    [Fact]
+    public void A_factory_that_returns_null_is_a_creation_line()
+    {
+        var result = Run(s => s.AddSingleton<IStartupCheck>(_ => null!));
+
+        result.Errors.ShouldBe([
+            $"[{nameof(StartupCheckIsolationTests)}] the startup check could not be created: InvalidOperationException: the registration's factory returned null{CreatedFix}",
+        ]);
     }
 
     [Fact]
@@ -203,6 +259,15 @@ public sealed class StartupCheckIsolationTests
         }
     }
 
+    private sealed class RefusingConstructorCheck : IStartupCheck
+    {
+        public RefusingConstructorCheck() => throw new GameServerStartupException("[mycheck] bad setting");
+
+        public void Check(StartupCheckResult result)
+        {
+        }
+    }
+
     private sealed class NeedsUnregisteredCheck(UnregisteredService service) : IStartupCheck
     {
         public void Check(StartupCheckResult result) => result.Errors.Add(service.ToString()!);
@@ -213,7 +278,7 @@ public sealed class StartupCheckIsolationTests
         public void Check(StartupCheckResult result) => result.Errors.Add(error);
     }
 
-    private sealed class ThrowingRunCheck : IStartupCheck
+    internal sealed class ThrowingRunCheck : IStartupCheck
     {
         public void Check(StartupCheckResult result) => throw new InvalidOperationException("run");
     }
@@ -241,6 +306,9 @@ public sealed class StartupCheckIsolationTests
 internal static class CheckFactories
 {
     public static IStartupCheck Throwing(IServiceProvider services) => throw new InvalidOperationException("method group");
+
+    /// <summary>A method group returning the concrete check (m5: named by its return type).</summary>
+    public static StartupCheckIsolationTests.ThrowingRunCheck Concrete(IServiceProvider services) => new();
 }
 
 /// <summary>The <c>FileStoreServiceCollectionExtensions</c> shape: a static lambda in a static extension class.</summary>

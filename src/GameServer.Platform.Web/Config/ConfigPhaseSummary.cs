@@ -21,10 +21,16 @@ internal sealed class ConfigPhaseSummary
         "No GetConfig bundle was built: the player API is not mapped (GameServer:Hosting:MapPlayerApi=false).");
 
     /// <param name="bundle">Null when the player API is not mapped ("bundle not served").</param>
-    public void Publish(IGameConfig config, int ruleCount, int catalogCount, ConfigBundle? bundle)
+    /// <param name="compressor">Non-null exactly when <paramref name="bundle"/> is.</param>
+    public void Publish(IGameConfig config, int ruleCount, int catalogCount, ConfigBundle? bundle, ConfigCompressor? compressor)
     {
         ArgumentNullException.ThrowIfNull(config);
-        if (Interlocked.CompareExchange(ref _values, new Values(config, ruleCount, catalogCount, bundle), null) is not null)
+        if ((bundle is null) != (compressor is null))
+        {
+            throw new ArgumentException("A bundle and its compressor are published together.", nameof(compressor));
+        }
+
+        if (Interlocked.CompareExchange(ref _values, new Values(config, ruleCount, catalogCount, bundle, compressor), null) is not null)
         {
             throw new InvalidOperationException("The config phase publishes its summary once per host.");
         }
@@ -34,5 +40,6 @@ internal sealed class ConfigPhaseSummary
     /// <param name="RuleCount">Rules run for the files present.</param>
     /// <param name="CatalogCount">Declared catalog types.</param>
     /// <param name="Bundle">The served bundle; null when the player API is not mapped.</param>
-    internal sealed record Values(IGameConfig Config, int RuleCount, int CatalogCount, ConfigBundle? Bundle);
+    /// <param name="Compressor">How the bundle is compressed; non-null exactly when <paramref name="Bundle"/> is.</param>
+    internal sealed record Values(IGameConfig Config, int RuleCount, int CatalogCount, ConfigBundle? Bundle, ConfigCompressor? Compressor);
 }

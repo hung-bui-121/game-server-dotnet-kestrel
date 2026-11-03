@@ -11,21 +11,39 @@ namespace GameServer.Client
     {
         /// <summary>
         /// <c>Application.persistentDataPath/gameserver-config/{environmentName}</c>: one folder per server environment, so a
-        /// build that talks to several servers (dev, beta, live) never mixes their configs. Call it on the main thread.
+        /// build that talks to several servers (dev, beta, live) never mixes their configs. On iOS the folder is excluded from
+        /// iCloud/iTunes backup (the cache is re-downloadable). Call it on the main thread.
         /// </summary>
-        /// <param name="environmentName">A plain folder name such as <c>local</c> or <c>live</c> (no path separators, not <c>..</c>).</param>
+        /// <param name="environmentName">
+        /// 1 to 64 lowercase letters, digits, <c>.</c>, <c>_</c> or <c>-</c>, not starting or ending with <c>.</c> and not a Windows
+        /// device name (<c>con</c>, <c>nul</c>, <c>com1</c>, …): the same rule on every platform, e.g. <c>local</c>, <c>live</c> or
+        /// <c>localhost-5080</c>. Keep it in the game's settings; never derive it from the URL.
+        /// </param>
+        /// <exception cref="ArgumentNullException"><paramref name="environmentName"/> is null.</exception>
+        /// <exception cref="ArgumentException"><paramref name="environmentName"/> breaks the rule above.</exception>
         public static PersistentConfigCache Create(string environmentName)
         {
-            if (string.IsNullOrWhiteSpace(environmentName)
-                || environmentName == "."
-                || environmentName == ".."
-                || environmentName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0
-                || environmentName.IndexOfAny(new[] { '/', '\\' }) >= 0)
+            if (environmentName == null)
             {
-                throw new ArgumentException($"'{environmentName}' is not a plain folder name.", nameof(environmentName));
+                throw new ArgumentNullException(nameof(environmentName));
             }
 
-            return new PersistentConfigCache(Path.Combine(Application.persistentDataPath, "gameserver-config", environmentName));
+            var problem = PersistentConfigCache.FolderNameProblem(environmentName);
+            if (problem != null)
+            {
+                throw new ArgumentException(problem, nameof(environmentName));
+            }
+
+            var folder = Path.Combine(Application.persistentDataPath, "gameserver-config", environmentName);
+            var cache = new PersistentConfigCache(folder);
+#if UNITY_IOS && !UNITY_EDITOR
+            // On the folder, not the file: File.Replace creates a new file, which would lose a per-file flag (m8).
+            if (Directory.Exists(folder))
+            {
+                UnityEngine.iOS.Device.SetNoBackupFlag(folder);
+            }
+#endif
+            return cache;
         }
     }
 }

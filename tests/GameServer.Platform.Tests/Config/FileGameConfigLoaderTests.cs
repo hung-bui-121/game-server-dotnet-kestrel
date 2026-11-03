@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using System.Globalization;
+using System.Text;
 using GameServer.Platform.Config;
 using Shouldly;
 
@@ -8,7 +11,13 @@ public sealed class FileGameConfigLoaderTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "gs-config-" + Guid.NewGuid().ToString("N"));
 
-    public FileGameConfigLoaderTests() => Directory.CreateDirectory(Path.Combine(_root, "base"));
+    private readonly ITestOutputHelper _output;
+
+    public FileGameConfigLoaderTests(ITestOutputHelper output)
+    {
+        _output = output;
+        Directory.CreateDirectory(Path.Combine(_root, "base"));
+    }
 
     public void Dispose() => Directory.Delete(_root, recursive: true);
 
@@ -170,13 +179,213 @@ public sealed class FileGameConfigLoaderTests : IDisposable
         Fails().ShouldBe([Duplicate(Base("a.json"), name, path, line, column)]);
     }
 
+    // ---- slice 015 T071 M2: names that differ only in case are repeated (config is read ignoring case) ----
+
     [Fact]
-    public void Case_variants_are_different_properties()
+    public void Case_variants_are_reported_as_one_line()
+    {
+        Write("base/manifest.json", """{"label":"v1","files":["resources.json"],"clientVisible":[]}""");
+        Write("base/resources.json", "{\n  \"resources\": [\n    {\n      \"maxQuantity\": 5,\n      \"MaxQuantity\": 0\n    }\n  ]\n}");
+
+        Fails().ShouldBe([CaseVariant(Base("resources.json"), "maxQuantity", "MaxQuantity", "$.resources[0]", 5, 7)]);
+    }
+
+    [Fact]
+    public void A_case_variant_in_the_manifest_is_one_line_and_skips_its_file_list()
+    {
+        Write("base/manifest.json", "{\n  \"label\": \"v1\",\n  \"Label\": \"v2\",\n  \"files\": [\"missing.json\"]\n}");
+
+        Fails().ShouldBe([CaseVariant(Base("manifest.json"), "label", "Label", "$", 3, 3)]);
+    }
+
+    [Fact]
+    public void An_escaped_case_variant_is_detected()
     {
         Write("base/manifest.json", """{"label":"v1","files":["a.json"],"clientVisible":[]}""");
-        Write("base/a.json", """{"a": 1, "A": 2, "n": {"a": 1}}""");
+        Write("base/a.json", """{"\u004dax": 1, "max": 2}""");
+
+        Fails().ShouldBe([CaseVariant(Base("a.json"), "Max", "max", "$", 1, 17)]);
+    }
+
+    [Fact]
+    public void An_exact_repeat_and_a_case_variant_give_two_lines_in_document_order()
+    {
+        Write("base/manifest.json", """{"label":"v1","files":["a.json"],"clientVisible":[]}""");
+        Write("base/a.json", "{\n  \"n\": {\"k\": 1, \"K\": 2},\n  \"a\": 1,\n  \"a\": 2\n}");
+
+        Fails().ShouldBe(
+        [
+            CaseVariant(Base("a.json"), "k", "K", "$.n", 2, 17),
+            Duplicate(Base("a.json"), "a", "$", 4, 3),
+        ]);
+    }
+
+    [Fact]
+    public void The_same_name_in_different_objects_is_not_a_duplicate()
+    {
+        Write("base/manifest.json", """{"label":"v1","files":["a.json"],"clientVisible":[]}""");
+        Write("base/a.json", """{"a": 1, "n": {"A": 1, "m": {"a": 2}}, "rows": [{"a": 1}, {"A": 2}]}""");
 
         FileGameConfigLoader.Load(_root, "Development").HasFile("a.json").ShouldBeTrue();
+    }
+
+    // ---- slice 015 T071 m11: positions are counted incrementally ----
+
+    /// <summary>
+    /// Opt-in (<c>GAMESERVER_PERF=1</c>): measured 181 ms under the full parallel suite against about 37 ms alone, so an always-on
+    /// budget would be flaky. The position tests above pin the values the incremental counter produces.
+    /// </summary>
+    [Fact]
+    public void A_megabyte_with_ten_thousand_duplicates_is_reported_in_linear_time()
+    {
+        Assert.SkipUnless(Environment.GetEnvironmentVariable("GAMESERVER_PERF") == "1", "Opt-in: set GAMESERVER_PERF=1 to measure the duplicate walk on 1 MiB.");
+        const int Duplicates = 10_000;
+        const int MeasuredLoads = 3;
+
+        // The 5x margin of the config phase test (20 ms x 5). Measured alone: about 37 ms with incremental positions, about
+        // 300 ms when every position is counted from the start of the file.
+        const double BudgetMs = 100;
+        var json = new StringBuilder("{\"rows\": [\n");
+        for (var i = 0; i < Duplicates; i++)
+        {
+            json.Append("  {\"id\": ").Append(i).Append(", \"text\": \"").Append('x', 80).Append("\", \"id\": ").Append(i).Append("},\n");
+        }
+
+        json.Append("  {}\n]}");
+        Write("base/manifest.json", """{"label":"v1","files":["a.json"],"clientVisible":[]}""");
+        Write("base/a.json", json.ToString());
+        Fails().Count.ShouldBe(Duplicates);
+
+        // Median of three loads, like the config phase test: one scheduling or GC spike under the full suite does not fail it.
+        IReadOnlyList<string> violations = [];
+        var samples = new double[MeasuredLoads];
+        for (var i = 0; i < MeasuredLoads; i++)
+        {
+            var watch = Stopwatch.StartNew();
+            violations = Fails();
+            samples[i] = watch.Elapsed.TotalMilliseconds;
+        }
+
+        Array.Sort(samples);
+        var median = samples[MeasuredLoads / 2];
+        _output.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{Duplicates} duplicates in {json.Length} chars: median {median:F1} ms"));
+
+        // Line i + 2 holds row i; its second "id" starts after `  {"id": <i>, "text": "<80 x>", `.
+        var last = Duplicates - 1;
+        violations[^1].ShouldBe(Duplicate(Base("a.json"), "id", $"$.rows[{last}]", Duplicates + 1, 104 + last.ToString(CultureInfo.InvariantCulture).Length));
+        median.ShouldBeLessThan(BudgetMs);
+    }
+
+    // ---- slice 015 T071 m1: a file the host cannot read is a line, not an exception ----
+
+    [Fact]
+    public void Files_the_host_cannot_read_are_lines_next_to_a_missing_file()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "FileShare.None locks a file on Windows only.");
+        Write("base/manifest.json", """{"label":"v1","files":["a.json","b.txt","missing.json"],"clientVisible":[]}""");
+        Write("base/a.json", "{}");
+        Write("base/b.txt", "text");
+        using var lockA = File.Open(Base("a.json"), FileMode.Open, FileAccess.Read, FileShare.None);
+        using var lockB = File.Open(Base("b.txt"), FileMode.Open, FileAccess.Read, FileShare.None);
+
+        var violations = Fails();
+
+        violations.Count.ShouldBe(3);
+        violations[0].ShouldStartWith($"[config] '{Base("a.json")}' cannot be read: ");
+        violations[0].ShouldEndWith(" Fix: check that the host process can read the file (CFG-01).");
+        violations[1].ShouldStartWith($"[config] '{Base("b.txt")}' cannot be read: ");
+        violations[2].ShouldBe($"[config] file '{Base("missing.json")}' listed in the manifest does not exist. Fix: add the file or remove it from the manifest.");
+    }
+
+    [Fact]
+    public void A_manifest_the_host_cannot_read_is_a_line_and_skips_its_file_list()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "FileShare.None locks a file on Windows only.");
+        Write("base/manifest.json", """{"label":"v1","files":[],"clientVisible":[]}""");
+        Write("env/Staging/manifest.json", """{"label":"","files":["missing.json"],"clientVisible":[]}""");
+        var envManifest = Path.Combine(_root, "env", "Staging", "manifest.json");
+        using var locked = File.Open(envManifest, FileMode.Open, FileAccess.Read, FileShare.None);
+
+        var violations = Fails("Staging");
+
+        violations.Count.ShouldBe(1);
+        violations[0].ShouldStartWith($"[config] '{envManifest}' cannot be read: ");
+        violations[0].ShouldEndWith(" Fix: check that the host process can read the file (CFG-01).");
+    }
+
+    [Fact]
+    public void An_unreadable_file_is_a_line_on_unix()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Mode 000 is a Unix permission.");
+        Assert.SkipWhen(Environment.UserName == "root", "root reads a mode 000 file.");
+        Write("base/manifest.json", """{"label":"v1","files":["a.json"],"clientVisible":[]}""");
+        Write("base/a.json", "{}");
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(Base("a.json"), UnixFileMode.None);
+        }
+
+        var violations = Fails();
+
+        violations.Count.ShouldBe(1);
+        violations[0].ShouldStartWith($"[config] '{Base("a.json")}' cannot be read: ");
+    }
+
+    // ---- slice 015 T071 m2: a null, empty or blank manifest entry is one line ----
+
+    [Theory]
+    [InlineData("files", "null")]
+    [InlineData("files", "\"\"")]
+    [InlineData("files", "\"  \"")]
+    [InlineData("clientVisible", "null")]
+    [InlineData("clientVisible", "\"\"")]
+    [InlineData("clientVisible", "\"  \"")]
+    public void An_empty_name_in_the_base_manifest_is_one_line(string list, string entry)
+    {
+        var files = list == "files" ? $"[\"a.json\",{entry}]" : "[\"a.json\"]";
+        var visible = list == "clientVisible" ? $"[\"a.json\",{entry}]" : "[]";
+        Write("base/manifest.json", $$"""{"label":"v1","files":{{files}},"clientVisible":{{visible}}}""");
+        Write("base/a.json", "{}");
+
+        Fails().ShouldBe([EmptyName(Base("manifest.json"), list)]);
+    }
+
+    [Theory]
+    [InlineData("files", "null")]
+    [InlineData("files", "\"\"")]
+    [InlineData("files", "\"  \"")]
+    [InlineData("clientVisible", "null")]
+    [InlineData("clientVisible", "\"\"")]
+    [InlineData("clientVisible", "\"  \"")]
+    public void An_empty_name_in_the_env_manifest_is_one_line(string list, string entry)
+    {
+        Write("base/manifest.json", """{"label":"v1","files":["a.json"],"clientVisible":[]}""");
+        Write("base/a.json", "{}");
+        var files = list == "files" ? $"[{entry}]" : "[]";
+        var visible = list == "clientVisible" ? $"[{entry}]" : "[]";
+        Write("env/Staging/manifest.json", $$"""{"label":"","files":{{files}},"clientVisible":{{visible}}}""");
+
+        Fails("Staging").ShouldBe([EmptyName(Path.Combine(_root, "env", "Staging", "manifest.json"), list)]);
+    }
+
+    // ---- slice 015 T071 m3: a file name with a control character is refused, rendered escaped ----
+
+    [Fact]
+    public void A_file_name_with_a_line_feed_is_refused_with_the_escaped_name()
+    {
+        Write("base/manifest.json", """{"label":"v1","files":["a\nb.json","ok.json"],"clientVisible":[]}""");
+        Write("base/ok.json", "{}");
+
+        Fails().ShouldBe(["[config] file name 'a\\u000Ab.json' is not allowed. Fix: use a plain relative file name."]);
+    }
+
+    [Fact]
+    public void A_client_visible_name_with_a_control_character_is_rendered_escaped()
+    {
+        Write("base/manifest.json", """{"label":"v1","files":["ok.json"],"clientVisible":["x\u0001.json"]}""");
+        Write("base/ok.json", "{}");
+
+        Fails().ShouldBe(["[config] clientVisible file 'x\\u0001.json' is not listed in 'files'. Fix: add it to manifest 'files'."]);
     }
 
     [Fact]
@@ -199,6 +408,13 @@ public sealed class FileGameConfigLoaderTests : IDisposable
 
     private static string Duplicate(string path, string name, string jsonPath, int line, int column) =>
         $"[config] '{path}' has property '{name}' twice at {jsonPath} (line {line}, byte {column}). Fix: keep one property; the last one used to win silently (CFG-01).";
+
+    private static string CaseVariant(string path, string first, string name, string jsonPath, int line, int column) =>
+        $"[config] '{path}' has properties '{first}' and '{name}' at {jsonPath} (line {line}, byte {column}), which differ only in case. " +
+        "Fix: keep one property; config is read ignoring case, so the last one used to win silently (CFG-01).";
+
+    private static string EmptyName(string manifestPath, string list) =>
+        $"[config] '{manifestPath}' lists an empty name in '{list}'. Fix: remove the entry or name a file (CFG-01).";
 
     private string Base(string file) => Path.Combine(_root, "base", file);
 

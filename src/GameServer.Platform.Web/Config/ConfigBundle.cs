@@ -61,16 +61,6 @@ internal sealed class ConfigBundle
     public byte[] Tail(long serverTimeUtcMs) =>
         new GetConfigResponse { ServerTimeUtcMs = serverTimeUtcMs, ClientConfigVersion = _clientVersion }.ToByteArray();
 
-    /// <summary>The whole full response, <c>Prefix ++ Tail(t)</c>; the endpoint writes the two parts without joining them.</summary>
-    public byte[] Full(long serverTimeUtcMs)
-    {
-        var tail = Tail(serverTimeUtcMs);
-        var full = new byte[_prefix.Length + tail.Length];
-        _prefix.CopyTo(full, 0);
-        tail.CopyTo(full, _prefix.Length);
-        return full;
-    }
-
     /// <summary>The <c>not_modified</c> response (a few dozen bytes, serialized per request).</summary>
     public byte[] NotModified(long serverTimeUtcMs) => new GetConfigResponse
     {

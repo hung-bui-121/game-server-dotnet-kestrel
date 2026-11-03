@@ -27,6 +27,10 @@ Within 2b and 2c the order is: module registration order, then declaration order
 | `.json` not valid (existing) | `[config] '{path}' is not valid JSON: {parser message}. Fix: correct the file (CFG-01).` |
 | `clientVisible` not in `files` (existing) | `[config] clientVisible file '{name}' is not listed in 'files'. Fix: add it to manifest 'files'.` |
 | **Duplicate property (new, BC-2)** | `[config] '{path}' has property '{name}' twice at {jsonPath} (line {line}, byte {byte}). Fix: keep one property; the last one used to win silently (CFG-01).` |
+| **Case-variant property (new, BC-2)** | `[config] '{path}' has properties '{firstName}' and '{name}' at {jsonPath} (line {line}, byte {byte}), which differ only in case. Fix: keep one property; config is read ignoring case, so the last one used to win silently (CFG-01).` (`{line}`/`{byte}`: the second name) |
+| File cannot be read (T071 m1) | `[config] '{path}' cannot be read: {message} Fix: check that the host process can read the file (CFG-01).` (a manifest that cannot be read skips its file list) |
+| Empty manifest entry (T071 m2) | `[config] '{manifestPath}' lists an empty name in '{list}'. Fix: remove the entry or name a file (CFG-01).` (`{list}` is `files` or `clientVisible`; null, empty or blank; one line per list, the entry is ignored) |
+| File name with a control character (T071 m3) | the "file name '{name}' is not allowed" line, each control character written `\uXXXX` (uppercase hex) |
 
 Example (SC-001 "two missing files and one invalid JSON file" = exactly these 3 lines):
 
@@ -90,9 +94,11 @@ errors. `ShopCatalog` is built.)
 | --- | --- |
 | Build reported a problem | `[module {module}] catalog {Type}[ ({file}{location})]: {problem}. Fix: {fix}` |
 | Build threw | `[module {module}] catalog {Type}: the build threw {ExceptionType}: {message}. Fix: report problems through ConfigProblems instead of throwing (FG-018).` |
+| Build threw, optional file absent (T071 M1) | `[module {module}] catalog {Type}: the build threw {ExceptionType}: {message}; optional config file '{file}' is absent. Fix: build an empty catalog when Config.HasFile("{file}") is false, or declare the file Required (FG-018).` (`{file}`: the first absent optional file in the declaration's order; one trailing period of the message is dropped) |
+| Not built, no line (framework fault, T071 M1) | `[catalog {Type}] was not built and no other line explains why (framework fault). Fix: report it with this config; the catalog would fail at its first use (FG-018).` |
 | Build returned null, no problem | `[module {module}] catalog {Type}: the build returned no catalog and reported no problem. Fix: return the catalog or report why (FG-018).` |
 | Declared twice | `[catalog {Type}] is declared by {moduleA} and {moduleB}. Fix: declare it in one module; the other takes it from DI (FG-018).` |
-| Host-registered instance fails | `[module {module}] catalog {Type}: the instance registered by the host could not be created: {ExceptionType}: {message}. Fix: correct the registration or remove it to use the declared build (FG-018).` |
+| Host-registered instance fails | `[catalog {Type}] the registration that replaces the declaration of module {module} could not be resolved: {ExceptionType}: {message}. Fix: correct that registration (host or test), or remove it so the platform builds the declared catalog (FG-018).` |
 
 ## 6. Bundle size (FR-053, BC-7)
 
@@ -107,13 +113,17 @@ equal to the limit passes.
 | --- | --- | --- | --- |
 | Creation threw | serve, provision | error | `[{check}] the startup check could not be created: {ExceptionType}: {message}. Fix: register its dependencies; a check that reads config takes GameConfigStatus (FG-023).` |
 | Needs `IGameConfig`, config failed (creation or `Check`) | serve | error | `[{check}] the startup check did not run: the game config did not load (see the [config] lines). Fix: take GameConfigStatus instead of IGameConfig and skip when it is not Loaded (FG-023).` |
-| Needs a declared catalog that was not built | serve | error | `[{check}] the startup check did not run: catalog {Type} was not built (see the lines above). Fix: take GameConfigStatus and read the catalog only when DeclarationsPassed (FG-023).` |
+| Needs a declared catalog that was not built | serve | error | `[{check}] the startup check did not run: catalog {Type} was not built (see the lines above). Fix: take GameConfigStatus and read the catalog with TryGetCatalog (FG-023).` |
 | Needs `IGameConfig` | provision | **warning** | `[{check}] the startup check did not run: provision mode does not load the game config. Fix: take GameConfigStatus and skip when it is NotLoaded (FG-023).` |
+| Creation threw a GameServerStartupException (unmarked) | any | errors | its Violations |
 | `Check` threw a `GameServerStartupException` (unmarked) | any | errors | its `Violations` (existing behaviour) |
 | `Check` threw anything else | any | error | `[{check}] the startup check failed: {ExceptionType}: {message}` (existing) |
 
-`{check}` = implementation type name. For a factory registration it is the declaring type of the factory, skipping
-compiler-generated closure classes.
+`{check}` = implementation type name. For a factory registration it is the class the factory returns when that is a
+non-abstract class implementing `IStartupCheck` (`AddSingleton<IStartupCheck, X>(sp => …)`, a method group returning `X`),
+otherwise the declaring type of the factory, skipping compiler-generated closure classes, otherwise `factory #{index}
+(IStartupCheck)` (T071 m5). A factory that returns null gives the creation line with `InvalidOperationException: the
+registration's factory returned null`.
 
 Example (SC-003: missing `battle.json` + `GameServer:Gate:CacheSeconds=99`, four checks `NeedsConfigCheck(IGameConfig)`,
 `ThrowingCheck` whose constructor throws, `StatusCheck(GameConfigStatus)` that adds `status: Failed`, and

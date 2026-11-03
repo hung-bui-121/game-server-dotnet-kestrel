@@ -84,7 +84,7 @@ public sealed class StartupCheckHostTests
 
         ex.Violations.ShouldBe([
             RuleLine,
-            "[CatalogCheck] the startup check did not run: catalog ChecksCatalog was not built (see the lines above). Fix: take GameConfigStatus and read the catalog only when DeclarationsPassed (FG-023).",
+            "[CatalogCheck] the startup check did not run: catalog ChecksCatalog was not built (see the lines above). Fix: take GameConfigStatus and read the catalog with TryGetCatalog (FG-023).",
         ]);
     }
 
@@ -140,6 +140,69 @@ public sealed class StartupCheckHostTests
             "Fix: take GameConfigStatus and skip when it is NotLoaded (FG-023)." + Environment.NewLine);
     }
 
+    // ---- slice 015 T071 G1: a check reads a declared catalog with GameConfigStatus.TryGetCatalog ----
+
+    [Fact]
+    public async Task A_check_gets_the_built_catalog_handlers_get_and_false_for_an_undeclared_type()
+    {
+        var probe = new CatalogProbe();
+        await using var host = await SampleTestHost.StartAsync(
+            Modules(new ChecksModule(refuse: false)), services: s => s.AddSingleton<IStartupCheck>(sp => new TryCatalogCheck(sp.GetRequiredService<GameConfigStatus>(), probe)));
+
+        probe.Found.ShouldBeTrue();
+        probe.Catalog.ShouldBeSameAs(host.Services.GetRequiredService<ChecksCatalog>());
+        probe.UndeclaredFound.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task A_check_gets_the_instance_a_host_registered_for_a_declared_catalog()
+    {
+        var own = new ChecksCatalog();
+        var probe = new CatalogProbe();
+        await using var host = await SampleTestHost.StartAsync(
+            Modules(new ChecksModule(refuse: false)),
+            services: s =>
+            {
+                s.AddSingleton(own);
+                s.AddSingleton<IStartupCheck>(sp => new TryCatalogCheck(sp.GetRequiredService<GameConfigStatus>(), probe));
+            });
+
+        probe.Found.ShouldBeTrue();
+        probe.Catalog.ShouldBeSameAs(own);
+    }
+
+    [Fact]
+    public async Task A_check_reading_a_failed_catalog_through_the_status_adds_no_line()
+    {
+        var probe = new CatalogProbe();
+
+        var ex = await StartupFails(
+            Modules(new ChecksModule(refuse: true)), services: s => s.AddSingleton<IStartupCheck>(sp => new TryCatalogCheck(sp.GetRequiredService<GameConfigStatus>(), probe)));
+
+        ex.Violations.ShouldBe([RuleLine]);
+        probe.Found.ShouldBeFalse();
+        probe.Catalog.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task In_provision_mode_try_get_catalog_is_false()
+    {
+        var probe = new CatalogProbe();
+        await using var app = SampleTestHost.BuildApp(
+            Modules(new ChecksModule(refuse: false)),
+            services: s =>
+            {
+                s.AddSingleton<IStartupCheck>(sp => new TryCatalogCheck(sp.GetRequiredService<GameConfigStatus>(), probe));
+                s.AddSingleton<IStoreProvisioner>(new NoopProvisioner());
+            });
+
+        var code = await ProvisioningRunner.RunAsync(app, new StringWriter(), new StringWriter(), CancellationToken.None);
+
+        code.ShouldBe(HostExitCodes.Ok);
+        probe.Ran.ShouldBeTrue();
+        probe.Found.ShouldBeFalse();
+    }
+
     private static void AddProbe(IServiceCollection services, StatusProbe probe)
     {
         services.AddSingleton(probe);
@@ -187,6 +250,29 @@ public sealed class StartupCheckHostTests
             {
                 context.Problems.Warning(ConfigLocation.WholeFile, "the counter is odd", "look at it");
             }
+        }
+    }
+
+    private sealed class CatalogProbe
+    {
+        public bool Ran { get; set; }
+
+        public bool Found { get; set; }
+
+        public ChecksCatalog? Catalog { get; set; }
+
+        public bool UndeclaredFound { get; set; }
+    }
+
+    /// <summary>The recommended shape (G1): the status in the constructor, the catalog read with TryGetCatalog inside Check.</summary>
+    private sealed class TryCatalogCheck(GameConfigStatus status, CatalogProbe probe) : IStartupCheck
+    {
+        public void Check(StartupCheckResult result)
+        {
+            probe.Ran = true;
+            probe.Found = status.TryGetCatalog<ChecksCatalog>(out var catalog);
+            probe.Catalog = catalog;
+            probe.UndeclaredFound = status.TryGetCatalog<StatusProbe>(out _);
         }
     }
 

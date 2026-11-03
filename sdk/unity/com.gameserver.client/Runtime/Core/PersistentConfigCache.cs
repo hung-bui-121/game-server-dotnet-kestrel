@@ -24,6 +24,9 @@ namespace GameServer.Client
 
         private const string TempSuffix = ".tmp";
 
+        /// <summary>Longest cache name <c>UnityConfigCache.Create</c> accepts (U1).</summary>
+        private const int MaxFolderNameLength = 64;
+
         private static readonly IReadOnlyDictionary<string, byte[]> NoFiles = new Dictionary<string, byte[]>(StringComparer.Ordinal);
 
         private readonly CacheFileOps _ops;
@@ -191,6 +194,60 @@ namespace GameServer.Client
             {
                 // Best effort: a leftover temp file is ignored while the main file is valid, and rewritten by the next save.
             }
+        }
+
+        /// <summary>
+        /// The cache-name rule of <c>UnityConfigCache.Create</c>, identical on every platform (slice 015 T071 U1): 1 to 64 characters
+        /// of <c>a-z</c>, <c>0-9</c>, <c>.</c>, <c>_</c> and <c>-</c>; not starting or ending with <c>.</c>; the part before the first
+        /// <c>.</c> is not a Windows device name. Lowercase only, so case-insensitive (Windows, macOS) and case-sensitive (Android)
+        /// file systems give the same folders. Never consults the running platform's invalid file-name characters.
+        /// </summary>
+        /// <returns>Null when <paramref name="name"/> is valid, otherwise the message of the <see cref="ArgumentException"/>.</returns>
+        internal static string? FolderNameProblem(string name)
+        {
+            if (name == null)
+            {
+                throw new ArgumentNullException(nameof(name));
+            }
+
+            return IsValidFolderName(name)
+                ? null
+                : $"'{name}' is not a valid config cache name. Fix: use 1 to {MaxFolderNameLength} lowercase letters, digits, '.', '_' or '-', " +
+                  "not starting or ending with '.' and not a Windows device name (con, nul, com1, …), for example 'local', 'live' or 'localhost-5080'.";
+        }
+
+        private static bool IsValidFolderName(string name)
+        {
+            if (name.Length < 1 || name.Length > MaxFolderNameLength || name[0] == '.' || name[name.Length - 1] == '.')
+            {
+                return false;
+            }
+
+            foreach (var c in name)
+            {
+                var allowed = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-';
+                if (!allowed)
+                {
+                    return false;
+                }
+            }
+
+            var dot = name.IndexOf('.');
+            var stem = dot < 0 ? name : name.Substring(0, dot);
+            return !IsWindowsDeviceName(stem);
+        }
+
+        /// <summary><c>con</c>, <c>prn</c>, <c>aux</c>, <c>nul</c>, <c>com1</c>–<c>com9</c>, <c>lpt1</c>–<c>lpt9</c> (the Windows Editor cannot create them).</summary>
+        private static bool IsWindowsDeviceName(string stem)
+        {
+            if (stem == "con" || stem == "prn" || stem == "aux" || stem == "nul")
+            {
+                return true;
+            }
+
+            return stem.Length == 4
+                && (stem.StartsWith("com", StringComparison.Ordinal) || stem.StartsWith("lpt", StringComparison.Ordinal))
+                && stem[3] >= '1' && stem[3] <= '9';
         }
 
         private bool SameFiles(IReadOnlyDictionary<string, byte[]> files) =>

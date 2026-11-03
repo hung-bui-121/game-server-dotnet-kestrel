@@ -93,8 +93,8 @@ public sealed class ConfigCatalogHostTests
 
         ex.Violations.ShouldBe(
         [
-            "[module economy] catalog ResourceCatalog: the instance registered by the host could not be created: InvalidOperationException: no file. " +
-            "Fix: correct the registration or remove it to use the declared build (FG-018).",
+            "[catalog ResourceCatalog] the registration that replaces the declaration of module economy could not be resolved: InvalidOperationException: no file. " +
+            "Fix: correct that registration (host or test), or remove it so the platform builds the declared catalog (FG-018).",
         ]);
     }
 

@@ -22,9 +22,11 @@ public static class ConfigDeclarationCheck
             registry.Add(module, serviceOnly: false);
         }
 
-        var errors = new List<string>(registry.ValidateConfig(config));
+        var required = registry.ValidateConfig(config);
+        var errors = new List<string>(required);
         var result = ConfigDeclarationRunner.Run(registry.Modules, config, _ => CatalogBinding.Declared);
+        result.Errors.AddRange(ConfigDeclarationRunner.UnexplainedFailures(result, required));
         errors.AddRange(result.Errors);
-        return new ConfigDeclarationReport(errors, result.Warnings, result.Catalogs);
+        return new ConfigDeclarationReport(config, errors, result.Warnings, result.Catalogs);
     }
 }

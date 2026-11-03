@@ -21,7 +21,7 @@ v0.7.0 (chưa phát hành / unreleased).
 | Protobuf decode | recursion ≤ 32, size = body | — | — |
 | Kestrel `MaxRequestBodySize` | 1 MiB toàn cục, hạ per-endpoint theo profile | | |
 | Bundle `GetConfig` (slice 015) | 1 MiB **chưa nén** (response lớn nhất có thể) | — | `GameServer:Limits:ConfigBundleBytes`; kiểm khi khởi động (mục 21), 413 khi request vẫn giữ |
-| Nén `GetConfig` (slice 015) | ngưỡng 1024 B; gzip level 6, Brotli quality 4 | — | `GameServer:ConfigCompression` (mặc định `true`) |
+| Nén `GetConfig` (slice 015) | ngưỡng 1024 B; gzip level 6, Brotli quality 4; encoding không nhỏ hơn ở lần thử lúc start thì không dùng; tối đa max(1, số CPU / 4) response nén cùng lúc, còn lại gửi không nén | — | `GameServer:ConfigCompression` (mặc định `true`) |
 
 Budget tổng = giá trị × số instance.
 
@@ -708,9 +708,14 @@ sẵn: `DeploymentIdentityCheck`, `CouchbaseSettingsCheck`, `FileStoreCheck`.
 Slice 015 (FG-023, BC-9, BC-10): mỗi check được framework **tạo** từ đăng ký của nó (instance, kiểu qua `ActivatorUtilities`,
 hoặc factory) trong một `try` riêng, mỗi lần start một lần, rồi chạy `Check` trong một `try` khác; check không còn là singleton
 resolve từ container và không bị dispose. Constructor/factory ném → một dòng "could not be created" mang tên check (kiểu
-implementation; factory → kiểu khai báo factory, bỏ qua lớp closure do compiler sinh), các check khác vẫn chạy. Check cần config
-đọc qua `GameConfigStatus` (`State` `NotLoaded`/`Loaded`/`Failed`, `Config`, `DeclarationsPassed`, `TryGetConfig`; không bao giờ
-ném, publish một lần trước khi các check chạy). Check nhận `IGameConfig` hoặc một catalog khai báo vẫn an toàn: khi config hoặc
+implementation; factory → class mà factory trả về khi nó là class không abstract cài `IStartupCheck`
+(`AddSingleton<IStartupCheck, X>(sp => …)`, method group trả `X`), nếu không thì kiểu khai báo factory, bỏ qua lớp closure do
+compiler sinh), các check khác vẫn chạy. Factory trả null → dòng "could not be created" với `InvalidOperationException: the
+registration's factory returned null`. Constructor ném `GameServerStartupException` không marker → các violation của nó, nguyên
+văn (serve và provisioning như nhau). Check chỉ được đọc từ `IServiceCollection` đưa cho `AddGameServer`: check đăng ký chỉ trong
+container builder của bên thứ ba (Autofac `ConfigureContainer`) không được thấy và không chạy (không phát hiện; hoãn). Check cần
+config đọc qua `GameConfigStatus` (`State` `NotLoaded`/`Loaded`/`Failed`, `Config`, `DeclarationsPassed`, `TryGetConfig`,
+`TryGetCatalog<T>`; không bao giờ ném, publish một lần trước khi các check chạy). Check nhận `IGameConfig` hoặc một catalog khai báo vẫn an toàn: khi config hoặc
 catalog không có, nó nhận một dòng "did not run" thay vì lặp lại nguyên nhân. Provisioning **không** load game config
 (`GameConfigStatus` ở `NotLoaded`): check cần config hay catalog được bỏ qua với **warning** trên stderr, exit code không đổi.
 Host/test đưa instance `IGameConfig` (`TestHost` `config:`) đi vòng qua loader, nên check như vậy vẫn chạy trong provisioning ở
@@ -1307,8 +1312,13 @@ Provision và export không chạy pha này. Một dòng của luật/catalog l�
 ### Loader (semantic — văn bản dòng)
 
 Loader báo **mọi** lỗi trong một `GameServerStartupException` (BC-3; trước: dừng ở lỗi đầu). Mỗi `.json` và manifest được parse một
-lần, tên property lặp ở bất kỳ độ sâu nào bị từ chối (BC-2; so ordinal, tên escape được unescape, `"a"`/`"A"` hợp lệ). Lỗi parse của
-một manifest chỉ bỏ danh sách file của manifest đó.
+lần, tên property lặp ở bất kỳ độ sâu nào bị từ chối (BC-2; so không phân biệt hoa thường — `OrdinalIgnoreCase`, như reader của framework — sau khi unescape: `"a"`/`"A"` trong
+cùng một object là lỗi). Lỗi parse của
+một manifest, hoặc manifest không đọc được, chỉ bỏ danh sách file của manifest đó. File không đọc được (`IOException`,
+`UnauthorizedAccessException`) là một dòng, không phải exception. Một mục `files`/`clientVisible` null, rỗng hay chỉ có khoảng
+trắng là một dòng mỗi danh sách và bị bỏ qua (không dòng "does not exist" hay "not listed" theo sau). Tên file có ký tự điều khiển
+(`char.IsControl`) bị từ chối bằng dòng "is not allowed", ký tự đó in dạng `\uXXXX` (hex hoa); `GameConfigVersions.Compute` ném
+`ArgumentException` với tên như vậy.
 
 ```text
 [config] '{path}' not found. Fix: create config/base/manifest.json with label, files and clientVisible (CFG-01).
@@ -1319,9 +1329,13 @@ một manifest chỉ bỏ danh sách file của manifest đó.
 [config] '{path}' is not valid JSON: {parser message}. Fix: correct the file (CFG-01).
 [config] clientVisible file '{name}' is not listed in 'files'. Fix: add it to manifest 'files'.
 [config] '{path}' has property '{name}' twice at {jsonPath} (line {line}, byte {byte}). Fix: keep one property; the last one used to win silently (CFG-01).
+[config] '{path}' has properties '{firstName}' and '{name}' at {jsonPath} (line {line}, byte {byte}), which differ only in case. Fix: keep one property; config is read ignoring case, so the last one used to win silently (CFG-01).
+[config] '{path}' cannot be read: {message} Fix: check that the host process can read the file (CFG-01).
+[config] '{manifestPath}' lists an empty name in '{files|clientVisible}'. Fix: remove the entry or name a file (CFG-01).
 ```
 
-`{line}` là dòng (từ 1) của tên lặp, `{byte}` là byte (từ 1) của dấu ngoặc mở tên đó trong dòng.
+`{line}` là dòng (từ 1) của tên lặp, `{byte}` là byte (từ 1) của dấu ngoặc mở tên đó trong dòng (với cặp khác hoa thường: vị trí
+của tên thứ hai; `{firstName}` là cách viết đầu tiên trong object).
 
 ### Khai báo (semantic với code module — `GameServer.Config`, Core)
 
@@ -1355,9 +1369,11 @@ là lỗi). Một luật của game có thể nằm trên file của framework (
 [module {module}] config {file}: rule '{rule}' threw {ExceptionType}: {message}. Fix: report problems through ConfigProblems instead of throwing (FG-018).
 [module {module}] catalog {Type}[ ({file}{location})]: {problem}. Fix: {fix}
 [module {module}] catalog {Type}: the build threw {ExceptionType}: {message}. Fix: report problems through ConfigProblems instead of throwing (FG-018).
+[module {module}] catalog {Type}: the build threw {ExceptionType}: {message}; optional config file '{file}' is absent. Fix: build an empty catalog when Config.HasFile("{file}") is false, or declare the file Required (FG-018).
+[catalog {Type}] was not built and no other line explains why (framework fault). Fix: report it with this config; the catalog would fail at its first use (FG-018).
 [module {module}] catalog {Type}: the build returned no catalog and reported no problem. Fix: return the catalog or report why (FG-018).
 [catalog {Type}] is declared by {moduleA} and {moduleB}. Fix: declare it in one module; the other takes it from DI (FG-018).
-[module {module}] catalog {Type}: the instance registered by the host could not be created: {ExceptionType}: {message}. Fix: correct the registration or remove it to use the declared build (FG-018).
+[catalog {Type}] the registration that replaces the declaration of module {module} could not be resolved: {ExceptionType}: {message}. Fix: correct that registration (host or test), or remove it so the platform builds the declared catalog (FG-018).
 ```
 
 `{location}` là `""`, `" row {n}"`, `" key '{key}'"` hoặc `" at {jsonPath}"`. `{problem}` và `{fix}` do luật đưa; formatter bỏ một
@@ -1372,28 +1388,33 @@ mẫu: PCR sample-game.
 | *Provided*: host/test đăng ký T (trước **hoặc** sau `AddModule`) | resolve T một lần trong `try` (dòng cat-host khi hỏng) | đăng ký của host |
 | Module thứ hai khai cùng T | dòng cat-dup; bỏ qua | của module đầu |
 
-Catalog không build được (file thiếu hoặc có lỗi luật) không thêm dòng thứ hai; service phụ thuộc nó (outbox consumer, startup
+File `Optional` vắng **không** chặn build: build tự quyết catalog rỗng (`c.Config.HasFile(file)`), build ném khi một file
+`Optional` vắng → dòng "optional config file … is absent" (file vắng đầu tiên theo thứ tự khai báo). Catalog không build được
+(file bắt buộc thiếu hoặc có lỗi luật) không thêm dòng thứ hai; một catalog không build mà không dòng nào giải thích → dòng
+"framework fault" (chốt chặn, cả host và kit), nên không catalog khai báo nào lazy. service phụ thuộc nó (outbox consumer, startup
 check) không lặp nguyên nhân. Module **không** đăng ký catalog khai báo trong `ConfigureServices` (test kiến trúc
 `ConfigCatalogArchitectureTests`); catalog không khai báo vẫn lazy (lỗi của nó lộ ở request đầu tiên).
 
 ### Config status (semantic với startup check — `GameServer.Platform.GameConfigStatus`)
 
 `State`: `NotLoaded` (chưa publish; provisioning) → `Loaded` (`Config` = instance mà `IGameConfig` resolve ra, `DeclarationsPassed`
-= không có dòng file bắt buộc, luật hay catalog ở lần start này; warning không tính) hoặc `Failed`. Publish một lần bởi pha
-config, trước các check; không thành viên nào ném.
+= không có dòng file bắt buộc, luật hay catalog ở lần start này; warning không tính) hoặc `Failed`. `TryGetCatalog<T>(out
+catalog)`: catalog khai báo T đã build ở lần start này (bởi khai báo, hoặc đăng ký của host/test); false khi không `Loaded`, T
+không phải catalog khai báo, hoặc không build được. Publish một lần bởi pha config, trước các check; không thành viên nào ném.
+Unit test của check: `TestGameConfigStatus.NotLoaded()`, `.Failed()`, `.From(report)` (kit).
 
 ### Startup check (semantic — văn bản dòng, mục 17)
 
 ```text
 [{check}] the startup check could not be created: {ExceptionType}: {message}. Fix: register its dependencies; a check that reads config takes GameConfigStatus (FG-023).
 [{check}] the startup check did not run: the game config did not load (see the [config] lines). Fix: take GameConfigStatus instead of IGameConfig and skip when it is not Loaded (FG-023).
-[{check}] the startup check did not run: catalog {Type} was not built (see the lines above). Fix: take GameConfigStatus and read the catalog only when DeclarationsPassed (FG-023).
+[{check}] the startup check did not run: catalog {Type} was not built (see the lines above). Fix: take GameConfigStatus and read the catalog with TryGetCatalog (FG-023).
 [{check}] the startup check did not run: provision mode does not load the game config. Fix: take GameConfigStatus and skip when it is NotLoaded (FG-023).
 [{check}] the startup check failed: {ExceptionType}: {message}
 ```
 
 Dòng thứ tư là **warning** (chỉ ở provisioning, BC-9); dòng cuối là văn bản có sẵn. Ở provisioning mọi trường hợp "config hay
-catalog không có" đều là warning, không bao giờ là error. Check ném `GameServerStartupException` không marker → các violation của nó.
+catalog không có" đều là warning, không bao giờ là error. Check (constructor hoặc `Check`) ném `GameServerStartupException` không marker → các violation của nó, nguyên văn.
 
 ### Hai version (semantic — FG-024, FG-019, API-03)
 
@@ -1442,6 +1463,8 @@ Bundle được serialize **một lần** khi khởi động (file client-visibl
 | `br` chấp nhận (q > 0, trực tiếp hoặc qua `*`) và q(br) ≥ q(gzip) | Brotli quality **4**, `Content-Encoding: br` |
 | còn lại, `gzip` chấp nhận | gzip level **6**, `Content-Encoding: gzip` |
 | kết quả nén không nhỏ hơn | không nén + `Vary` |
+| encoding không được chọn ở lần thử lúc start (bundle không nén nhỏ hơn được) | không nén |
+| đã có max(1, CPU/4) response đang nén | không nén (body như khi tắt nén, + `Vary`) |
 
 Chỉ handler `GetConfig` nén (theo request, buffer từ pool); không có middleware nén của ASP.NET nên không route nào khác (login,
 session, GM, health, error) có `Content-Encoding` (BREACH). `Content-Length` = bytes trên dây; body đã giải nén giống hệt body chưa
@@ -1465,7 +1488,7 @@ Config {Label}: version {ConfigVersion}, client version {ClientConfigVersion}, {
 | # | Thay đổi | Lộ ra thế nào | Cách chuyển |
 | --- | --- | --- | --- |
 | BC-1 | Nội dung config được kiểm khi khởi động (luật `resources.json`, `iap.json`, luật mẫu), catalog build trước traffic | exit 1, một dòng mỗi lỗi nêu module, file, row/key/path và fix | sửa file theo dòng báo |
-| BC-2 | Property JSON lặp tên trong file config hoặc manifest là lỗi loader | exit 1, dòng "has property … twice" | giữ một property |
+| BC-2 | Property JSON lặp tên trong file config hoặc manifest là lỗi loader; tên chỉ khác hoa thường cũng tính là lặp (config đọc không phân biệt hoa thường) | exit 1, dòng "has property … twice" hoặc "has properties … which differ only in case" | giữ một property |
 | BC-3 | `FileGameConfigLoader.Load` báo mọi lỗi trong một exception | nhiều violation hơn, văn bản cũ giữ nguyên | đọc mọi violation |
 | BC-4 | SDK khoá cache, `ConfigOutdated`, `ConfigVersionChanged` theo version client khi server gửi | ít `ConfigVersionChanged` hơn (không có khi sửa file chỉ server); một lần tải lại sau deploy | so cache với `ClientConfigVersion` |
 | BC-5 | Version server hash thêm tập `clientVisible`: giá trị đổi một lần khi nâng cấp | giá trị mới trong metric và receipt | cập nhật giá trị ghim |
@@ -1473,6 +1496,6 @@ Config {Label}: version {ConfigVersion}, client version {ClientConfigVersion}, {
 | BC-7 | Bundle client-visible lớn hơn `GameServer:Limits:ConfigBundleBytes` làm startup fail (trước: 413 cho mọi client) | exit 1, dòng kích thước bundle | nâng giới hạn hoặc chuyển file thành chỉ server |
 | BC-8 | Catalog khai báo do platform đăng ký, không còn trong `ConfigureServices` của module | `InvalidOperationException` khi dựng services chỉ từ `ConfigureServices` | đăng ký instance, hoặc `ConfigDeclarationCheck.Check(config, modules).ThrowIfFailed().AddCatalogsTo(services)` |
 | BC-9 | Provisioning không load game config; check cần nó được bỏ qua với warning | dòng `warning:` trên stderr, exit code không đổi | nhận `GameConfigStatus`, bỏ qua khi `NotLoaded` |
-| BC-10 | Startup check được tạo từ đăng ký ở mỗi lần start, trong isolation riêng; không phải singleton, không dispose | không có với check stateless | giữ check stateless, không disposable |
+| BC-10 | Startup check được tạo từ đăng ký ở mỗi lần start, trong isolation riêng; không phải singleton, không dispose. Check chỉ đăng ký trong container của bên thứ ba (Autofac `ConfigureContainer`) không chạy | không có với check stateless | giữ check stateless, không disposable; đăng ký mọi check trong `IServiceCollection` |
 
 Bước chuyển đầy đủ: release notes `v0.7.0` (bản nháp `specs/015-config/release-notes-draft.md`).

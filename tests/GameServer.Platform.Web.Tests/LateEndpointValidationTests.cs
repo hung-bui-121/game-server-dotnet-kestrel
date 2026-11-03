@@ -178,30 +178,19 @@ public sealed class LateEndpointValidationTests
         {
             Services = s => s.AddRouteCondition("gm.sso", _ => true),
         });
+        GameServerStartupException ex;
         try
         {
-            Should.Throw<InvalidOperationException>(() => broken.CreateClient());
+            ex = Should.Throw<GameServerStartupException>(() => broken.CreateClient());
         }
         finally
         {
-            await DisposeAfterFailedStartAsync(broken);
+            // The entry point disposed its host after the failed start; the factory's own dispose must still not throw (G3).
+            await broken.DisposeAsync();
         }
-    }
 
-    /// <summary>
-    /// The entry point's <c>RunAsync</c> disposed the host after the failed start, so the factory's own stop throws
-    /// <see cref="ObjectDisposedException"/> (minimal hosting); its root folder is then deleted here.
-    /// </summary>
-    private static async Task DisposeAfterFailedStartAsync(LocalFlavorFactory<Program> factory)
-    {
-        try
-        {
-            await factory.DisposeAsync();
-        }
-        catch (ObjectDisposedException)
-        {
-            TestStores.DeleteFolder(factory.Root);
-        }
+        ex.Violations.ShouldContain(v => v.StartsWith("[route gm.sso_", StringComparison.Ordinal) && v.Contains("is declared but not mapped", StringComparison.Ordinal));
+        Directory.Exists(broken.Root).ShouldBeFalse();
     }
 
     private static int FreePort()

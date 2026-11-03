@@ -24,7 +24,8 @@ public enum GameConfigState
 /// </summary>
 public sealed class GameConfigStatus
 {
-    private static readonly Snapshot NotLoadedSnapshot = new(GameConfigState.NotLoaded, null, false);
+    private static readonly IReadOnlyDictionary<Type, object> NoCatalogs = new Dictionary<Type, object>();
+    private static readonly Snapshot NotLoadedSnapshot = new(GameConfigState.NotLoaded, null, false, NoCatalogs);
 
     private volatile Snapshot _snapshot = NotLoadedSnapshot;
     private int _published;
@@ -48,15 +49,31 @@ public sealed class GameConfigStatus
         return config is not null;
     }
 
-    /// <summary>The config phase found the config: <paramref name="declarationsPassed"/> when no required-file, rule or catalog line was reported.</summary>
-    internal void PublishLoaded(IGameConfig config, bool declarationsPassed)
+    /// <summary>
+    /// The declared catalog <typeparamref name="T"/> built in this start (by its declaration or from a host/test registration of
+    /// <typeparamref name="T"/>); false when the config is not Loaded, <typeparamref name="T"/> is not a declared catalog, or it was
+    /// not built. Never throws.
+    /// </summary>
+    public bool TryGetCatalog<T>([NotNullWhen(true)] out T? catalog)
+        where T : class
+    {
+        catalog = _snapshot.Catalogs.GetValueOrDefault(typeof(T)) as T;
+        return catalog is not null;
+    }
+
+    /// <summary>
+    /// The config phase found the config: <paramref name="declarationsPassed"/> when no required-file, rule or catalog line was
+    /// reported; <paramref name="catalogs"/> are the declared catalogs built (or resolved) in this start, copied.
+    /// </summary>
+    internal void PublishLoaded(IGameConfig config, bool declarationsPassed, IReadOnlyDictionary<Type, object> catalogs)
     {
         ArgumentNullException.ThrowIfNull(config);
-        Publish(new Snapshot(GameConfigState.Loaded, config, declarationsPassed));
+        ArgumentNullException.ThrowIfNull(catalogs);
+        Publish(new Snapshot(GameConfigState.Loaded, config, declarationsPassed, new Dictionary<Type, object>(catalogs)));
     }
 
     /// <summary>The config phase could not load the config.</summary>
-    internal void PublishFailed() => Publish(new Snapshot(GameConfigState.Failed, null, false));
+    internal void PublishFailed() => Publish(new Snapshot(GameConfigState.Failed, null, false, NoCatalogs));
 
     private void Publish(Snapshot snapshot)
     {
@@ -68,5 +85,5 @@ public sealed class GameConfigStatus
         _snapshot = snapshot;
     }
 
-    private sealed record Snapshot(GameConfigState State, IGameConfig? Config, bool DeclarationsPassed);
+    private sealed record Snapshot(GameConfigState State, IGameConfig? Config, bool DeclarationsPassed, IReadOnlyDictionary<Type, object> Catalogs);
 }

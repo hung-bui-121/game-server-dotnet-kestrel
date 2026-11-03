@@ -48,12 +48,15 @@ internal static class ConfigStartup
         errors.AddRange(required);
         var bindings = services.GetRequiredService<DeclaredCatalogBindings>();
         var result = ConfigDeclarationRunner.Run(registry.Modules, config, type => bindings.For(type, services));
+        result.Errors.AddRange(ConfigDeclarationRunner.UnexplainedFailures(result, required));
         errors.AddRange(result.Errors);
         store.Publish(result);
-        status.PublishLoaded(config, declarationsPassed: required.Count == 0 && result.Errors.Count == 0);
+        status.PublishLoaded(config, declarationsPassed: required.Count == 0 && result.Errors.Count == 0, result.Catalogs);
 
         // Step 4 (FR-053, BC-7): the bundle the endpoint serves, built once; its largest response must fit the uncompressed limit.
+        // Its compressor probes each encoding once (M3) and owns the process-wide gate of concurrent compressions.
         ConfigBundle? bundle = null;
+        ConfigCompressor? compressor = null;
         if (options.Hosting.MapPlayerApi)
         {
             bundle = ConfigBundle.Build(config);
@@ -61,9 +64,12 @@ internal static class ConfigStartup
             {
                 errors.Add(ConfigReportLines.BundleTooLarge(bundle.MaxResponseBytes, bundle.FileCount, options.Limits.ConfigBundleBytes));
             }
+
+            var permits = ConfigCompressor.MaxConcurrentCompressions;
+            compressor = ConfigCompressor.Create(bundle, options.ConfigCompression, new SemaphoreSlim(permits, permits));
         }
 
-        services.GetRequiredService<ConfigPhaseSummary>().Publish(config, result.RuleCount, result.CatalogCount, bundle);
+        services.GetRequiredService<ConfigPhaseSummary>().Publish(config, result.RuleCount, result.CatalogCount, bundle, compressor);
         return result.Warnings;
     }
 }

@@ -1,5 +1,6 @@
 using GameServer.Errors;
 using GameServer.Modules;
+using GameServer.Platform;
 using GameServer.Platform.Aggregates;
 using GameServer.Platform.Web.Aggregates;
 using GameServer.Platform.Web.Auth;
@@ -26,8 +27,13 @@ public sealed class FixtureModule : IGameModule, IPlayerApiModule
 
     public ModuleDescriptor Describe() => FixtureModuleDefinition.Describe();
 
-    public void ConfigureServices(IServiceCollection services, ModuleContext context) =>
+    public void ConfigureServices(IServiceCollection services, ModuleContext context)
+    {
         services.AddAggregateWireMapper<CardState, Wire.CardState>(FixtureModuleDefinition.CardAggregate, ToWire, o => o.Hidden(nameof(CardState.InternalNote)));
+
+        // A startup check is registered in IServiceCollection; the platform creates and runs it after the config phase (FG-023).
+        services.AddSingleton<IStartupCheck, NotesResultSizeCheck>();
+    }
 
     public void MapPlayerApi(IEndpointRouteBuilder routes)
     {

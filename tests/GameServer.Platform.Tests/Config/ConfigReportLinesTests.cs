@@ -46,6 +46,11 @@ public sealed class ConfigReportLinesTests
             .ShouldBe("[module economy] config resources.json: rule 'economy.resources' threw InvalidOperationException: boom. Fix: report problems through ConfigProblems instead of throwing (FG-018).");
         ConfigReportLines.CatalogThrew("economy", typeof(SampleCatalog), boom)
             .ShouldBe("[module economy] catalog SampleCatalog: the build threw InvalidOperationException: boom. Fix: report problems through ConfigProblems instead of throwing (FG-018).");
+        ConfigReportLines.CatalogThrewOptionalAbsent("game", typeof(SampleCatalog), new KeyNotFoundException("no probe.json."), "probe.json")
+            .ShouldBe("[module game] catalog SampleCatalog: the build threw KeyNotFoundException: no probe.json; optional config file 'probe.json' is absent. " +
+                "Fix: build an empty catalog when Config.HasFile(\"probe.json\") is false, or declare the file Required (FG-018).");
+        ConfigReportLines.CatalogUnexplained(typeof(SampleCatalog))
+            .ShouldBe("[catalog SampleCatalog] was not built and no other line explains why (framework fault). Fix: report it with this config; the catalog would fail at its first use (FG-018).");
     }
 
     [Fact]
@@ -60,7 +65,7 @@ public sealed class ConfigReportLinesTests
         ConfigReportLines.CatalogDeclaredTwice(typeof(SampleCatalog), "economy", "game")
             .ShouldBe("[catalog SampleCatalog] is declared by economy and game. Fix: declare it in one module; the other takes it from DI (FG-018).");
         ConfigReportLines.CatalogHostFailed("economy", typeof(SampleCatalog), new InvalidOperationException("no file"))
-            .ShouldBe("[module economy] catalog SampleCatalog: the instance registered by the host could not be created: InvalidOperationException: no file. Fix: correct the registration or remove it to use the declared build (FG-018).");
+            .ShouldBe("[catalog SampleCatalog] the registration that replaces the declaration of module economy could not be resolved: InvalidOperationException: no file. Fix: correct that registration (host or test), or remove it so the platform builds the declared catalog (FG-018).");
     }
 
     [Fact]
@@ -71,7 +76,7 @@ public sealed class ConfigReportLinesTests
         ConfigReportLines.CheckNotRunConfig("NeedsConfigCheck")
             .ShouldBe("[NeedsConfigCheck] the startup check did not run: the game config did not load (see the [config] lines). Fix: take GameConfigStatus instead of IGameConfig and skip when it is not Loaded (FG-023).");
         ConfigReportLines.CheckNotRunCatalog("NeedsCatalogCheck", "ResourceCatalog")
-            .ShouldBe("[NeedsCatalogCheck] the startup check did not run: catalog ResourceCatalog was not built (see the lines above). Fix: take GameConfigStatus and read the catalog only when DeclarationsPassed (FG-023).");
+            .ShouldBe("[NeedsCatalogCheck] the startup check did not run: catalog ResourceCatalog was not built (see the lines above). Fix: take GameConfigStatus and read the catalog with TryGetCatalog (FG-023).");
         ConfigReportLines.CheckNotRunProvision("NeedsConfigCheck")
             .ShouldBe("[NeedsConfigCheck] the startup check did not run: provision mode does not load the game config. Fix: take GameConfigStatus and skip when it is NotLoaded (FG-023).");
         ConfigReportLines.CheckFailed("BrokenCheck", new InvalidOperationException("boom"))

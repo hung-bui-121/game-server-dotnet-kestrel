@@ -10,8 +10,6 @@ internal sealed class CatalogBinding
 
     public static CatalogBinding Declared { get; } = new(null);
 
-    public bool IsDeclared => Resolve is null;
-
     /// <summary>Resolves the host's registration; null for <see cref="Declared"/>.</summary>
     public Func<object>? Resolve { get; }
 

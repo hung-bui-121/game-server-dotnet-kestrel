@@ -14,7 +14,8 @@ public readonly record struct GameConfigVersionPair(string Server, string Client
 /// <remarks>
 /// The server version hashes the label, every effective file and the client-visible set; the client version hashes the label
 /// and the client-visible files only. The two inputs start with different domain tags, so they never coincide, even when every
-/// file is client-visible. Names are length-prefixed by line and contents by byte count, so no two configs share an input.
+/// file is client-visible. Names never contain a control character (the loader refuses them, Compute throws), so each name
+/// ends at its line feed; contents are length-prefixed by byte count, so no two configs share an input.
 /// </remarks>
 public static class GameConfigVersions
 {
@@ -28,11 +29,20 @@ public static class GameConfigVersions
     /// Both versions of <paramref name="files"/> (effective files, after the overlay). Order and duplicates of
     /// <paramref name="clientVisible"/> do not matter; every client-visible name must be one of the files.
     /// </summary>
+    /// <exception cref="ArgumentException">A file name contains a control character, or a client-visible name is not one of the files.</exception>
     public static GameConfigVersionPair Compute(string label, IReadOnlyDictionary<string, byte[]> files, IEnumerable<string> clientVisible)
     {
         ArgumentNullException.ThrowIfNull(label);
         ArgumentNullException.ThrowIfNull(files);
         ArgumentNullException.ThrowIfNull(clientVisible);
+        foreach (var name in files.Keys)
+        {
+            if (ConfigFileNames.HasControlCharacter(name))
+            {
+                throw new ArgumentException($"Config file name '{ConfigFileNames.Escape(name)}' contains a control character.", nameof(files));
+            }
+        }
+
         var visible = clientVisible.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
         foreach (var name in visible)
         {

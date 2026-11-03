@@ -21,11 +21,12 @@ public sealed class GameConfigLoadTests : IDisposable
     {
         Write("base/manifest.json", """{"label":"v1","files":["a.json"],"clientVisible":[]}""");
         Write("base/a.json", """{"x":1}""");
-        var load = new GameConfigLoad(_root, "Development");
+        var loads = 0;
+        var load = Counting(() => loads++);
 
         var configs = await Task.WhenAll(Enumerable.Range(0, 4).Select(_ => Task.Run(() => Enumerable.Range(0, 10).Select(_ => load.GetOrThrow()).ToArray())));
 
-        load.LoadCount.ShouldBe(1);
+        loads.ShouldBe(1);
         configs.SelectMany(c => c).Distinct().Count().ShouldBe(1);
     }
 
@@ -33,12 +34,13 @@ public sealed class GameConfigLoadTests : IDisposable
     public void A_failing_load_runs_once_and_each_resolve_throws_a_new_marked_exception_with_the_same_violations()
     {
         Write("base/manifest.json", """{"label":"v1","files":["missing.json"],"clientVisible":[]}""");
-        var load = new GameConfigLoad(_root, "Development");
+        var loads = 0;
+        var load = Counting(() => loads++);
 
         var first = Should.Throw<GameServerStartupException>(load.GetOrThrow);
         var second = Should.Throw<GameServerStartupException>(load.GetOrThrow);
 
-        load.LoadCount.ShouldBe(1);
+        loads.ShouldBe(1);
         second.ShouldNotBeSameAs(first);
         second.Violations.ShouldBe(first.Violations);
         first.Violations.Single().ShouldStartWith("[config] file '");
@@ -49,14 +51,27 @@ public sealed class GameConfigLoadTests : IDisposable
     [Fact]
     public void Not_loaded_mode_never_touches_the_disk_and_gives_the_provision_line()
     {
-        var load = new GameConfigLoad(Path.Combine(_root, "does-not-exist"), "Development") { Mode = GameConfigLoadMode.NotLoaded };
+        var loads = 0;
+        var load = new GameConfigLoad(() =>
+        {
+            loads++;
+            return FileGameConfigLoader.Load(Path.Combine(_root, "does-not-exist"), "Development");
+        })
+        { Mode = GameConfigLoadMode.NotLoaded };
 
         var ex = Should.Throw<GameServerStartupException>(load.GetOrThrow);
 
-        load.LoadCount.ShouldBe(0);
+        loads.ShouldBe(0);
         ex.Violations.ShouldBe(["[config] the game config is not loaded in provision mode. Fix: take GameConfigStatus and skip when it is NotLoaded (FG-023)."]);
         Unavailable.Find(ex).ShouldBe(Unavailable.Provision);
     }
+
+    /// <summary>The production loader over this test's root, counting its runs through <paramref name="onLoad"/>.</summary>
+    private GameConfigLoad Counting(Action onLoad) => new(() =>
+    {
+        onLoad();
+        return FileGameConfigLoader.Load(_root, "Development");
+    });
 
     private void Write(string relative, string content)
     {

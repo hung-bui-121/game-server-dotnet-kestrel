@@ -10,9 +10,11 @@ game (framework là submodule): xem thêm [consumer-guide.md](consumer-guide.md)
 | Project | Chứa | Tham chiếu |
 | --- | --- | --- |
 | `MyModule` | state aggregate, command/result (domain), handler, policy, error codes, `ModuleDescriptor` | chỉ `GameServer.Core` |
-| `MyModule.Adapters` | `IGameModule` + `IPlayerApiModule`/`IGmApiModule`, `.proto`, mapping wire ↔ domain, wire mapper, service implementation | module + `GameServer.Platform.Web` |
+| `MyModule.Adapters` | `IGameModule` + `IPlayerApiModule`/`IGmApiModule`, `.proto`, mapping wire ↔ domain, wire mapper, service implementation, startup check (`IStartupCheck`) | module + `GameServer.Platform.Web` |
 
-Arch test chặn project nghiệp vụ tham chiếu HTTP, Couchbase, Protobuf hoặc `GameServer.Platform` (ARC-01).
+Arch test chặn project nghiệp vụ tham chiếu HTTP, Couchbase, Protobuf hoặc `GameServer.Platform` (ARC-01). Vì vậy startup
+check nằm ở project `.Adapters`: `IStartupCheck`, `StartupCheckResult` và `GameConfigStatus` ở `GameServer.Platform`. Khai báo
+file, luật và catalog (`ConfigFiles`, `ConfigCatalogs`, `ConfigJson`) ở `GameServer.Core`, nên nằm ở project nghiệp vụ.
 
 ## 2. Aggregate
 
@@ -118,8 +120,9 @@ lỗi (module, file, row/key/path, fix), trước mọi traffic. Ví dụ của 
 ConfigFiles = [ConfigFileDeclaration.Optional(ConfigFile, TemplateConfigRules.Points)],
 
 // A typed catalog built once from the files before traffic; handlers take it from DI. Declare it here, never register
-// it in ConfigureServices (an undeclared catalog stays lazy and its faults surface on the first request):
-// ConfigCatalogs = [ConfigCatalogDeclaration.Of(c => TemplateCatalog.Load(c.Config), ConfigFile)],
+// it in ConfigureServices (an undeclared catalog stays lazy and its faults surface on the first request). The file is
+// optional, so the build runs without it too and must return an empty catalog then:
+// ConfigCatalogs = [ConfigCatalogDeclaration.Of(c => c.Config.HasFile(ConfigFile) ? TemplateCatalog.Load(c.Config) : TemplateCatalog.Empty, ConfigFile)],
 ```
 
 ```csharp
@@ -142,19 +145,34 @@ public static class TemplateConfigRules
 - `RequiredConfigFiles` = file bắt buộc **không** luật (vẫn dùng được). `ConfigFiles` = `ConfigFileDeclaration.Required(name,
   rules…)` hoặc `Optional(name, rules…)` (file vắng → luật không chạy; template dùng `Optional` để host không có `template.json`
   vẫn start). `ConfigCatalogs` = `ConfigCatalogDeclaration.Of<T>(build, files…)`; file của catalog là bắt buộc trừ khi module
-  khai nó `Optional`.
+  khai nó `Optional`; file `Optional` vắng thì catalog **vẫn được build**: build tự quyết catalog rỗng (`c.Config.HasFile(file)`
+  false → catalog rỗng). Build ném hoặc trả null → một dòng lỗi, host không start (không bao giờ lazy).
 - Luật viết bằng `ConfigJson` (`RequiredString`, `RequiredInteger`, `OptionalInteger`, `TryGetObject`, `TryGetArray`,
   `RequireObject`, `PathOf`) để câu chữ giống mọi module (`'maxPoints' is missing`, `… must be an integer of at least 1, found
   "5"`); báo qua `context.Problems.Error/Warning(ConfigLocation…, problem, fix)`, **không ném** (luật ném → một dòng "rule threw").
   "Số nguyên JSON" là `TryGetInt64` (`1.0`, `1e3`, `"5"` là lỗi). Luật đọc lỏng file của module khác (ví dụ
   `ResourceReferences.Read(context)` cho `resources.json`) chỉ so với row hợp lệ.
+- Thứ tự tham số của `ConfigJson`: element JSON, tên property, vị trí, `problems`, rồi `out value` (của `TryGetObject`/
+  `TryGetArray`), `fix` luôn cuối và tuỳ chọn (viết `fix: "…"`; bỏ trống → `set '{property}' to {type}`). Câu chữ:
+  `'{property}' is missing`, `'{property}' is null`, `'{property}' must be {type}, found {kind}`. Vị trí:
+  `ConfigLocation.WholeFile`, `Row(n)` (**đếm từ 1**: row đầu là `Row(1)`; `PathOf` đếm từ 0 như JSON path), `Key(key)`,
+  `Path("$.a.b")`, `.InFile(file)`. Bảng đủ và một luật row-array hoàn chỉnh (`economy.resources`): consumer guide §12.2.
+- Catalog là class thường có hàm build tĩnh trên `IGameConfig` (ví dụ `ResourceCatalog.Load(config)` =
+  `config.GetFile<ResourcesFile>(file)`). `GetFile<T>` bind bằng `GameServerJson.Options` (mặc định web của System.Text.Json:
+  tên camelCase, không phân biệt hoa thường, enum là chuỗi camelCase, số đọc được từ chuỗi), nên luật chặt hơn binding. Build
+  báo lỗi qua `c.Problems` rồi trả null; build ném → dòng `the build threw …`; trả null mà không báo gì → dòng `the build
+  returned no catalog …`; cả hai làm host không start (consumer guide §12.3).
 - **Khai mọi catalog.** Catalog khai báo được platform build một lần và đăng ký vào DI; module **không** đăng ký nó trong
   `ConfigureServices` (test `ConfigCatalogArchitectureTests` bắt lỗi này ở module của framework, sample và template). Catalog
   không khai báo vẫn lazy: lỗi của nó chỉ lộ ở request đầu tiên đọc nó. Host/test đăng ký instance của kiểu đó (trước hoặc sau
   `AddModule`) thì instance đó thắng.
 - Dữ liệu suy ra từ config (bảng tra, index) chỉ để trong catalog khai báo, không trong singleton tự dựng (seam FG-020).
-- Startup check của module đọc config qua `GameConfigStatus` (`TryGetConfig`, `DeclarationsPassed`), không nhận `IGameConfig`
-  (PCR platform §17, §21).
+- Startup check của module đọc config qua `GameConfigStatus` (`TryGetConfig`, `TryGetCatalog<T>`, `DeclarationsPassed`),
+  không nhận `IGameConfig`, không dựng lại catalog bằng `Load` (PCR platform §17, §21). Đăng ký trong `ConfigureServices` của
+  adapter (hoặc ở host): `services.AddSingleton<IStartupCheck, MyCheck>()`, trong `IServiceCollection` (đăng ký chỉ trong
+  container builder của bên thứ ba không được thấy và không chạy). Mỗi chuỗi thêm vào `result.Errors`/`Warnings` là một dòng
+  của báo cáo, in nguyên văn: viết theo định dạng `[{check hoặc module}] {problem}. Fix: {fix}.` Ví dụ:
+  `tests/ConsumerFixture/src/Fixture.Game/NotesResultSizeCheck.cs`.
 - Định dạng dòng và thứ tự: PCR platform §21.
 
 ## 5. Route và endpoint
@@ -185,7 +203,7 @@ public static class MyRoutes
   (kể cả trong segment, `{id}.json`): không constraint, optional, default hay catch-all; mỗi khai báo một method.
 - Route có `condition: "x"` chỉ được map khi condition `x` đúng; module đăng ký nó bằng
   `services.AddRouteCondition("x", sp => …)`. Có sẵn: `development_tools` (server Development/Test).
-- Route trong `PublicEndpoints` phải khai profile `Public`, nếu không startup fail (BC-5).
+- Route trong `PublicEndpoints` phải khai profile `Public`, nếu không startup fail (014/BC-5).
 
 ### 5.2 Map từ khai báo và wire mapper
 
@@ -295,8 +313,11 @@ public async Task Save_replaces_the_note_and_the_runner_would_commit_it()
   aggregate vượt `HardBytes`, thiếu audit GM); rỗng = runner sẽ commit. `CheckCommit(outcome, encodeResult)` kiểm thêm
   giới hạn resultCompact; kích thước receipt không được kiểm (consumer guide §5.1). `Writes` bỏ qua `Set` không đổi state.
 - Host test: `TestHost.StartAsync(modules: b => b.AddModule<IdentityModule>().AddModule<MyModule>())` (mặc định chỉ
-  Identity, config rỗng); flavor thật của host game: `new LocalFlavorFactory<Program>()` (thư mục tạm riêng, xoá khi
-  dispose).
+  Identity, config rỗng; tham số `config:` nhận một `IGameConfig`, ví dụ `TestGameConfig.FromJson(...)`, thay cho config trên
+  đĩa); flavor thật của host game: `new LocalFlavorFactory<Program>()` (thư mục tạm riêng, xoá khi dispose). Startup lỗi →
+  `TestHost.StartAsync` và `LocalFlavorFactory.StartServer()`/`CreateClient()` ném `GameServerStartupException`, `Violations`
+  là báo cáo. Host trên port thật: `LocalFlavorOptions.Settings["Urls"]` (port trống, không dùng port của flavor),
+  `Settings["GameServer:ConfigPath"]`, rồi `factory.UseKestrel()` + `factory.StartServer()` (consumer guide §12.4).
 
 **Luật config trong test** (slice 015, không host): `ConfigDeclarationCheck.Check(config, modules…)` cho đúng các dòng mà host
 in khi khởi động (ví dụ từ `tests/ConsumerFixture/tests/Fixture.Tests/FixtureConfigTests.cs`):
@@ -310,7 +331,25 @@ report.Passed.ShouldBeFalse();
 ```
 
 `Errors`, `Warnings`, `Passed`, `ThrowIfFailed()`, `Catalog<T>()`/`TryGetCatalog<T>()`, `AddCatalogsTo(services)` (dựng
-services cho test không có host).
+services cho test không có host). `FromJson` phải có **mọi** file `Required` của các module truyền vào (thiếu → dòng
+`required config file … is missing`): thêm một file `Required` vào module thì sửa luôn các test kit dựng config bằng `FromJson`.
+
+Unit test của startup check: `TestGameConfigStatus.NotLoaded()`, `.Failed()` hoặc `.From(report)` (đúng status host công bố
+cho config và module đó), ví dụ `tests/ConsumerFixture/tests/Fixture.Tests/FixtureStartupCheckTests.cs`:
+
+```csharp
+var report = ConfigDeclarationCheck.Check(TestGameConfig.FromDirectory(dir), new IdentityModule(), new FixtureModule());
+var result = new StartupCheckResult();
+
+new NotesResultSizeCheck(TestGameConfigStatus.From(report), new GameServerOptions()).Check(result);
+
+result.Errors.ShouldBeEmpty();
+```
+
+Test gọi SDK: tham chiếu `sdk/GameServer.Client/GameServer.Client.csproj` với `Aliases="sdk"` và `extern alias sdk;` (SDK và
+server biên dịch cùng kiểu protocol sinh ra, thiếu alias → CS0433), dùng `HttpClientTransport` trên `factory.CreateClient()`,
+`LoginGuestAsync`, rồi `RefreshConfigAsync()` khi `ConfigOutdated`. Test project ghim danh sách tham chiếu thì thêm SDK (kèm
+alias) vào danh sách cho phép. Ví dụ: `tests/ConsumerFixture/tests/Fixture.Tests/FixtureSdkConfigTests.cs` (consumer guide §12.4).
 
 **Test conformance của wire mapper** (bắt buộc cho module có aggregate client-visible): mapper quên một member thì Unity
 nhận giá trị default mà không có lỗi nào. `WireConformance` (kit, không host, không store, không test framework) dựng state
@@ -346,6 +385,10 @@ nào của framework, không cần item MSBuild nào: file sinh ra được comm
   `CommittedOutputTests` chạy `verify` của config này trong mỗi lần test framework.
 - **Trong repo game**: `wiregen.json` riêng của game (consumer guide §10.3), `dotnet run --project
   framework/tools/GameServer.WireGen -c Release -- generate --config <file>`, `verify --no-build` trong CI.
+
+Thêm route vào module là đổi file client: chạy lại `generate` (không thì `verify` và test codegen của game fail). Test codegen
+của fixture (`FixtureCodegenTests`) chạy tool đã build: build nó trước bằng `dotnet build tools/GameServer.WireGen` (build cả
+solution cũng được).
 
 Client dùng hằng sinh ra thay vì chuỗi copy: `client.SendCommandAsync(SampleGameRoutes.CounterIncrement, …)`,
 `client.Sections.Register(SampleGameSections.Table)` một lần, `client.Sections.Get(SampleGameSections.Counter)`.

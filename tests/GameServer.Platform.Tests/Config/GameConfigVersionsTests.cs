@@ -111,6 +111,18 @@ public sealed class GameConfigVersionsTests : IDisposable
         Should.Throw<ArgumentException>(() => GameConfigVersions.Compute("v", Files(("a.json", "{}")), ["b.json"])).ParamName.ShouldBe("clientVisible");
     }
 
+    [Theory]
+    [InlineData("a\nb.json", "a\\u000Ab.json")]
+    [InlineData("a\u0000.json", "a\\u0000.json")]
+    [InlineData("tab\t.json", "tab\\u0009.json")]
+    public void A_file_name_with_a_control_character_is_refused(string name, string escaped)
+    {
+        var ex = Should.Throw<ArgumentException>(() => GameConfigVersions.Compute("v", Files(("a.json", "{}"), (name, "{}")), []));
+
+        ex.ParamName.ShouldBe("files");
+        ex.Message.ShouldStartWith($"Config file name '{escaped}' contains a control character.");
+    }
+
     [Fact]
     public void The_loader_and_the_constructor_agree_and_two_loads_are_equal()
     {

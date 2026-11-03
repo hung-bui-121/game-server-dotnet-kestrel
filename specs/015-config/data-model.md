@@ -117,19 +117,21 @@ GetOrThrow(): NotLoaded mode → throw marked "provision" (no disk access)
 ### 3.2 `GameConfigStatus` (public, one published snapshot)
 
 ```text
-NotLoaded ──phase: IGameConfig resolved──► Loaded(config, declarationsPassed)
+NotLoaded ──phase: IGameConfig resolved──► Loaded(config, declarationsPassed, catalogs)
     │
     └──────phase: resolution threw─────────► Failed
 (provision mode: the phase never runs → stays NotLoaded)
 ```
 
 `declarationsPassed` = no required-file line, no rule error, no catalog line in this start. Warnings do not count.
+`catalogs` = a read-only copy of the catalogs built (or resolved) in this start, read with `TryGetCatalog<T>` (T071 G1); empty
+when NotLoaded or Failed. The kit's `TestGameConfigStatus.From(report)` publishes the same snapshot for a kit report (G2).
 
 ### 3.3 Catalog bindings and store
 
 | Binding of type T (decided after `Build()`, last non-keyed descriptor of T) | Phase action | What DI returns for T |
 | --- | --- | --- |
-| *Declared*: the platform's descriptor | build once if files present and rule-clean | the built instance; failed → marked exception; phase never ran → `InvalidOperationException` (R7) |
+| *Declared*: the platform's descriptor | build once if its required files are present and every listed file is rule-clean (an absent `Optional` file does not skip the build, T071 M1) | the built instance; failed → marked exception; phase never ran → `InvalidOperationException` (R7) |
 | *Provided*: a host or test descriptor (before or after the module) | resolve T once in `try` | the host's registration (unchanged DI behaviour) |
 | Second declaration of T by another module | line (FR-023); ignored | the first module's |
 
@@ -181,7 +183,9 @@ One line per fault, every line names the fix. The full catalogue with examples i
 
 Missing base manifest · invalid manifest JSON · empty label · file name not plain · listed file missing · `.json` parse
 error · `clientVisible` not in `files` · **new:** duplicate property (`… has property '{name}' twice at {path} (line
-{l}, byte {b}). Fix: keep one property (CFG-01).`).
+{l}, byte {b}). Fix: keep one property (CFG-01).`), names compared ignoring case (`… has properties '{first}' and '{name}' at
+{path} (line {l}, byte {b}), which differ only in case. …`, T071 M2) · file cannot be read (m1) · empty manifest entry (m2) ·
+file name with a control character (m3, the "not allowed" line).
 
 ### 5.2 Required file (existing registry text, extended set §2.1)
 
@@ -199,8 +203,10 @@ rule-throw:= "[module {module}] config {fileRef}: rule '{rule}' threw {Exception
 catalog   := "[module {module}] catalog {Type}[ ({file}{location})]: {problem}. Fix: {fix}"
 cat-throw := "[module {module}] catalog {Type}: the build threw {ExceptionType}: {message}. Fix: report problems through ConfigProblems instead of throwing (FG-018)."
 cat-null  := "[module {module}] catalog {Type}: the build returned no catalog and reported no problem. Fix: return the catalog or report why (FG-018)."
+cat-opt   := "[module {module}] catalog {Type}: the build threw {ExceptionType}: {message}; optional config file '{file}' is absent. Fix: build an empty catalog when Config.HasFile(\"{file}\") is false, or declare the file Required (FG-018)."
+cat-none  := "[catalog {Type}] was not built and no other line explains why (framework fault). Fix: report it with this config; the catalog would fail at its first use (FG-018)."
 cat-dup   := "[catalog {Type}] is declared by {moduleA} and {moduleB}. Fix: declare it in one module; the other takes it from DI (FG-018)."
-cat-host  := "[module {module}] catalog {Type}: the instance registered by the host could not be created: {ExceptionType}: {message}. Fix: correct the registration or remove it to use the declared build (FG-018)."
+cat-host  := "[catalog {Type}] the registration that replaces the declaration of module {module} could not be resolved: {ExceptionType}: {message}. Fix: correct that registration (host or test), or remove it so the platform builds the declared catalog (FG-018)."
 ```
 
 `{problem}` and `{fix}` come from the rule. The formatter strips one trailing `.` from each, so every line ends exactly
@@ -211,7 +217,7 @@ once.
 ```text
 created   := "[{check}] the startup check could not be created: {ExceptionType}: {message}. Fix: register its dependencies; a check that reads config takes GameConfigStatus (FG-023)."
 not-run   := "[{check}] the startup check did not run: the game config did not load (see the [config] lines). Fix: take GameConfigStatus instead of IGameConfig and skip when it is not Loaded (FG-023)."
-not-run-c := "[{check}] the startup check did not run: catalog {Type} was not built (see the lines above). Fix: take GameConfigStatus and read the catalog only when DeclarationsPassed (FG-023)."
+not-run-c := "[{check}] the startup check did not run: catalog {Type} was not built (see the lines above). Fix: take GameConfigStatus and read the catalog with TryGetCatalog (FG-023)."
 provision := (warning) "[{check}] the startup check did not run: provision mode does not load the game config. Fix: take GameConfigStatus and skip when it is NotLoaded (FG-023)."
 failed    := "[{check}] the startup check failed: {ExceptionType}: {message}"      (existing text, unchanged)
 ```

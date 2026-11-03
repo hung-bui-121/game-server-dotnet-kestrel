@@ -238,7 +238,17 @@ public static class GameServerApplicationExtensions
             catch (Exception ex)
             {
                 var name = StartupCheckRegistrations.NameOf(descriptors[index], index);
-                if (!ReportUnavailable(ex, name, mode, result))
+                if (ReportUnavailable(ex, name, mode, result))
+                {
+                    continue;
+                }
+
+                // A constructor that reports through GameServerStartupException gives its own lines, as Check does (m4).
+                if (ex is GameServerStartupException startup)
+                {
+                    result.Errors.AddRange(startup.Violations);
+                }
+                else
                 {
                     result.Errors.Add(ConfigReportLines.CheckNotCreated(name, ex));
                 }

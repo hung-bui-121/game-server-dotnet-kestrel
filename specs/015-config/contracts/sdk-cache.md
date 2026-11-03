@@ -64,7 +64,7 @@ file`, `unknown format version {n}`, `integrity check failed`, `invalid UTF-8`, 
 | step 2 (partial tmp) | main (old version); tmp invalid, ignored |
 | between 2 and 3 | main (old version) |
 | step 3 (atomic rename) | old or new, never a mix |
-| delete-then-move fallback (V10), between delete and move | tmp (new version, valid) |
+| a runtime whose File.Replace is delete + move (none seen: Windows .NET, Mono Editor; devices T058), between the two | tmp (new version, valid), by the load-time recovery |
 
 `Store` with the version already stored and identical files skips the write. One version is kept.
 

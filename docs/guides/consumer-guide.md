@@ -456,6 +456,9 @@ Rule: a framework setting that writes to disk, starts background work or writes 
 slice that introduces it, so a game never copies settings by hand. Game settings with side effects go into the game's own
 `LocalFlavorOptions.Settings`.
 
+A startup failure throws `GameServerStartupException` from `StartServer()`/`CreateClient()` with the report as `Violations`
+(the real host prints it and exits 1). Disposing a factory whose start failed does not throw and still deletes its root.
+
 ### 5.3 In-process host with chosen modules — `TestHost`
 
 `TestHost.StartAsync(modules: …, settings: …, config: …)` builds a host on TestServer with the in-memory store, a fake clock
@@ -671,7 +674,7 @@ The package version equals the framework version (`0.7.0`). It ships the framewo
 `.proto` messages from its own repository with the framework's generator, **WireGen** (sections 10.3–10.6). Nothing in the
 framework is edited or copied.
 
-Config versions (0.7.0, BC-4): `client.ClientConfigVersion` is the version of the client-visible files (the server's
+Config versions (0.7.0, 015/BC-4): `client.ClientConfigVersion` is the version of the client-visible files (the server's
 `client_config_version`, or `config_version` from a server before 0.7.0); `client.ServerConfigVersion` stays the server
 version, for correlating receipts only. `ConfigOutdated`, `ConfigVersionChanged(version)` and the config cache key follow the
 client version, so a server-only config edit no longer raises `ConfigVersionChanged` or triggers a download. Compare a cache
@@ -745,7 +748,7 @@ Routes = [FixtureRoutes.Save, FixtureRoutes.Card],
   services.AddAggregateWireMapper<CardState, Wire.CardState>(FixtureModuleDefinition.CardAggregate, ToWire, o => o.Hidden(nameof(CardState.InternalNote)));
   // a command with its own messages: routes.MapPlayerCommand<Wire.RenameRequest, Rename, RenameResult>(FixtureRoutes.Rename, …);
   ```
-- A route listed in `ModuleDescriptor.PublicEndpoints` must be declared with profile `Public` (else startup fails, BC-5).
+- A route listed in `ModuleDescriptor.PublicEndpoints` must be declared with profile `Public` (else startup fails, 014/BC-5).
 - Hosting conditions: a declaration with `condition: "x"` is mapped only where condition `x` holds; the module registers
   it with `services.AddRouteCondition("x", sp => …)`. Built in: `development_tools` (Development/Test servers), which Dev
   routes use. The check holds both ways: a declaration whose condition holds must be mapped, and an endpoint mapped while
@@ -944,11 +947,11 @@ client.Sections.SectionChanged += id =>
    `samples/SampleHost/Program.cs` and its flavor files (the host is a copy until FG-009).
 4. Update every place that names the tag (game props, README, UPM URL `#vX.Y.Z` in the Unity project).
 5. Act on the breaking changes the release notes list. For 0.7.0: declare every route and map it from the declaration
-   (an undeclared endpoint fails startup, BC-1) and switch every section mapper to the typed
-   `AddAggregateWireMapper<TState, TWire>` (the one-type overload is CS0618, BC-3) — section 10. Game config (slice 015,
+   (an undeclared endpoint fails startup, 014/BC-1) and switch every section mapper to the typed
+   `AddAggregateWireMapper<TState, TWire>` (the one-type overload is CS0618, 014/BC-3) — section 10. Game config (slice 015,
    section 12): replace `new GameConfig(label, FileGameConfigLoader.ComputeVersion(label, files), files, clientVisible)` with
-   `new GameConfig(label, files, clientVisible)` (CS0618, BC-6); start each flavor once and fix every `[module …] config …`,
-   `[config] … twice at …` or bundle-size line (BC-1, BC-2, BC-7); move config checks out of `IStartupCheck`s that take
+   `new GameConfig(label, files, clientVisible)` (CS0618, 015/BC-6); start each flavor once and fix every `[module …] config …`,
+   `[config] … twice at …` or bundle-size line (015/BC-1, 015/BC-2, 015/BC-7); move config checks out of `IStartupCheck`s that take
    `IGameConfig` into file declarations and rules, or make the check take `GameConfigStatus` (section 12.5); turn lazy catalog
    factories in `ConfigureServices` into `ConfigCatalogs` declarations (section 12.3); rewrite tests that pin a config version
    (section 12.6). A check moved into a rule reports in the framework line format, so tests that assert its old text change
@@ -986,9 +989,13 @@ template.
 
 `config/env/<DeploymentEnvironment>/manifest.json` (optional) overlays it: a non-empty label replaces the base label, a file
 of the same name in `config/env/<env>/` replaces the base bytes, and its `clientVisible` adds to the base set. A rule line for an
-overlaid file names it: `resources.json (config/env/Staging)`. The loader reports **every** fault in one start (BC-3), and a
-property name that appears twice in one JSON object is a fault (BC-2): `[config] '{path}' has property '{name}' twice at
-{jsonPath} (line {line}, byte {byte}). Fix: keep one property; the last one used to win silently (CFG-01).`
+overlaid file names it: `resources.json (config/env/Staging)`. The loader reports **every** fault in one start (015/BC-3), and a
+property name that appears twice in one JSON object is a fault (015/BC-2): `[config] '{path}' has property '{name}' twice at
+{jsonPath} (line {line}, byte {byte}). Fix: keep one property; the last one used to win silently (CFG-01).` Two names that
+differ only in case (`maxQuantity`, `MaxQuantity`) are the same fault, because config is read ignoring case: `[config] '{path}'
+has properties '{first}' and '{name}' at {jsonPath} (line {line}, byte {byte}), which differ only in case. Fix: keep one
+property; config is read ignoring case, so the last one used to win silently (CFG-01).` A file the host process cannot read is
+one line too: `[config] '{path}' cannot be read: {message} Fix: check that the host process can read the file (CFG-01).`
 
 ### 12.2 File declarations, rules and the line format
 
@@ -1040,21 +1047,105 @@ declared with `ConfigFiles = [ConfigFileDeclaration.Required(RulesFile, FixtureC
   required and end without a period, and the framework adds the module, the file and the location, so they are not repeated in
   `problem`. A rule may read other files (`context.Config`, `context.Json(file)`) for cross-file checks.
 - A "JSON integer" is `TryGetInt64`: `1.0`, `1e3` and `"5"` are faults. Unknown properties are ignored.
+- `ConfigJson` helpers (namespace `GameServer.Config`) take the JSON element first, then the property name, the location and
+  the problem sink; an `out` value comes next, and the optional `fix` is always last (named: `fix: "…"`). Without `fix` the
+  line says `set '{property}' to {type}`. Each helper reports at most one problem and returns what it read:
+
+  | Helper | Returns |
+  | --- | --- |
+  | `TryGetObject(owner, property, at, problems, out JsonElement value, fix: null)` | true and the object; false after reporting |
+  | `TryGetArray(owner, property, at, problems, out JsonElement value, fix: null)` | true and the array; false after reporting |
+  | `RequiredString(owner, property, at, problems, allowEmpty: false, fix: null)` | the string, or null after reporting |
+  | `RequiredInteger(owner, property, at, problems, min, max, fix: null)` | `long?`, null after reporting |
+  | `OptionalInteger(owner, property, at, problems, min, max, fix: null)` | null when absent (no problem); a problem when present but wrong |
+  | `RequireObject(element, at, problems, fix: null)` | true when the element (a row) is an object |
+  | `PathOf(segments…)` | `$.a.b`, `$.items['key with.dot']`, `$.rows[2]` (0-based index, as JSON paths are) |
+
+  The problems read `'{property}' is missing`, `'{property}' is null`, `'{property}' must be {type}, found {kind}` and
+  `'{property}' must be an integer of at least 1, found "999"`. Locations: `ConfigLocation.WholeFile` (no location),
+  `ConfigLocation.Row(n)` (` row {n}`, **1-based**: the first row of the array is `Row(1)`), `ConfigLocation.Key(key)`
+  (` key '{key}'`) and `ConfigLocation.Path("$.a.b")` (` at $.a.b`, must start with `$`); `.InFile(file)` names another file.
+
+A full row-array rule, the framework's `resources.json` rule (`src/GameServer.Modules.Economy/EconomyConfigRules.cs`,
+shortened):
+
+```csharp
+public static ConfigRule Resources { get; } = new("economy.resources", CheckResources);
+
+private static void CheckResources(ConfigContext context)
+{
+    var problems = context.Problems;
+    if (!ConfigJson.TryGetArray(context.Json(ResourceCatalog.ConfigFile), "resources", ConfigLocation.WholeFile, problems, out var rows, "put the resource rows in a \"resources\" array (ECO-07)"))
+    {
+        return;
+    }
+
+    var firstRow = new Dictionary<string, int>(StringComparer.Ordinal);
+    var number = 0;
+    foreach (var row in rows.EnumerateArray())
+    {
+        var at = ConfigLocation.Row(++number);
+        if (!ConfigJson.RequireObject(row, at, problems, "write each resource as an object (ECO-07)"))
+        {
+            continue;
+        }
+
+        if (ConfigJson.RequiredString(row, "id", at, problems, fix: "give every resource a non-empty id (ECO-07)") is { } id && !firstRow.TryAdd(id, number))
+        {
+            problems.Error(at, $"id '{id}' is already defined in row {firstRow[id]}", "give every resource a unique id (ECO-07)");
+        }
+
+        ConfigJson.RequiredInteger(row, "maxQuantity", at, problems, min: 1, fix: "set the largest quantity a player may hold (ECO-07)");
+    }
+}
+```
 - A warning (`context.Problems.Warning(…)`) has the same text and is logged once at startup; it does not stop the host.
 - The framework ships rules for `resources.json` (`economy.resources`) and `iap.json` (`iap.products`, grants checked
   against the well-formed rows of `resources.json`); PCR economy and PCR iap list every line. A deployment whose config was
-  accepted only because nothing read the bad row before now stops at startup (BC-1).
+  accepted only because nothing read the bad row before now stops at startup (015/BC-1).
 
 ### 12.3 Catalogs
 
 Declare every typed view of a config file as a catalog (`ConfigCatalogs` above). The platform builds it once before traffic,
-only when its files are present and free of rule errors, and registers the instance in DI; handlers take it as a constructor
+only when its files are present and free of rule errors (an absent file declared `Optional` does not stop the build: the build
+must then return an empty catalog, and a build that throws stops the host), and registers the instance in DI; handlers take it as a constructor
 parameter. **Never register a declared catalog in `ConfigureServices`** (a registration there is caught by the
 framework's own architecture test for its modules) — an undeclared catalog stays lazy and its faults surface on the first request
 instead of at startup. A host or test that registers an instance of the catalog type, before or after `AddModule`, wins.
 
+A catalog is a plain class with a static build over `IGameConfig`. `ResourceCatalog`
+(`src/GameServer.Modules.Economy/EconomyModel.cs`):
+
+```csharp
+public sealed class ResourceCatalog
+{
+    public const string ConfigFile = "resources.json";
+
+    private readonly Dictionary<string, ResourceDefinition> _resources;
+
+    public ResourceCatalog(IEnumerable<ResourceDefinition> resources) => _resources = resources.ToDictionary(r => r.Id, StringComparer.Ordinal);
+
+    public ResourceDefinition? Find(string id) => _resources.GetValueOrDefault(id);
+
+    public static ResourceCatalog Load(IGameConfig config) => new(config.GetFile<ResourcesFile>(ConfigFile).Resources);
+
+    private sealed record ResourcesFile(IReadOnlyList<ResourceDefinition> Resources);
+}
+```
+
+`GetFile<T>` binds with `GameServerJson.Options`, the System.Text.Json web defaults: camelCase JSON names bind PascalCase
+properties and names match ignoring case, enums are camelCase strings, and a number may be read from a string (`"5"`). The rules
+run first and are stricter than the binding, so a build reads files that passed them. A build reports a problem it finds with
+`c.Problems.Error(ConfigLocation.Row(n).InFile(file), problem, fix)` and returns null: `[module {module}] catalog {Type}
+({file} row {n}): {problem}. Fix: {fix}.` A build that throws gives `[module {module}] catalog {Type}: the build threw
+{ExceptionType}: {message}. Fix: report problems through ConfigProblems instead of throwing (FG-018).` (when a listed optional
+file is absent: `…; optional config file '{file}' is absent. Fix: build an empty catalog when Config.HasFile("{file}") is false,
+or declare the file Required (FG-018).`), and a null without a problem gives `[module {module}] catalog {Type}: the build
+returned no catalog and reported no problem. Fix: return the catalog or report why (FG-018).` Each of them stops the host: no
+declared catalog is ever built on first use.
+
 Code that builds a service collection from a module's `ConfigureServices` alone (without `AddGameServer`) no longer finds
-`ResourceCatalog`, `IapCatalog`, `BattleCatalog` or `ShopCatalog` (BC-8). Register the instance, or use the kit (12.4):
+`ResourceCatalog`, `IapCatalog`, `BattleCatalog` or `ShopCatalog` (015/BC-8). Register the instance, or use the kit (12.4):
 `ConfigDeclarationCheck.Check(config, modules).ThrowIfFailed().AddCatalogsTo(services)`.
 
 ### 12.4 The test kit call
@@ -1095,15 +1186,61 @@ public void A_bad_max_length_gives_the_startup_line(string notes, string found)
 The report also has `Warnings`, `Catalog<T>()` (throws listing the lines when the catalog was not built), `TryGetCatalog<T>()`
 and `AddCatalogsTo(services)`.
 
+`TestGameConfig.FromJson` must include every `Required` file of the modules passed: a missing one is the registry line
+(`[module {module}] required config file '{file}' is missing. …`). So declaring a new `Required` file breaks every kit test whose
+`FromJson` config lacks it; add the file there (or use `FromDirectory` on the committed config).
+
+**Calling the SDK from a game test.** Reference the SDK with an alias:
+
+```xml
+<ProjectReference Include="$(GameServerRoot)sdk/GameServer.Client/GameServer.Client.csproj" Aliases="sdk" />
+```
+
+```csharp
+extern alias sdk;
+using sdk::GameServer.Client;
+```
+
+The alias is required: the SDK and the server compile the same generated protocol types. Use HttpClientTransport over
+factory.CreateClient(). Shortened from `tests/ConsumerFixture/tests/Fixture.Tests/FixtureSdkConfigTests.cs`:
+
+```csharp
+await using var factory = new LocalFlavorFactory<Program>();
+var http = factory.CreateClient();
+var client = new GameServerClient(new GameServerClientOptions(http.BaseAddress!, "1.2.3", "editor", "fixture-test"), new HttpClientTransport(http));
+
+await client.LoginGuestAsync(IdentityHttp.NewLocalId(), IdentityHttp.NewSecret());
+if (client.ConfigOutdated)
+{
+    await client.RefreshConfigAsync();
+}
+
+client.Config.Version.ShouldBe(factory.Services.GetRequiredService<IGameConfig>().ClientConfigVersion);
+```
+
+A test project that pins its references (the fixture's `FixtureProjectTests` allows exactly the kit, the aliased SDK and the
+game's own projects) adds the SDK reference to that allow-list, with its `Aliases="sdk"`.
+
+**The host on a real port.** `LocalFlavorFactory` runs on the in-process `TestServer`. A test that needs a socket (an external
+client, a second process) sets `LocalFlavorOptions.Settings["Urls"] = "http://127.0.0.1:{free port}"` (never the flavor's own
+port, which a developer's `run-local` may hold), points `Settings["GameServer:ConfigPath"]` at the config to serve, then calls
+`factory.UseKestrel()` and `factory.StartServer()`. A test of a refused start uses `TestHost.StartAsync(…, config: …)` or
+`LocalFlavorFactory.StartServer()`; both throw the `GameServerStartupException` with the report as `Violations`.
+
+**A new route and the generated client files.** A route added to a module changes the client files: regenerate them
+(`generate`, section 10.4), or `verify` and the game's codegen test fail. The fixture's `FixtureCodegenTests` run the built
+generator, so build it first: `dotnet build tools/GameServer.WireGen` (the solution build does it too).
+
 ### 12.5 Startup checks read config through `GameConfigStatus`
 
-Every `IStartupCheck` is created from its registration in its own isolation, once per start, and never disposed (BC-10); a
+Every `IStartupCheck` is created from its registration in its own isolation, once per start, and never disposed (015/BC-10); a
 constructor that throws adds one line naming the check and the other checks still run. A check that reads config takes
 `GameConfigStatus` (namespace `GameServer.Platform`), never `IGameConfig`:
 
-- `State`: `NotLoaded` (provision mode, which never loads config, BC-9), `Loaded` or `Failed`;
+- `State`: `NotLoaded` (provision mode, which never loads config, 015/BC-9), `Loaded` or `Failed`;
 - `Config`: the instance handlers get (`TryGetConfig(out config)`);
 - `DeclarationsPassed`: no required-file, rule or catalog line in this start (warnings do not count).
+- `TryGetCatalog<T>(out catalog)`: a declared catalog built in this start (false otherwise).
 
 It is published once, before the checks run, and none of its members throws. A check from the framework's tests
 (`tests/GameServer.Platform.Web.Tests/StartupCheckHostTests.cs`) that only reports the state:
@@ -1116,8 +1253,46 @@ private sealed class StatusCheck(GameConfigStatus status) : IStartupCheck
 ```
 
 A real check returns when `!status.TryGetConfig(out var config) || !status.DeclarationsPassed` (the report already has the
-cause) and reads `config` or a declared catalog otherwise. A check that still takes `IGameConfig` or a catalog is safe: when the
-config or the catalog is unavailable it gets one "did not run" line (a warning in provision mode) instead of repeating the cause.
+cause) and otherwise reads `config`, or a declared catalog with `status.TryGetCatalog<MyCatalog>(out var catalog)`. Never
+rebuild a catalog with its `Load` in a check (the build already ran once). A check that still takes `IGameConfig` or a catalog
+is safe: when the config or the catalog is unavailable it gets one "did not run" line (a warning in provision mode) instead of
+repeating the cause.
+
+Register a check with `services.AddSingleton<IStartupCheck, MyCheck>()` in the module's `ConfigureServices` or in the host.
+Register every IStartupCheck in IServiceCollection; a registration made only in a third-party container builder is not seen and
+never runs. The check lives in the module's `.Adapters` project (or the host), because `IStartupCheck` and `GameConfigStatus` are
+in `GameServer.Platform` (the fixture has a single game project, `Fixture.Game`, which references `GameServer.Platform.Web`). Each string added to `result.Errors` (or `Warnings`) is one report line, printed as it is: write it in
+the framework's format, `[{check or module}] {problem}. Fix: {fix}.` A constructor that throws a `GameServerStartupException`
+adds its `Violations` as they are. The fixture's check (`tests/ConsumerFixture/src/Fixture.Game/NotesResultSizeCheck.cs`):
+
+```csharp
+public sealed class NotesResultSizeCheck(GameConfigStatus status, GameServerOptions options) : IStartupCheck
+{
+    public void Check(StartupCheckResult result)
+    {
+        if (!status.DeclarationsPassed || !status.TryGetConfig(out var config))
+        {
+            return;
+        }
+
+        var maxLength = config.GetFile<NotesRules>(FixtureModuleDefinition.RulesFile).MaxLength;
+        // … one line when maxLength * 3 > options.Commands.ResultCompactMaxBytes
+    }
+}
+```
+
+In a unit test build the status with `TestGameConfigStatus.NotLoaded()`, `.Failed()` or `.From(report)`. `From(report)` is
+exactly what the host publishes for that config and those modules (`DeclarationsPassed = report.Passed`, the report's catalogs
+for `TryGetCatalog`):
+
+```csharp
+var report = ConfigDeclarationCheck.Check(TestGameConfig.FromDirectory(dir), new IdentityModule(), new GameModule());
+var result = new StartupCheckResult();
+
+new RewardsCheck(TestGameConfigStatus.From(report)).Check(result);
+
+result.Errors.ShouldBeEmpty();
+```
 
 ### 12.6 Two versions
 
@@ -1135,14 +1310,16 @@ config or the catalog is unavailable it gets one "did not run" line (a warning i
 | order or duplicates in the manifest lists | unchanged | unchanged |
 
 Do not bump the label because a file became client-visible: both versions change by themselves. The server version's value
-changes once at the upgrade to 0.7.0 (BC-5). `GetConfig` answers `not_modified` for either current version. Custom
+changes once at the upgrade to 0.7.0 (015/BC-5). `GetConfig` answers `not_modified` for either current version. Custom
 `IGameConfig` implementations add `ClientConfigVersion`; build test configs with `TestGameConfig` or
-`new GameConfig(label, files, clientVisible)` (the 4-argument constructor is obsolete, BC-6).
+`new GameConfig(label, files, clientVisible)` (the 4-argument constructor is obsolete, 015/BC-6).
 
 ### 12.7 Compression and the bundle limit
 
 `GetConfig` is compressed per request with Brotli (quality 4) or gzip (level 6) when the request's `Accept-Encoding` asks for
-it, the response carries files and is at least 1024 bytes; no other route is ever compressed. `not_modified` and small bodies
+it, the response carries files and is at least 1024 bytes; an encoding that does not shrink the bundle (checked once at
+startup) is never used, and at most max(1, CPUs / 4) responses are compressed at the same time (others are sent uncompressed,
+so a burst of full downloads cannot take the CPU); no other route is ever compressed. `not_modified` and small bodies
 are sent as they are. Unity's UnityWebRequest sends `Accept-Encoding: deflate, gzip` and decodes gzip itself (Editor and
 Windows player checked); `HttpClient` without `AutomaticDecompression` sends no header and gets the plain body. No client change
 is needed. `GameServer:ConfigCompression=false` is the rollback switch (today's bytes and headers, no `Vary`).
@@ -1150,7 +1327,7 @@ is needed. `GameServer:ConfigCompression=false` is the rollback switch (today's 
 `GameServer:Limits:ConfigBundleBytes` (1 MiB) limits the **uncompressed** response. The host computes the largest response its
 config can produce at startup; over the limit it stops with `[config] the client-visible bundle needs a GetConfig response of
 up to {size} bytes ({files} files), over GameServer:Limits:ConfigBundleBytes = {limit}. Fix: raise the limit or remove files from
-'clientVisible' (CFG-03, API-06).` (BC-7; before, every client got 413). The startup log has one line with both versions:
+'clientVisible' (CFG-03, API-06).` (015/BC-7; before, every client got 413). The startup log has one line with both versions:
 `Config {Label}: version {ConfigVersion}, client version {ClientConfigVersion}, {FileCount} files ({ClientVisibleCount}
 client-visible, bundle {BundleBytes} B), {RuleCount} rules, {CatalogCount} catalogs.`
 
@@ -1186,9 +1363,10 @@ else if (client.Config.Version != null)
 ```
 
 `environmentName` is a plain folder name chosen by the game, one per server it talks to (`local`, `dev`, `beta`, `live`): keep
-it in the client settings next to the server URL. Do not derive it from the URL: `Create` refuses path separators and the
-platform's invalid file-name characters (`Path.GetInvalidFileNameChars`), which differ between platforms: `:` is invalid on
-Windows, so `localhost:5080` throws in the Windows Editor, while .NET on Android and iOS refuses only `/` and NUL. Without the
+it in the client settings next to the server URL. `Create` accepts 1 to 64 lowercase letters, digits, `.`, `_` and `-` (not
+starting or ending with `.`, not a Windows device name such as `con` or `nul`), the same on every platform, and throws
+`ArgumentException` otherwise: `localhost:5080` is refused everywhere (use `localhost-5080`). On iOS the folder is excluded from
+iCloud/iTunes backup. Without the
 `ConfigOutdated` gate above, a start with an unchanged client version still sends one `GetConfig`, answered `not_modified` (no
 files downloaded).
 

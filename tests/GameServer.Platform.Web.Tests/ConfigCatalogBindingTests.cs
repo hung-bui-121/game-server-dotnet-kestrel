@@ -17,7 +17,7 @@ public sealed class ConfigCatalogBindingTests
     {
         await using var app = Build(gs => gs.AddModule(new CatalogModule()));
 
-        Binding(app).IsDeclared.ShouldBeTrue();
+        Binding(app).Resolve.ShouldBeNull();
     }
 
     [Fact]
@@ -30,7 +30,7 @@ public sealed class ConfigCatalogBindingTests
             gs.AddModule(new CatalogModule());
         });
 
-        Binding(app).IsDeclared.ShouldBeFalse();
+        Binding(app).Resolve.ShouldNotBeNull();
         Binding(app).Resolve!().ShouldBeSameAs(own);
         app.Services.GetRequiredService<SampleCatalog>().ShouldBeSameAs(own);
     }
@@ -41,7 +41,7 @@ public sealed class ConfigCatalogBindingTests
         var own = new SampleCatalog("host");
         await using var app = Build(gs => gs.AddModule(new CatalogModule()), services => services.AddSingleton(own));
 
-        Binding(app).IsDeclared.ShouldBeFalse();
+        Binding(app).Resolve.ShouldNotBeNull();
         app.Services.GetRequiredService<SampleCatalog>().ShouldBeSameAs(own);
     }
 

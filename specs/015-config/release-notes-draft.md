@@ -2,8 +2,8 @@
 
 Framework `0.7.0` (unreleased). Input of the `v0.7.0` annotated tag message (FR-090), merged with the notes of slices 013,
 014 and 016 at the end of the round (one tag). Started in T002, extended by T028, T033, T040, T045, T052 and T064; final
-pass in T065 (2026-11-04, framework `abfc32d`, after the first-consumer check T067). **The tag waits for** the device run
-T058 (owner) and the reviewer walkthrough T066 (see "Manual checks").
+pass in T065 (2026-11-04, framework `abfc32d`, after the first-consumer check T067); review fixes T071 (tech-lead review
+T070: 3 Major, 11 Minor; walkthrough T066: 12 gaps). **The tag waits for** the device run T058 (owner; see "Manual checks").
 
 **Fixed:** FG-018 (config content validated at startup, every catalog built before traffic), FG-023 (a startup check never
 loses the combined report and reads config safely), FG-024 (the server config version hashes the client-visible set),
@@ -21,15 +21,15 @@ FG-019 (a client config version, compressed `GetConfig`, persistent SDK cache). 
 | Id | Change | Who is affected | How it surfaces | Fix |
 | --- | --- | --- | --- | --- |
 | BC-1 | Config content is checked at startup: framework rules for `resources.json` and `iap.json` (IAP grants must name a defined resource), sample rules, and catalogs built before traffic (FR-013..FR-016, FR-021) | Every deployment whose config was accepted only because nothing read the bad row before; test configs given to `TestHost`, `LocalFlavorFactory` and `TestGameConfig`-based hosts | Startup exit 1, one line per fault: `[module economy] config resources.json row 3: 'maxQuantity' must be an integer of at least 1, found "999". Fix: set the largest quantity a player may hold (ECO-07).` | Fix the file as the line says |
-| BC-2 | A JSON object with a repeated property name in a config file or manifest is a loader fault (FR-002) | Configs that relied on "last one wins" (usually an unnoticed copy-paste) | Startup exit 1: `[config] '…/config/base/iap.json' has property 'google:gems_100' twice at $.products (line 4, byte 5). Fix: keep one property; the last one used to win silently (CFG-01).` | Keep one property |
+| BC-2 | A JSON object with a repeated property name in a config file or manifest is a loader fault (FR-002); names that differ only in case count as repeated (config is read ignoring case) | Configs that relied on "last one wins" (usually an unnoticed copy-paste) | Startup exit 1: `[config] '…/config/base/iap.json' has property 'google:gems_100' twice at $.products (line 4, byte 5). Fix: keep one property; the last one used to win silently (CFG-01).`, or `… has properties 'maxQuantity' and 'MaxQuantity' at $.resources[0] (line 5, byte 7), which differ only in case. …` | Keep one property |
 | BC-3 | `FileGameConfigLoader.Load` reports every fault in one `GameServerStartupException` instead of throwing at the first one (FR-001) | Code or tests that call the loader and read the first violation only | Several `[config] …` lines in one exception (two missing files + one invalid JSON file = 3 lines); existing line texts unchanged | Read every violation |
 | BC-4 | SDK semantics (PCR unity-sdk): five player messages gain `client_config_version` (additive, FR-043; `config_version` keeps its meaning). The SDK keys its cache, `ConfigOutdated` and `ConfigVersionChanged` on the client version when the server sends it (FR-046) | Game code that reads the `ConfigVersionChanged` argument or compares `Config.Version` with `ServerConfigVersion`; every client that cached a bundle reloads it once after the upgrade | No `ConfigVersionChanged` on server-only edits; the event argument and `Config.Version` hold the client version (`test-1+4c5423c2dad9`), `ServerConfigVersion` the server version (`test-1+9b2cd1009ff1`); one bundle download per client after deploy | Compare the cache with `ClientConfigVersion`; read `ServerConfigVersion` only to correlate with receipts |
 | BC-5 | The server config version also hashes the `clientVisible` set (FR-040), so its value changes once at the upgrade | Dashboards or alerts keyed on a fixed `config_version_info{version}` value; receipts after the deploy carry the new value | New value in metric and receipts: SampleHost config `sample-1+0a58d1cc006c` (v0.6.0 formula) → server `sample-1+8a37f29ee2dc`, client `sample-1+9b25b8b6bc0b` | None (format unchanged); update pinned values |
-| BC-6 | `IGameConfig` gains `ClientConfigVersion`; the `GameConfig` constructor computes both versions; `FileGameConfigLoader.ComputeVersion(label, files)` is obsolete (FR-042) | Custom `IGameConfig` implementations and direct `GameConfig`/`ComputeVersion` callers (game test support code) | `error CS0535: 'X' does not implement interface member 'GameServer.Config.IGameConfig.ClientConfigVersion'`; `error CS0618: 'GameConfig.GameConfig(string, string, IReadOnlyDictionary<string, byte[]>, IReadOnlySet<string>)' is obsolete: '…'` and `error CS0618: 'FileGameConfigLoader.ComputeVersion(string, IReadOnlyDictionary<string, byte[]>)' is obsolete: '…'` (under `TreatWarningsAsErrors`; both on one line in zh-pvp, T067) | Implement the member; use `TestGameConfig` or `new GameConfig(label, files, clientVisible)` |
+| BC-6 | `IGameConfig` gains `ClientConfigVersion`; the `GameConfig` constructor computes both versions; `FileGameConfigLoader.ComputeVersion(label, files)` is obsolete (FR-042) | Custom `IGameConfig` implementations and direct `GameConfig`/`ComputeVersion` callers (game test support code) | `error CS0535: 'X' does not implement interface member 'GameServer.Config.IGameConfig.ClientConfigVersion'`; `error CS0618: 'GameConfig.GameConfig(string, string, IReadOnlyDictionary<string, byte[]>, IReadOnlySet<string>)' is obsolete: '…'` and `error CS0618: 'FileGameConfigLoader.ComputeVersion(string, IReadOnlyDictionary<string, byte[]>)' is obsolete: '…'` (under `TreatWarningsAsErrors`; both on one line in zh-pvp, T067); both constructors throw ArgumentException ("Client-visible file '{name}' is not one of the config files.") when a client-visible name is not a file — a test helper that removes a client-visible file must also drop it from clientVisible | Implement the member; use `TestGameConfig` or `new GameConfig(label, files, clientVisible)` |
 | BC-7 | A client-visible bundle larger than `GameServer:Limits:ConfigBundleBytes` stops the host (FR-053); it was a 413 for every client | Deployments with an oversized bundle (already broken for clients) | Startup exit 1: `[config] the client-visible bundle needs a GetConfig response of up to 1747 bytes (4 files), over GameServer:Limits:ConfigBundleBytes = 1746. Fix: raise the limit or remove files from 'clientVisible' (CFG-03, API-06).` (SampleHost, run 2026-11-04) | Raise the limit or make files server-only |
 | BC-8 | `ResourceCatalog`, `IapCatalog`, `BattleCatalog` and `ShopCatalog` are registered from their declarations by the platform, no longer by the modules' `ConfigureServices` (FR-021, FR-024, FR-070) | Code that builds a service collection from a module's `ConfigureServices` alone (without `AddGameServer`) and resolves a catalog | `No service for type 'GameServer.Modules.Economy.ResourceCatalog' has been registered.` (services from `ConfigureServices` alone) or `ResourceCatalog is a declared config catalog: the platform builds it in UseGameServer. Fix: … (FG-018).` (host built without `UseGameServer`) | Register the catalog instance explicitly, or `ConfigDeclarationCheck.Check(config, modules).ThrowIfFailed().AddCatalogsTo(services)` |
 | BC-9 | Provision mode never loads game config: `IGameConfig` cannot be resolved there, and a startup check that needs it is skipped with a **warning** (FR-032, D4) | Checks that read config in provision mode (today they silently load it) | stderr of `--provision`, exit code unaffected: `warning: [{check}] the startup check did not run: provision mode does not load the game config. Fix: take GameConfigStatus and skip when it is NotLoaded (FG-023).` | Take `GameConfigStatus` and skip when it is `NotLoaded` |
-| BC-10 | Startup checks are created by the framework from their registration at each start, inside their own isolation (FR-030); they are no longer resolved as container singletons and are not disposed | A check type that is also resolved elsewhere (it gets a different instance there); disposable checks | None for a stateless check | Keep checks stateless and not disposable |
+| BC-10 | Startup checks are created by the framework from their registration at each start, inside their own isolation (FR-030); they are no longer resolved as container singletons and are not disposed | A check type that is also resolved elsewhere (it gets a different instance there); disposable checks; a check registered only in a third-party container builder (`ConfigureContainer`) is not seen and does not run (register every `IStartupCheck` in `IServiceCollection`) | None for a stateless check | Keep checks stateless and not disposable |
 
 ## zh-pvp-server migration checklist (in this order; verified in a temp clone, T067)
 
@@ -95,8 +95,7 @@ changes; their checklists come first and their errors show first.
 5. **Client persistent cache (FG-019).** `Assets/MadProject/Scripts/Online/OnlineSession.cs:83` is
    `this.Client = new GameServerClient(options, transport);`: pass
    `config: UnityConfigCache.Create(cacheName)`, where `cacheName` is a plain folder name per server environment (`local`,
-   `dev`, `beta`, `live`). `OnlineSettings` has only `BaseUrl`: add the name there; do not derive it from the URL (`:` is
-   refused on Windows/Editor but not on Android/iOS). Drop the markers `ServerConfigInjector.cs:39` and `OnlineSession.cs:333`
+   `dev`, `beta`, `live`). `OnlineSettings` has only `BaseUrl`: add the name there; do not derive it from the URL (`:` is refused; names are 1–64 lowercase letters, digits, `.`, `_`, `-`, the same on every platform). Drop the markers `ServerConfigInjector.cs:39` and `OnlineSession.cs:333`
    (and the remark at `:329`). `FetchConfigAsync` (`:335-347`) already applies the cached files at boot when `updated` is false
    (`appliedConfigVersion` starts null). It still sends one `GetConfig` per boot, answered `not_modified`; a
    `if (this.Client.ConfigOutdated)` gate as in KestrelDemo skips it. `OnConfigVersionChanged` (`OnlineSession.cs:179`) now
@@ -163,6 +162,13 @@ ConfigCatalogs = [ConfigCatalogDeclaration.Of(c => ResourceCatalog.Load(c.Config
   least 1, found "999"`) and report through `ConfigProblems`; a rule or build that throws gives one line naming it.
 - Test kit: `ConfigDeclarationCheck.Check(config, modules)` gives exactly the host's lines (`Errors`, `Warnings`,
   `ThrowIfFailed()`, `Catalog<T>()`, `AddCatalogsTo(services)`).
+- A catalog over an optional file is built when the file is absent (its build returns an empty catalog); a build that cannot
+  cope stops the host with one line. No declared catalog is ever built on first use.
+- Loader (review T071): names that differ only in case are repeated properties too (BC-2); a file the host process cannot read
+  is one line (`[config] '{path}' cannot be read: {message} Fix: check that the host process can read the file (CFG-01).`)
+  instead of a stack trace; a null, empty or blank manifest entry is one line (`[config] '{manifestPath}' lists an empty name in
+  'files'. Fix: remove the entry or name a file (CFG-01).`); a file name with a control character is refused (the "file name …
+  is not allowed" line, rendered with `\u000A`), so version inputs stay unambiguous and pinned versions are unchanged.
 
 Real line texts (slice 015 tests, asserted literally):
 
@@ -175,7 +181,7 @@ Real line texts (slice 015 tests, asserted literally):
 [module sample.game] config battle.json row 2: 'xp' must be an integer of at least 0, found "70". Fix: give every stage an integer xp of at least 0.
 [config] '…/config/base/iap.json' has property 'google:gems_100' twice at $.products (line 4, byte 5). Fix: keep one property; the last one used to win silently (CFG-01).
 [catalog ResourceCatalog] is declared by economy and game. Fix: declare it in one module; the other takes it from DI (FG-018).
-[module economy] catalog ResourceCatalog: the instance registered by the host could not be created: InvalidOperationException: no file. Fix: correct the registration or remove it to use the declared build (FG-018).
+[catalog ResourceCatalog] the registration that replaces the declaration of module economy could not be resolved: InvalidOperationException: no file. Fix: correct that registration (host or test), or remove it so the platform builds the declared catalog (FG-018).
 ```
 
 Line and byte of the duplicate line are 1-based (the line of the repeated name, the byte of its opening quote). A config
@@ -186,7 +192,7 @@ BC rows with the real texts:
 | Id | Line seen by the operator | Fix |
 | --- | --- | --- |
 | BC-1 | `[module economy] config resources.json row 3: 'maxQuantity' must be an integer of at least 1, found "999". Fix: …` | Correct the row |
-| BC-2 | `[config] '{path}' has property '{name}' twice at {jsonPath} (line {l}, byte {b}). Fix: keep one property; the last one used to win silently (CFG-01).` | Keep one property |
+| BC-2 | `[config] '{path}' has property '{name}' twice at {jsonPath} (line {l}, byte {b}). Fix: keep one property; the last one used to win silently (CFG-01).` or `[config] '{path}' has properties '{first}' and '{name}' at {jsonPath} (line {l}, byte {b}), which differ only in case. Fix: keep one property; config is read ignoring case, so the last one used to win silently (CFG-01).` | Keep one property |
 | BC-3 | Several `[config] …` lines in one `GameServerStartupException` (two missing files + one invalid JSON file = 3 lines) | Read `Violations`, not the first line |
 | BC-8 | `No service for type 'GameServer.Modules.Economy.ResourceCatalog' has been registered.` (services built from `ConfigureServices` alone) or `ResourceCatalog is a declared config catalog: the platform builds it in UseGameServer. Fix: … ConfigDeclarationCheck.Check(config, modules) and call report.AddCatalogsTo(services) (FG-018).` (host built without `UseGameServer`) | `ConfigDeclarationCheck.Check(config, modules).ThrowIfFailed().AddCatalogsTo(services)` or register the instance |
 
@@ -202,14 +208,19 @@ format (`[module zhpvp.game] config ConfigGunChest.json row 2: …`), so three `
 
 - Every `IStartupCheck` is created from its registration inside its own isolation, in serve and provision mode, then run
   inside another (BC-10). A constructor or factory that throws adds one line naming the check (its implementation type;
-  for a factory registration the type that declares the factory, compiler closures skipped) and every other check still
-  runs. Checks are created once per start, not resolved as container singletons, and never disposed.
+  for a factory registration the class the factory returns, else the type that declares the factory, compiler closures
+  skipped) and every other check still runs; a constructor that throws a `GameServerStartupException` adds its violations
+  as they are, and a factory that returns null is a creation line. Checks are created once per start, not resolved as
+  container singletons, and never disposed. Register every `IStartupCheck` in `IServiceCollection`; a registration made only
+  in a third-party container builder is not seen and never runs.
 - A check that needs the config or a declared catalog that is unavailable gets one "did not run" line; the cause is already
   in the report and is not repeated.
 - New `GameConfigStatus` (`GameServer.Platform`): `State` (`NotLoaded` / `Loaded` / `Failed`), `Config` (the instance
-  handlers get), `DeclarationsPassed` (no required-file, rule or catalog line in this start), `TryGetConfig`. It never
-  throws and is published once by the config phase, before the checks run. This is the supported way for a check to read
-  config.
+  handlers get), `DeclarationsPassed` (no required-file, rule or catalog line in this start), `TryGetConfig`, and
+  `TryGetCatalog<T>` (a declared catalog built in this start). It never throws and is published once by the config phase,
+  before the checks run. This is the supported way for a check to read config and catalogs.
+- Test kit: `TestGameConfigStatus.NotLoaded()`, `.Failed()` and `.From(report)` give a startup check's unit test the status the
+  host would publish (`From(ConfigDeclarationCheck.Check(config, modules))`).
 - Provision mode never loads game config (BC-9): `IGameConfig` and declared catalogs cannot be resolved there, the status
   stays `NotLoaded`, and a check that needs them is skipped with a warning on stderr; provisioning goes on.
 
@@ -223,7 +234,7 @@ internal sealed class GameRulesCheck(GameConfigStatus status) : IStartupCheck
             return; // NotLoaded (provision) or Failed: the report already has the cause.
         }
 
-        // read config or declared catalogs here
+        // read config, or a declared catalog with status.TryGetCatalog<GameCatalog>(out var catalog)
     }
 }
 ```
@@ -238,7 +249,7 @@ four checks):
 [ThrowingCheck] the startup check could not be created: InvalidOperationException: boom. Fix: register its dependencies; a check that reads config takes GameConfigStatus (FG-023).
 status: Failed
 plain ran
-[CatalogCheck] the startup check did not run: catalog ChecksCatalog was not built (see the lines above). Fix: take GameConfigStatus and read the catalog only when DeclarationsPassed (FG-023).
+[CatalogCheck] the startup check did not run: catalog ChecksCatalog was not built (see the lines above). Fix: take GameConfigStatus and read the catalog with TryGetCatalog (FG-023).
 warning: [NeedsConfigCheck] the startup check did not run: provision mode does not load the game config. Fix: take GameConfigStatus and skip when it is NotLoaded (FG-023).
 ```
 
@@ -303,7 +314,10 @@ the compatibility table above hold.
   `LoadProblem`, a failed save keeps the new version in memory with `WriteProblem`; it never throws for file problems.
   Config file names stay data inside the container (never paths). Not thread-safe (main thread), not encrypted.
 - Unity: `UnityConfigCache.Create(environmentName)` = `Application.persistentDataPath/gameserver-config/{environmentName}`,
-  one folder per server environment.
+  one folder per server environment. On iOS the folder is excluded from iCloud/iTunes backup (the cache is re-downloadable;
+  checked in T058).
+- Fixed in review (T071): one cache-name rule on every platform (it was the running platform's invalid file-name characters,
+  found in T067).
 - With it, a second app start has the config before login; while the client config version is unchanged (also across
   server-only edits) nothing is downloaded.
 - Budget (SC-006, `GAMESERVER_PERF=1`): 1 MiB save p95 11–15 ms, load p95 5–9 ms on the C: drive (`%TEMP%`, where
@@ -318,8 +332,7 @@ this.Client = new GameServerClient(options, transport, config: UnityConfigCache.
 ```
 
 `cacheName` is a plain folder name per server environment kept in the client settings (`OnlineSettings` has only `BaseUrl`
-today); `Create` refuses the platform's invalid file-name characters, which differ (`:` on Windows/Editor only), so it is not
-derived from the URL. Client markers removable: `ServerConfigInjector.cs:39` and `OnlineSession.cs:333` (and the remark at
+today); `Create` accepts only 1–64 lowercase letters, digits, `.`, `_` and `-` on every platform, so it is not derived from the URL. Client markers removable: `ServerConfigInjector.cs:39` and `OnlineSession.cs:333` (and the remark at
 `:329`). `FetchConfigAsync` (`OnlineSession.cs:335-347`) already applies the cached files when `RefreshConfigAsync` returns
 false. T067: the snippet compiles (C# 9, package `Runtime`, Unity 6000.3.22f1 `UnityEngine` modules), and a .NET client with
 `PersistentConfigCache` downloaded 0 files on its second start after a server-only `ConfigMission.json` edit (SC-009).
@@ -333,6 +346,9 @@ false. T067: the snippet compiles (C# 9, package `Runtime`, Unity 6000.3.22f1 `U
   the wire; the decoded body is byte-identical to the uncompressed one. No ASP.NET response-compression middleware: login,
   session, GM, health and error responses never carry `Content-Encoding` (BREACH). Request bodies are never decompressed.
 - Rollback switch `GameServer:ConfigCompression=false` (default `true`): today's bytes and headers, no `Vary`.
+- An encoding that does not shrink the bundle (checked once at startup) is never used, and at most max(1, CPUs / 4) responses
+  are compressed at the same time; the others are sent uncompressed (the body of the rollback switch, plus `Vary`), so a burst
+  of full downloads cannot take the CPU (review T071).
 - The bundle is serialized once at startup (files sorted by name + the server version); each full response adds only the
   per-request tail (server time, client version), byte-identical to serializing the whole message.
 - `GameServer:Limits:ConfigBundleBytes` keeps limiting the **uncompressed** response. When the player API is mapped, startup
@@ -365,9 +381,14 @@ false. T067: the snippet compiles (C# 9, package `Runtime`, Unity 6000.3.22f1 `U
 - KestrelDemo (`samples/SampleGame/KestrelDemo/Assets/SampleGame/SampleGameClient.cs`) uses the persistent cache
   (`config: UnityConfigCache.Create("local")`) and logs `config from cache {version}` / `config downloaded {version}`.
 - Consumer fixture: `notes.json` is declared with the rule `fixture.notes` (`maxLength` integer ≥ 1) instead of
-  `RequiredConfigFiles`; `FixtureConfigTests` shows the kit call (`ConfigDeclarationCheck.Check`).
+  `RequiredConfigFiles`; `FixtureConfigTests` shows the kit call (`ConfigDeclarationCheck.Check`). Review T071: the startup
+  check `NotesResultSizeCheck(GameConfigStatus, GameServerOptions)` with its unit test `FixtureStartupCheckTests`
+  (`TestGameConfigStatus`), and `FixtureSdkConfigTests` calling the SDK through an aliased reference (`Aliases="sdk"`).
+- Test kit (slice 013 `LocalFlavorFactory`, 0.7.0-only, so no BC): a refused start throws `GameServerStartupException` from
+  `StartServer()`/`CreateClient()`/`Services` with the report as `Violations` instead of an `InvalidOperationException`; dispose
+  after a failed start no longer throws. Merge this into the 013 notes' TestKit section with the round's notes.
 - Module template: `ConfigFileDeclaration.Optional("template.json", TemplateConfigRules.Points)` (rule `template.points`) and a
-  commented `ConfigCatalogs` example.
+  commented `ConfigCatalogs` example whose build returns an empty catalog when the optional file is absent.
 - New architecture test `ConfigCatalogArchitectureTests`: no framework, sample or template module registers a declared catalog
   in `ConfigureServices`.
 - Docs: consumer guide §12 "Game config" (and §5, §10, §11); `docs/guides/module-authoring.md` (config declarations, kit call);
@@ -394,7 +415,7 @@ All three are implemented as architect decisions and none blocks a task; each ne
 | T051 | KestrelDemo E2E with compression on (Editor) | done 2026-11-04 (agent-run, Unity 6000.3.22f1): `-CompileOnly` 0 `error CS`/`warning CS`; `-E2E` through a logging forwarder on 5092: request `Accept-Encoding: deflate, gzip`, `/api/v1/config/get` answered `Content-Encoding: gzip`, `Vary: Accept-Encoding`, 494 B; bundle parsed (`config downloaded sample-1+9b25b8b6bc0b`), exit 0 |
 | T057 | KestrelDemo persistent cache in the Editor (V10 Mono) | done 2026-11-04 (agent-run): run 1 `config downloaded sample-1+9b25b8b6bc0b`, run 2 `config from cache sample-1+9b25b8b6bc0b` with no `GetConfig` request, run 3 after a client-visible `shop.json` edit `config downloaded sample-1+523717009cea` (the `File.Replace` path on Mono); exit 0 each; the cache folder holds only `gameserver-config.bin` |
 | T058 | Android device run and iOS build/device (V8, V9, V10, V11) | **pending (owner); the tag waits for it (FR-091).** Steps below |
-| T066 | Consumer-guide walkthrough by a fresh reviewer agent (FR-075, US6-2) | pending (not run yet; the tag waits for it) |
+| T066 | Consumer-guide walkthrough by a fresh reviewer agent (FR-075, US6-2) | done 2026-11-04 (fresh agent, temp copy deleted, nothing committed): the walkthrough ran green (35 fixture tests); 12 gaps, each fixed in the consumer guide §5.2/§12, module-authoring, the kit (`TestGameConfigStatus`, `GameConfigStatus.TryGetCatalog`, `LocalFlavorFactory` startup failure) or the fixture (T066 and T071 Notes in tasks.md) |
 | T067 | First-consumer temp clone (zh-pvp-server), SC-009 | done 2026-11-04 (agent-run, temp clone of `7911f20`, framework `abfc32d`, deleted afterwards; `E:\ProjGits\*` untouched; host on 5097, never 5180): every step of the checklist above verified; game suite 120/121 (the failure is the game's own docs naming `v0.6.0`, bump step 1); SC-009: 0 client downloads after a server-only `ConfigMission.json` edit; doc fixes: this checklist, consumer guide §11/§12.2/§12.8, PCR unity-sdk, 013 BC-4 |
 
 T058 steps (owner; Android on a device on the same network, iOS on macOS):
@@ -411,14 +432,15 @@ T058 steps (owner; Android on a device on the same network, iOS on macOS):
    close and start it again (run 2 → `config from cache {v}`, no `config/get` request); stop the host, restart it with
    `GameServer__ConfigPath` pointing at a **copy** of `samples/SampleHost/config` whose `shop.json` is edited (never the committed
    folder); start the app (run 3 → `config downloaded {w}`).
-5. iOS: the same three starts from a macOS build (the iOS module is not installed on the agent's machine).
+5. iOS: the same three starts from a macOS build (the iOS module is not installed on the agent's machine). After a save,
+   `gameserver-config/<env>` has `NSURLIsExcludedFromBackupKey` (Xcode device container or a log of `NSURL resourceValues`).
 6. Record per platform: `Accept-Encoding` sent, response compressed or not, bundle parsed, the two cache lines, no crash
    (SHA-256 and `File.Replace` under IL2CPP). A platform that advertises gzip without decoding: set
    `GameServer:ConfigCompression=false` for the deployments serving it (V9 not needed while V8 holds).
 
 ## Known before the tag
 
-- **Open before the tag:** T058 (owner device run), T066 (reviewer walkthrough), owner confirmations 1–3.
+- **Open before the tag:** T058 (owner device run), owner confirmations 1–3.
 - V6 (T006, T050): gzip 9 / Brotli 6 measured 17.8–18.7 ms p95 at 1 MiB on the real path, within 10 % of the 20 ms budget;
   **gzip 6 / Brotli 4 ship** (p95 9.2 / 7.5 ms, gzip ratio ≤ 28.3 %). Android/iOS decoding is still T058.
 - V11 (T009, T045): SC-006 (1 MiB load and save ≤ 50 ms) is met on the C: drive (save p95 11–15 ms) but not on D: (≈ 70 ms
@@ -428,6 +450,5 @@ T058 steps (owner; Android on a device on the same network, iOS on macOS):
   now writes nothing once the request token is cancelled.
 - Provision mode treats every config-related unavailability (config or declared catalog) as the BC-9 warning, never an
   error (T029, T031).
-- `UnityConfigCache.Create` checks the name with the running platform's `Path.GetInvalidFileNameChars()`, so the same name can
-  be refused in the Windows Editor and accepted on Android/iOS (found in T067, reported for the review T070; the docs tell games
-  to use plain names such as `local` or `live`).
+- Per-request compression cost is bounded by a gate (max(1, CPU/4) concurrent); the gzip splice (research R12 alt. 2) is deferred
+  until a real bundle approaches the 1 MiB limit.

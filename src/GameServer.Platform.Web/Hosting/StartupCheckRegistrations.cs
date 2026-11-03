@@ -35,7 +35,8 @@ internal sealed class StartupCheckRegistrations(IServiceCollection services)
             var created = descriptor.ImplementationInstance
                 ?? (descriptor.ImplementationType is { } type
                     ? ActivatorUtilities.CreateInstance(provider, type)
-                    : descriptor.ImplementationFactory!(provider));
+                    : descriptor.ImplementationFactory!(provider))
+                ?? throw new InvalidOperationException("the registration's factory returned null");
             return created as IStartupCheck
                 ?? throw new InvalidOperationException($"the registration created {created.GetType().Name}, which is not an {nameof(IStartupCheck)}");
         }
@@ -47,8 +48,9 @@ internal sealed class StartupCheckRegistrations(IServiceCollection services)
     }
 
     /// <summary>
-    /// The name a line gives the check of <paramref name="descriptor"/> (startup-report §7): the implementation type, or for a
-    /// factory registration its declaring type, skipping compiler-generated closure classes (V4).
+    /// The name a line gives the check of <paramref name="descriptor"/> (startup-report §7): the implementation type; for a factory
+    /// registration the class it returns (<c>AddSingleton&lt;IStartupCheck, X&gt;(sp =&gt; …)</c>, a method group returning X),
+    /// otherwise its declaring type, skipping compiler-generated closure classes (V4).
     /// </summary>
     public static string NameOf(ServiceDescriptor descriptor, int index)
     {
@@ -61,6 +63,12 @@ internal sealed class StartupCheckRegistrations(IServiceCollection services)
         if (descriptor.ImplementationType is { } type)
         {
             return type.Name;
+        }
+
+        if (descriptor.ImplementationFactory?.Method.ReturnType is { IsClass: true, IsAbstract: false } returned
+            && typeof(IStartupCheck).IsAssignableFrom(returned))
+        {
+            return returned.Name;
         }
 
         for (var declaring = descriptor.ImplementationFactory?.Method.DeclaringType; declaring is not null; declaring = declaring.DeclaringType)

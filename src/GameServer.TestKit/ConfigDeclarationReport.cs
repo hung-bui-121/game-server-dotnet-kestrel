@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using GameServer.Config;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GameServer.TestKit;
@@ -8,8 +9,10 @@ public sealed class ConfigDeclarationReport
 {
     private readonly IReadOnlyDictionary<Type, object> _catalogs;
 
-    internal ConfigDeclarationReport(IReadOnlyList<string> errors, IReadOnlyList<string> warnings, IReadOnlyDictionary<Type, object> catalogs)
+    internal ConfigDeclarationReport(
+        IGameConfig config, IReadOnlyList<string> errors, IReadOnlyList<string> warnings, IReadOnlyDictionary<Type, object> catalogs)
     {
+        Config = config;
         Errors = errors;
         Warnings = warnings;
         _catalogs = catalogs;
@@ -22,6 +25,12 @@ public sealed class ConfigDeclarationReport
     public IReadOnlyList<string> Warnings { get; }
 
     public bool Passed => Errors.Count == 0;
+
+    /// <summary>The config the report was made from (<see cref="TestGameConfigStatus.From"/> publishes it).</summary>
+    internal IGameConfig Config { get; }
+
+    /// <summary>The built catalogs by type.</summary>
+    internal IReadOnlyDictionary<Type, object> Catalogs => _catalogs;
 
     /// <summary>The built catalog; throws InvalidOperationException naming the lines when it was not built.</summary>
     public T Catalog<T>()

@@ -36,7 +36,7 @@ public static class FileGameConfigLoader
         var label = baseManifest?.Label ?? string.Empty;
         if (baseManifest is not null)
         {
-            ReadFiles(baseDir, baseManifest, files, listed, clientVisible, violations);
+            ReadFiles(baseDir, baseManifestPath, baseManifest, files, listed, clientVisible, violations);
         }
 
         var envDir = Path.Combine(configRoot, "env", deploymentEnvironment);
@@ -53,7 +53,7 @@ public static class FileGameConfigLoader
                     label = envManifest.Label;
                 }
 
-                overlaid.UnionWith(ReadFiles(envDir, envManifest, files, listed, clientVisible, violations));
+                overlaid.UnionWith(ReadFiles(envDir, envManifestPath, envManifest, files, listed, clientVisible, violations));
             }
         }
 
@@ -67,7 +67,7 @@ public static class FileGameConfigLoader
             // Compared with the listed names: a listed file that failed to read already has its own line.
             foreach (var name in clientVisible.Distinct(StringComparer.Ordinal).Where(n => !listed.Contains(n)))
             {
-                violations.Add($"[config] clientVisible file '{name}' is not listed in 'files'. Fix: add it to manifest 'files'.");
+                violations.Add($"[config] clientVisible file '{ConfigFileNames.Escape(name)}' is not listed in 'files'. Fix: add it to manifest 'files'.");
             }
         }
 
@@ -98,10 +98,14 @@ public static class FileGameConfigLoader
         return $"{label}+{hex[..12]}";
     }
 
-    /// <summary>The manifest bound from its parsed document; null (with its lines) when it is not valid JSON or repeats a property.</summary>
+    /// <summary>The manifest bound from its parsed document; null (with its lines) when it cannot be read, is not valid JSON or repeats a property.</summary>
     private static Manifest? ReadManifest(string path, List<string> violations)
     {
-        var bytes = File.ReadAllBytes(path);
+        if (ReadBytes(path, violations) is not { } bytes)
+        {
+            return null;
+        }
+
         try
         {
             using var document = JsonDocument.Parse(bytes);
@@ -120,11 +124,17 @@ public static class FileGameConfigLoader
     }
 
     /// <summary>Reads every file of <paramref name="manifest"/> (one line per fault) and returns the names it listed.</summary>
-    private static string[] ReadFiles(
-        string dir, Manifest manifest, Dictionary<string, byte[]> files, HashSet<string> listed, List<string> clientVisible, List<string> violations)
+    private static List<string> ReadFiles(
+        string dir,
+        string manifestPath,
+        Manifest manifest,
+        Dictionary<string, byte[]> files,
+        HashSet<string> listed,
+        List<string> clientVisible,
+        List<string> violations)
     {
-        clientVisible.AddRange(manifest.ClientVisible ?? []);
-        var names = manifest.Files ?? [];
+        clientVisible.AddRange(NamedEntries(manifestPath, "clientVisible", manifest.ClientVisible, violations));
+        var names = NamedEntries(manifestPath, "files", manifest.Files, violations);
         foreach (var name in names)
         {
             listed.Add(name);
@@ -137,11 +147,33 @@ public static class FileGameConfigLoader
         return names;
     }
 
+    /// <summary>The entries of one manifest list; a null, empty or blank entry is one line and is ignored (no follow-up line).</summary>
+    private static List<string> NamedEntries(string manifestPath, string list, string?[]? entries, List<string> violations)
+    {
+        var names = new List<string>(entries?.Length ?? 0);
+        var reported = false;
+        foreach (var entry in entries ?? [])
+        {
+            if (!string.IsNullOrWhiteSpace(entry))
+            {
+                names.Add(entry);
+            }
+            else if (!reported)
+            {
+                violations.Add($"[config] '{manifestPath}' lists an empty name in '{list}'. Fix: remove the entry or name a file (CFG-01).");
+                reported = true;
+            }
+        }
+
+        return names;
+    }
+
     private static byte[]? ReadConfigFile(string dir, string name, List<string> violations)
     {
-        if (name.Contains("..", StringComparison.Ordinal) || Path.IsPathRooted(name))
+        // A control character would make the version input ambiguous (a name ends at its line feed) and split report lines.
+        if (name.Contains("..", StringComparison.Ordinal) || Path.IsPathRooted(name) || ConfigFileNames.HasControlCharacter(name))
         {
-            violations.Add($"[config] file name '{name}' is not allowed. Fix: use a plain relative file name.");
+            violations.Add($"[config] file name '{ConfigFileNames.Escape(name)}' is not allowed. Fix: use a plain relative file name.");
             return null;
         }
 
@@ -152,7 +184,11 @@ public static class FileGameConfigLoader
             return null;
         }
 
-        var bytes = File.ReadAllBytes(path);
+        if (ReadBytes(path, violations) is not { } bytes)
+        {
+            return null;
+        }
+
         if (name.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
         {
             try
@@ -174,15 +210,32 @@ public static class FileGameConfigLoader
         return bytes;
     }
 
-    /// <summary>One line per repeated property name (BC-2); true when there was any.</summary>
+    /// <summary>The file's bytes, or null with one line when the host process cannot read it (CFG-01).</summary>
+    private static byte[]? ReadBytes(string path, List<string> violations)
+    {
+        try
+        {
+            return File.ReadAllBytes(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            violations.Add($"[config] '{path}' cannot be read: {ex.Message} Fix: check that the host process can read the file (CFG-01).");
+            return null;
+        }
+    }
+
+    /// <summary>One line per repeated property name, exact or differing only in case (BC-2); true when there was any.</summary>
     private static bool AddDuplicates(string path, byte[] json, List<string> violations)
     {
         var duplicates = JsonDuplicateProperties.Find(json);
         foreach (var duplicate in duplicates)
         {
-            violations.Add(
-                $"[config] '{path}' has property '{duplicate.Name}' twice at {duplicate.Path} (line {duplicate.Line}, byte {duplicate.Byte}). " +
-                "Fix: keep one property; the last one used to win silently (CFG-01).");
+            var at = $"at {duplicate.Path} (line {duplicate.Line}, byte {duplicate.Byte})";
+            violations.Add(duplicate.IsCaseVariant
+                ? $"[config] '{path}' has properties '{duplicate.FirstName}' and '{duplicate.Name}' {at}, which differ only in case. " +
+                  "Fix: keep one property; config is read ignoring case, so the last one used to win silently (CFG-01)."
+                : $"[config] '{path}' has property '{duplicate.Name}' twice {at}. " +
+                  "Fix: keep one property; the last one used to win silently (CFG-01).");
         }
 
         return duplicates.Count > 0;
@@ -192,9 +245,9 @@ public static class FileGameConfigLoader
     {
         public string Label { get; set; } = string.Empty;
 
-        public string[]? Files { get; set; } = [];
+        public string?[]? Files { get; set; } = [];
 
-        public string[]? ClientVisible { get; set; } = [];
+        public string?[]? ClientVisible { get; set; } = [];
     }
 }
 
@@ -208,6 +261,7 @@ public sealed class GameConfig : IGameConfig
     /// <paramref name="files"/> are the effective files (after the overlay) and <paramref name="clientVisible"/> names some of them.
     /// Computes both versions exactly like the host loader (FR-042, <see cref="GameConfigVersions"/>).
     /// </summary>
+    /// <exception cref="ArgumentException">A client-visible name is not one of the files, or a file name contains a control character.</exception>
     public GameConfig(string label, IReadOnlyDictionary<string, byte[]> files, IEnumerable<string> clientVisible)
     {
         ArgumentNullException.ThrowIfNull(label);
@@ -222,6 +276,8 @@ public sealed class GameConfig : IGameConfig
         _clientVisible = visible;
     }
 
+    /// <summary>Keeps the given server version; computes the client version like the host.</summary>
+    /// <exception cref="ArgumentException">A client-visible name is not one of the files (also thrown by the 3-argument constructor).</exception>
     [Obsolete("The given configVersion may not hash clientVisible (FG-024). Use new GameConfig(label, files, clientVisible), which computes both versions like the host.")]
     public GameConfig(string label, string configVersion, IReadOnlyDictionary<string, byte[]> files, IReadOnlySet<string> clientVisible)
     {

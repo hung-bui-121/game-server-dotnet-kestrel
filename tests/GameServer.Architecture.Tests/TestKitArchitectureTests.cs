@@ -37,9 +37,20 @@ public sealed class TestKitArchitectureTests
     ];
 
     private static readonly string[] AllowedInternalMembers =
-        ["GameServer.Platform.Aggregates.LoadedAggregate::.ctor", "GameServer.Platform.Registry.ModuleRegistry::ValidateConfig"];
+    [
+        "GameServer.Platform.Aggregates.LoadedAggregate::.ctor",
+        "GameServer.Platform.Registry.ModuleRegistry::ValidateConfig",
 
-    /// <summary>Platform.Web internals the kit may use: the member tree of aggregate states shared with the startup hidden-member check (slice 014, FG-027).</summary>
+        // TestGameConfigStatus (slice 015 T071 G2): the status a startup check gets, in the state the host would publish.
+        "GameServer.Platform.GameConfigStatus::.ctor",
+        "GameServer.Platform.GameConfigStatus::PublishLoaded",
+        "GameServer.Platform.GameConfigStatus::PublishFailed",
+    ];
+
+    /// <summary>
+    /// Platform.Web internals the kit may use: the member tree of aggregate states shared with the startup hidden-member check (slice 014,
+    /// FG-027) and the startup-failure marker of LocalFlavorFactory (slice 015).
+    /// </summary>
     private static readonly string[] AllowedWebInternalTypes =
     [
         "GameServer.Platform.Web.Aggregates.StateMembers",
@@ -51,6 +62,9 @@ public sealed class TestKitArchitectureTests
         "GameServer.Platform.Web.Aggregates.StateCollection",
         "GameServer.Platform.Web.Aggregates.StateDictionary",
         "GameServer.Platform.Web.Aggregates.StateUnfillable",
+
+        // LocalFlavorFactory (slice 015 T071 G3): a startup failure is rethrown to the test instead of exit code 1.
+        "GameServer.Platform.Web.Hosting.StartupFailureMode",
     ];
 
     [Fact]
@@ -100,8 +114,9 @@ public sealed class TestKitArchitectureTests
         used.Where(u => !AllowedInternalTypes.Any(t => u == t || u.StartsWith(t + "::", StringComparison.Ordinal)) && !AllowedInternalMembers.Contains(u))
             .ShouldBeEmpty(
                 "GameServer.TestKit may use only CommandContext, CommitRules, the LoadedAggregate constructor, the config declaration " +
-                "engine and ModuleRegistry.ValidateConfig of GameServer.Platform's internals (InternalsVisibleTo for the command-context " +
-                "double, FR-025, and the config check, FR-018); anything else needs a review and a new entry here");
+                "engine, ModuleRegistry.ValidateConfig and the GameConfigStatus constructor and publish methods of GameServer.Platform's " +
+                "internals (InternalsVisibleTo for the command-context double, FR-025, the config check, FR-018, and TestGameConfigStatus, " +
+                "FG-023); anything else needs a review and a new entry here");
     }
 
     [Fact]

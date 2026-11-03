@@ -80,10 +80,13 @@ var client = new GameServerClient(options, new UnityWebRequestTransport(), confi
 ```
 
 `UnityConfigCache.Create(environmentName)` = `new PersistentConfigCache(Path.Combine(Application.persistentDataPath,
-"gameserver-config", environmentName))`; tên môi trường phải là tên thư mục đơn (không rỗng, không `.`/`..`, không dấu phân cách
-hay ký tự cấm) — **một thư mục cho mỗi môi trường server** (local, dev, beta, live không dùng chung cache). "Ký tự cấm" là
-`Path.GetInvalidFileNameChars()` của nền tảng đang chạy, nên khác nhau theo nền tảng (`:` bị cấm trên Windows/Editor, Android
-và iOS chỉ cấm `/` và NUL): game đặt tên trong settings của client (vd. `local`, `live`), không suy ra từ URL. Thành viên:
+"gameserver-config", environmentName))`; tên môi trường phải là tên thư mục đơn (1–64 ký tự `a-z`, `0-9`, `.`, `_`, `-`; không bắt đầu hay kết thúc bằng `.`;
+không phải tên thiết bị Windows `con`, `prn`, `aux`, `nul`, `com1`–`com9`, `lpt1`–`lpt9`; **cùng một luật trên mọi nền tảng**, sai →
+`ArgumentException`, `null` → `ArgumentNullException`) — **một thư mục cho mỗi môi trường server** (local, dev, beta, live không
+dùng chung cache). Luật nằm ở `PersistentConfigCache.FolderNameProblem` (internal, `Runtime/Core`), không dùng
+`Path.GetInvalidFileNameChars()`; `localhost:5080` bị từ chối ở mọi nơi (dùng `localhost-5080`). Game đặt tên trong settings của
+client (vd. `local`, `live`), không suy ra từ URL. Trên iOS thư mục được loại khỏi backup iCloud/iTunes
+(`UnityEngine.iOS.Device.SetNoBackupFlag` trên **thư mục**, vì `File.Replace` tạo file mới và mất cờ đặt trên file; kiểm ở T058). Thành viên:
 `FileName` (`gameserver-config.bin`), `Folder`, `Version`, `Files`, `LoadProblem`, `WriteProblem`, `Store(version, files)`.
 
 - **Container v1** (một file mỗi thư mục, little-endian): magic `GSCC`, format version `1` (u16), reserved (u16), độ dài payload

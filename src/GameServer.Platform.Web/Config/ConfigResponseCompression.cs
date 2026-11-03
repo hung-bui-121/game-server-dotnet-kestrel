@@ -1,15 +1,12 @@
-using System.Buffers;
 using System.IO.Compression;
-using GameServer.Platform.Web.Protobuf;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Net.Http.Headers;
 
 namespace GameServer.Platform.Web.Config;
 
 /// <summary>
-/// Writes <c>GetConfig</c> responses, compressed per request for clients that ask (research R12, contracts/wire-changes.md §5,
-/// data-model §4.2). Only the <c>GetConfig</c> handler calls it: no middleware compresses, so no other route (login and session
-/// responses carry secrets, BREACH) can ever carry a <c>Content-Encoding</c>.
+/// The constants, negotiation and compression of <c>GetConfig</c> responses (research R12, contracts/wire-changes.md §5, data-model
+/// §4.2); <see cref="ConfigCompressor"/> writes them. Only the <c>GetConfig</c> handler compresses: no middleware does, so no other
+/// route (login and session responses carry secrets, BREACH) can ever carry a <c>Content-Encoding</c>.
 /// </summary>
 internal static class ConfigResponseCompression
 {
@@ -31,67 +28,18 @@ internal static class ConfigResponseCompression
     private const string Wildcard = "*";
 
     /// <summary>
-    /// The full response (<c>Prefix ++ tail</c>): compressed when the switch is on, the response is at least
-    /// <see cref="MinCompressBytes"/> long, carries files, the request accepts br or gzip and the result is smaller.
-    /// </summary>
-    public static async Task WriteFullAsync(HttpContext context, bool enabled, ConfigBundle bundle, ReadOnlyMemory<byte> tail)
-    {
-        ArgumentNullException.ThrowIfNull(bundle);
-        if (!enabled)
-        {
-            // Rollback switch: today's bytes and headers.
-            await ProtobufBinding.WriteBytesAsync(context, StatusCodes.Status200OK, bundle.Prefix, tail, contentEncoding: null, contentLength: null);
-            return;
-        }
-
-        AddVary(context);
-        var length = bundle.Prefix.Length + tail.Length;
-        var encoding = bundle.FileCount > 0 && length >= MinCompressBytes ? Negotiate(context.Request) : null;
-        if (encoding is null)
-        {
-            await WriteIdentityAsync(context, bundle.Prefix, tail);
-            return;
-        }
-
-        // Only a strictly smaller result is sent, so the buffer never needs more than the input length.
-        var buffer = ArrayPool<byte>.Shared.Rent(length);
-        try
-        {
-            var written = Compress(encoding, bundle.Prefix.Span, tail.Span, buffer, capacity: length - 1);
-            if (written < 0)
-            {
-                await WriteIdentityAsync(context, bundle.Prefix, tail);
-                return;
-            }
-
-            await ProtobufBinding.WriteBytesAsync(
-                context, StatusCodes.Status200OK, buffer.AsMemory(0, written), ReadOnlyMemory<byte>.Empty, encoding, written);
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer);
-        }
-    }
-
-    /// <summary>A <c>not_modified</c> response: never compressed, with <c>Vary</c> while the switch is on.</summary>
-    public static Task WriteNotModifiedAsync(HttpContext context, bool enabled, ReadOnlyMemory<byte> body)
-    {
-        if (!enabled)
-        {
-            return ProtobufBinding.WriteBytesAsync(context, StatusCodes.Status200OK, body, ReadOnlyMemory<byte>.Empty, contentEncoding: null, contentLength: null);
-        }
-
-        AddVary(context);
-        return WriteIdentityAsync(context, body, ReadOnlyMemory<byte>.Empty);
-    }
-
-    /// <summary>
     /// <c>br</c>, <c>gzip</c> or null (identity) for the request's <c>Accept-Encoding</c> (wire-changes §5): <c>q=0</c> excludes,
     /// <c>*</c> covers a candidate that is not listed, the higher q wins and a tie goes to <c>br</c>. An absent or unparseable header
-    /// names no candidate (the ASP.NET parser never throws and re-tokenises malformed elements, VERIFY V7).
+    /// names no candidate (the ASP.NET parser never throws and re-tokenises malformed elements, VERIFY V7). Only offered encodings
+    /// are candidates (M3: the startup probe drops one that does not shrink the bundle); none offered → null without parsing.
     /// </summary>
-    internal static string? Negotiate(HttpRequest request)
+    internal static string? Negotiate(HttpRequest request, bool offerBrotli, bool offerGzip)
     {
+        if (!offerBrotli && !offerGzip)
+        {
+            return null;
+        }
+
         double? brotli = null;
         double? gzip = null;
         double? any = null;
@@ -112,8 +60,8 @@ internal static class ConfigResponseCompression
             }
         }
 
-        var brotliQuality = brotli ?? any ?? 0;
-        var gzipQuality = gzip ?? any ?? 0;
+        var brotliQuality = offerBrotli ? brotli ?? any ?? 0 : 0;
+        var gzipQuality = offerGzip ? gzip ?? any ?? 0 : 0;
         if (brotliQuality > 0 && brotliQuality >= gzipQuality)
         {
             return Brotli;
@@ -144,12 +92,6 @@ internal static class ConfigResponseCompression
         Gzip => new GZipStream(sink, new ZLibCompressionOptions { CompressionLevel = GzipLevel }, leaveOpen: true),
         _ => throw new ArgumentOutOfRangeException(nameof(encoding), encoding, "Only br and gzip are offered."),
     };
-
-    private static Task WriteIdentityAsync(HttpContext context, ReadOnlyMemory<byte> first, ReadOnlyMemory<byte> second) =>
-        ProtobufBinding.WriteBytesAsync(context, StatusCodes.Status200OK, first, second, contentEncoding: null, first.Length + second.Length);
-
-    /// <summary>A shared cache must never give a compressed body to a client that did not ask (R12).</summary>
-    private static void AddVary(HttpContext context) => context.Response.Headers.Append(HeaderNames.Vary, HeaderNames.AcceptEncoding);
 
     /// <summary>
     /// Write-only stream over a fixed buffer: past <c>capacity</c> it records the overflow and drops the rest, so a result that is

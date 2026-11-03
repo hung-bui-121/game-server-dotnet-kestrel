@@ -41,15 +41,30 @@ internal static class ConfigReportLines
     public static string CatalogThrew(string module, Type catalog, Exception exception) =>
         $"[module {module}] catalog {catalog.Name}: the build threw {exception.GetType().Name}: {exception.Message}. {ThrowFix}";
 
+    /// <summary>
+    /// The build threw while an optional file it lists is absent (M1): <paramref name="file"/> is the first absent one. The message's
+    /// trailing period is stripped (the <c>Json</c> of an absent file ends with one) so the clause after it reads as one sentence.
+    /// </summary>
+    public static string CatalogThrewOptionalAbsent(string module, Type catalog, Exception exception, string file) =>
+        $"[module {module}] catalog {catalog.Name}: the build threw {exception.GetType().Name}: {Trim(exception.Message)}; optional config file '{file}' is absent. " +
+        $"Fix: build an empty catalog when Config.HasFile(\"{file}\") is false, or declare the file Required (FG-018).";
+
+    /// <summary>The backstop line (M1): a catalog is not built and no other line explains why.</summary>
+    public static string CatalogUnexplained(Type catalog) =>
+        $"[catalog {catalog.Name}] was not built and no other line explains why (framework fault). " +
+        "Fix: report it with this config; the catalog would fail at its first use (FG-018).";
+
     public static string CatalogNull(string module, Type catalog) =>
         $"[module {module}] catalog {catalog.Name}: the build returned no catalog and reported no problem. Fix: return the catalog or report why (FG-018).";
 
     public static string CatalogDeclaredTwice(Type catalog, string firstModule, string secondModule) =>
         $"[catalog {catalog.Name}] is declared by {firstModule} and {secondModule}. Fix: declare it in one module; the other takes it from DI (FG-018).";
 
+    /// <summary>A host's or a test's registration (instance, type or factory) of a declared catalog threw when resolved.</summary>
     public static string CatalogHostFailed(string module, Type catalog, Exception exception) =>
-        $"[module {module}] catalog {catalog.Name}: the instance registered by the host could not be created: {exception.GetType().Name}: {exception.Message}. " +
-        "Fix: correct the registration or remove it to use the declared build (FG-018).";
+        $"[catalog {catalog.Name}] the registration that replaces the declaration of module {module} could not be resolved: " +
+        $"{exception.GetType().Name}: {exception.Message}. " +
+        "Fix: correct that registration (host or test), or remove it so the platform builds the declared catalog (FG-018).";
 
     public static string CheckNotCreated(string check, Exception exception) =>
         $"[{check}] the startup check could not be created: {exception.GetType().Name}: {exception.Message}. " +
@@ -61,7 +76,7 @@ internal static class ConfigReportLines
 
     public static string CheckNotRunCatalog(string check, string catalogTypeName) =>
         $"[{check}] the startup check did not run: catalog {catalogTypeName} was not built (see the lines above). " +
-        "Fix: take GameConfigStatus and read the catalog only when DeclarationsPassed (FG-023).";
+        "Fix: take GameConfigStatus and read the catalog with TryGetCatalog (FG-023).";
 
     /// <summary>A warning, not an error: provision mode does not validate config (D4, BC-9).</summary>
     public static string CheckNotRunProvision(string check) =>

@@ -12,6 +12,8 @@
   <ItemGroup>
     <!-- The consumer test kit is the only framework reference; Microsoft.AspNetCore.Mvc.Testing flows through it (V4). -->
     <ProjectReference Include="$(GameServerRoot)src/GameServer.TestKit/GameServer.TestKit.csproj" />
+    <!-- A game test that calls the SDK: the SDK compiles the same generated protocol types as the server (CS0433 without the alias). -->
+    <ProjectReference Include="$(GameServerRoot)sdk/GameServer.Client/GameServer.Client.csproj" Aliases="sdk" />
     <ProjectReference Include="../../src/Fixture.Game/Fixture.Game.csproj" />
     <ProjectReference Include="../../src/Fixture.Host/Fixture.Host.csproj" />
   </ItemGroup>

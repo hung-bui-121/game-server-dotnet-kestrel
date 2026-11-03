@@ -53,8 +53,9 @@ public static class ProtobufBinding
         string? contentEncoding,
         long? contentLength)
     {
-        // A request whose timeout fired (or whose client left) gets the timeout response only: a body written here with the
-        // cancelled token may still be buffered, and the timeout writer would append its envelope to it (two messages, one body).
+        // The token is cancelled when the request timeout fired or the client left. Write nothing then: on a timeout the timeout
+        // policy writes the error envelope, and a body started here first would share the response with it (seen under
+        // TestServer, T035). A cancellation during the writes below still stops them through the same token.
         context.RequestAborted.ThrowIfCancellationRequested();
         context.Response.StatusCode = statusCode;
         context.Response.ContentType = ErrorResponseWriter.ProtobufContentType;

@@ -41,7 +41,7 @@ public sealed class FixtureConfigTests
     }
 
     /// <summary><c>src/Fixture.Host/config</c> of the fixture repository (the config the host ships).</summary>
-    private static string CommittedConfig()
+    internal static string CommittedConfig()
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
         {

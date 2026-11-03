@@ -1,4 +1,5 @@
 using System.Net;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using GameServer.Platform.Registry;
 using GameServer.Platform.Web.Catalog;
@@ -116,11 +117,13 @@ public static class GameServerRunExtensions
 
     internal static async Task<int> ServeAsync(WebApplication app, TextWriter error)
     {
+        // Under the kit's LocalFlavorFactory a startup failure is rethrown, so the test gets the report instead of exit code 1 (G3).
+        var rethrow = app.Services.GetService<StartupFailureMode>() is not null;
         try
         {
             app.UseGameServer();
         }
-        catch (GameServerStartupException ex)
+        catch (GameServerStartupException ex) when (!rethrow)
         {
             // Fail fast before serving traffic (ARC-06, ACC-26).
             await error.WriteLineAsync(ex.Message);
@@ -134,6 +137,12 @@ public static class GameServerRunExtensions
         }
         catch (Exception ex) when (FindStartupException(ex) is { } startup)
         {
+            if (rethrow)
+            {
+                // The startup exception itself, however the host wrapped it (an AggregateException from a hosted service).
+                ExceptionDispatchInfo.Capture(startup).Throw();
+            }
+
             // A store that cannot open (file store locked or malformed, Couchbase scope missing collections) stops the start.
             await error.WriteLineAsync(startup.Message);
             return HostExitCodes.InvalidConfiguration;

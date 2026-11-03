@@ -88,6 +88,24 @@ public sealed class ConfigStartupReportTests
     }
 
     [Fact]
+    public async Task A_case_variant_of_a_checked_property_fails_startup_with_the_loader_line()
+    {
+        // The rule reads 'maxQuantity' (5) case-sensitively, while the catalog binds ignoring case and the last spelling won:
+        // without the loader line the host started with a maxQuantity of 0 (slice 015 T071 M2).
+        var resources = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "config", "base", "resources.json")).Replace(
+            "\"maxQuantity\": 999,", "\"maxQuantity\": 5,\n      \"MaxQuantity\": 0,", StringComparison.Ordinal);
+        using var seeded = new SeededConfig().With("resources.json", resources);
+
+        var violations = await StartupFailsAsync(seeded, GameHttp.FullGame);
+
+        violations.ShouldBe(
+        [
+            $"[config] '{Path.Combine(seeded.BasePath, "resources.json")}' has properties 'maxQuantity' and 'MaxQuantity' at $.resources[2] " +
+            "(line 19, byte 7), which differ only in case. Fix: keep one property; config is read ignoring case, so the last one used to win silently (CFG-01).",
+        ]);
+    }
+
+    [Fact]
     public async Task A_game_rule_and_the_economy_rule_on_one_file_both_report_naming_their_module()
     {
         using var seeded = new SeededConfig();

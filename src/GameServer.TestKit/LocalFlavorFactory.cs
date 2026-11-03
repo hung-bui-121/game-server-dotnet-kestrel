@@ -1,6 +1,11 @@
+using System.Runtime.ExceptionServices;
+using GameServer.Platform;
+using GameServer.Platform.Web.Hosting;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace GameServer.TestKit;
 
@@ -9,7 +14,9 @@ namespace GameServer.TestKit;
 /// root of its own (<c>%TEMP%/gs-local-{guid}</c> with <c>data/</c>, <c>analytics/</c>, <c>logs/</c>) and a unique instance id
 /// (<c>lf-{8 hex}</c>), so parallel factories never share a folder or a lock and nothing is written next to the host
 /// (FR-012). Disposing stops the host, waits until it released its files (logs, file-store and analytics locks), then deletes
-/// the root unless it was given through <see cref="LocalFlavorOptions.Folder"/>.
+/// the root unless it was given through <see cref="LocalFlavorOptions.Folder"/>. A startup failure throws the
+/// <see cref="GameServerStartupException"/> from the first member that starts the host (<c>StartServer()</c>, <c>CreateClient()</c>,
+/// <c>Services</c>) with the report as its violations; the real host prints it and exits 1.
 /// </summary>
 public class LocalFlavorFactory<TEntryPoint> : WebApplicationFactory<TEntryPoint>
     where TEntryPoint : class
@@ -61,6 +68,8 @@ public class LocalFlavorFactory<TEntryPoint> : WebApplicationFactory<TEntryPoint
             builder.UseSetting(key, value);
         }
 
+        builder.ConfigureServices(s => s.AddSingleton(StartupFailureMode.Throw));
+
         if (_options.Services is { } services)
         {
             builder.ConfigureTestServices(services);
@@ -69,7 +78,15 @@ public class LocalFlavorFactory<TEntryPoint> : WebApplicationFactory<TEntryPoint
 
     public override async ValueTask DisposeAsync()
     {
-        await base.DisposeAsync();
+        try
+        {
+            await base.DisposeAsync();
+        }
+        catch (ObjectDisposedException)
+        {
+            // The start failed: the entry point already disposed its host, so the factory's own stop finds it disposed.
+        }
+
         if (_ownsRoot)
         {
             await DeleteRootAsync();
@@ -77,6 +94,28 @@ public class LocalFlavorFactory<TEntryPoint> : WebApplicationFactory<TEntryPoint
 
         GC.SuppressFinalize(this);
     }
+
+    /// <summary>The caller sees the <see cref="GameServerStartupException"/> itself, however the factory plumbing wraps the entry point's.</summary>
+    protected override IHost CreateHost(IHostBuilder builder)
+    {
+        try
+        {
+            return base.CreateHost(builder);
+        }
+        catch (Exception ex) when (FirstStartupException(ex) is { } startup && !ReferenceEquals(startup, ex))
+        {
+            ExceptionDispatchInfo.Capture(startup).Throw();
+            throw;
+        }
+    }
+
+    private static GameServerStartupException? FirstStartupException(Exception exception) => exception switch
+    {
+        GameServerStartupException startup => startup,
+        AggregateException aggregate => aggregate.InnerExceptions.Select(FirstStartupException).FirstOrDefault(found => found is not null),
+        { InnerException: { } inner } => FirstStartupException(inner),
+        _ => null,
+    };
 
     /// <summary>
     /// With minimal hosting the entry point's own <c>RunAsync</c> disposes the host too, so the file logger, the file store

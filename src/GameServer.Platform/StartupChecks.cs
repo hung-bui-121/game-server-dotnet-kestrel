@@ -2,7 +2,9 @@ namespace GameServer.Platform;
 
 /// <summary>
 /// Contributes startup violations (fail before traffic) and warnings (logged once) to the one startup report (FR-009).
-/// Registered by store packages, modules and the host (<c>services.AddSingleton&lt;IStartupCheck, MyCheck&gt;()</c>).
+/// Registered by store packages, modules and the host (<c>services.AddSingleton&lt;IStartupCheck, MyCheck&gt;()</c>) in the
+/// <c>IServiceCollection</c> given to <c>AddGameServer</c>: a registration made only in a third-party container builder
+/// (<c>ConfigureContainer</c>) is not seen and never runs.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -13,8 +15,8 @@ namespace GameServer.Platform;
 /// </para>
 /// <para>
 /// A check must not throw and must not do I/O beyond reading local files named by configuration. To read the game config, take
-/// <see cref="GameConfigStatus"/> and skip when it is not <see cref="GameConfigState.Loaded"/> (read declared catalogs only when
-/// <see cref="GameConfigStatus.DeclarationsPassed"/>). A check taking <c>IGameConfig</c> or a catalog is safe, but it is reported
+/// <see cref="GameConfigStatus"/> and skip when it is not <see cref="GameConfigState.Loaded"/>; read a declared catalog with
+/// <see cref="GameConfigStatus.TryGetCatalog{T}"/>, never rebuild it. A check taking <c>IGameConfig</c> or a catalog is safe, but it is reported
 /// as "did not run" when the config fails, and provision mode (which never loads config) skips it with a warning.
 /// </para>
 /// </remarks>

@@ -64,7 +64,9 @@ internal static class CoreEndpoints
                 var services = http.RequestServices;
                 var options = services.GetRequiredService<GameServerOptions>();
                 var request = ProtobufBinding.Parse<GetConfigRequest>(await ProtobufBinding.ReadBodyAsync(http, options.Limits.PlayerBodyBytes));
-                var bundle = services.GetRequiredService<ConfigPhaseSummary>().Bundle;
+                var summary = services.GetRequiredService<ConfigPhaseSummary>();
+                var bundle = summary.Bundle;
+                var compressor = summary.Current.Compressor!;
                 var now = services.GetRequiredService<IClock>().UtcNow.ToUnixTimeMilliseconds();
 
                 // Either version names exactly the current client-visible files; SDKs before 0.7.0 hold the server version (R1).
@@ -72,7 +74,7 @@ internal static class CoreEndpoints
                 http.RequestOutcome().NotModified = notModified;
                 if (notModified)
                 {
-                    await ConfigResponseCompression.WriteNotModifiedAsync(http, options.ConfigCompression, bundle.NotModified(now));
+                    await compressor.WriteNotModifiedAsync(http, bundle.NotModified(now));
                     return;
                 }
 
@@ -84,7 +86,7 @@ internal static class CoreEndpoints
                     throw new GameServerException(CoreErrorCodes.PayloadTooLarge, $"Config bundle exceeds {options.Limits.ConfigBundleBytes} bytes.");
                 }
 
-                await ConfigResponseCompression.WriteFullAsync(http, options.ConfigCompression, bundle, tail);
+                await compressor.WriteFullAsync(http, bundle, tail);
             })
             .AsPlayerEndpoint();
 
