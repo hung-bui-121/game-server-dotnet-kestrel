@@ -36,6 +36,7 @@ public sealed class PlatformMetrics : IDisposable
     private readonly Counter<long> _accountPurgeStepFailures;
     private readonly Counter<long> _accountPurgeDocuments;
     private readonly Counter<long> _requestLogFailures;
+    private readonly Counter<long> _configCompressionSkipped;
     private string _configVersion = string.Empty;
     private string _clientConfigVersion = string.Empty;
     private OverdueSample? _purgeOverdue;
@@ -65,6 +66,9 @@ public sealed class PlatformMetrics : IDisposable
         _accountPurgeStepFailures = _meter.CreateCounter<long>("account_purge_step_failures_total", description: "Failed purge steps by step id");
         _accountPurgeDocuments = _meter.CreateCounter<long>("account_purge_documents_total", description: "Documents anonymized or removed by account purges");
         _requestLogFailures = _meter.CreateCounter<long>("request_log_failures_total", description: "Request events that could not be written (FR-085)");
+        _configCompressionSkipped = _meter.CreateCounter<long>(
+            "config_compression_skipped_total",
+            description: "Full GetConfig responses sent uncompressed although the request accepted an encoding, by reason (busy, probe)");
         _meter.CreateObservableGauge(
             "account_purge_overdue_seconds",
             ObserveAccountPurgeOverdue,
@@ -131,6 +135,13 @@ public sealed class PlatformMetrics : IDisposable
 
     /// <summary>A request event failed while being built or written; the response was not affected (FR-085, LOG-06).</summary>
     public void RequestLogFailed() => _requestLogFailures.Add(1);
+
+    /// <summary>
+    /// A full <c>GetConfig</c> response went out uncompressed although the request accepts an encoding (slice 015 T071 round 2):
+    /// <paramref name="reason"/> is <c>busy</c> (no free permit of the host's compression gate) or <c>probe</c> (the request accepts
+    /// only encodings the startup probe dropped because they do not shrink the bundle).
+    /// </summary>
+    public void ConfigCompressionSkipped(string reason) => _configCompressionSkipped.Add(1, new KeyValuePair<string, object?>("reason", reason));
 
     public void HttpError(string code) => _httpErrors.Add(1, new KeyValuePair<string, object?>("code", code));
 

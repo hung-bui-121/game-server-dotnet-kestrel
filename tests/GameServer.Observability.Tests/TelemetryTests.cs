@@ -39,12 +39,16 @@ public sealed class TelemetryTests
         await player.CheatAsync("gold", 3);
         await observed.Host.Client().GetAsync("/api/v1/player/snapshot"); // 401 → http_errors_total
 
+        // A compression fallback needs a busy gate or an incompressible bundle; the counter is recorded directly (slice 015 T071 round 2).
+        observed.Host.Services.GetRequiredService<GameServer.Platform.Diagnostics.PlatformMetrics>().ConfigCompressionSkipped("busy");
+
         observed.Host.Services.GetRequiredService<MeterProvider>().ForceFlush().ShouldBeTrue();
         var names = observed.Metrics.Select(m => m.Name).ToHashSet(StringComparer.Ordinal);
         foreach (var expected in new[]
                  {
                      "txn_attempts_total", "txn_duration_seconds", "receipt_size_bytes", "aggregate_size_bytes",
-                     "command_results_total", "http_errors_total", "config_version_info", "client_config_version_info", "login_total",
+                     "command_results_total", "http_errors_total", "config_version_info", "client_config_version_info",
+                     "config_compression_skipped_total", "login_total",
                      "http.server.request.duration", "log_sink_errors_total", "log_dropped_total",
                  })
         {

@@ -203,7 +203,7 @@ rule-throw:= "[module {module}] config {fileRef}: rule '{rule}' threw {Exception
 catalog   := "[module {module}] catalog {Type}[ ({file}{location})]: {problem}. Fix: {fix}"
 cat-throw := "[module {module}] catalog {Type}: the build threw {ExceptionType}: {message}. Fix: report problems through ConfigProblems instead of throwing (FG-018)."
 cat-null  := "[module {module}] catalog {Type}: the build returned no catalog and reported no problem. Fix: return the catalog or report why (FG-018)."
-cat-opt   := "[module {module}] catalog {Type}: the build threw {ExceptionType}: {message}; optional config file '{file}' is absent. Fix: build an empty catalog when Config.HasFile(\"{file}\") is false, or declare the file Required (FG-018)."
+cat-opt   := "[module {module}] catalog {Type}: the build read optional config file '{file}', which is absent. Fix: build an empty catalog when Config.HasFile(\"{file}\") is false, or declare the file Required (FG-018)."
 cat-none  := "[catalog {Type}] was not built and no other line explains why (framework fault). Fix: report it with this config; the catalog would fail at its first use (FG-018)."
 cat-dup   := "[catalog {Type}] is declared by {moduleA} and {moduleB}. Fix: declare it in one module; the other takes it from DI (FG-018)."
 cat-host  := "[catalog {Type}] the registration that replaces the declaration of module {module} could not be resolved: {ExceptionType}: {message}. Fix: correct that registration (host or test), or remove it so the platform builds the declared catalog (FG-018)."
@@ -231,8 +231,9 @@ API-06).`
 ### 5.6 Startup config line (Information, category `GameServer.Startup`, after the 013 startup line)
 
 `Config {Label}: version {ConfigVersion}, client version {ClientConfigVersion}, {FileCount} files ({ClientVisibleCount}
-client-visible, bundle {BundleBytes} B), {RuleCount} rules, {CatalogCount} catalogs.` `BundleBytes` is absent ("bundle
-not served") when the player API is not mapped.
+client-visible, bundle {BundleBytes} B, compression {Compression}), {RuleCount} rules, {CatalogCount} catalogs.` `BundleBytes`
+and `Compression` are absent ("bundle not served") when the player API is not mapped. `Compression` (T071 round 2 m-2) is `off`
+(rollback switch) or the encodings the probe kept (`br,gzip`, `br`, `gzip`, `none`) and the host's permits: `br,gzip, permits 2`.
 
 ## 6. SDK persistent cache (format in [sdk-cache.md](contracts/sdk-cache.md))
 

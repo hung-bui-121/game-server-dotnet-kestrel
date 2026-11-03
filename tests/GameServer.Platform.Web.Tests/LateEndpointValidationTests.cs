@@ -165,6 +165,46 @@ public sealed class LateEndpointValidationTests
         listener.Stop();
     }
 
+    /// <summary>
+    /// T071 round 2 m-5: when <c>UseGameServer</c> throws, <c>RunAsync</c> never runs, so the entry point disposes the app itself:
+    /// printed (exit 1) or rethrown under the kit's marker, every singleton the start created is disposed before the caller resumes.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_failed_start_disposes_the_app(bool kit)
+    {
+        var probe = new DisposalProbe();
+        // A registry line of UseGameServer itself (the unmapped-route line comes later, from RunAsync, which disposes on its own).
+        await using var app = KestrelApp(
+            FreePort(),
+            SampleTestHost.DefaultModules,
+            settings: s => s["GameServer:Gate:CacheSeconds"] = "99",
+            services: services =>
+            {
+                services.AddSingleton(_ => probe);
+                if (kit)
+                {
+                    services.AddSingleton(StartupFailureMode.Throw);
+                }
+            });
+        app.Services.GetRequiredService<DisposalProbe>().ShouldBeSameAs(probe);
+        var error = new StringWriter();
+
+        if (kit)
+        {
+            await Should.ThrowAsync<GameServerStartupException>(() => GameServerRunExtensions.ServeAsync(app, error));
+            error.ToString().ShouldBeEmpty();
+        }
+        else
+        {
+            (await GameServerRunExtensions.ServeAsync(app, error)).ShouldBe(HostExitCodes.InvalidConfiguration);
+            error.ToString().ShouldContain("[gate] GameServer:Gate:CacheSeconds must be 0..10");
+        }
+
+        probe.Disposed.ShouldBeTrue();
+    }
+
     [Fact]
     public async Task A_web_application_factory_start_fails_on_a_late_fault_and_starts_without_it()
     {
@@ -203,19 +243,34 @@ public sealed class LateEndpointValidationTests
     }
 
     /// <summary>A host on Kestrel (not TestServer) at a fixed loopback port, composed like the kit's test host.</summary>
-    private static WebApplication KestrelApp(int port, Action<GameServerBuilder> modules)
+    private static WebApplication KestrelApp(
+        int port, Action<GameServerBuilder> modules, Action<Dictionary<string, string?>>? settings = null, Action<IServiceCollection>? services = null)
     {
         var url = $"http://127.0.0.1:{port}";
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Development", ContentRootPath = AppContext.BaseDirectory });
-        var settings = SampleTestHost.DefaultSettings();
-        settings["Urls"] = url;
-        builder.Configuration.AddInMemoryCollection(settings);
+        var values = SampleTestHost.DefaultSettings();
+        values["Urls"] = url;
+        settings?.Invoke(values);
+        builder.Configuration.AddInMemoryCollection(values);
         builder.WebHost.UseUrls(url);
         builder.Logging.ClearProviders();
         var gameServer = builder.AddGameServer();
         builder.Services.AddInMemoryDocumentStore();
         gameServer.UseTestAuthentication();
         modules(gameServer);
+        services?.Invoke(builder.Services);
         return builder.Build();
+    }
+
+    /// <summary>A singleton the container disposes with the app (it creates it through a factory), recording that it did.</summary>
+    private sealed class DisposalProbe : IAsyncDisposable
+    {
+        public bool Disposed { get; private set; }
+
+        public ValueTask DisposeAsync()
+        {
+            Disposed = true;
+            return ValueTask.CompletedTask;
+        }
     }
 }

@@ -166,10 +166,11 @@ public sealed class ConfigBundleTests
         lines[0].Message.ShouldStartWith("Starting ");
         lines[1].Message.ShouldBe(
             $"Config test-1: version {config.ConfigVersion}, client version {config.ClientConfigVersion}, 5 files (4 client-visible, " +
-            $"bundle {bundle.MaxResponseBytes} B), 4 rules, 4 catalogs.");
+            $"bundle {bundle.MaxResponseBytes} B, compression br,gzip, permits {ConfigCompressor.MaxConcurrentCompressions}), 4 rules, 4 catalogs.");
         lines[1].Properties["ConfigVersion"].ShouldBe(config.ConfigVersion);
         lines[1].Properties["ClientConfigVersion"].ShouldBe(config.ClientConfigVersion);
         lines[1].Properties["BundleBytes"].ShouldBe(bundle.MaxResponseBytes);
+        lines[1].Properties["Compression"].ShouldBe($"br,gzip, permits {ConfigCompressor.MaxConcurrentCompressions}");
     }
 
     private static async Task<int> LargestResponseAsync()

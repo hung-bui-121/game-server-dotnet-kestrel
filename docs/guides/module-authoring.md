@@ -121,8 +121,8 @@ ConfigFiles = [ConfigFileDeclaration.Optional(ConfigFile, TemplateConfigRules.Po
 
 // A typed catalog built once from the files before traffic; handlers take it from DI. Declare it here, never register
 // it in ConfigureServices (an undeclared catalog stays lazy and its faults surface on the first request). The file is
-// optional, so the build runs without it too and must return an empty catalog then:
-// ConfigCatalogs = [ConfigCatalogDeclaration.Of(c => c.Config.HasFile(ConfigFile) ? TemplateCatalog.Load(c.Config) : TemplateCatalog.Empty, ConfigFile)],
+// optional, so the build runs without it too and must return an empty catalog then, here with MyCatalog (your catalog type):
+// ConfigCatalogs = [ConfigCatalogDeclaration.Of(c => c.Config.HasFile(ConfigFile) ? MyCatalog.Load(c.Config) : MyCatalog.Empty, ConfigFile)],
 ```
 
 ```csharp

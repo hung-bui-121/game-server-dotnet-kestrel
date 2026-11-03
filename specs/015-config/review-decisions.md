@@ -10,7 +10,7 @@ Summary:
 | --- | --- | --- | --- |
 | M1 | (a) build runs when only optional files are absent + backstop line | — | — |
 | M2 | Loader refuses case-variant sibling names (OrdinalIgnoreCase), manifest included | none; BC-2 widened | strict case-sensitive binding rejected |
-| M3 | Startup probe per encoding + process-wide compression gate (identity when busy) | — | gzip splice, per-player rate limit |
+| M3 | Startup probe per encoding + per-host compression gate (identity when busy) | — | gzip splice, per-player rate limit |
 | G1 | `GameConfigStatus.TryGetCatalog<T>`; constructor injection stays safe | — | — |
 | G2 | TestKit `TestGameConfigStatus` (`NotLoaded`, `Failed`, `From(report)`) | — | — |
 | G3 | Fix: `LocalFlavorFactory` throws `GameServerStartupException` | — (0.7.0-only type) | — |
@@ -45,6 +45,10 @@ the build throws and at least one listed optional file is absent, the line names
 declaration's file order) instead of using `CatalogThrew`:
 
 `[module {module}] catalog {Type}: the build threw {ExceptionType}: {message}; optional config file '{file}' is absent. Fix: build an empty catalog when Config.HasFile("{file}") is false, or declare the file Required (FG-018).`
+
+Round 2 (m-1) replaced this variant: it is chosen only when the build threw the `AbsentConfigFileException` of a `c.Json` read
+and names that file, `[module {module}] catalog {Type}: the build read optional config file '{file}', which is absent. Fix: build an empty catalog when Config.HasFile("{file}") is false, or declare the file Required (FG-018).`;
+every other throw is `CatalogThrew`.
 
 A null result is still an error (`CatalogNull`). "No catalog" would be lazy again.
 
@@ -163,7 +167,7 @@ silent-default risk for other games. The framework's own configs (`samples/**/co
 
 ## M3 — `GetConfig` recompresses the whole bundle per full response
 
-**Decision: (a) a per-encoding startup probe, plus a process-wide compression gate that falls back to identity.** The gzip
+**Decision: (a) a per-encoding startup probe, plus a per-host compression gate that falls back to identity.** The gzip
 splice (b) and a per-player rate limit are **deferred**.
 
 **Rationale.**
@@ -188,7 +192,7 @@ splice (b) and a per-player rate limit are **deferred**.
    A client that accepts `br, gzip` gets gzip when only gzip is offered. Neither offered → identity with **no**
    compression attempt.
 3. **Gate.** At most `MaxConcurrentCompressions = Math.Max(1, Environment.ProcessorCount / 4)` responses are compressed at
-   the same time, process-wide (`SemaphoreSlim.Wait(0)`, never waits). If no permit is free, the response is sent identity
+   the same time, per host (`SemaphoreSlim.Wait(0)`, never waits). If no permit is free, the response is sent identity
    (`Content-Length`, `Vary: Accept-Encoding`, no `Content-Encoding`). The permit is released in `finally` after the
    compression, before the write (the write does not hold CPU).
 4. Unchanged: the never-larger rule per request, `Vary` on every `GetConfig` response while the switch is on, the rollback

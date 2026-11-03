@@ -135,21 +135,25 @@ public static class GameServerApplicationExtensions
         LogConfig(logger, services.GetRequiredService<ConfigPhaseSummary>().Current);
     }
 
-    /// <summary>The bundle size is the largest <c>GetConfig</c> response, the value checked against the limit (FR-053).</summary>
+    /// <summary>
+    /// The bundle size is the largest <c>GetConfig</c> response, the value checked against the limit (FR-053); the compression part
+    /// names the encodings the startup probe kept and the permits of this host's gate (T071 round 2 m-2).
+    /// </summary>
     private static void LogConfig(ILogger logger, ConfigPhaseSummary.Values summary)
     {
         var config = summary.Config;
-        if (summary.Bundle is { } bundle)
+        if (summary is { Bundle: { } bundle, Compressor: { } compressor })
         {
             logger.LogInformation(
                 "Config {Label}: version {ConfigVersion}, client version {ClientConfigVersion}, {FileCount} files ({ClientVisibleCount} client-visible, " +
-                "bundle {BundleBytes} B), {RuleCount} rules, {CatalogCount} catalogs.",
+                "bundle {BundleBytes} B, compression {Compression}), {RuleCount} rules, {CatalogCount} catalogs.",
                 config.Label,
                 config.ConfigVersion,
                 config.ClientConfigVersion,
                 config.FileNames.Count,
                 config.ClientVisibleFiles.Count,
                 bundle.MaxResponseBytes,
+                compressor.Describe(),
                 summary.RuleCount,
                 summary.CatalogCount);
             return;

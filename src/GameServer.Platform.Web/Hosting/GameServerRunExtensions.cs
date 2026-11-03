@@ -123,9 +123,15 @@ public static class GameServerRunExtensions
         {
             app.UseGameServer();
         }
-        catch (GameServerStartupException ex) when (!rethrow)
+        catch (GameServerStartupException ex)
         {
-            // Fail fast before serving traffic (ARC-06, ACC-26).
+            // Fail fast before serving traffic (ARC-06, ACC-26). RunAsync never runs, so nothing else disposes the app (T071 round 2 m-5).
+            await app.DisposeAsync();
+            if (rethrow)
+            {
+                throw;
+            }
+
             await error.WriteLineAsync(ex.Message);
             return HostExitCodes.InvalidConfiguration;
         }

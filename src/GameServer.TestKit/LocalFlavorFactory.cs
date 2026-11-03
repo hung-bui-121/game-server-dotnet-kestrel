@@ -78,15 +78,7 @@ public class LocalFlavorFactory<TEntryPoint> : WebApplicationFactory<TEntryPoint
 
     public override async ValueTask DisposeAsync()
     {
-        try
-        {
-            await base.DisposeAsync();
-        }
-        catch (ObjectDisposedException)
-        {
-            // The start failed: the entry point already disposed its host, so the factory's own stop finds it disposed.
-        }
-
+        await base.DisposeAsync();
         if (_ownsRoot)
         {
             await DeleteRootAsync();

@@ -207,8 +207,6 @@ public sealed class ConfigDeclarationRunnerTests
 
     // ---- slice 015 T071 M1: a catalog over an absent optional file is still built ----
 
-    private const string AbsentJsonMessage = "Config file 'absent.json' is not in the effective config. Fix: check Config.HasFile(\"absent.json\") first";
-
     [Fact]
     public void An_absent_optional_file_whose_build_checks_has_file_gives_the_empty_catalog_and_no_line()
     {
@@ -237,10 +235,51 @@ public sealed class ConfigDeclarationRunnerTests
 
         result.Errors.ShouldBe(
         [
-            $"[module m] catalog CatalogA: the build threw KeyNotFoundException: {AbsentJsonMessage}; optional config file 'absent.json' is absent. " +
+            "[module m] catalog CatalogA: the build read optional config file 'absent.json', which is absent. " +
             "Fix: build an empty catalog when Config.HasFile(\"absent.json\") is false, or declare the file Required (FG-018).",
         ]);
         result.FailedCatalogs.ShouldBe([typeof(CatalogA)]);
+    }
+
+    /// <summary>T071 round 2 m-1: an absent optional file the build handles is not blamed for a throw elsewhere in the build.</summary>
+    [Fact]
+    public void A_build_that_checks_the_absent_file_but_throws_on_another_gets_the_threw_line()
+    {
+        var module = Module(
+            "m",
+            files: [ConfigFileDeclaration.Optional("extra.json")],
+            catalogs:
+            [
+                ConfigCatalogDeclaration.Of(
+                    c => new CatalogA
+                    {
+                        X = c.Json("a.json").GetProperty("missing").GetInt32() + (c.Config.HasFile("extra.json") ? c.Json("extra.json").GetArrayLength() : 0),
+                    },
+                    "a.json",
+                    "extra.json"),
+            ]);
+
+        var line = Run([module]).Errors.ShouldHaveSingleItem();
+
+        line.ShouldStartWith("[module m] catalog CatalogA: the build threw KeyNotFoundException: The given key was not present in the dictionary.");
+        line.ShouldEndWith("Fix: report problems through ConfigProblems instead of throwing (FG-018).");
+        line.ShouldNotContain("extra.json");
+    }
+
+    /// <summary>T071 round 2 m-1: the line names the absent file the build read, not the first absent file it lists.</summary>
+    [Fact]
+    public void The_absent_line_names_the_file_the_build_read()
+    {
+        var module = Module(
+            "m",
+            files: [ConfigFileDeclaration.Optional("first.json"), ConfigFileDeclaration.Optional("second.json")],
+            catalogs: [ConfigCatalogDeclaration.Of(c => new CatalogA { X = c.Json("second.json").GetArrayLength() }, "first.json", "second.json")]);
+
+        Run([module]).Errors.ShouldBe(
+        [
+            "[module m] catalog CatalogA: the build read optional config file 'second.json', which is absent. " +
+            "Fix: build an empty catalog when Config.HasFile(\"second.json\") is false, or declare the file Required (FG-018).",
+        ]);
     }
 
     [Fact]

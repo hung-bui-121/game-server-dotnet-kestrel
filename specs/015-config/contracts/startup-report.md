@@ -94,7 +94,7 @@ errors. `ShopCatalog` is built.)
 | --- | --- |
 | Build reported a problem | `[module {module}] catalog {Type}[ ({file}{location})]: {problem}. Fix: {fix}` |
 | Build threw | `[module {module}] catalog {Type}: the build threw {ExceptionType}: {message}. Fix: report problems through ConfigProblems instead of throwing (FG-018).` |
-| Build threw, optional file absent (T071 M1) | `[module {module}] catalog {Type}: the build threw {ExceptionType}: {message}; optional config file '{file}' is absent. Fix: build an empty catalog when Config.HasFile("{file}") is false, or declare the file Required (FG-018).` (`{file}`: the first absent optional file in the declaration's order; one trailing period of the message is dropped) |
+| Build read an absent optional file (T071 M1, round 2 m-1) | `[module {module}] catalog {Type}: the build read optional config file '{file}', which is absent. Fix: build an empty catalog when Config.HasFile("{file}") is false, or declare the file Required (FG-018).` (`{file}`: the file the build read through `c.Json`; only when the build threw that read's exception, `AbsentConfigFileException : KeyNotFoundException`; any other throw is "Build threw", even when a listed optional file is absent) |
 | Not built, no line (framework fault, T071 M1) | `[catalog {Type}] was not built and no other line explains why (framework fault). Fix: report it with this config; the catalog would fail at its first use (FG-018).` |
 | Build returned null, no problem | `[module {module}] catalog {Type}: the build returned no catalog and reported no problem. Fix: return the catalog or report why (FG-018).` |
 | Declared twice | `[catalog {Type}] is declared by {moduleA} and {moduleB}. Fix: declare it in one module; the other takes it from DI (FG-018).` |
@@ -142,4 +142,8 @@ plain ran
 
 After the 013 startup line (`Starting {GameId} …`), once:
 
-`Config {Label}: version {ConfigVersion}, client version {ClientConfigVersion}, {FileCount} files ({ClientVisibleCount} client-visible, bundle {BundleBytes} B), {RuleCount} rules, {CatalogCount} catalogs.`
+`Config {Label}: version {ConfigVersion}, client version {ClientConfigVersion}, {FileCount} files ({ClientVisibleCount} client-visible, bundle {BundleBytes} B, compression {Compression}), {RuleCount} rules, {CatalogCount} catalogs.`
+
+`{Compression}` (T071 round 2 m-2): `off` when `GameServer:ConfigCompression=false`, otherwise the encodings the startup probe
+kept (`br,gzip`, `br`, `gzip` or `none`) and the permits of this host's gate, e.g. `br,gzip, permits 2` (permits =
+`max(1, Environment.ProcessorCount / 4)`, so 2 on 8 CPUs).

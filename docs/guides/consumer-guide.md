@@ -994,7 +994,8 @@ property name that appears twice in one JSON object is a fault (015/BC-2): `[con
 {jsonPath} (line {line}, byte {byte}). Fix: keep one property; the last one used to win silently (CFG-01).` Two names that
 differ only in case (`maxQuantity`, `MaxQuantity`) are the same fault, because config is read ignoring case: `[config] '{path}'
 has properties '{first}' and '{name}' at {jsonPath} (line {line}, byte {byte}), which differ only in case. Fix: keep one
-property; config is read ignoring case, so the last one used to win silently (CFG-01).` A file the host process cannot read is
+property; config is read ignoring case, so the last one used to win silently (CFG-01).` Case-variant keys fail startup even in
+files a game reads with its own case-sensitive reader: the loader checks every listed `.json` file, whoever reads it. A file the host process cannot read is
 one line too: `[config] '{path}' cannot be read: {message} Fix: check that the host process can read the file (CFG-01).`
 
 ### 12.2 File declarations, rules and the line format
@@ -1138,9 +1139,9 @@ properties and names match ignoring case, enums are camelCase strings, and a num
 run first and are stricter than the binding, so a build reads files that passed them. A build reports a problem it finds with
 `c.Problems.Error(ConfigLocation.Row(n).InFile(file), problem, fix)` and returns null: `[module {module}] catalog {Type}
 ({file} row {n}): {problem}. Fix: {fix}.` A build that throws gives `[module {module}] catalog {Type}: the build threw
-{ExceptionType}: {message}. Fix: report problems through ConfigProblems instead of throwing (FG-018).` (when a listed optional
-file is absent: `…; optional config file '{file}' is absent. Fix: build an empty catalog when Config.HasFile("{file}") is false,
-or declare the file Required (FG-018).`), and a null without a problem gives `[module {module}] catalog {Type}: the build
+{ExceptionType}: {message}. Fix: report problems through ConfigProblems instead of throwing (FG-018).` (when the build reads an
+absent optional file through `c.Json`: `[module {module}] catalog {Type}: the build read optional config file '{file}', which is
+absent. Fix: build an empty catalog when Config.HasFile("{file}") is false, or declare the file Required (FG-018).`), and a null without a problem gives `[module {module}] catalog {Type}: the build
 returned no catalog and reported no problem. Fix: return the catalog or report why (FG-018).` Each of them stops the host: no
 declared catalog is ever built on first use.
 
@@ -1318,8 +1319,10 @@ changes once at the upgrade to 0.7.0 (015/BC-5). `GetConfig` answers `not_modifi
 
 `GetConfig` is compressed per request with Brotli (quality 4) or gzip (level 6) when the request's `Accept-Encoding` asks for
 it, the response carries files and is at least 1024 bytes; an encoding that does not shrink the bundle (checked once at
-startup) is never used, and at most max(1, CPUs / 4) responses are compressed at the same time (others are sent uncompressed,
-so a burst of full downloads cannot take the CPU); no other route is ever compressed. `not_modified` and small bodies
+startup) is never used, and at most max(1, CPUs / 4) responses per host are compressed at the same time (others are sent
+uncompressed, so a burst of full downloads cannot take the CPU); no other route is ever compressed. Each full response sent
+uncompressed although the client accepted an encoding is counted in `config_compression_skipped_total{reason}`: `busy` (no free
+permit) or `probe` (the client accepts only encodings the startup probe dropped). `not_modified` and small bodies
 are sent as they are. Unity's UnityWebRequest sends `Accept-Encoding: deflate, gzip` and decodes gzip itself (Editor and
 Windows player checked); `HttpClient` without `AutomaticDecompression` sends no header and gets the plain body. No client change
 is needed. `GameServer:ConfigCompression=false` is the rollback switch (today's bytes and headers, no `Vary`).
@@ -1329,7 +1332,8 @@ config can produce at startup; over the limit it stops with `[config] the client
 up to {size} bytes ({files} files), over GameServer:Limits:ConfigBundleBytes = {limit}. Fix: raise the limit or remove files from
 'clientVisible' (CFG-03, API-06).` (015/BC-7; before, every client got 413). The startup log has one line with both versions:
 `Config {Label}: version {ConfigVersion}, client version {ClientConfigVersion}, {FileCount} files ({ClientVisibleCount}
-client-visible, bundle {BundleBytes} B), {RuleCount} rules, {CatalogCount} catalogs.`
+client-visible, bundle {BundleBytes} B, compression {Compression}), {RuleCount} rules, {CatalogCount} catalogs.`, where
+`{Compression}` is `off` (rollback switch) or the encodings the probe kept and the host's permits, e.g. `br,gzip, permits 2`.
 
 ### 12.8 The persistent cache in Unity
 

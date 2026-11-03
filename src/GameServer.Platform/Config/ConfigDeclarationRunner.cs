@@ -154,10 +154,11 @@ internal static class ConfigDeclarationRunner
         catch (Exception ex)
         {
             AddCatalogProblems(module, type, config, problems, result);
-            var absent = catalog.Files.FirstOrDefault(f => !config.HasFile(f));
-            result.Errors.Add(absent is null
-                ? ConfigReportLines.CatalogThrew(module, type, ex)
-                : ConfigReportLines.CatalogThrewOptionalAbsent(module, type, ex, absent));
+
+            // Only a read of an absent file is blamed on that file: any other throw keeps its own line, whatever else is absent.
+            result.Errors.Add(ex is AbsentConfigFileException absent
+                ? ConfigReportLines.CatalogReadAbsentOptionalFile(module, type, absent.File)
+                : ConfigReportLines.CatalogThrew(module, type, ex));
             result.FailedCatalogs.Add(type);
             return;
         }
@@ -205,7 +206,7 @@ internal static class ConfigDeclarationRunner
 
             if (!config.HasFile(file))
             {
-                throw new KeyNotFoundException($"Config file '{file}' is not in the effective config. Fix: check Config.HasFile(\"{file}\") first.");
+                throw new AbsentConfigFileException(file);
             }
 
             document = JsonDocument.Parse(config.GetFileBytes(file));

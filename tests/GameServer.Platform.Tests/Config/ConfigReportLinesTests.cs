@@ -46,9 +46,12 @@ public sealed class ConfigReportLinesTests
             .ShouldBe("[module economy] config resources.json: rule 'economy.resources' threw InvalidOperationException: boom. Fix: report problems through ConfigProblems instead of throwing (FG-018).");
         ConfigReportLines.CatalogThrew("economy", typeof(SampleCatalog), boom)
             .ShouldBe("[module economy] catalog SampleCatalog: the build threw InvalidOperationException: boom. Fix: report problems through ConfigProblems instead of throwing (FG-018).");
-        ConfigReportLines.CatalogThrewOptionalAbsent("game", typeof(SampleCatalog), new KeyNotFoundException("no probe.json."), "probe.json")
-            .ShouldBe("[module game] catalog SampleCatalog: the build threw KeyNotFoundException: no probe.json; optional config file 'probe.json' is absent. " +
+        ConfigReportLines.CatalogReadAbsentOptionalFile("game", typeof(SampleCatalog), "probe.json")
+            .ShouldBe("[module game] catalog SampleCatalog: the build read optional config file 'probe.json', which is absent. " +
                 "Fix: build an empty catalog when Config.HasFile(\"probe.json\") is false, or declare the file Required (FG-018).");
+        ConfigReportLines.RuleThrew("economy", "resources.json", "economy.cross", new AbsentConfigFileException("probe.json"))
+            .ShouldStartWith("[module economy] config resources.json: rule 'economy.cross' threw KeyNotFoundException: Config file 'probe.json' is not in the " +
+                "effective config. Fix: check Config.HasFile(\"probe.json\") first.");
         ConfigReportLines.CatalogUnexplained(typeof(SampleCatalog))
             .ShouldBe("[catalog SampleCatalog] was not built and no other line explains why (framework fault). Fix: report it with this config; the catalog would fail at its first use (FG-018).");
     }

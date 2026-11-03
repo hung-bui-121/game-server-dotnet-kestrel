@@ -28,7 +28,7 @@ internal static class ConfigReportLines
         $"[module {module}] config {fileRef}{Location(at)}: {Trim(problem)}. Fix: {Trim(fix)}.";
 
     public static string RuleThrew(string module, string fileRef, string rule, Exception exception) =>
-        $"[module {module}] config {fileRef}: rule '{rule}' threw {exception.GetType().Name}: {exception.Message}. {ThrowFix}";
+        $"[module {module}] config {fileRef}: rule '{rule}' threw {TypeName(exception)}: {exception.Message}. {ThrowFix}";
 
     /// <summary><c>[module {module}] catalog {Type}[ ({file}{location})]: {problem}. Fix: {fix}</c>.</summary>
     public static string Catalog(string module, Type catalog, string? fileRef, ConfigLocation at, string problem, string fix)
@@ -39,14 +39,14 @@ internal static class ConfigReportLines
     }
 
     public static string CatalogThrew(string module, Type catalog, Exception exception) =>
-        $"[module {module}] catalog {catalog.Name}: the build threw {exception.GetType().Name}: {exception.Message}. {ThrowFix}";
+        $"[module {module}] catalog {catalog.Name}: the build threw {TypeName(exception)}: {exception.Message}. {ThrowFix}";
 
     /// <summary>
-    /// The build threw while an optional file it lists is absent (M1): <paramref name="file"/> is the first absent one. The message's
-    /// trailing period is stripped (the <c>Json</c> of an absent file ends with one) so the clause after it reads as one sentence.
+    /// The build read <paramref name="file"/>, which is absent (M1; T071 round 2 m-1: only for an <see cref="AbsentConfigFileException"/>,
+    /// naming the file it carries). Every other throw is <see cref="CatalogThrew"/>.
     /// </summary>
-    public static string CatalogThrewOptionalAbsent(string module, Type catalog, Exception exception, string file) =>
-        $"[module {module}] catalog {catalog.Name}: the build threw {exception.GetType().Name}: {Trim(exception.Message)}; optional config file '{file}' is absent. " +
+    public static string CatalogReadAbsentOptionalFile(string module, Type catalog, string file) =>
+        $"[module {module}] catalog {catalog.Name}: the build read optional config file '{file}', which is absent. " +
         $"Fix: build an empty catalog when Config.HasFile(\"{file}\") is false, or declare the file Required (FG-018).";
 
     /// <summary>The backstop line (M1): a catalog is not built and no other line explains why.</summary>
@@ -92,4 +92,8 @@ internal static class ConfigReportLines
         $"GameServer:Limits:ConfigBundleBytes = {limit}. Fix: raise the limit or remove files from 'clientVisible' (CFG-03, API-06).";
 
     private static string Trim(string text) => text.EndsWith('.') ? text[..^1] : text;
+
+    /// <summary>The thrown type as a rule author knows it: an absent-file read is the <see cref="KeyNotFoundException"/> <c>ConfigContext.Json</c> documents.</summary>
+    private static string TypeName(Exception exception) =>
+        exception is AbsentConfigFileException ? nameof(KeyNotFoundException) : exception.GetType().Name;
 }

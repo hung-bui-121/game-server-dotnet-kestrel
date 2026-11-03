@@ -21,7 +21,7 @@ FG-019 (a client config version, compressed `GetConfig`, persistent SDK cache). 
 | Id | Change | Who is affected | How it surfaces | Fix |
 | --- | --- | --- | --- | --- |
 | BC-1 | Config content is checked at startup: framework rules for `resources.json` and `iap.json` (IAP grants must name a defined resource), sample rules, and catalogs built before traffic (FR-013..FR-016, FR-021) | Every deployment whose config was accepted only because nothing read the bad row before; test configs given to `TestHost`, `LocalFlavorFactory` and `TestGameConfig`-based hosts | Startup exit 1, one line per fault: `[module economy] config resources.json row 3: 'maxQuantity' must be an integer of at least 1, found "999". Fix: set the largest quantity a player may hold (ECO-07).` | Fix the file as the line says |
-| BC-2 | A JSON object with a repeated property name in a config file or manifest is a loader fault (FR-002); names that differ only in case count as repeated (config is read ignoring case) | Configs that relied on "last one wins" (usually an unnoticed copy-paste) | Startup exit 1: `[config] '…/config/base/iap.json' has property 'google:gems_100' twice at $.products (line 4, byte 5). Fix: keep one property; the last one used to win silently (CFG-01).`, or `… has properties 'maxQuantity' and 'MaxQuantity' at $.resources[0] (line 5, byte 7), which differ only in case. …` | Keep one property |
+| BC-2 | A JSON object with a repeated property name in a config file or manifest is a loader fault (FR-002); names that differ only in case count as repeated (config is read ignoring case) | Configs that relied on "last one wins" (usually an unnoticed copy-paste). Case-variant keys fail startup even in files a game reads with its own case-sensitive reader: the loader checks every listed `.json` file, whoever reads it | Startup exit 1: `[config] '…/config/base/iap.json' has property 'google:gems_100' twice at $.products (line 4, byte 5). Fix: keep one property; the last one used to win silently (CFG-01).`, or `… has properties 'maxQuantity' and 'MaxQuantity' at $.resources[0] (line 5, byte 7), which differ only in case. …` | Keep one property |
 | BC-3 | `FileGameConfigLoader.Load` reports every fault in one `GameServerStartupException` instead of throwing at the first one (FR-001) | Code or tests that call the loader and read the first violation only | Several `[config] …` lines in one exception (two missing files + one invalid JSON file = 3 lines); existing line texts unchanged | Read every violation |
 | BC-4 | SDK semantics (PCR unity-sdk): five player messages gain `client_config_version` (additive, FR-043; `config_version` keeps its meaning). The SDK keys its cache, `ConfigOutdated` and `ConfigVersionChanged` on the client version when the server sends it (FR-046) | Game code that reads the `ConfigVersionChanged` argument or compares `Config.Version` with `ServerConfigVersion`; every client that cached a bundle reloads it once after the upgrade | No `ConfigVersionChanged` on server-only edits; the event argument and `Config.Version` hold the client version (`test-1+4c5423c2dad9`), `ServerConfigVersion` the server version (`test-1+9b2cd1009ff1`); one bundle download per client after deploy | Compare the cache with `ClientConfigVersion`; read `ServerConfigVersion` only to correlate with receipts |
 | BC-5 | The server config version also hashes the `clientVisible` set (FR-040), so its value changes once at the upgrade | Dashboards or alerts keyed on a fixed `config_version_info{version}` value; receipts after the deploy carry the new value | New value in metric and receipts: SampleHost config `sample-1+0a58d1cc006c` (v0.6.0 formula) → server `sample-1+8a37f29ee2dc`, client `sample-1+9b25b8b6bc0b` | None (format unchanged); update pinned values |
@@ -52,6 +52,7 @@ changes; their checklists come first and their errors show first.
    `using TestGameConfig = ZhPvp.Tests.Support.TestGameConfig;` there (or rename the game helper). Then start each flavor once:
    the committed config gives **no** `[module …] config …` or `[config] … twice at …` line (T067, Local flavor):
    `Config zhpvp-1: version zhpvp-1+3d29d982d748, client version zhpvp-1+c2ba61ed994a, 10 files (7 client-visible, bundle 27860 B), 2 rules, 2 catalogs.`
+   (at `abfc32d`; since review T071 round 2 the parenthesis also names the compression: `bundle 27860 B, compression br,gzip, permits {n}`).
 3. **`GameConfigCheck` into declarations (FG-018, FG-023).** Delete `src/ZhPvp.Game.Adapters/GameConfigCheck.cs` (markers
    FG-018 line 11, FG-023 line 12), its registration at `src/ZhPvp.Game.Adapters/GameModule.cs:27` and the lazy
    `GameModule.cs:26` `TryAddSingleton(sp => GameCatalog.Load(…))`. `GameModuleDefinition.cs:23`
@@ -346,9 +347,11 @@ false. T067: the snippet compiles (C# 9, package `Runtime`, Unity 6000.3.22f1 `U
   the wire; the decoded body is byte-identical to the uncompressed one. No ASP.NET response-compression middleware: login,
   session, GM, health and error responses never carry `Content-Encoding` (BREACH). Request bodies are never decompressed.
 - Rollback switch `GameServer:ConfigCompression=false` (default `true`): today's bytes and headers, no `Vary`.
-- An encoding that does not shrink the bundle (checked once at startup) is never used, and at most max(1, CPUs / 4) responses
-  are compressed at the same time; the others are sent uncompressed (the body of the rollback switch, plus `Vary`), so a burst
-  of full downloads cannot take the CPU (review T071).
+- An encoding that does not shrink the bundle (checked once at startup; an over-limit bundle is not checked, the host does not
+  start) is never used, and at most max(1, CPUs / 4) responses per host are compressed at the same time; the others are sent
+  uncompressed (the body of the rollback switch, plus `Vary`), so a burst of full downloads cannot take the CPU (review T071).
+  Each such response is counted in `config_compression_skipped_total{reason}` (`busy`: no free permit; `probe`: the client
+  accepts only encodings the probe dropped) (review T071 round 2).
 - The bundle is serialized once at startup (files sorted by name + the server version); each full response adds only the
   per-request tail (server time, client version), byte-identical to serializing the whole message.
 - `GameServer:Limits:ConfigBundleBytes` keeps limiting the **uncompressed** response. When the player API is mapped, startup
@@ -356,10 +359,11 @@ false. T067: the snippet compiles (C# 9, package `Runtime`, Unity 6000.3.22f1 `U
   `[config] the client-visible bundle needs a GetConfig response of up to {size} bytes ({files} files), over GameServer:Limits:ConfigBundleBytes = {limit}. Fix: raise the limit or remove files from 'clientVisible' (CFG-03, API-06).`
   The request-time 413 stays.
 - Startup log: one Information line after `Starting …`:
-  `Config {Label}: version {ConfigVersion}, client version {ClientConfigVersion}, {FileCount} files ({ClientVisibleCount} client-visible, bundle {BundleBytes} B), {RuleCount} rules, {CatalogCount} catalogs.`
-  (`bundle not served` when the player API is not mapped). The SampleHost local flavor logs
-  `Config sample-1: version sample-1+8a37f29ee2dc, client version sample-1+9b25b8b6bc0b, 5 files (4 client-visible, bundle 1747 B), 4 rules, 4 catalogs.`
-  for its committed config.
+  `Config {Label}: version {ConfigVersion}, client version {ClientConfigVersion}, {FileCount} files ({ClientVisibleCount} client-visible, bundle {BundleBytes} B, compression {Compression}), {RuleCount} rules, {CatalogCount} catalogs.`
+  (`bundle not served` when the player API is not mapped; `{Compression}` is `off` for the rollback switch, otherwise the
+  encodings the startup probe kept and the host's permits). The SampleHost local flavor logs
+  `Config sample-1: version sample-1+8a37f29ee2dc, client version sample-1+9b25b8b6bc0b, 5 files (4 client-visible, bundle 1747 B, compression br,gzip, permits 2), 4 rules, 4 catalogs.`
+  for its committed config on 8 CPUs (compression part since review T071 round 2).
 - **Levels (V6, measured on the real path, T050):** the T006 rule picked gzip 9 / Brotli 6, whose p95 at 1 MiB is
   18.2–18.7 ms (gzip) and 17.8–17.9 ms (Brotli), within 10 % of the 20 ms budget (SC-005). The lower levels ship: gzip 6 p95
   9.2 ms, ratio 14.0 %; Brotli 4 p95 7.5 ms, 14.2 %. Gzip ratios at level 6: sample bundle (1 743 B) 28.3 %, first-consumer-shaped

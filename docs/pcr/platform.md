@@ -21,7 +21,7 @@ v0.7.0 (chưa phát hành / unreleased).
 | Protobuf decode | recursion ≤ 32, size = body | — | — |
 | Kestrel `MaxRequestBodySize` | 1 MiB toàn cục, hạ per-endpoint theo profile | | |
 | Bundle `GetConfig` (slice 015) | 1 MiB **chưa nén** (response lớn nhất có thể) | — | `GameServer:Limits:ConfigBundleBytes`; kiểm khi khởi động (mục 21), 413 khi request vẫn giữ |
-| Nén `GetConfig` (slice 015) | ngưỡng 1024 B; gzip level 6, Brotli quality 4; encoding không nhỏ hơn ở lần thử lúc start thì không dùng; tối đa max(1, số CPU / 4) response nén cùng lúc, còn lại gửi không nén | — | `GameServer:ConfigCompression` (mặc định `true`) |
+| Nén `GetConfig` (slice 015) | ngưỡng 1024 B; gzip level 6, Brotli quality 4; encoding không nhỏ hơn ở lần thử lúc start thì không dùng; tối đa max(1, số CPU / 4) response nén cùng lúc **mỗi host**, còn lại gửi không nén (`config_compression_skipped_total{reason}`) | — | `GameServer:ConfigCompression` (mặc định `true`) |
 
 Budget tổng = giá trị × số instance.
 
@@ -387,7 +387,9 @@ nâng `Observability:Logging:FileSizeLimitBytes`/`RetainedFileCountLimit` hoặc
 `/v1/traces`, `/v1/metrics` được nối vào endpoint gốc); Prometheus qua collector. Cấu hình sai (level, URI, protocol) → startup fail.
 Metric bổ sung slice 005: `command_results_total{operation, code, replayed}`, `http_errors_total{code}`, `log_*`. Slice 015:
 gauge `config_version_info{version}` giữ tên, label và giá trị version **server**; gauge mới `client_config_version_info{version}`
-= version client (mục 21). Không metric nào
+= version client (mục 21); counter `config_compression_skipped_total{reason}` đếm response `GetConfig` đầy đủ gửi không nén dù
+client chấp nhận một encoding (`busy`: gate của host hết permit; `probe`: client chỉ chấp nhận encoding bị loại ở lần thử lúc
+start; mục 21). Không metric nào
 có tag player/request (OBS-02); `gs.request_id`, `gs.player_id` là attribute của span. Span `command {operation}` là con của span
 HTTP. Couchbase SDK tracing và `txn_cleanup_lost_total`: chờ cluster thật (V2).
 
@@ -1369,7 +1371,7 @@ là lỗi). Một luật của game có thể nằm trên file của framework (
 [module {module}] config {file}: rule '{rule}' threw {ExceptionType}: {message}. Fix: report problems through ConfigProblems instead of throwing (FG-018).
 [module {module}] catalog {Type}[ ({file}{location})]: {problem}. Fix: {fix}
 [module {module}] catalog {Type}: the build threw {ExceptionType}: {message}. Fix: report problems through ConfigProblems instead of throwing (FG-018).
-[module {module}] catalog {Type}: the build threw {ExceptionType}: {message}; optional config file '{file}' is absent. Fix: build an empty catalog when Config.HasFile("{file}") is false, or declare the file Required (FG-018).
+[module {module}] catalog {Type}: the build read optional config file '{file}', which is absent. Fix: build an empty catalog when Config.HasFile("{file}") is false, or declare the file Required (FG-018).
 [catalog {Type}] was not built and no other line explains why (framework fault). Fix: report it with this config; the catalog would fail at its first use (FG-018).
 [module {module}] catalog {Type}: the build returned no catalog and reported no problem. Fix: return the catalog or report why (FG-018).
 [catalog {Type}] is declared by {moduleA} and {moduleB}. Fix: declare it in one module; the other takes it from DI (FG-018).
@@ -1388,8 +1390,9 @@ mẫu: PCR sample-game.
 | *Provided*: host/test đăng ký T (trước **hoặc** sau `AddModule`) | resolve T một lần trong `try` (dòng cat-host khi hỏng) | đăng ký của host |
 | Module thứ hai khai cùng T | dòng cat-dup; bỏ qua | của module đầu |
 
-File `Optional` vắng **không** chặn build: build tự quyết catalog rỗng (`c.Config.HasFile(file)`), build ném khi một file
-`Optional` vắng → dòng "optional config file … is absent" (file vắng đầu tiên theo thứ tự khai báo). Catalog không build được
+File `Optional` vắng **không** chặn build: build tự quyết catalog rỗng (`c.Config.HasFile(file)`), build đọc
+(`c.Json`) một file `Optional` vắng → dòng "the build read optional config file … which is absent" nêu đúng file đã đọc (chỉ khi
+exception là lần đọc file vắng đó; build ném vì lý do khác → dòng "the build threw", dù có file vắng). Catalog không build được
 (file bắt buộc thiếu hoặc có lỗi luật) không thêm dòng thứ hai; một catalog không build mà không dòng nào giải thích → dòng
 "framework fault" (chốt chặn, cả host và kit), nên không catalog khai báo nào lazy. service phụ thuộc nó (outbox consumer, startup
 check) không lặp nguyên nhân. Module **không** đăng ký catalog khai báo trong `ConfigureServices` (test kiến trúc
@@ -1463,8 +1466,8 @@ Bundle được serialize **một lần** khi khởi động (file client-visibl
 | `br` chấp nhận (q > 0, trực tiếp hoặc qua `*`) và q(br) ≥ q(gzip) | Brotli quality **4**, `Content-Encoding: br` |
 | còn lại, `gzip` chấp nhận | gzip level **6**, `Content-Encoding: gzip` |
 | kết quả nén không nhỏ hơn | không nén + `Vary` |
-| encoding không được chọn ở lần thử lúc start (bundle không nén nhỏ hơn được) | không nén |
-| đã có max(1, CPU/4) response đang nén | không nén (body như khi tắt nén, + `Vary`) |
+| encoding không được chọn ở lần thử lúc start (bundle không nén nhỏ hơn được) | không nén; client chỉ chấp nhận encoding đó → `config_compression_skipped_total{reason="probe"}` |
+| host này đã có max(1, CPU/4) response đang nén (gate theo host, không theo process) | không nén (body như khi tắt nén, + `Vary`), `config_compression_skipped_total{reason="busy"}` |
 
 Chỉ handler `GetConfig` nén (theo request, buffer từ pool); không có middleware nén của ASP.NET nên không route nào khác (login,
 session, GM, health, error) có `Content-Encoding` (BREACH). `Content-Length` = bytes trên dây; body đã giải nén giống hệt body chưa
@@ -1478,10 +1481,12 @@ Unity Editor và Windows player gửi `Accept-Encoding: deflate, gzip` và tự 
 Sau dòng `Starting …` (slice 013), một lần, category `GameServer.Startup`, Information:
 
 ```text
-Config {Label}: version {ConfigVersion}, client version {ClientConfigVersion}, {FileCount} files ({ClientVisibleCount} client-visible, bundle {BundleBytes} B), {RuleCount} rules, {CatalogCount} catalogs.
+Config {Label}: version {ConfigVersion}, client version {ClientConfigVersion}, {FileCount} files ({ClientVisibleCount} client-visible, bundle {BundleBytes} B, compression {Compression}), {RuleCount} rules, {CatalogCount} catalogs.
 ```
 
-`{BundleBytes}` = response lớn nhất (số so với giới hạn); khi player API không map: `… client-visible, bundle not served), …`.
+`{BundleBytes}` = response lớn nhất (số so với giới hạn); `{Compression}` = `off` (rollback switch) hoặc encoding mà lần thử lúc
+start giữ (`br,gzip`, `br`, `gzip`, `none`) và số permit của host, ví dụ `br,gzip, permits 2` (max(1, CPU/4); bundle vượt giới hạn
+thì không thử, host không start); khi player API không map: `… client-visible, bundle not served), …`.
 
 ### Breaking (slice 015 — so với `v0.6.0`)
 

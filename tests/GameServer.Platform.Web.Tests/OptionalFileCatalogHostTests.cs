@@ -23,8 +23,7 @@ public sealed class OptionalFileCatalogHostTests
     private const string ProbeFile = "probe.json";
 
     private const string ReadsLine =
-        "[module optprobe] catalog ProbeCatalog: the build threw KeyNotFoundException: Config file 'probe.json' is not in the effective config. " +
-        "Fix: check Config.HasFile(\"probe.json\") first; optional config file 'probe.json' is absent. " +
+        "[module optprobe] catalog ProbeCatalog: the build read optional config file 'probe.json', which is absent. " +
         "Fix: build an empty catalog when Config.HasFile(\"probe.json\") is false, or declare the file Required (FG-018).";
 
     private static readonly RouteDeclaration Probe = RouteDeclaration.Command(ProbeHandler.Descriptor, Route);
