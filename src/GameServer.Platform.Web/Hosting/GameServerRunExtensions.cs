@@ -34,7 +34,8 @@ public static class GameServerRunExtensions
     /// <summary>
     /// Export mode (FR-030, slice 014 contracts/wiregen-cli.md §1): reports the registry rules of the composition (deployment
     /// identity, modules; no game config) and the declaration faults of the <see cref="WireCatalog"/> (exit 1, no file), then writes <see cref="WireCatalog.ToExportJson"/> to the path given with
-    /// <see cref="GameServerCommandLine.ExportWireContractSwitch"/> (UTF-8 without BOM, LF; its folder must exist) and disposes
+    /// <see cref="GameServerCommandLine.ExportWireContractSwitch"/> (UTF-8 without BOM, LF; its folder must exist; written to a temp file
+    /// in that folder and moved over the path, so the path never holds a partial export) and disposes
     /// the app. Never calls <c>UseGameServer</c>, starts no hosted service and resolves no store, game config or secret.
     /// </summary>
     internal static async Task<int> ExportAsync(WebApplication app, TextWriter output, TextWriter error)
@@ -69,12 +70,16 @@ public static class GameServerRunExtensions
                 return HostExitCodes.InvalidConfiguration;
             }
 
+            // Next to the target and moved over it: a reader (or a run cut short) sees the old file or the new one, never a part.
+            var temp = Path.Combine(folder, $".{Path.GetFileName(file)}.{Guid.NewGuid():N}.tmp");
             try
             {
-                await File.WriteAllTextAsync(file, catalog.ToExportJson(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+                await File.WriteAllTextAsync(temp, catalog.ToExportJson(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+                File.Move(temp, file, overwrite: true);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
+                TryDelete(temp);
                 await error.WriteLineAsync(new GameServerStartupException(
                     $"[export] the export file '{path}' cannot be written: {ex.Message} Fix: pass a writable file path (contracts/wiregen-cli.md §1).").Message);
                 return HostExitCodes.InvalidConfiguration;
@@ -86,6 +91,18 @@ public static class GameServerRunExtensions
         finally
         {
             await app.DisposeAsync();
+        }
+    }
+
+    private static void TryDelete(string file)
+    {
+        try
+        {
+            File.Delete(file);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // The write already failed and is reported; a leftover temp file next to the export must not replace that message.
         }
     }
 

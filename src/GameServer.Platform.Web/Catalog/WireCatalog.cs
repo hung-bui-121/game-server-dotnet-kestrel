@@ -8,6 +8,12 @@ namespace GameServer.Platform.Web.Catalog;
 internal sealed record ModulePublicEndpoint(string Module, string Template);
 
 /// <summary>
+/// A typed mapper contract with the facts its rules compare it with (FG-021, API-10): the state type of the aggregate the
+/// mapper serves and, for a <c>ReplaceWireMapper</c> override of a typed mapper, the message of the mapper it replaced.
+/// </summary>
+internal sealed record WireContractEntry(IAggregateWireContract Contract, Type AggregateStateType, string? ReplacedMessage);
+
+/// <summary>
 /// Read-only route and section catalog of a host (FG-026, FG-028). DI singleton, available after Build() without starting:
 /// built from the registered modules (service-only included and flagged), the platform routes, the host's own declarations
 /// and the wire mappers.
@@ -18,13 +24,16 @@ public sealed class WireCatalog
     private readonly Dictionary<string, List<RouteEntry>> _byTemplate = new(StringComparer.Ordinal);
     private readonly Dictionary<string, SectionEntry> _sections = new(StringComparer.Ordinal);
 
+    // By reference on purpose (RouteDeclaration is a class): an endpoint mapped from a copy of a listed declaration is not declared.
+    private readonly HashSet<RouteDeclaration> _declarations = new(ReferenceEqualityComparer.Instance);
+
     internal WireCatalog(
         IEnumerable<RouteEntry> routes,
         IEnumerable<SectionEntry> sections,
         IEnumerable<string> conditionNames,
         IEnumerable<ModulePublicEndpoint> modulePublicEndpoints,
         IEnumerable<DuplicateWireMapper> duplicateMappers,
-        IReadOnlyDictionary<string, IAggregateWireContract> contracts)
+        IReadOnlyDictionary<string, WireContractEntry> contracts)
     {
         Routes = routes.OrderBy(r => r.Declaration.Name, StringComparer.Ordinal).ToArray();
         Sections = sections.OrderBy(s => s.Id, StringComparer.Ordinal).ToArray();
@@ -34,6 +43,7 @@ public sealed class WireCatalog
         Contracts = contracts;
         foreach (var route in Routes)
         {
+            _declarations.Add(route.Declaration);
             _byName.TryAdd(route.Declaration.Name, route);
             if (!_byTemplate.TryGetValue(route.Declaration.Template, out var sameTemplate))
             {
@@ -62,7 +72,7 @@ public sealed class WireCatalog
     internal IReadOnlyList<DuplicateWireMapper> DuplicateMappers { get; }
 
     /// <summary>Typed mapper contracts by section id (sections of untyped mappers are absent).</summary>
-    internal IReadOnlyDictionary<string, IAggregateWireContract> Contracts { get; }
+    internal IReadOnlyDictionary<string, WireContractEntry> Contracts { get; }
 
     public bool TryGetRoute(string name, [NotNullWhen(true)] out RouteEntry? entry) => _byName.TryGetValue(name, out entry);
 
@@ -84,10 +94,34 @@ public sealed class WireCatalog
     internal IReadOnlyList<RouteEntry> RoutesAt(string template) =>
         _byTemplate.TryGetValue(RouteDeclaration.CanonicalTemplate(template), out var routes) ? routes : [];
 
+    /// <summary>True when <paramref name="declaration"/> is the instance a module, the platform or the host lists (FG-026).</summary>
+    internal bool Contains(RouteDeclaration declaration) => _declarations.Contains(declaration);
+
+    /// <summary>
+    /// Runs per request (request log): index loops over the read-only lists, so no closure, delegate or boxed enumerator is
+    /// allocated.
+    /// </summary>
     internal RouteEntry? FindRoute(string method, string template)
     {
         ArgumentNullException.ThrowIfNull(method);
-        return RoutesAt(template).FirstOrDefault(r =>
-            r.Declaration.Methods.Count == 0 || r.Declaration.Methods.Contains(method, StringComparer.OrdinalIgnoreCase));
+        var routes = RoutesAt(template);
+        for (var i = 0; i < routes.Count; i++)
+        {
+            var methods = routes[i].Declaration.Methods;
+            if (methods.Count == 0)
+            {
+                return routes[i];
+            }
+
+            for (var j = 0; j < methods.Count; j++)
+            {
+                if (string.Equals(methods[j], method, StringComparison.OrdinalIgnoreCase))
+                {
+                    return routes[i];
+                }
+            }
+        }
+
+        return null;
     }
 }

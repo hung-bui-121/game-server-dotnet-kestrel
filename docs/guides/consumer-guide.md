@@ -316,6 +316,10 @@ game projects, and links no file of the framework's `tests/` folder. From
 </Project>
 ```
 
+Run a test project with `dotnet test --project <test csproj> -c Release` (the fixture, from `tests/ConsumerFixture`:
+`dotnet test --project tests/Fixture.Tests/Fixture.Tests.csproj -c Release`; the mirrored `global.json` selects the
+Microsoft.Testing.Platform runner, section 2).
+
 A direct `Microsoft.AspNetCore.Mvc.Testing` reference is not needed (its build targets flow through the kit) but does no
 harm. The kit has no test framework dependency; the samples use xUnit v3 and Shouldly. Reference the kit from test
 projects only: a host with `GameServer.TestKit` loaded fails startup outside Development/Test (`[deployment] the consumer
@@ -370,6 +374,29 @@ public async Task Save_replaces_the_note_and_the_runner_would_commit_it()
 }
 ```
 
+A rejection is the handler's `CommandOutcome<T>.Error` (the declared `ErrorCode` instance), not a `Code` string: the
+string (`"FIXTURE_TOO_LONG"`) exists only on the wire, in `CommandResponse.Code`. A rejected outcome writes nothing (same
+file):
+
+```csharp
+[Fact]
+public async Task A_note_that_is_too_long_is_rejected_and_writes_nothing()
+{
+    var context = Context();
+
+    var outcome = await new SaveNoteHandler().HandleAsync(new SaveNote("far too long"), context);
+
+    outcome.IsOk.ShouldBeFalse();
+    outcome.Error.ShouldBe(FixtureErrors.TooLong);
+    context.Writes.ShouldBeEmpty();
+}
+```
+
+Time: `ICommandContext.Now` is a `DateTimeOffset`, the server time fixed for the attempt (read it instead of
+`DateTime.UtcNow` in a handler). The double starts at `2026-01-01T00:00:00Z`; set another instant with
+`At(DateTimeOffset now)` (returns the double, so it chains:
+`Context().At(new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero))`).
+
 `TestGameConfig`: `Empty`, `FromJson(files, label)` and `FromDirectory(configRoot, deploymentEnvironment)` (the host
 loader itself, same `ConfigVersion`).
 
@@ -402,6 +429,12 @@ await using (var factory = new LocalFlavorFactory<Program>())
     command.Code.ShouldBe("OK");
 }
 ```
+
+`CommandResponse` (`GameServer.Protocol.Core.V1`, from `core.proto`): `Code` (`"OK"` or the business code), `CodeNumber`,
+`ReceiptId` (empty on a rejection), `Updates` (repeated `SectionUpdate`), `Result` (the bytes of the command's result
+message: `StringValue.Parser.ParseFrom(command.Result)`), `ConfigVersion`, `ServerTimeUtcMs`, `Replayed`. A `SectionUpdate`
+carries `Id`, `BaseRev`, `NewRev`, `Payload` and `Full` directly (no nested section): `command.Updates[0].NewRev`,
+`Wire.CardState.Parser.ParseFrom(command.Updates[0].Payload)`. Only aggregates the command changed are in `Updates`.
 
 The settings the factory applies (`LocalFlavorSettings.Keys`; overrides through `LocalFlavorOptions.Settings`, services
 through `LocalFlavorOptions.Services`, the sweeper through `LocalFlavorOptions.OutboxSweeper`):
@@ -458,7 +491,13 @@ public void The_game_and_framework_mappers_pass()
   and checks every client-visible aggregate the modules declare. Pass the framework modules whose sections the game
   sends too (`IdentityModule`, `EconomyModule`). `Check(module, aggregateId, options?)` checks one aggregate;
   `CheckAll(services, options?)` checks every client-visible aggregate of a built composition (`factory.Services` of a
-  `LocalFlavorFactory`, `TestHost.BuildApp(...).Services`).
+  `LocalFlavorFactory`, `TestHost.BuildApp(...).Services`). `Check` and `CheckModules` see the mappers the modules
+  register; only `CheckAll` sees a host's `ConfigureExtensions(e => e.ReplaceWireMapper(…))` override (section 10.2).
+- When a test is needed: one `CheckModules` test per game covers every client-visible aggregate its modules declare, so a
+  new command whose mapper and state are unchanged needs nothing new (the existing test still passes). Rerun it, and
+  extend its expected `CheckedAggregates`, when a module adds a client-visible aggregate or changes a state type or its
+  mapper. A state that only a command produces (values the default sample does not reach) is checked with
+  `WithSampleState` (below).
 - `ThrowIfFailed()` throws `WireConformanceException` with one line per finding:
   `[aggregate {id}] {problem}: {path} — {fix}`. `report.Findings` lists them as data (`AggregateId`, `Problem`, `Path`,
   `Message`); `report.Passed` is true when there is none.
@@ -481,13 +520,30 @@ public void The_game_and_framework_mappers_pass()
   | `Guid` | deterministic from `n` | another deterministic value |
   | `byte[]` | `[n]` | `[n, 1]` |
   | `T?` | sample of `T` | change of `T` |
-  | list / collection | one element | the element's members, one at a time |
-  | dictionary | one entry (`"k{n}"`, `n`, enum or `Guid` key) | the key, then the value's members |
+  | list / collection | two elements | the last element's members, one at a time (a mapper that keeps only the first element, `.First()` or `Take(1)`, is `MemberNotOnWire`) |
+  | dictionary | two entries (`"k{n}"`, `n`, enum or `Guid` key; enum keys collapse into one entry) | the last entry's key, then its value's members |
   | anything else (`object`, `JsonNode`, an interface) | none: `MemberNotFillable` | — |
 
 - `WireConformanceOptions`: `WithMemberValue(aggregateId, memberPath, value)` supplies the sample for a member the kit
   cannot fill (`MemberNotFillable`; that member is then not changed); `WithSampleState(aggregateId, state)` uses your own
-  state as the sample (the changes still apply to it). Pass the options as the last argument of `Check*`.
+  state as the sample (the changes still apply to it; give its collections two elements, since the last one is changed).
+  Each `With*` returns the options, so they chain. Pass the options as the last argument of `Check*` (from
+  `FixtureConformanceTests.cs`):
+
+  ```csharp
+  var options = new WireConformanceOptions()
+      .WithSampleState(FixtureModuleDefinition.CardAggregate, new CardState
+      {
+          Title = "after save",
+          Counts = new Dictionary<string, int> { ["a"] = 1, ["b"] = 2 },
+          Slots = [new CardSlot("sword", DateTimeOffset.UnixEpoch.AddDays(1)), new CardSlot("shield", DateTimeOffset.UnixEpoch.AddDays(2))],
+          Nickname = "n",
+          UpdatedUtc = DateTimeOffset.UnixEpoch.AddDays(3),
+          InternalNote = "kept on the server",
+      });
+
+  WireConformance.CheckModules([new IdentityModule(), new FixtureModule()], options).ThrowIfFailed();
+  ```
 - Other problems: `SampleNotSerializable` (the sample does not deserialize into the state type, or the mapper throws),
   `UntypedMapper` (registered with the obsolete one-type `AddAggregateWireMapper<TState>`, section 10.2), `NoMapper` (a
   client-visible aggregate without a mapper).
@@ -615,6 +671,17 @@ framework is edited or copied.
 
 ### 10.1 Declare every route
 
+A new command needs more than its route. First add the command itself, in this order (`docs/html/02-them-command.html`
+§5, steps (1)–(5), worked through for `counter.reset`): the request/result messages in the game's `.proto` (section 10.3
+for its C# namespace), the domain records, the handler with its `CommandDescriptor` (Touches/Reads), and its registration
+`Command.Define<TRequest, TResult>(Handler.Descriptor).HandledBy<Handler>()` in `ModuleDescriptor.Commands` (a route that
+runs an unregistered command fails startup, ARC-07). Then declare and map its route as below. From
+`FixtureModuleDefinition.Describe()`:
+
+```csharp
+Commands = [Command.Define<SaveNote, SaveNoteResult>(SaveNoteHandler.Descriptor).HandledBy<SaveNoteHandler>()],
+```
+
 A route is declared once, as data, in the module's business project (no ASP.NET, no Protobuf), and listed in
 `ModuleDescriptor.Routes`. From `tests/ConsumerFixture/src/Fixture.Game/FixtureModuleDefinition.cs`:
 
@@ -655,18 +722,40 @@ Routes = [FixtureRoutes.Save, FixtureRoutes.Card],
   `MapPlayerCommand`/`MapDevCommand`/`MapGmCommand(declaration, …)` take method, template, operation and permission from
   the declaration. `MapDeclared(declaration, handler)` maps its methods and template; call the `As*Endpoint()` helper of
   the declared profile as before. A library helper endpoint (`MapHealthChecks`) is tagged with `.WithDeclaration(route)`.
+- Map from the **same instance** that `ModuleDescriptor.Routes` lists (the static property, `FixtureRoutes.Save`): an
+  endpoint mapped from a declaration no module lists is "not declared", and one mapped from a copy (`new`/`Post(...)` again
+  with the same name) is `[endpoint …] is mapped from a declaration named … that is not the one {owner} lists`. Either way
+  the route would be missing from the export and from the generated client routes.
+- The request and result types of `MapPlayerCommand<TWireRequest, TRequest, TResult>` are the protoc classes of the game's
+  messages. A proto without `option csharp_namespace` gets protoc's package rule: `package fixture.v1;` →
+  namespace `Fixture.V1` (each `.`-separated part with its first letter upper-cased, `_` removed, a letter after a digit
+  upper-cased). Domain and wire types often share names, so alias the wire namespace (`FixtureModule.cs`):
+
+  ```csharp
+  using Wire = Fixture.V1;
+
+  services.AddAggregateWireMapper<CardState, Wire.CardState>(FixtureModuleDefinition.CardAggregate, ToWire, o => o.Hidden(nameof(CardState.InternalNote)));
+  // a command with its own messages: routes.MapPlayerCommand<Wire.RenameRequest, Rename, RenameResult>(FixtureRoutes.Rename, …);
+  ```
 - A route listed in `ModuleDescriptor.PublicEndpoints` must be declared with profile `Public` (else startup fails, BC-5).
 - Hosting conditions: a declaration with `condition: "x"` is mapped only where condition `x` holds; the module registers
   it with `services.AddRouteCondition("x", sp => …)`. Built in: `development_tools` (Development/Test servers), which Dev
-  routes use.
+  routes use. The check holds both ways: a declaration whose condition holds must be mapped, and an endpoint mapped while
+  its condition does not hold fails startup (`[route {name}] is mapped but its condition 'x' does not hold. …`); a Public
+  route whose condition does not hold is not a public endpoint either.
 
 ### 10.2 The endpoint check and typed section mappers
 
 At startup the host compares every mapped endpoint with the declarations and refuses to serve on any fault (exit 1, one
-line per fault, each naming the fix), in every environment. Checked: an endpoint that is not declared, a template,
-method, profile, command or permission that differs from its declaration, and a declaration that is never mapped. The
-check also covers endpoints mapped **after** `UseGameServer` (directly on `app`, inside `MapGroup`): they are validated with
-the same rules before the server accepts a connection. Example line:
+line per fault, each naming the fix), in every environment. Checked: an endpoint that is not declared (also one mapped
+from a declaration instance no module lists, section 10.1), a template, method, profile, command or permission that
+differs from its declaration, an endpoint mapped while its hosting condition does not hold, and a declaration that is
+never mapped. The check also covers endpoints mapped **after** `UseGameServer` (directly on `app`, inside `MapGroup`): they
+are validated with the same rules before the server accepts a connection. For an otherwise passing configuration,
+endpoint faults now surface from `StartAsync`/`RunAsync` (and the `WebApplicationFactory` start), not from
+`UseGameServer`, and the startup line (`Starting {game} … on framework …`) moves there too: it is logged once the endpoint
+check passed. With another fault, `UseGameServer` still throws one report that holds the endpoint lines as well. Example
+line:
 
 ```text
 [endpoint POST /api/v1/account/init] is not declared in the route catalog. Fix: declare it in the module's ModuleDescriptor.Routes (or GameServerBuilder.DeclareRoutes for a host endpoint) and map it from the declaration (FG-026).
@@ -688,8 +777,16 @@ services.AddAggregateWireMapper<CardState, Wire.CardState>(FixtureModuleDefiniti
   (section 5.5).
 - The one-type `AddAggregateWireMapper<TState>(id, Func<TState, IMessage>)` is obsolete (CS0618, a build error under
   `TreatWarningsAsErrors`); a section registered that way still works but gets a startup Warning and no parser in Unity.
+- The mapper's `TState` must be the aggregate's state type (or a base of it): otherwise every snapshot of the section
+  would fail with a cast error, so startup fails instead:
+  `[aggregate {id}] wire mapper takes {TState} but the aggregate holds {state}. Fix: AddAggregateWireMapper<{state}, TWire>(…) (API-10).`
 - One mapper per aggregate: a second registration for the same id fails startup. To replace a framework mapper use
-  `gameServer.ConfigureExtensions(e => e.ReplaceWireMapper<WalletState, Wire.WalletState>("wallet", map, o => …))`.
+  `gameServer.ConfigureExtensions(e => e.ReplaceWireMapper<WalletState, Wire.WalletState>("wallet", map, o => …))`. The
+  replacement **must keep the message** of the mapper it replaces (`TWire`): the Unity client parses the section with that
+  message's parser (for a framework section, the one in the package), so another message fails startup with
+  `[aggregate wallet] ReplaceWireMapper must keep gameserver.economy.v1.WalletState; a new payload needs a new aggregate (FG-021).`
+  A new payload needs a new client-visible aggregate of the game. Conformance of an override is checked by
+  `WireConformance.CheckAll` on the built host only (section 5.5).
 
 ### 10.3 Generator config — `wiregen.json`
 
@@ -723,14 +820,16 @@ The zh-pvp shape (server repository with the framework at `framework/`, Unity cl
 | `origin` | `game` (default): only the game's own routes and sections are generated (the framework's are in the package) |
 | `protos[]` | the game's `.proto` files, each list under its protoc import root. Framework protos (`gameserver/core/v1/core.proto`, identity, economy, iap) are always import roots: import them, never list or copy them. `importRoots[]` adds the game's other import roots |
 | `output.root` | the Unity project folder (must exist); `--output-root <dir>` overrides it for another checkout |
-| `output.marker` | a path that must exist under the root (guards against a wrong root) |
-| `output.directory` | the folder that receives the files (must exist; the tool never creates it) |
+| `output.marker` | a path that must exist under the root (guards against a wrong root); relative, inside the root |
+| `output.directory` | the folder that receives the files (must exist; the tool never creates it); relative to the root and inside it (an absolute path or a `..` that leaves the root is exit 1) |
 | `output.layout` | `flat` (file name only, default) or `by-root` (the proto's folder under its root) |
 | `output.lineEndings` | `lf` (default) or `crlf` |
 | `namespace`, `routesClass`, `sectionsClass` | namespace and class names of the route and section files (defaults `GameRoutes`, `GameSections`) |
 
 Outputs: one C# file per listed proto (`zhpvp_game.proto` → `ZhpvpGame.cs`, protoc naming), `<routesClass>.cs` and
-`<sectionsClass>.cs`. Every input or contract error (missing path, protoc error, a game message that redefines a
+`<sectionsClass>.cs`. The message classes keep protoc's namespace, the same on server and client: `option
+csharp_namespace` when the proto sets it, else the package rule of section 10.1 (`fixture.v1` → `Fixture.V1`); the
+`namespace` of the config applies to the route and section classes only. Every input or contract error (missing path, protoc error, a game message that redefines a
 framework message, a route template the client cannot express, a name collision) stops the run with exit 1 before any
 file is written; each line names the fix. When the host project itself does not build, the tool relays only the
 `dotnet run` summary ("The build failed…"): run `dotnet build <host project>` to see the compiler errors.
@@ -749,12 +848,16 @@ dotnet run --project framework/tools/GameServer.WireGen -c Release -- generate -
 
 # game CI, after the solution build
 dotnet run --project framework/tools/GameServer.WireGen -c Release -- verify --config tools/unity-codegen/wiregen.json --no-build
+
+# the consumer fixture inside the framework, run from tests/ConsumerFixture (the framework is two folders up)
+dotnet run --project ../../tools/GameServer.WireGen -c Release -- generate --config tools/wiregen.json
 ```
 
 - `generate` writes only the files whose bytes differ (an unchanged file keeps its timestamp, so Unity does not
   reimport it) and prints one line per written file. `verify` writes nothing and exits 2 listing each file that differs
   or is missing: run it in CI so the committed client files cannot drift from the server. Exit codes: 0 done, 1 input or
-  contract error (nothing written), 2 `verify` found differences.
+  contract error (nothing written; an unexpected failure of the tool itself is exit 1 with an `[internal] …` line), 2
+  `verify` found differences.
 - Options: `--output-root <dir>`, `--catalog <export file>` (no host run), `--configuration <cfg>` (default `Release`),
   `--no-build` (the host is already built), `--dotnet <path>` (the dotnet executable to run the host with).
 - The run is deterministic: the same inputs give the same bytes on every machine and checkout path (no timestamp,
@@ -798,7 +901,8 @@ client.Sections.SectionChanged += id =>
 
 - Routes: `GameRoutes.X` is the route path without the leading slash (relative to the SDK base URL), `GameRoutes.XMethod`
   its HTTP method; a route with parameters is a method, `GameRoutes.X(string id)`, which escapes each value. Only
-  player-facing routes (profiles Player, Public, Dev; never GM) are generated.
+  player-facing routes (profiles Player, Public, Dev; never GM) are generated, and never the unversioned health probes
+  (`/health/live`, `/health/ready`: they serve load balancers, not the client).
 - Sections: `GameSections.X` is a typed key (`SectionKey<TMessage>`), `GameSections.XId` the id constant,
   `GameSections.Table` every key. `FrameworkSections.Table` is registered by the SDK itself; register the game's table
   once. `Get(key)` returns the parsed message or null when the client has not received it; `TryRead(id, out message)`
@@ -809,9 +913,12 @@ client.Sections.SectionChanged += id =>
 
 ### 10.6 Checklist for the game
 
-1. Declare every route (`ModuleDescriptor.Routes`, `DeclareRoutes` for host endpoints) and map from the declaration.
+1. Register the command in `ModuleDescriptor.Commands` (`Command.Define<…>().HandledBy<…>()`), declare the route
+   (`ModuleDescriptor.Routes`, `DeclareRoutes` for host endpoints) and map from the declaration (section 10.1).
 2. Register every section mapper typed, with `Hidden`/`MayStayDefault` where the server keeps data on purpose.
-3. Add the conformance test (section 5.5).
+3. Add the conformance test once (section 5.5). Rerun `CheckModules` (and update its `CheckedAggregates`) for a new
+   client-visible aggregate or a changed state or mapper; use `WithSampleState` to check a state that a command
+   produces. A new command with an unchanged mapper and state needs no new conformance test.
 4. Commit `wiregen.json`; run `generate`; commit the generated files and the `.meta` files Unity creates.
 5. Add `verify --no-build` to CI after the solution build.
 

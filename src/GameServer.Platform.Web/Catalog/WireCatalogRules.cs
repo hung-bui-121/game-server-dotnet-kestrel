@@ -37,9 +37,9 @@ internal static partial class WireCatalogRules
                 "mapper with ConfigureExtensions(e => e.ReplaceWireMapper<TState, TWire>(…)) (API-10).");
         }
 
-        foreach (var (id, contract) in catalog.Contracts.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+        foreach (var (id, entry) in catalog.Contracts.OrderBy(pair => pair.Key, StringComparer.Ordinal))
         {
-            ValidateContract(id, contract, errors);
+            ValidateContract(id, entry, errors);
         }
 
         return errors;
@@ -167,8 +167,24 @@ internal static partial class WireCatalogRules
         }
     }
 
-    private static void ValidateContract(string id, IAggregateWireContract contract, List<string> errors)
+    private static void ValidateContract(string id, WireContractEntry entry, List<string> errors)
     {
+        var contract = entry.Contract;
+
+        // The mapper casts the stored state to its TState: a type the aggregate does not hold fails every snapshot with a 500.
+        if (!contract.StateType.IsAssignableFrom(entry.AggregateStateType))
+        {
+            errors.Add(
+                $"[aggregate {id}] wire mapper takes {contract.StateType.Name} but the aggregate holds {entry.AggregateStateType.Name}. " +
+                $"Fix: AddAggregateWireMapper<{entry.AggregateStateType.Name}, TWire>(…) (API-10).");
+        }
+
+        // The client parses a section with the parser generated for its message: an override must keep that message.
+        if (entry.ReplacedMessage is { } replaced && !string.Equals(replaced, contract.Message.FullName, StringComparison.Ordinal))
+        {
+            errors.Add($"[aggregate {id}] ReplaceWireMapper must keep {replaced}; a new payload needs a new aggregate (FG-021).");
+        }
+
         var members = StateMembers.Of(contract.StateType);
         foreach (var path in contract.HiddenMembers.Where(path => !members.Resolve(path, out _)))
         {

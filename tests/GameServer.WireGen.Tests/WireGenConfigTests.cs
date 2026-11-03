@@ -216,6 +216,47 @@ public sealed class WireGenConfigTests : IDisposable
         _tree.Snapshot().ShouldBe(before);
     }
 
+    // T086 minor 4: the generator writes only inside the output root, so directory and marker may not leave it.
+    [Theory]
+    [InlineData("directory", "../elsewhere")]
+    [InlineData("directory", "Assets/../../elsewhere")]
+    [InlineData("directory", "ABSOLUTE")]
+    [InlineData("marker", "../elsewhere")]
+    [InlineData("marker", "ABSOLUTE")]
+    public void Output_directory_and_marker_must_stay_inside_the_output_root(string field, string value)
+    {
+        var path = value == "ABSOLUTE" ? Repo.Json(_tree.Path("client/Assets/Generated")) : value;
+        var directory = field == "directory" ? path : "Assets/Generated";
+        var marker = field == "marker" ? path : "Assets";
+        var file = _tree.Write("tools/wiregen.json", Repo.Config(
+            "\"catalog\": { \"hostProject\": \"host\" }, \"protos\": [ { \"root\": \"protos\", \"files\": [\"game.proto\"] } ], " +
+            $"\"output\": {{ \"root\": \"../client\", \"marker\": \"{marker}\", \"directory\": \"{directory}\" }}, \"namespace\": \"Game\""));
+        Layout();
+        _tree.Folder("client/Assets/Generated");
+        _tree.Folder("elsewhere");
+
+        Should.Throw<WireGenException>(() => WireGenConfig.Load(file)).Message
+            .ShouldContain($"output.{field} '{path}' is absolute or leaves the output root {_tree.Path("client")} (resolves to ");
+    }
+
+    [Fact]
+    public void An_output_directory_equal_to_the_root_or_with_an_inner_dot_dot_is_accepted()
+    {
+        var file = _tree.Write("tools/wiregen.json", Repo.Config("""
+              "catalog": { "hostProject": "host" },
+              "protos": [ { "root": "protos", "files": ["game.proto"] } ],
+              "output": { "root": "../client", "marker": "Assets/../Assets", "directory": "." },
+              "namespace": "Game"
+            """));
+        Layout();
+        _tree.Folder("client/Assets");
+
+        var config = WireGenConfig.Load(file);
+
+        config.OutputDirectory.ShouldBe(_tree.Path("client"));
+        config.Marker.ShouldBe(_tree.Path("client/Assets"));
+    }
+
     [Fact]
     public void The_output_root_option_replaces_output_root()
     {

@@ -63,7 +63,7 @@ public sealed class CatalogSourceTests : IDisposable
     {
         var config = HostConfig("Local");
 
-        var contract = await CatalogSource.LoadAsync(config, DotnetHost.Resolve(null), Repo.Configuration, noBuild: true, _tree.Folder("temp"));
+        var contract = await CatalogSource.ExportAsync(config, DotnetHost.Resolve(null), Repo.Configuration, noBuild: true, _tree.Folder("temp"));
 
         contract.Routes.ShouldContain(r => r.Name == "fixture.save" && r.Origin == "game" && r.Template == "/api/v1/fixture/save");
         contract.Routes.ShouldContain(r => r.Name == "identity.login_guest" && r.Origin == "framework");
@@ -77,7 +77,7 @@ public sealed class CatalogSourceTests : IDisposable
         var config = HostConfig("Nope");
 
         var ex = await Should.ThrowAsync<WireGenException>(() =>
-            CatalogSource.LoadAsync(config, DotnetHost.Resolve(null), Repo.Configuration, noBuild: true, _tree.Folder("temp")));
+            CatalogSource.ExportAsync(config, DotnetHost.Resolve(null), Repo.Configuration, noBuild: true, _tree.Folder("temp")));
 
         ex.Lines[0].ShouldStartWith($"[catalog] the export of {config.HostProject} (--environment Nope) exited with code 1:");
         ex.Lines.ShouldContain(l => l.Contains("GameServer:EnvironmentId '' is missing or invalid", StringComparison.Ordinal));

@@ -133,6 +133,26 @@ public sealed class WireCatalogTests
         catalog.FindRouteName("GET", "/v1/unknown").ShouldBeNull();
     }
 
+    // T086 minor 9: the request log looks every request up, so the lookup must not allocate (the LINQ predicate captured the method).
+    [Fact]
+    public void Find_route_allocates_nothing()
+    {
+        var catalog = Catalog(ProbeComposition);
+        const string Template = "/api/v1/probe/save";
+        catalog.FindRoute("POST", Template).ShouldNotBeNull();
+        catalog.FindRoute("GET", Template).ShouldBeNull();
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        for (var i = 0; i < 100; i++)
+        {
+            catalog.FindRoute("POST", Template);
+            catalog.FindRoute("GET", Template);
+            catalog.FindRoute("DELETE", "/v1/probe/any");
+        }
+
+        (GC.GetAllocatedBytesForCurrentThread() - before).ShouldBe(0);
+    }
+
     [Fact]
     public async Task Resolving_the_catalog_starts_nothing_and_never_touches_the_store()
     {
@@ -358,7 +378,7 @@ public sealed class WireCatalogTests
         [],
         [],
         [],
-        new Dictionary<string, IAggregateWireContract>());
+        new Dictionary<string, WireContractEntry>());
 
     [Fact]
     public void Export_matches_the_contract_example()
@@ -447,7 +467,7 @@ public sealed class WireCatalogTests
             [],
             [],
             [],
-            new Dictionary<string, IAggregateWireContract>());
+            new Dictionary<string, WireContractEntry>());
 
         var json = catalog.ToExportJson();
 

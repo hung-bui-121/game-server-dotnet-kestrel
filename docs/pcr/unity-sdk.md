@@ -75,7 +75,7 @@ của protoc, UTF-8 không BOM, LF; không timestamp, path, user, máy.
 | --- | --- |
 | `gameserver/core/v1/Core.cs` | `core.proto` (root `proto/`, lồng theo thư mục), namespace `GameServer.Protocol.Core.V1` |
 | `Identity.cs`, `Economy.cs`, `Iap.cs` | `identity.proto`, `economy.proto`, `iap.proto` (root = thư mục `Protos` của module, nên phẳng) |
-| `FrameworkRoutes.cs` | route player-facing của framework (origin `framework`, surface `PlayerApi`/`Host`, profile Player/Public/Dev, không service-only; **không** `gm.*`) |
+| `FrameworkRoutes.cs` | route player-facing của framework (origin `framework`, surface `PlayerApi`/`Host`, profile Player/Public/Dev, không service-only; **không** `gm.*`, không health probe `/health/live`, `/health/ready` — route `Host` không version chỉ dành cho load balancer) |
 | `FrameworkSections.cs` | section client-visible của framework: typed key, id và `Table` |
 
 **`FrameworkRoutes`** (namespace `GameServer.Client`; giá trị tương đối với `BaseUrl`, không có `/` đầu; mỗi route có
@@ -92,8 +92,6 @@ của protoc, UTF-8 không BOM, LF; không timestamp, path, user, máy.
 | `IdentityRequestDeletion` | `api/v1/identity/delete-account` | `POST` |
 | `IdentitySetDisplayName` | `api/v1/identity/display-name` | `POST` |
 | `PlatformConfig` | `api/v1/config/get` | `POST` |
-| `PlatformHealthLive` | `health/live` | `*` (mọi method) |
-| `PlatformHealthReady` | `health/ready` | `GET` |
 | `PlatformReceipt(string receiptId)` | `"api/v1/player/receipts/" + Uri.EscapeDataString(receiptId)` | `GET` |
 | `PlatformSnapshot` | `api/v1/player/snapshot` | `POST` |
 | `PlatformTime` | `v1/time` | `GET` |

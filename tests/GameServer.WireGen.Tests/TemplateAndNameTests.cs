@@ -68,15 +68,30 @@ public sealed class TemplateAndNameTests
             Route("gm.sso_start", "/gm/v1/auth/sso/start", profile: "Public", surface: "GmApi", origin: "framework"),
             Route("identity.ban", "/gm/v1/players/{playerId}/ban", profile: "Gm", surface: "GmApi", origin: "framework"),
             Route("cheat.grant", "/api/v1/cheat/grant", profile: "Dev", origin: "framework"),
-            Route("platform.health_live", "/health/live", profile: "Public", surface: "Host", origin: "framework", methods: []),
+            Route("platform.time", "/v1/time", profile: "Public", surface: "Host", origin: "framework", methods: ["GET"]),
+            Route("platform.hook", "/v1/hook", profile: "Public", surface: "Host", origin: "framework", methods: []),
             Route("quiet.thing", "/api/v1/quiet", origin: "framework", serviceOnly: true),
             Route("battle.end", "/api/v1/battle/end"),
         ], []);
 
-        Selection.Routes(contract, "framework").Select(r => r.Name).ShouldBe(["cheat.grant", "platform.health_live"]);
+        Selection.Routes(contract, "framework").Select(r => r.Name).ShouldBe(["cheat.grant", "platform.hook", "platform.time"]);
         Selection.Routes(contract, "game").Select(r => r.Name).ShouldBe(["battle.end"]);
         RouteRenderer.Render(Selection.Routes(contract, "framework"), "N", "R", "framework", "0.7.0")
-            .ShouldContain("public const string PlatformHealthLiveMethod = \"*\";");
+            .ShouldContain("public const string PlatformHookMethod = \"*\";");
+    }
+
+    // T086 minor 9: the unversioned host routes are the load-balancer health probes, never called by the client.
+    [Fact]
+    public void Selection_leaves_out_the_unversioned_health_probes()
+    {
+        var contract = new WireContract("0.7.0", "3.36.2",
+        [
+            Route("platform.health_live", "/health/live", profile: "Public", surface: "Host", origin: "framework", methods: []),
+            Route("platform.health_ready", "/health/ready", profile: "Public", surface: "Host", origin: "framework", methods: ["GET"]),
+            Route("platform.time", "/v1/time", profile: "Public", surface: "Host", origin: "framework", methods: ["GET"]),
+        ], []);
+
+        Selection.Routes(contract, "framework").Select(r => r.Name).ShouldBe(["platform.time"]);
     }
 
     [Fact]

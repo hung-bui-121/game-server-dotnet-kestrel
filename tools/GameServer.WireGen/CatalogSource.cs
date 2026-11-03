@@ -35,13 +35,9 @@ internal static class CatalogSource
 
     private const string FormatPrefix = "gameserver.wire-contract/";
 
-    public static async Task<WireContract> LoadAsync(WireGenConfig config, string dotnet, string configuration, bool noBuild, string tempFolder)
+    /// <summary>The catalog of <c>catalog.hostProject</c> (a config with <c>catalog.file</c> or <c>--catalog</c> uses <see cref="Read"/>).</summary>
+    public static async Task<WireContract> ExportAsync(WireGenConfig config, string dotnet, string configuration, bool noBuild, string tempFolder)
     {
-        if (config.CatalogFile is { } file)
-        {
-            return Read(file);
-        }
-
         var export = Path.Combine(tempFolder, "wire-contract.json");
         var host = config.HostProject!;
         var arguments = new List<string> { "run", "--project", host, "--no-launch-profile" };

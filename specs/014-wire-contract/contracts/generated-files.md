@@ -141,12 +141,6 @@ namespace GameServer.Client
         /// <summary>HTTP method of <see cref="IdentityLoginGuest"/>.</summary>
         public const string IdentityLoginGuestMethod = "POST";
 
-        /// <summary><c>* health/live</c>: profile Public, module <c>platform.observability</c>; any HTTP method.</summary>
-        public const string PlatformHealthLive = "health/live";
-
-        /// <summary>HTTP method of <see cref="PlatformHealthLive"/> (<c>*</c> = any).</summary>
-        public const string PlatformHealthLiveMethod = "*";
-
         /// <summary><c>GET api/v1/player/receipts/{receiptId}</c>: profile Player, platform.</summary>
         public static string PlatformReceipt(string receiptId) =>
             "api/v1/player/receipts/" + global::System.Uri.EscapeDataString(receiptId);

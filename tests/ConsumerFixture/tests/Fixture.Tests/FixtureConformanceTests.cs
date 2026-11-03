@@ -25,6 +25,24 @@ public sealed class FixtureConformanceTests
         report.ThrowIfFailed();
     }
 
+    // Consumer guide §5.5: a state a command produces, as the sample; the With* options chain.
+    [Fact]
+    public void A_supplied_sample_state_passes()
+    {
+        var options = new WireConformanceOptions()
+            .WithSampleState(FixtureModuleDefinition.CardAggregate, new CardState
+            {
+                Title = "after save",
+                Counts = new Dictionary<string, int> { ["a"] = 1, ["b"] = 2 },
+                Slots = [new CardSlot("sword", DateTimeOffset.UnixEpoch.AddDays(1)), new CardSlot("shield", DateTimeOffset.UnixEpoch.AddDays(2))],
+                Nickname = "n",
+                UpdatedUtc = DateTimeOffset.UnixEpoch.AddDays(3),
+                InternalNote = "kept on the server",
+            });
+
+        WireConformance.CheckModules([new IdentityModule(), new FixtureModule()], options).ThrowIfFailed();
+    }
+
     [Fact]
     public void A_mapper_that_drops_a_nested_member_fails_naming_it()
     {

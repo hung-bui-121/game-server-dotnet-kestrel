@@ -16,7 +16,10 @@ public static class WireConformance
     /// <summary>Context handed to the modules' <c>ConfigureServices</c> (registrations only; nothing is started).</summary>
     private static readonly ModuleContext Context = new("wire-conformance", "wire-conformance", "Development");
 
-    /// <summary>One client-visible aggregate of <paramref name="module"/>.</summary>
+    /// <summary>
+    /// One client-visible aggregate of <paramref name="module"/>, with the mapper the module registers. A
+    /// <c>ConfigureExtensions(e => e.ReplaceWireMapper(…))</c> override of the host is not seen here: use <see cref="CheckAll"/>.
+    /// </summary>
     public static WireConformanceReport Check(IGameModule module, string aggregateId, WireConformanceOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(module);
@@ -26,7 +29,11 @@ public static class WireConformance
         return Run([aggregate], MappersOf([module]), options);
     }
 
-    /// <summary>Every client-visible aggregate declared by <paramref name="modules"/> (their ConfigureServices run against a bare service collection).</summary>
+    /// <summary>
+    /// Every client-visible aggregate declared by <paramref name="modules"/> (their ConfigureServices run against a bare service
+    /// collection), with the mappers the modules register. A host's <c>ReplaceWireMapper</c> override is not seen here: use
+    /// <see cref="CheckAll"/> on the built host.
+    /// </summary>
     public static WireConformanceReport CheckModules(IEnumerable<IGameModule> modules, WireConformanceOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(modules);
@@ -35,7 +42,11 @@ public static class WireConformance
         return Run(aggregates, MappersOf(list), options);
     }
 
-    /// <summary>Every client-visible aggregate of a built host composition (e.g. <c>TestHost.BuildApp(...).Services</c>, <c>LocalFlavorFactory.Services</c>).</summary>
+    /// <summary>
+    /// Every client-visible aggregate of a built host composition (e.g. <c>TestHost.BuildApp(...).Services</c>,
+    /// <c>LocalFlavorFactory.Services</c>): the only entry point that checks the mappers the host serves, including
+    /// <c>ReplaceWireMapper</c> overrides.
+    /// </summary>
     public static WireConformanceReport CheckAll(IServiceProvider services, WireConformanceOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(services);

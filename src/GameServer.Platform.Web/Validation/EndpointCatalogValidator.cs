@@ -7,13 +7,13 @@ using Microsoft.AspNetCore.Routing;
 
 namespace GameServer.Platform.Web.Validation;
 
-/// <summary>What the check needs to know about the host (surfaces, service-only owners, conditions).</summary>
-public sealed record EndpointCheckContext(bool MapPlayerApi, bool MapGmApi, IReadOnlySet<string> ServiceOnlyOwners, Func<string, bool> ConditionHolds);
+/// <summary>What the check needs to know about the host: the mapped surfaces and whether a hosting condition holds.</summary>
+public sealed record EndpointCheckContext(bool MapPlayerApi, bool MapGmApi, Func<string, bool> ConditionHolds);
 
 /// <summary>
 /// Mapped endpoints ↔ catalog (FR-010, research R7): one report line per fault (data-model §2.2). An endpoint binds to its
-/// <see cref="RouteDeclarationMetadata"/>, else each of its (method, template) pairs to the declaration listing that method at
-/// that template. Non-route endpoints are ignored.
+/// <see cref="RouteDeclarationMetadata"/> (which must be the very declaration the catalog lists), else each of its (method,
+/// template) pairs to the declaration listing that method at that template. Non-route endpoints are ignored.
 /// </summary>
 public static class EndpointCatalogValidator
 {
@@ -33,7 +33,15 @@ public static class EndpointCatalogValidator
             var label = $"{string.Join(",", methods)} {template}";
             if (endpoint.Metadata.GetMetadata<RouteDeclarationMetadata>()?.Declaration is { } declared)
             {
+                // A declaration no module, platform or host lists is not in the export (nor in the generated client routes).
+                if (!catalog.Contains(declared))
+                {
+                    errors.Add(NotListed(label, declared, catalog));
+                    continue;
+                }
+
                 CheckBound(endpoint, declared, template, methods, label, errors);
+                CheckCondition(declared, catalog, context, errors);
                 foreach (var method in Pairs(declared))
                 {
                     mapped.Add((declared, method));
@@ -45,15 +53,14 @@ public static class EndpointCatalogValidator
             var candidates = catalog.RoutesAt(template);
             if (candidates.Count == 0)
             {
-                errors.Add(
-                    $"[endpoint {label}] is not declared in the route catalog. Fix: declare it in the module's ModuleDescriptor.Routes " +
-                    "(or GameServerBuilder.DeclareRoutes for a host endpoint) and map it from the declaration (FG-026).");
+                errors.Add(NotDeclared(label));
                 continue;
             }
 
             foreach (var declaration in Bind(methods, candidates, label, errors, mapped))
             {
                 CheckSecurity(endpoint, declaration, label, errors);
+                CheckCondition(declaration, catalog, context, errors);
             }
         }
 
@@ -63,6 +70,31 @@ public static class EndpointCatalogValidator
         }
 
         return errors;
+    }
+
+    private static string NotDeclared(string label) =>
+        $"[endpoint {label}] is not declared in the route catalog. Fix: declare it in the module's ModuleDescriptor.Routes " +
+        "(or GameServerBuilder.DeclareRoutes for a host endpoint) and map it from the declaration (FG-026).";
+
+    /// <summary>An endpoint mapped from a declaration instance the catalog does not list: a copy of a listed one, or an undeclared one.</summary>
+    private static string NotListed(string label, RouteDeclaration declared, WireCatalog catalog) =>
+        catalog.TryGetRoute(declared.Name, out var listed)
+            ? $"[endpoint {label}] is mapped from a declaration named {declared.Name} that is not the one {listed.Owner} lists. " +
+              "Fix: map it from the declaration instance listed in ModuleDescriptor.Routes (or GameServerBuilder.DeclareRoutes), not a copy (FG-026)."
+            : NotDeclared(label);
+
+    /// <summary>
+    /// FR-011: a route whose condition does not hold must not be mapped. An unregistered condition is reported once by the
+    /// declaration rules (<see cref="WireCatalog.Validate"/>), not here.
+    /// </summary>
+    private static void CheckCondition(RouteDeclaration declared, WireCatalog catalog, EndpointCheckContext context, List<string> errors)
+    {
+        if (declared.Condition is { } condition && catalog.ConditionNames.Contains(condition) && !context.ConditionHolds(condition))
+        {
+            errors.Add(
+                $"[route {declared.Name}] is mapped but its condition '{condition}' does not hold. " +
+                "Fix: map it only when the condition holds, or correct the declaration's condition (FG-026).");
+        }
     }
 
     /// <summary>The declaration of each endpoint pair; a method no declaration at the template lists is one "method differs" line.</summary>
@@ -157,7 +189,6 @@ public static class EndpointCatalogValidator
         {
             var route = entry.Declaration;
             if (entry.ServiceOnly
-                || context.ServiceOnlyOwners.Contains(entry.Owner)
                 || !SurfaceMapped(route.Surface, context)
                 || (route.Condition is { } condition && !context.ConditionHolds(condition))
                 || Pairs(route).All(method => mapped.Contains((route, method))))

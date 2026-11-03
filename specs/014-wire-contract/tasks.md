@@ -1396,13 +1396,34 @@ suite; guides and PCRs describe the shipped behaviour.
   Batch check after T070–T082: Debug and Release 0 warnings, 0 errors; in memory and `GAMESERVER_TEST_STORE=File` (no
   `COUCHBASE_*` in the test environment): **1828 total, 1732 passed, 96 skipped, 0 failed** each (T069: 1824 / 1728 / 96;
   +4 from T071). `git status` shows no file created by the runs.
-- [ ] T081 Reviewer walkthrough (story 5, FR-091 manual; after T074–T076): a fresh agent (no context beyond the docs)
+- [X] T081 Reviewer walkthrough (story 5, FR-091 manual; after T074–T076): a fresh agent (no context beyond the docs)
   follows the consumer guide §10 and `02-them-command.html` §4.10/§5 in a **temp copy** of the repository: add a
   `fixture.rename` command to the consumer fixture (declaration, mapping from it, typed mapper unchanged, conformance
   test), run `generate` for `tests/ConsumerFixture/tools/wiregen.json`, call the generated `FixtureRoutes.FixtureRename`
   from `Fixture.Client`, build and run the fixture tests; then the in-repo variant for `counter.reset` per §5.
   Done when: the agent's list of missing or wrong steps is recorded as a Note and each item is fixed in the docs (or
   answered); the temp copy is deleted; nothing of it is committed. (FR-070, FR-071, US5-3)
+  Note (2026-11-03, fixed in T086): 11 gaps, all fixed (consumer guide in English, `02-them-command.html` in Vietnamese,
+  both still "framework 0.7.0, unreleased / chưa phát hành"): (1) §10.1 opens with how to add the command itself (proto,
+  domain, handler + `CommandDescriptor`, `Command.Define<…>().HandledBy<…>()` in `ModuleDescriptor.Commands`, ARC-07) and
+  points to HTML §5 (1)–(5); §10.6 item 1 = register the command, declare the route, map from the declaration; (2)
+  rejection test (`outcome.IsOk.ShouldBeFalse(); outcome.Error.ShouldBe(FixtureErrors.TooLong); context.Writes.ShouldBeEmpty();`,
+  `Error` not a `Code` string) in guide §5.1 and the game variant of HTML §5(7) (`CounterErrors.AlreadyZero`); (3) when a
+  conformance test is needed (guide §5.5, §10.6 step 3: rerun `CheckModules` for a new client-visible aggregate or a
+  changed state/mapper, `WithSampleState` for a state a command produces, nothing new otherwise); (4)
+  `new WireConformanceOptions().WithSampleState(id, state)` example, `With*` chain (§5.5); (5) C# namespace of game
+  messages (no `csharp_namespace` → package rule, `fixture.v1` → `Fixture.V1`, letter after a digit upper-cased) with
+  `using Wire = Fixture.V1;` and `MapPlayerCommand<Wire.X, …>` (§10.1, §10.3); (6) `At(DateTimeOffset now)`,
+  `ICommandContext.Now` (`DateTimeOffset`, default `2026-01-01T00:00:00Z` in the double) in §5.1, `CommandResponse` and
+  `SectionUpdate` fields (`Id`/`NewRev`/`Payload` on the update) in §5.2; (7) the fixture's own WireGen command from
+  `tests/ConsumerFixture` in §10.4 (run: `generate: 0 written, 3 unchanged`); (8) `dotnet test --project <csproj> -c Release`
+  in §5 (run on the fixture: 26/26); (9) `-c Release` in HTML §4.10 and §5(8), as in guide §10.4 (also the
+  `contracts/wiregen-cli.md` §6 framework commands); (10) HTML §5(8) "Từ Unity" marked as illustrative (KestrelDemo has no
+  counter call; a real client puts it in its server script, `SampleGameClient.cs` next to `ShopBuy`); (11) HTML checklist
+  row 12 names the three configs `CommittedOutputTests` verifies (`sdk/GameServer.Client/wiregen.json`,
+  `samples/SampleGame/wiregen.json`, `tests/ConsumerFixture/tools/wiregen.json`). The two new guide samples are real fixture
+  tests (`SaveNoteHandlerTests.A_note_that_is_too_long_is_rejected_and_writes_nothing`,
+  `FixtureConformanceTests.A_supplied_sample_state_passes`), so the guide's "every sample is from the fixture" holds.
 - [X] T082 **Manual / owner-assisted** first-consumer CRLF regeneration (FR-091, SC-009; never edit
   `E:\ProjGits\zh-pvp-server` or `E:\ProjGits\research-and-development-games`): in a temp clone of the game repo with its
   `framework/` submodule checked out at this branch's head, write the illustrative config of data-model §4 (crlf,
@@ -1448,6 +1469,63 @@ suite; guides and PCRs describe the shipped behaviour.
   fix where practical; update docs/release notes/PCR touched by a fix; re-run the affected classes, then T083 and T084.
   Append `## Review (T085/T086, …)` to this file in the 013 format (finding, fix, test, docs; deviations; test delta).
   Done when: suites green; review section complete. (FR-091)
+  Notes (2026-11-03; every code test below was checked to fail with its fix temporarily reverted, then restored):
+  - B1 (unlisted declaration passed the check): `WireCatalog` keeps a reference-equality set of the listed declarations
+    (`Contains`); a bound endpoint whose declaration is not listed is "not declared", or "mapped from a declaration named N
+    that is not the one {owner} lists" when another instance has the name. Tests: `EndpointCatalogValidatorTests.An_endpoint_mapped_from_a_declaration_the_catalog_does_not_list_is_not_declared`,
+    `…_from_a_copy_of_a_listed_declaration_names_the_owner`; `EndpointCatalogCheckTests.An_endpoint_mapped_from_a_declaration_no_module_lists_is_one_line`,
+    `…_from_a_copy_of_the_listed_declaration_names_the_owner`, `The_export_of_that_host_does_not_list_the_route` (export
+    mode, documents why). Full suites green after the fix: no test or sample relied on the gap.
+  - M1 (`ReplaceWireMapper` with another `TWire`): the replacement records the replaced typed mapper's message (chained
+    overrides keep the original); `ValidateContract` reports `[aggregate id] ReplaceWireMapper must keep {message}; a new
+    payload needs a new aggregate (FG-021).` Tests: `WireMapperRegistrationTests.Replace_wire_mapper_with_another_message_fails_startup`,
+    `A_second_replacement_still_compares_with_the_original_message`, `Replace_wire_mapper_keeping_the_message_records_no_fault`.
+    Docs: consumer guide §10.2, release notes BC-4 + FG-028, PCR platform §20.
+  - M2 (typed `TState` never checked): `WireContractEntry` carries the aggregate's `StateType`; `[aggregate id] wire mapper
+    takes X but the aggregate holds Y. Fix: AddAggregateWireMapper<Y, TWire>(…) (API-10).` Tests:
+    `WireMapperRegistrationTests.A_mapper_typed_for_another_state_fails_startup_naming_both_types`,
+    `A_replacement_typed_for_another_state_fails_startup_too`. `WireConformance` itself does not add this check (startup does).
+  - m1 conditions: `PublicTemplates` keeps only declarations whose condition is null or holds; bound and template-matched
+    endpoints get `[route X] is mapped but its condition 'c' does not hold` (registered conditions only; an unknown one stays
+    the single declaration line). A condition whose options fail validation does not hold (`OptionsValidationException`
+    caught; already reported by `ValidateModuleOptions`; `FlavorValidationTests.Production_with_nothing_configured…` caught
+    it). Tests: `EndpointCatalogValidatorTests.An_endpoint_whose_registered_condition_does_not_hold_is_one_line`,
+    `An_unregistered_condition_is_left_to_the_declaration_rules`, `EndpointCatalogCheckTests.A_public_route_mapped_while_its_condition_does_not_hold_is_reported_twice_over`
+    (fails with only the `PublicTemplates` part reverted). `LateEndpointValidationTests.A_late_dev_endpoint_outside_development_tools_is_refused`
+    now expects the two GM OpenAPI lines its mutated environment implies. Production SampleHost unaffected (login/OpenAPI are
+    mapped only under `AllowsDevelopmentTools`); every flavor test green.
+  - m2 WireGen exit codes: final `catch (Exception)` → `[internal] {type}: {message} …`, exit 1; temp delete in `DeleteTemp`
+    (IO/permission failure → `note:` line). Tests: `CliTests.An_unexpected_failure_exits_1_with_an_internal_line_and_writes_nothing`,
+    `A_temp_folder_that_cannot_be_deleted_is_a_note_not_an_exception`.
+  - m3 `dotnet!`: load paths split (`CatalogSource.Read` for a file, `ExportAsync(config, dotnet, …)` for a host); a given
+    `--dotnet` is still validated. Refactor only: no failing test possible; covered by `CliTests`/`CatalogSourceTests`.
+  - m4 output escape: `output.directory`/`output.marker` that are absolute or leave the root are one config line (Windows
+    case-insensitive, as `Protoc.PathComparer`). Tests: `WireGenConfigTests.Output_directory_and_marker_must_stay_inside_the_output_root`
+    (5 cases), `An_output_directory_equal_to_the_root_or_with_an_inner_dot_dot_is_accepted`.
+  - m5 export atomic: temp file in the target folder, `File.Move(overwrite: true)`, temp deleted on failure. Test:
+    `WireContractExportTests.The_export_replaces_an_existing_file_in_one_step_and_leaves_no_temp_file` (a reader holding the
+    old file keeps the old bytes; measured: Windows refuses the replace of an open file → exit 1, old file intact),
+    `The_export_overwrites_an_existing_file`.
+  - m6 conformance: XML docs say only `CheckAll` sees `ReplaceWireMapper`; samples have two elements/entries and the walk
+    perturbs the last. Tests: `WireConformanceTests.A_mapper_that_keeps_only_the_first_element_is_caught`,
+    `A_mapper_that_keeps_only_the_first_entry_is_caught`, `A_mapper_of_every_element_passes`. Rerun on framework, sample,
+    template and fixture mappers: no real finding (all pass unchanged).
+  - m7 dead code: `CoreEndpoints.TimeRoute/ReceiptRoute/ConfigRoute` deleted (grep src/ tests/: unused; `SnapshotRoute`
+    stays, `TestKitHostTests` uses it); `ServiceOnlyOwners` dropped from `EndpointCheckContext` (uses `entry.ServiceOnly`;
+    the validator test marks its service-only entry). No behaviour change, no failing test possible.
+  - m8 docs: BC-2 row of the release notes and consumer guide §10.2 (and PCR §20 BC-2) say endpoint faults of an otherwise
+    passing configuration surface from `StartAsync`/`RunAsync`, with the startup line.
+  - m9 WireGen selection leaves out unversioned `Host` routes (the health probes); all three configs regenerated: only
+    `FrameworkRoutes.cs` changed (the four `PlatformHealth*` constants removed, no file added or removed, `.meta` untouched);
+    `WireCatalog.FindRoute` uses index loops. Tests: `TemplateAndNameTests.Selection_leaves_out_the_unversioned_health_probes`
+    (+ `CommittedOutputTests` for the SDK config), `WireCatalogTests.Find_route_allocates_nothing`; `SdkRouteTests` now
+    excludes the probes and asserts no `PlatformHealth*` member. Docs: release notes FG-026 (2), PCR unity-sdk, data-model
+    §3.1/§5.1, generated-files contract, consumer guide §10.5.
+  - Docs gaps of T081: see the T081 Note. Also updated for the fixes: data-model §2.1/§2.2/§7.2, contracts public-api and
+    wiregen-cli, PCR platform §20, release notes (BC-1, BC-2, BC-4, FG-021, FG-026, FG-027, FG-028, manual checks).
+  - Run: Debug and Release 0 warnings, 0 errors; in memory and `GAMESERVER_TEST_STORE=File` (no `COUCHBASE_PW`):
+    **1858 total, 1762 passed, 96 skipped, 0 failed** each (T080: 1828 / 1732 / 96; +30 = 28 framework tests + 2 fixture
+    tests for the new guide samples). Open: T083 opt-in perf run and T084 Couchbase suite were not rerun here.
 - [ ] T087 Resume update `AgentMemories/features/p05-speckit/00_summary.md` (after T086): 014 row DONE with task count
   and review result; "Technical notes from 014" (catalog + check incl. the hook chosen in T002, export mode, WireGen
   commands and exit codes, `wiregen.json` locations, typed mapper + `ReplaceWireMapper`, `WireConformance`, SDK typed

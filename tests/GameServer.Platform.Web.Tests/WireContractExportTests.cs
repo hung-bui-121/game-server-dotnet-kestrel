@@ -60,6 +60,53 @@ public sealed class WireContractExportTests : IDisposable
         output.ToString().ShouldContain("export: ");
     }
 
+    // T086 minor 5: the export replaces the file in one step, so the old file is never truncated in place. A reader holding it
+    // keeps the old bytes; on Windows the replace of an open file is refused (exit 1, old file intact), elsewhere it succeeds.
+    [Fact]
+    public async Task The_export_replaces_an_existing_file_in_one_step_and_leaves_no_temp_file()
+    {
+        var file = Path.Combine(_folder, "wire.json");
+        await File.WriteAllTextAsync(file, "old export");
+        var app = SampleTestHost.BuildApp(settings: s => s[GameServerCommandLine.ExportPathKey] = file);
+        var error = new StringWriter();
+        int code;
+        string seenByReader;
+        using (var reader = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+        {
+            code = await GameServerRunExtensions.ExportAsync(app, TextWriter.Null, error);
+            using var text = new StreamReader(reader);
+            seenByReader = await text.ReadToEndAsync();
+        }
+
+        seenByReader.ShouldBe("old export");
+        if (code == HostExitCodes.Ok)
+        {
+            (await File.ReadAllTextAsync(file)).ShouldStartWith("{");
+        }
+        else
+        {
+            code.ShouldBe(HostExitCodes.InvalidConfiguration);
+            error.ToString().ShouldContain($"[export] the export file '{file}' cannot be written:");
+            (await File.ReadAllTextAsync(file)).ShouldBe("old export");
+        }
+
+        Directory.GetFiles(_folder).ShouldBe([file]);
+    }
+
+    [Fact]
+    public async Task The_export_overwrites_an_existing_file()
+    {
+        var file = Path.Combine(_folder, "wire.json");
+        await File.WriteAllTextAsync(file, "old export");
+        var app = SampleTestHost.BuildApp(settings: s => s[GameServerCommandLine.ExportPathKey] = file);
+        var error = new StringWriter();
+
+        (await GameServerRunExtensions.ExportAsync(app, TextWriter.Null, error)).ShouldBe(HostExitCodes.Ok, error.ToString());
+
+        (await File.ReadAllTextAsync(file)).ShouldStartWith("{");
+        Directory.GetFiles(_folder).ShouldBe([file]);
+    }
+
     [Fact]
     public async Task A_declaration_fault_exits_1_and_writes_no_file()
     {

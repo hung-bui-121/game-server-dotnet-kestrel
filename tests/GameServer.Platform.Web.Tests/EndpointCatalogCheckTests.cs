@@ -2,6 +2,7 @@ using GameServer.Actors;
 using GameServer.Modules.Identity;
 using GameServer.Platform.Persistence;
 using GameServer.Platform.Web.Aggregates;
+using GameServer.Platform.Web.Catalog;
 using GameServer.Platform.Web.Hosting;
 using GameServer.Platform.Web.Routing;
 using GameServer.Routing;
@@ -66,6 +67,76 @@ public sealed class EndpointCatalogCheckTests
                 endpoints: app => app.MapGet("/v1/probe/host", () => "x").AsPublicEndpoint(protobuf: false),
                 settings: s => s["GameServer:PublicEndpointAllowlist:1"] = "/v1/probe/host"))
             .ShouldBe([$"[endpoint GET /v1/probe/host] {NotDeclared}"]);
+    }
+
+    // T086 B1 (found in T082): mapped from a declaration that no ModuleDescriptor.Routes lists, the endpoint used to pass the check
+    // while the export (and so the generated client routes) silently lacked it.
+    [Fact]
+    public async Task An_endpoint_mapped_from_a_declaration_no_module_lists_is_one_line()
+    {
+        var route = RouteDeclaration.Post("probe.unlisted", "/api/v1/probe/unlisted", SecurityProfile.Player);
+
+        (await Violations(gs => gs.AddModule(new CatalogProbeModule(routes: [], card: false)), app => app.MapDeclared(route, () => "x").AsPlayerEndpoint()))
+            .ShouldBe([$"[endpoint POST /api/v1/probe/unlisted] {NotDeclared}"]);
+    }
+
+    [Fact]
+    public async Task The_export_of_that_host_does_not_list_the_route()
+    {
+        var route = RouteDeclaration.Post("probe.unlisted", "/api/v1/probe/unlisted", SecurityProfile.Player);
+        var file = Path.Combine(Path.GetTempPath(), "gs-unlisted-" + Guid.NewGuid().ToString("N") + ".json");
+        var app = SampleTestHost.BuildApp(
+            gs =>
+            {
+                SampleTestHost.DefaultModules(gs);
+                gs.AddModule(new CatalogProbeModule(routes: [], card: false));
+            },
+            s => s[GameServerCommandLine.ExportPathKey] = file);
+        app.MapDeclared(route, () => "x").AsPlayerEndpoint();
+        try
+        {
+            (await GameServerRunExtensions.ExportAsync(app, TextWriter.Null, TextWriter.Null)).ShouldBe(HostExitCodes.Ok);
+            (await File.ReadAllTextAsync(file)).ShouldNotContain(route.Name);
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    [Fact]
+    public async Task An_endpoint_mapped_from_a_copy_of_the_listed_declaration_names_the_owner()
+    {
+        var listed = RouteDeclaration.Post("probe.save", "/api/v1/probe/save", SecurityProfile.Player);
+        var copy = RouteDeclaration.Post("probe.save", "/api/v1/probe/save", SecurityProfile.Player);
+
+        (await Violations(gs => gs.AddModule(new CatalogProbeModule(routes: [listed], card: false)), app => app.MapDeclared(copy, () => "x").AsPlayerEndpoint()))
+            .ShouldBe(
+            [
+                "[endpoint POST /api/v1/probe/save] is mapped from a declaration named probe.save that is not the one probe lists. " +
+                "Fix: map it from the declaration instance listed in ModuleDescriptor.Routes (or GameServerBuilder.DeclareRoutes), not a copy (FG-026).",
+                "[route probe.save] (POST /api/v1/probe/save, owner probe, surface PlayerApi) is declared but not mapped. " +
+                "Fix: map it in the module's MapPlayerApi method or remove the declaration (FG-026).",
+            ]);
+    }
+
+    // T086 minor 1: a Public route whose condition does not hold opens no public template and must not be mapped.
+    [Fact]
+    public async Task A_public_route_mapped_while_its_condition_does_not_hold_is_reported_twice_over()
+    {
+        var route = RouteDeclaration.Get("probe.open", "/v1/probe/open", SecurityProfile.Public, RouteSurface.Host, condition: "probe.off");
+
+        (await Violations(
+                gs => gs.AddModule(new CatalogProbeModule(routes: [route], card: false)),
+                app => app.MapDeclared(route, () => "x").AsPublicEndpoint(protobuf: false),
+                services: s => s.AddRouteCondition("probe.off", _ => false)))
+            .ShouldBe(
+            [
+                "[endpoint GET /v1/probe/open] is Public but not in GameServer:PublicEndpointAllowlist. Fix: add it to the allowlist and the PCR (SEC-09) " +
+                "or change its profile.",
+                "[route probe.open] is mapped but its condition 'probe.off' does not hold. " +
+                "Fix: map it only when the condition holds, or correct the declaration's condition (FG-026).",
+            ]);
     }
 
     [Fact]

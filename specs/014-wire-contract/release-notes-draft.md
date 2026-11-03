@@ -15,10 +15,10 @@ below). **Obsolete:** the untyped `AddAggregateWireMapper<TState>` (BC-3, kept t
 
 | Id | Change | How it surfaces | Fix |
 | --- | --- | --- | --- |
-| BC-1 | Every mapped endpoint must be declared in the route catalog and match its declaration (template, method, profile, command operation, GM permission) | Startup exit 1 in every environment, one line per endpoint: `[endpoint POST /api/v1/account/init] is not declared in the route catalog. Fix: …` | Declare each route in `ModuleDescriptor.Routes` (host endpoints: `GameServerBuilder.DeclareRoutes`) and map it from the declaration (FG-026 below) |
-| BC-2 | Endpoints mapped after `UseGameServer` are validated before the server listens (catalog, profile, version segment, duplicates, Public allowlist, Dev rule, command route) | Startup exit 1 (or `GameServerStartupException` from `StartAsync`/`WebApplicationFactory`) with the same lines as for endpoints mapped before `UseGameServer` | Fix the endpoint as the line says, or move it into a module |
+| BC-1 | Every mapped endpoint must be declared in the route catalog and match its declaration (template, method, profile, command operation, GM permission); an endpoint mapped from a declaration instance that no module lists (or from a copy of a listed one) is not declared, and an endpoint mapped while its hosting condition does not hold is refused | Startup exit 1 in every environment, one line per endpoint: `[endpoint POST /api/v1/account/init] is not declared in the route catalog. Fix: …` | Declare each route in `ModuleDescriptor.Routes` (host endpoints: `GameServerBuilder.DeclareRoutes`) and map it from that same declaration (FG-026 below) |
+| BC-2 | Endpoints mapped after `UseGameServer` are validated before the server listens (catalog, profile, version segment, duplicates, Public allowlist, Dev rule, command route) | Startup exit 1 (or `GameServerStartupException` from `StartAsync`/`WebApplicationFactory`) with the same lines as for endpoints mapped before `UseGameServer`. For an otherwise passing configuration, endpoint faults now surface from `StartAsync`/`RunAsync`, not from `UseGameServer`, and the startup line moves there | Fix the endpoint as the line says, or move it into a module |
 | BC-3 | `AddAggregateWireMapper<TState>(id, Func<TState, IMessage>)` is obsolete | Compiler warning CS0618 (a build error under `TreatWarningsAsErrors`); startup Warning per untyped section | `AddAggregateWireMapper<TState, TWire>(id, map, o => …)` naming the section's message (FG-028 below) |
-| BC-4 | Two wire mappers for one aggregate id stop the host (was: the last registration won) | Startup exit 1: `[aggregate {id}] has 2 wire mappers. Fix: …` | One registration per aggregate; replace a framework mapper with `ConfigureExtensions(e => e.ReplaceWireMapper<TState, TWire>(…))` |
+| BC-4 | Two wire mappers for one aggregate id stop the host (was: the last registration won) | Startup exit 1: `[aggregate {id}] has 2 wire mappers. Fix: …` | One registration per aggregate; replace a framework mapper with `ConfigureExtensions(e => e.ReplaceWireMapper<TState, TWire>(…))`, which must keep the replaced mapper's message (`TWire`; else `[aggregate {id}] ReplaceWireMapper must keep {message}; a new payload needs a new aggregate (FG-021).`) |
 | BC-5 | A route listed in `ModuleDescriptor.PublicEndpoints` must be declared with profile Public | Startup exit 1: `[module {module}] lists {template} in PublicEndpoints but route {name} declares profile {profile}. …` | Declare it Public, or remove the entry (Public declarations no longer need `PublicEndpoints`) |
 | BC-6 | `sdk/GameServer.Client` no longer runs protoc: the Unity package files and the KestrelDemo sample files come from WireGen | Framework contributors only: building the SDK no longer refreshes `Runtime/Generated` or `KestrelDemo/Assets/SampleGame/Generated`; `CommittedOutputTests` fail until regenerated | `dotnet run --project tools/GameServer.WireGen -c Release -- generate --config sdk/GameServer.Client/wiregen.json` (package) and `… --config samples/SampleGame/wiregen.json` (sample client) |
 
@@ -100,8 +100,11 @@ table) and the hidden-field comment become removable.
   file is not rewritten (no Unity reimport). The tool never deletes a file and never reads, writes or deletes a `.meta`; for
   each new file it prints `new file <path>: Unity creates <path>.meta on import; commit it`.
 - **`verify` for CI**: writes nothing, lists every differing or missing file relative to the output root, exit 2.
+- **Exit codes are a contract**: 0, 1 or 2 only; an unexpected failure of the tool itself is exit 1 with one `[internal] …`
+  line, and a temp folder that cannot be deleted is a note that changes neither the exit code nor the error shown.
 - **Errors before any write** (exit 1, one line naming the input and the fix): unreadable config or unknown format major,
-  missing `output.root` / `output.marker` / `output.directory` (never created), missing proto, protoc compile error
+  missing `output.root` / `output.marker` / `output.directory` (never created), an `output.marker` or `output.directory`
+  that is absolute or leaves `output.root` through `..` (the tool writes only inside the root), missing proto, protoc compile error
   (`file:line` relayed), a game message duplicating a framework message (protoc "already defined", or the same C# type name
   through `csharp_namespace`), a section whose message the client does not have, colliding generated names, a player-facing
   route with several methods or with a constraint, optional, default or catch-all parameter. When the host itself does not
@@ -161,9 +164,12 @@ table) and the hidden-field comment become removable.
   `development_tools` (platform) and `gm.sso` (GM); a module adds its own with `services.AddRouteCondition(name, holds)`.
 - **Startup check** (every environment, no setting turns it off): declaration rules (name `<area>.<route>` in lower case,
   ≤ 64; unique name; unique method + template; valid, versioned template; GM routes and only GM routes carry a permission;
-  known condition) and mapped endpoints ↔ catalog (not declared, template/method/profile/operation/permission differs,
-  declared but not mapped while its surface is mapped, its owner is not service-only and its condition holds). One report
-  line per fault, naming the route and the fix; exit 1. `--provision` checks the declarations too.
+  known condition) and mapped endpoints ↔ catalog (not declared — including an endpoint bound to a declaration instance no
+  module, platform or host lists, so the export cannot silently lose a route; bound to a copy of a listed declaration;
+  template/method/profile/operation/permission differs; mapped while its registered condition does not hold; declared but not
+  mapped while its surface is mapped, its owner is not service-only and its condition holds). One report line per fault,
+  naming the route and the fix; exit 1. `--provision` checks the declarations too. A Public declaration whose condition does
+  not hold is not a public endpoint.
 - **Endpoints mapped after `UseGameServer`** are validated before the server listens, with every endpoint rule (catalog,
   security profile, version segment, duplicates, Public allowlist, Dev rule, command route). The request-time Dev refusal of
   slice 013 stays as defense in depth.
@@ -177,9 +183,9 @@ table) and the hidden-field comment become removable.
   produced by the same WireGen step as a game (`sdk/GameServer.Client/wiregen.json`, origin `framework`, catalog of the
   SampleHost Local composition): every player-facing framework route — `IdentityLoginGuest`, `IdentityLoginProvider`,
   `IdentityLink`, `IdentityLogout`, `IdentityRequestDeletion`, `IdentitySetDisplayName`, `IapPurchase`, `CheatGrant`,
-  `PlatformSnapshot`, `PlatformConfig`, `PlatformTime`, `PlatformReceipt(receiptId)`, `PlatformHealthLive` (method `*`),
-  `PlatformHealthReady` — each with `…Method`, no leading slash, no `gm.*`. A game gets the same for its own routes
-  (`<routesClass>.cs`, FG-021).
+  `PlatformSnapshot`, `PlatformConfig`, `PlatformTime`, `PlatformReceipt(receiptId)` — each with `…Method`, no leading
+  slash, no `gm.*`, and no unversioned health probe (`/health/live`, `/health/ready` serve load balancers, not the client).
+  A game gets the same for its own routes (`<routesClass>.cs`, FG-021).
 - **SDK route constants** `GameServerClient.LoginRoute … TimeRoute` are now defined from `FrameworkRoutes` (same values).
   The SDK's own code and the KestrelDemo client script contain no route literal (framework tests scan them; the sample
   script is also checked for section id literals).
@@ -234,14 +240,17 @@ table) and the hidden-field comment become removable.
   `WireConformance.CheckModules([new EconomyModule(), new GameModule()]).ThrowIfFailed();` (modules' `ConfigureServices` run
   against a bare service collection), `Check(module, aggregateId)`, `CheckAll(app.Services)` (every client-visible aggregate
   of a built composition). The kit builds a sample state from the persisted members (System.Text.Json contract of
-  `GameServerJson.Options`: members with a setter or a constructor parameter; collections get one element, dictionaries one
-  entry, each leaf a distinct value), maps it, and reports: `FieldAtDefault` (a proto field still default; repeated/map
+  `GameServerJson.Options`: members with a setter or a constructor parameter; collections get two elements, dictionaries
+  two entries, each leaf a distinct value; the last element or entry is perturbed, so a mapper that keeps only the first is
+  caught), maps it, and reports: `FieldAtDefault` (a proto field still default; repeated/map
   empty; presence fields absent; oneof unset), `MemberNotOnWire` (perturbing a non-hidden member leaves the message
   unchanged, nested paths such as `ActiveBattle.Seed`), `HiddenMemberOnWire` (a hidden member reaches the wire, or the
   declaration is stale), `MemberNotFillable` (a member type the kit cannot sample, e.g. `object`: supply it with
   `WithMemberValue`), `SampleNotSerializable`, `UntypedMapper`, `NoMapper`. One line per finding:
   `[aggregate {id}] {problem}: {path} — {fix}`. Options: `new WireConformanceOptions().WithSampleState(id, state)` (the
-  sample, still perturbed) and `.WithMemberValue(id, path, value)` (not perturbed; noted in the report text).
+  sample, still perturbed) and `.WithMemberValue(id, path, value)` (not perturbed; noted in the report text); the `With*`
+  methods chain. `Check` and `CheckModules` see the mappers the modules register; only `CheckAll` sees a host's
+  `ReplaceWireMapper` override.
 - **Hidden members and may-stay-default fields are declared at the registration**: `o => o.Hidden("ActiveBattle.WinCash")`
   (C# member names joined by `.`, collection elements transparent) and `o => o.MayStayDefault("kind")` (proto field names).
   Both are validated at startup (unknown path → exit 1, `[aggregate {id}] hidden member '{path}' does not exist on {TState}.
@@ -272,7 +281,12 @@ table) and the hidden-field comment become removable.
   uses it.
 - **Replacing a mapper**: `gameServer.ConfigureExtensions(e => e.ReplaceWireMapper<TState, TWire>(aggregateId, map, configure))`
   removes the mappers registered for the id so far (through `AddAggregateWireMapper`) and registers the new one; for an id
-  without a mapper it simply registers it.
+  without a mapper it simply registers it. The replacement must keep the message of the typed mapper it replaces: the
+  client parses the section with that message's parser (a framework section with the package's parser), so another
+  `TWire` stops the host with `[aggregate {id}] ReplaceWireMapper must keep {message}; a new payload needs a new aggregate (FG-021).`
+- **Mapper state type**: a typed mapper whose `TState` does not take the aggregate's state type (which failed every
+  snapshot of the section with a cast error, HTTP 500) stops the host: `[aggregate {id}] wire mapper takes {TState} but the
+  aggregate holds {state}. Fix: AddAggregateWireMapper<{state}, TWire>(…) (API-10).`
 - **Generated sections in the Unity package**: `Runtime/Generated/FrameworkSections.cs` (`Wallet`/`WalletId`,
   `Inventory`/`InventoryId`, `Profile`/`ProfileId`, `Table`). The protoc output of the package
   (`gameserver/core/v1/Core.cs`, `Identity.cs`, `Economy.cs`, `Iap.cs`) is byte-identical to 0.6.0; paths and `.meta`
@@ -338,7 +352,7 @@ table) and the hidden-field comment become removable.
 | Check | Status |
 | --- | --- |
 | KestrelDemo in Unity 6 (`sdk/unity/ci/smoke-build.ps1 -CompileOnly`, then `-E2E` against SampleHost on 5080), T072 | Done 2026-11-03 (Unity 6000.3.22f1): compile exit 0, E2E exit 0 (login, battle start/end OK, buy, gold, `result=OK`); Unity created the three `.meta` files of the new sample files; no `.meta` created or changed under `sdk/unity` |
-| Reviewer walkthrough of the consumer guide §10 and `02-them-command.html` §4.10/§5 (story 5), T081 | Pending (next step of the slice) |
+| Reviewer walkthrough of the consumer guide §10 and `02-them-command.html` §4.10/§5 (story 5), T081 | Done 2026-11-03: 11 missing or unclear steps (command registration, rejection test, when to rerun conformance, `WithSampleState`, proto C# namespace, `At`/`Now`/`CommandResponse` fields, fixture WireGen and test commands, `-c Release`, illustrative Unity snippet, the three verified configs) fixed in both docs (T086) |
 | First-consumer CRLF regeneration in a temp clone of zh-pvp-server (SC-009), T082 | Done 2026-11-03 in a temp clone (framework at `2dc74e8`): after BC-3 and BC-1 (as in the checklist), `generate` with `crlf` reproduced the committed `ZhpvpGame.cs` byte for byte and added only `GameRoutes.cs` and `GameSections.cs`; rerun wrote nothing, `verify` 0, conformance over economy, identity and game passes; nothing bound on 5180 |
 | Generation on Linux/macOS (determinism across OS, N9) | Pending: no CI runner yet (CI-01); Windows covers two checkout paths, mixed separators, LF and CRLF |
 
@@ -347,6 +361,6 @@ table) and the hidden-field comment become removable.
 - **When endpoint faults surface (SC-007).** Endpoint faults of an otherwise valid configuration are reported when the host
   starts (`StartAsync`, before any hosted service I/O and before Kestrel binds): same report lines, exit 1 through
   `RunGameServerAsync`, nothing bound. With another fault, `UseGameServer` still throws one report holding the endpoint lines
-  too. The startup line (`Starting {game} … on framework …`) is logged after the endpoint check. The endpoint set is built
+  too. The startup line (`Starting {game} … on framework …`) is logged after the endpoint check (BC-2). The endpoint set is built
   once before serving, as in 0.6.0: no added startup cost beyond the check itself (≈ 1 ms for 217 endpoints on the reference
   machine).

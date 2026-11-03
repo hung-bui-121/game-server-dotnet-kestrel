@@ -31,7 +31,7 @@ internal static class WireCatalogBuilder
                 .Select(route => new RouteEntry(route, module.Descriptor.Name, OriginOf(module.Module), module.ServiceOnly))))
             .Concat(host.Routes.Select(route => new RouteEntry(route, RouteEntry.HostOwner, CatalogOrigin.Game, ServiceOnly: false)));
 
-        var contracts = new Dictionary<string, IAggregateWireContract>(StringComparer.Ordinal);
+        var contracts = new Dictionary<string, WireContractEntry>(StringComparer.Ordinal);
         var sections = new List<SectionEntry>();
         foreach (var aggregate in registry.Aggregates.Values.Where(a => a.ClientVisible && mappers.Has(a.AggregateId)))
         {
@@ -39,7 +39,7 @@ internal static class WireCatalogBuilder
             mappers.TryGetContract(aggregate.AggregateId, out var contract);
             if (contract is not null)
             {
-                contracts[aggregate.AggregateId] = contract;
+                contracts[aggregate.AggregateId] = new WireContractEntry(contract, aggregate.StateType, (contract as IWireMapperReplacement)?.ReplacedMessage);
             }
 
             sections.Add(new SectionEntry(

@@ -244,8 +244,8 @@ public static class EndpointCatalogValidator
     public static IReadOnlyList<string> Validate(IEnumerable<Endpoint> endpoints, WireCatalog catalog, EndpointCheckContext context, bool includeUnmapped);
 }
 
-/// <summary>What the check needs to know about the host (surfaces, service-only owners, conditions).</summary>
-public sealed record EndpointCheckContext(bool MapPlayerApi, bool MapGmApi, IReadOnlySet<string> ServiceOnlyOwners, Func<string, bool> ConditionHolds);
+/// <summary>What the check needs to know about the host: the mapped surfaces and whether a hosting condition holds (service-only owners come from RouteEntry.ServiceOnly, T086).</summary>
+public sealed record EndpointCheckContext(bool MapPlayerApi, bool MapGmApi, Func<string, bool> ConditionHolds);
 ```
 
 ```csharp
@@ -263,7 +263,10 @@ public sealed class ExtensionRegistry
 {
     // … ReplacePolicy, ReplaceHandler …
 
-    /// <summary>Replaces the wire mapper of <paramref name="aggregateId"/> (the documented way since two mappers fail startup, BC-4).</summary>
+    /// <summary>
+    /// Replaces the wire mapper of <paramref name="aggregateId"/> (the documented way since two mappers fail startup, BC-4). Must keep the
+    /// message of the typed mapper it replaces (startup line otherwise, FG-021, T086): a new payload needs a new aggregate.
+    /// </summary>
     public ExtensionRegistry ReplaceWireMapper<TState, TWire>(string aggregateId, Func<TState, TWire> map, Action<WireMapperOptions>? configure = null)
         where TState : class
         where TWire : class, IMessage<TWire>, new();

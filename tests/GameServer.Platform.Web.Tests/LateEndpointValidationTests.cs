@@ -104,11 +104,17 @@ public sealed class LateEndpointValidationTests
             },
             LateDev);
 
+        // The GM OpenAPI document was mapped under Development; in the Staging the check now sees, its condition does not hold, so
+        // it is no longer a public template and is reported as mapped against its condition (T086 minor 1).
         violations.ShouldBe(
         [
+            "[endpoint GET /gm/v1/openapi/{documentName}.json] is Public but not in GameServer:PublicEndpointAllowlist. Fix: add it to the " +
+            "allowlist and the PCR (SEC-09) or change its profile.",
             "[endpoint POST /api/v1/late/dev] uses profile Dev in deployment environment 'Staging' (environment id 'test'). " +
             "Fix: register Dev (cheat) modules only when development tools are allowed (GameServerOptions.AllowsDevelopmentTools: " +
             "Development/Test, flavors local and dev) (OPS-09, SEC-08).",
+            "[route platform.gm_openapi] is mapped but its condition 'development_tools' does not hold. " +
+            "Fix: map it only when the condition holds, or correct the declaration's condition (FG-026).",
         ]);
     }
 

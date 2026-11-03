@@ -38,7 +38,9 @@ public sealed class ExtensionRegistry(IServiceCollection services, ModuleRegistr
     /// <summary>
     /// Replaces the wire mapper of <paramref name="aggregateId"/> (BC-4: two mappers for one aggregate fail startup, so this is the
     /// documented way to change a framework section's payload). Removes the mappers registered for the id so far through
-    /// <c>AddAggregateWireMapper</c> and adds the typed one; without an earlier mapper it simply registers it.
+    /// <c>AddAggregateWireMapper</c> and adds the typed one; without an earlier mapper it simply registers it. The override must keep
+    /// the message of the typed mapper it replaces (<typeparamref name="TWire"/>): the client parses the section with that message's
+    /// parser, so another message fails startup (FG-021); a new payload needs a new aggregate.
     /// </summary>
     public ExtensionRegistry ReplaceWireMapper<TState, TWire>(string aggregateId, Func<TState, TWire> map, Action<WireMapperOptions>? configure = null)
         where TState : class
@@ -57,7 +59,14 @@ public sealed class ExtensionRegistry(IServiceCollection services, ModuleRegistr
             services.Remove(descriptor);
         }
 
-        services.AddAggregateWireMapper(aggregateId, map, configure);
+        // The first earlier mapper is the one that served (first registration wins); a second override keeps the original message.
+        var replaced = earlier.Select(d => d.ImplementationInstance).FirstOrDefault();
+        var options = new WireMapperOptions();
+        configure?.Invoke(options);
+        services.AddSingleton<IAggregateWireMapper>(new AggregateWireMapper<TState, TWire>(aggregateId, map, options)
+        {
+            ReplacedMessage = (replaced as IWireMapperReplacement)?.ReplacedMessage ?? (replaced as IAggregateWireContract)?.Message.FullName,
+        });
         return this;
     }
 }

@@ -142,13 +142,17 @@ One line per fault, prefixed like the existing validators; every line names the 
 | Duplicate mapper (BC-4) | `[aggregate {id}] has {n} wire mappers. Fix: register one mapper per aggregate; replace a framework mapper with ConfigureExtensions(e => e.ReplaceWireMapper<TState, TWire>(…)) (API-10).` |
 | Unknown hidden member | `[aggregate {id}] hidden member '{path}' does not exist on {TState}. Fix: use C# member names joined by '.' (FG-027).` |
 | Unknown may-stay-default field | `[aggregate {id}] field '{path}' does not exist on {message full name}. Fix: use proto field names joined by '.' (FG-027).` |
+| Mapper `TState` does not take the aggregate's state (T086) | `[aggregate {id}] wire mapper takes {TState} but the aggregate holds {state type}. Fix: AddAggregateWireMapper<{state type}, TWire>(…) (API-10).` |
+| `ReplaceWireMapper` changes the message (T086) | `[aggregate {id}] ReplaceWireMapper must keep {message full name}; a new payload needs a new aggregate (FG-021).` |
 | Untyped mapper (Warning, not error) | `[aggregate {id}] wire mapper registered without its message type: the catalog has no message for this section and Unity gets no parser. Fix: AddAggregateWireMapper<TState, TWire>(…) (FG-028).` |
 
 ### 2.2 Endpoints (`EndpointCatalogValidator`)
 
 | Fault | Line |
 | --- | --- |
-| Not declared | `[endpoint {label}] is not declared in the route catalog. Fix: declare it in the module's ModuleDescriptor.Routes (or GameServerBuilder.DeclareRoutes for a host endpoint) and map it from the declaration (FG-026).` |
+| Not declared (also: bound to a declaration instance nobody lists, T086) | `[endpoint {label}] is not declared in the route catalog. Fix: declare it in the module's ModuleDescriptor.Routes (or GameServerBuilder.DeclareRoutes for a host endpoint) and map it from the declaration (FG-026).` |
+| Bound to a copy of a listed declaration (same name, other instance, T086) | `[endpoint {label}] is mapped from a declaration named {name} that is not the one {owner} lists. Fix: map it from the declaration instance listed in ModuleDescriptor.Routes (or GameServerBuilder.DeclareRoutes), not a copy (FG-026).` |
+| Mapped while its registered condition does not hold (T086) | `[route {name}] is mapped but its condition '{condition}' does not hold. Fix: map it only when the condition holds, or correct the declaration's condition (FG-026).` |
 | Template differs (metadata-bound) | `[route {name}] declared at {declared template} but mapped at {mapped template}. Fix: map it with the declaration and no route group prefix, or correct the declaration (FG-026).` |
 | Method differs | `[endpoint {label}] maps method {method} but route {name} declares {declared methods}. Fix: declare one route per method or correct the mapping (FG-026).` |
 | Profile differs | `[endpoint {label}] has profile {mapped} but route {name} declares {declared}. Fix: use the As*Endpoint helper of the declared profile or correct the declaration (SEC-08).` |
@@ -175,7 +179,9 @@ No timestamp, path, machine, user, game id or environment.
 
 ### 3.1 Generator selection
 
-- Routes: `origin == config.origin` ∧ `surface ∈ {PlayerApi, Host}` ∧ `profile ∈ {Player, Public, Dev}` ∧ `!serviceOnly`.
+- Routes: `origin == config.origin` ∧ `surface ∈ {PlayerApi, Host}` ∧ `profile ∈ {Player, Public, Dev}` ∧ `!serviceOnly` ∧
+  not (`surface == Host` ∧ no version segment) — the unversioned host routes are the health probes, which serve load
+  balancers, not the client (T086).
 - Sections: `origin == config.origin`.
 - Messages: a selected section's `message` must be a message of the consumer protos (game) or the framework protos
   (framework, or a game section reusing a framework message); untyped sections → id only.
@@ -230,7 +236,7 @@ file must be unique (route `X`, `XMethod`; section `X`, `XId`, `Table`), otherwi
 | `TimeRoute` | `v1/time` | `FrameworkRoutes.PlatformTime` |
 
 Also generated (no SDK method): `IapPurchase`, `CheatGrant`, `IdentitySetDisplayName`, `PlatformReceipt(string
-receiptId)`, `PlatformHealthLive` (method `*`), `PlatformHealthReady`.
+receiptId)`. Not generated: the unversioned health probes `platform.health_live`/`platform.health_ready` (load balancers only, T086).
 
 ### 5.2 Framework sections
 
@@ -267,14 +273,15 @@ kind), collection (`IEnumerable<T>` other than string/dictionary: element node, 
 | `Guid` | deterministic from `n` | another deterministic value |
 | `byte[]` | `[n]` | `[n, 1]` |
 | nullable `T?` | sample of `T` | perturbation of `T` |
-| collection | one element (sample of the element) | element leaves perturbed inside that element |
-| dictionary | one entry: key sample (string `"k{n}"`, integer `n`, enum, `Guid`), value sample | key: perturbed key; value leaves perturbed inside the entry |
+| collection | two elements (distinct samples of the element) | leaves of the **last** element perturbed, so a mapper keeping only the first (`.First()`, `Take(1)`) is caught (T086) |
+| dictionary | two entries: key samples (string `"k{n}"`, integer `n`, enum, `Guid`; enum keys collapse into one entry), value samples | last entry: perturbed key; value leaves perturbed inside that entry |
 | anything else (`object`, `JsonNode`, interfaces without a known collection shape) | unsupported → `MemberNotFillable` unless `WithMemberValue` | — |
 
 Values are written into JSON through `JsonSerializer.SerializeToNode(value, GameServerJson.Options)`, so converters
 (camelCase enums, dates) apply. `WithMemberValue(aggregate, path, value)` replaces the sample of that member (its
 perturbation is then skipped, reported in `CheckedAggregates` notes); `WithSampleState(aggregate, state)` replaces the whole
-sample (perturbations are applied to its serialized JSON).
+sample (perturbations are applied to its serialized JSON; give collections at least two elements there, since the last one
+is perturbed).
 
 ### 7.3 Proto "default" (FR-061)
 

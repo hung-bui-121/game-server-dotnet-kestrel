@@ -20,10 +20,7 @@ namespace GameServer.Platform.Web.Endpoints;
 /// <summary>Framework endpoints: server time (TIME-01), snapshot (PLY-02, API-10), receipt lookup (CMD-09).</summary>
 internal static class CoreEndpoints
 {
-    public const string TimeRoute = PlatformRoutes.TimeTemplate;
     public const string SnapshotRoute = PlatformRoutes.SnapshotTemplate;
-    public const string ReceiptRoute = PlatformRoutes.ReceiptTemplate;
-    public const string ConfigRoute = PlatformRoutes.ConfigTemplate;
 
     public static void MapPublic(IEndpointRouteBuilder routes) =>
         routes.MapDeclared(PlatformRoutes.Time, async (HttpContext http, IClock clock) =>

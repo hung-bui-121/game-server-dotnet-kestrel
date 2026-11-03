@@ -63,18 +63,6 @@ namespace GameServer.Client
         /// <summary>HTTP method of <see cref="PlatformConfig"/>.</summary>
         public const string PlatformConfigMethod = "POST";
 
-        /// <summary><c>* health/live</c>: profile Public, module <c>platform.observability</c>; any HTTP method.</summary>
-        public const string PlatformHealthLive = "health/live";
-
-        /// <summary>HTTP method of <see cref="PlatformHealthLive"/> (<c>*</c> = any).</summary>
-        public const string PlatformHealthLiveMethod = "*";
-
-        /// <summary><c>GET health/ready</c>: profile Public, module <c>platform.observability</c>.</summary>
-        public const string PlatformHealthReady = "health/ready";
-
-        /// <summary>HTTP method of <see cref="PlatformHealthReady"/>.</summary>
-        public const string PlatformHealthReadyMethod = "GET";
-
         /// <summary><c>GET api/v1/player/receipts/{receiptId}</c>: profile Player, platform.</summary>
         public static string PlatformReceipt(string receiptId) =>
             "api/v1/player/receipts/" + global::System.Uri.EscapeDataString(receiptId);

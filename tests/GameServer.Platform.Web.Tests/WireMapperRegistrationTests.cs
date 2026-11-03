@@ -239,6 +239,83 @@ public sealed class WireMapperRegistrationTests
         registry.ToPayload(EconomyAggregates.Wallet, new WalletState()).ShouldBe(CustomWallet(new WalletState()).ToByteString());
     }
 
+    // T086 M1: the client parses a framework section with the framework parser, so an override must keep the message.
+    [Fact]
+    public void Replace_wire_mapper_with_another_message_fails_startup()
+    {
+        using var app = SampleTestHost.BuildApp(b => b
+            .AddModule<IdentityModule>()
+            .AddModule<EconomyModule>()
+            .ConfigureExtensions(e => e.ReplaceWireMapper<WalletState, EconomyWire.InventoryState>(EconomyAggregates.Wallet, _ => new EconomyWire.InventoryState())));
+
+        var ex = Should.Throw<GameServerStartupException>(() => app.UseGameServer());
+
+        ex.Violations.ShouldContain("[aggregate wallet] ReplaceWireMapper must keep gameserver.economy.v1.WalletState; a new payload needs a new aggregate (FG-021).");
+        ex.Violations.ShouldNotContain(v => v.Contains("wire mapper takes", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A_second_replacement_still_compares_with_the_original_message()
+    {
+        var services = new ServiceCollection();
+        foreach (var mapper in MappersOf(new EconomyModule()).Values)
+        {
+            services.AddSingleton(mapper);
+        }
+
+        new GameServer.Platform.Web.Hosting.ExtensionRegistry(services, new GameServer.Platform.Registry.ModuleRegistry())
+            .ReplaceWireMapper<WalletState, EconomyWire.InventoryState>(EconomyAggregates.Wallet, _ => new EconomyWire.InventoryState())
+            .ReplaceWireMapper<WalletState, EconomyWire.InventoryState>(EconomyAggregates.Wallet, _ => new EconomyWire.InventoryState());
+
+        var registry = new AggregateWireMapperRegistry(services.Select(d => (IAggregateWireMapper)d.ImplementationInstance!));
+        registry.TryGetContract(EconomyAggregates.Wallet, out var contract).ShouldBeTrue();
+        ((IWireMapperReplacement)contract!).ReplacedMessage.ShouldBe("gameserver.economy.v1.WalletState");
+    }
+
+    [Fact]
+    public void Replace_wire_mapper_keeping_the_message_records_no_fault()
+    {
+        using var app = SampleTestHost.BuildApp(b => b
+            .AddModule<IdentityModule>()
+            .AddModule<EconomyModule>()
+            .ConfigureExtensions(e => e.ReplaceWireMapper<WalletState, EconomyWire.WalletState>(EconomyAggregates.Wallet, CustomWallet)));
+
+        app.Services.GetRequiredService<WireCatalog>().Validate().ShouldBeEmpty();
+    }
+
+    // T086 M2: a mapper whose TState the aggregate does not hold threw InvalidCastException (500) on every snapshot.
+    [Fact]
+    public void A_mapper_typed_for_another_state_fails_startup_naming_both_types()
+    {
+        using var app = SampleTestHost.BuildApp(b =>
+        {
+            SampleTestHost.DefaultModules(b);
+            b.AddModule(new MistypedMapperModule());
+        });
+
+        var ex = Should.Throw<GameServerStartupException>(() => app.UseGameServer());
+
+        ex.Violations.ShouldBe(
+        [
+            "[aggregate probe_card] wire mapper takes CounterState but the aggregate holds ProbeCard. " +
+            "Fix: AddAggregateWireMapper<ProbeCard, TWire>(…) (API-10).",
+        ]);
+    }
+
+    [Fact]
+    public void A_replacement_typed_for_another_state_fails_startup_too()
+    {
+        using var app = SampleTestHost.BuildApp(b => b
+            .AddModule<IdentityModule>()
+            .AddModule<EconomyModule>()
+            .ConfigureExtensions(e => e.ReplaceWireMapper<ProfileState, EconomyWire.WalletState>(EconomyAggregates.Wallet, _ => new EconomyWire.WalletState())));
+
+        var ex = Should.Throw<GameServerStartupException>(() => app.UseGameServer());
+
+        ex.Violations.ShouldContain(
+            "[aggregate wallet] wire mapper takes ProfileState but the aggregate holds WalletState. Fix: AddAggregateWireMapper<WalletState, TWire>(…) (API-10).");
+    }
+
     private static EconomyWire.WalletState CustomWallet(WalletState state) => new() { Balances = { ["replaced"] = 42 } };
 
     private static string[] StartupWarnings(TestHost host) =>
@@ -260,5 +337,14 @@ public sealed class WireMapperRegistrationTests
             .Where(d => d.ServiceType == typeof(IAggregateWireMapper))
             .Select(d => (IAggregateWireMapper)d.ImplementationInstance!)
             .ToDictionary(m => m.AggregateId, StringComparer.Ordinal);
+    }
+
+    /// <summary>Declares the probe card (state <see cref="ProbeCard"/>) but maps it from <see cref="CounterState"/>.</summary>
+    private sealed class MistypedMapperModule : IGameModule
+    {
+        public ModuleDescriptor Describe() => new() { Name = "probe.mistyped", Aggregates = [CatalogProbeModule.CardDescriptor] };
+
+        public void ConfigureServices(IServiceCollection services, ModuleContext context) =>
+            services.AddAggregateWireMapper<CounterState, Wire.CounterState>(CatalogProbeModule.Card, ToWire);
     }
 }

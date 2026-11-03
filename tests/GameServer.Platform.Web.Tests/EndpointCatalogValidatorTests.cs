@@ -1,5 +1,4 @@
 using GameServer.Actors;
-using GameServer.Platform.Web.Aggregates;
 using GameServer.Platform.Web.Catalog;
 using GameServer.Platform.Web.Routing;
 using GameServer.Platform.Web.Validation;
@@ -19,12 +18,12 @@ public sealed class EndpointCatalogValidatorTests
     private static readonly RouteDeclaration Edit = new("probe.edit", ["POST"], "/gm/v1/probe/{playerId}", SecurityProfile.Gm, RouteSurface.GmApi, "probe.edit", "probe.write");
     private static readonly RouteDeclaration Live = RouteDeclaration.AnyMethod("probe.live", "/health/live", SecurityProfile.Public, RouteSurface.Host);
 
-    private static readonly EndpointCheckContext AllMapped = new(true, true, new HashSet<string>(), _ => true);
+    private static readonly EndpointCheckContext AllMapped = new(true, true, _ => true);
 
     private static WireCatalog Catalog(params RouteDeclaration[] routes) => Catalog(routes.Select(r => new RouteEntry(r, "probe", CatalogOrigin.Game, false)));
 
-    private static WireCatalog Catalog(IEnumerable<RouteEntry> entries) =>
-        new(entries, [], [], [], [], new Dictionary<string, IAggregateWireContract>());
+    private static WireCatalog Catalog(IEnumerable<RouteEntry> entries, params string[] conditionNames) =>
+        new(entries, [], conditionNames, [], [], new Dictionary<string, WireContractEntry>());
 
     private static RouteEndpoint Endpoint(string template, string[]? methods, params object[] metadata)
     {
@@ -66,6 +65,60 @@ public sealed class EndpointCatalogValidatorTests
             "[endpoint POST /api/v1/probe/other] is not declared in the route catalog. Fix: declare it in the module's ModuleDescriptor.Routes " +
             "(or GameServerBuilder.DeclareRoutes for a host endpoint) and map it from the declaration (FG-026).",
         ]);
+    }
+
+    // T086 B1: the endpoint's own metadata is not enough; the declaration must be the instance the catalog lists.
+    [Fact]
+    public void An_endpoint_mapped_from_a_declaration_the_catalog_does_not_list_is_not_declared()
+    {
+        var unlisted = RouteDeclaration.Post("probe.unlisted", "/api/v1/probe/unlisted", SecurityProfile.Player);
+        var bound = Endpoint(unlisted.Template, ["POST"], new SecurityProfileMetadata(SecurityProfile.Player), new RouteDeclarationMetadata(unlisted));
+
+        Check(Catalog(Save), false, bound).ShouldBe(
+        [
+            "[endpoint POST /api/v1/probe/unlisted] is not declared in the route catalog. Fix: declare it in the module's ModuleDescriptor.Routes " +
+            "(or GameServerBuilder.DeclareRoutes for a host endpoint) and map it from the declaration (FG-026).",
+        ]);
+    }
+
+    [Fact]
+    public void An_endpoint_mapped_from_a_copy_of_a_listed_declaration_names_the_owner()
+    {
+        var copy = RouteDeclaration.Post(Save.Name, Save.Template, SecurityProfile.Player);
+        var bound = Endpoint(copy.Template, ["POST"], new SecurityProfileMetadata(SecurityProfile.Player), new RouteDeclarationMetadata(copy));
+
+        Check(Catalog(Save), true, bound).ShouldBe(
+        [
+            "[endpoint POST /api/v1/probe/save] is mapped from a declaration named probe.save that is not the one probe lists. " +
+            "Fix: map it from the declaration instance listed in ModuleDescriptor.Routes (or GameServerBuilder.DeclareRoutes), not a copy (FG-026).",
+            "[route probe.save] (POST /api/v1/probe/save, owner probe, surface PlayerApi) is declared but not mapped. " +
+            "Fix: map it in the module's MapPlayerApi method or remove the declaration (FG-026).",
+        ]);
+    }
+
+    // T086 minor 1: FR-011 the other way round, for bound and template-matched endpoints.
+    [Fact]
+    public void An_endpoint_whose_registered_condition_does_not_hold_is_one_line()
+    {
+        var flag = RouteDeclaration.Post("probe.flag", "/api/v1/probe/flag", SecurityProfile.Player, condition: "probe.flag_on");
+        var catalog = Catalog([new RouteEntry(flag, "probe", CatalogOrigin.Game, false)], "probe.flag_on");
+        var off = new EndpointCheckContext(true, true, _ => false);
+        const string Line = "[route probe.flag] is mapped but its condition 'probe.flag_on' does not hold. " +
+            "Fix: map it only when the condition holds, or correct the declaration's condition (FG-026).";
+
+        var bound = Endpoint(flag.Template, ["POST"], new SecurityProfileMetadata(SecurityProfile.Player), new RouteDeclarationMetadata(flag));
+        EndpointCatalogValidator.Validate([bound], catalog, off, includeUnmapped: true).ShouldBe([Line]);
+        EndpointCatalogValidator.Validate([Player(flag.Template, "POST")], catalog, off, includeUnmapped: true).ShouldBe([Line]);
+        EndpointCatalogValidator.Validate([bound], catalog, AllMapped, includeUnmapped: true).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void An_unregistered_condition_is_left_to_the_declaration_rules()
+    {
+        var flag = RouteDeclaration.Post("probe.flag", "/api/v1/probe/flag", SecurityProfile.Player, condition: "probe.nope");
+        var bound = Endpoint(flag.Template, ["POST"], new SecurityProfileMetadata(SecurityProfile.Player), new RouteDeclarationMetadata(flag));
+
+        EndpointCatalogValidator.Validate([bound], Catalog(flag), new EndpointCheckContext(true, true, _ => false), includeUnmapped: true).ShouldBeEmpty();
     }
 
     [Fact]
@@ -208,9 +261,9 @@ public sealed class EndpointCatalogValidatorTests
             new RouteEntry(gmRoute, "probe", CatalogOrigin.Game, false),
             new RouteEntry(conditional, "probe", CatalogOrigin.Game, false),
             new RouteEntry(quiet, "probe.quiet", CatalogOrigin.Game, true),
-            new RouteEntry(hostOnly, "probe.listed", CatalogOrigin.Game, false),
+            new RouteEntry(hostOnly, "probe.listed", CatalogOrigin.Game, true),
         ]);
-        var context = new EndpointCheckContext(false, false, new HashSet<string> { "probe.listed" }, condition => condition != "probe.flag_on");
+        var context = new EndpointCheckContext(false, false, condition => condition != "probe.flag_on");
 
         EndpointCatalogValidator.Validate([], catalog, context, includeUnmapped: true).ShouldBeEmpty();
     }

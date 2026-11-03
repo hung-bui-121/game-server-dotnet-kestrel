@@ -15,7 +15,7 @@ dotnet run --project <host.csproj> --no-launch-profile [--no-build] [-c <cfg>] -
 | --- | --- |
 | Parsing | `GameServerCommandLine.Parse`: the switch (any letter case) and the next argument are removed from `HostArgs`; `Mode = ExportWireContract`, `ExportPath = <path>`; the path reaches `RunGameServerAsync(mode)` as one appended internal argument `--GameServerCommandLine:ExportWireContract=<path>` (the host passes only the mode) |
 | Refused (exit 1) | no path after the switch (none, or the next argument starts with `-`); `--export-wire-contract=…`, `-export-wire-contract`, `/export-wire-contract`; given twice; combined with `--provision` |
-| Run | `RunGameServerAsync`: resolve `WireCatalog` → registry rules (`ModuleRegistry.Validate(options)`, no game config, as `--provision`) + `WireCatalog.Validate()` → write `ToExportJson()` to `<path>` (folder must exist; UTF-8 without BOM, LF) → dispose → exit 0 |
+| Run | `RunGameServerAsync`: resolve `WireCatalog` → registry rules (`ModuleRegistry.Validate(options)`, no game config, as `--provision`) + `WireCatalog.Validate()` → write `ToExportJson()` to `<path>` (folder must exist; UTF-8 without BOM, LF; written to a temp file in that folder and moved over `<path>`, T086) → dispose → exit 0 |
 | Never | `UseGameServer`, hosted services, store open, game config load, secret read, port bind, traffic |
 | Errors (exit 1) | registry and declaration faults (data-model §2.1) on stderr, one line each; output folder missing; file not writable |
 | Requirement on the host | `Program` uses `GameServerCommandLine.Parse(args)` + `app.RunGameServerAsync(mode)` (as `samples/SampleHost/Program.cs`); composition decisions that depend on the flavor run with the flavor passed by `--environment` |
@@ -46,7 +46,7 @@ options:
 | Code | Meaning |
 | --- | --- |
 | 0 | `generate`: done (files written or already up to date). `verify`: every output equals what would be generated |
-| 1 | input, configuration or contract error; nothing written. One line per problem: what, where, fix |
+| 1 | input, configuration or contract error; nothing written. One line per problem: what, where, fix. An unexpected failure of the tool itself is exit 1 too, with one `[internal] {exception}: {message}` line (T086); a temp folder the tool cannot delete afterwards is a `note:` line and changes neither the code nor the error |
 | 2 | `verify` only: one or more output files differ or are missing (each listed relative to the output root) |
 
 ## 4. Steps and their failures (all before any write)
@@ -54,7 +54,7 @@ options:
 | # | Step | Failure (exit 1) message names |
 | --- | --- | --- |
 | 1 | Read config (format, required fields), resolve paths relative to the config folder (`Path.GetFullPath`) | the field and the expected format |
-| 2 | `output.root` exists, `output.marker` exists under it, `output.directory` exists under it | the missing path and the option (`--output-root`) to fix it |
+| 2 | `output.root` exists, `output.marker` exists under it, `output.directory` exists under it; marker and directory are relative and stay inside the root (absolute or `..`-escaping paths refused, compared case-insensitively on Windows; T086) | the missing path and the option (`--output-root`) to fix it, or the path that leaves the root |
 | 3 | Every listed proto exists under its `root` | the proto path and its root |
 | 4 | Catalog: run the host export (§1) into a temp file, or read `--catalog` / `catalog.file`; `format` major = 1 | host exit code + stderr lines, or the bad file |
 | 5 | Version guard: export `frameworkVersion` = tool's framework version; export `protobufVersion` = pinned `Google.Protobuf`; with `hostProject`: `dotnet msbuild <host> -getItem:PackageVersion` → `Grpc.Tools` and `Google.Protobuf` = pinned | both versions and which side to change |
@@ -85,8 +85,8 @@ be authored and committed with the file). Warnings (exit code unchanged): each u
 
 ```text
 # framework repo: refresh the Unity package and the sample client
-dotnet run --project tools/GameServer.WireGen -- generate --config sdk/GameServer.Client/wiregen.json
-dotnet run --project tools/GameServer.WireGen -- generate --config samples/SampleGame/wiregen.json
+dotnet run --project tools/GameServer.WireGen -c Release -- generate --config sdk/GameServer.Client/wiregen.json
+dotnet run --project tools/GameServer.WireGen -c Release -- generate --config samples/SampleGame/wiregen.json
 
 # game repo (framework submodule at framework/), client in a sibling checkout, CRLF in the config
 dotnet run --project framework/tools/GameServer.WireGen -c Release -- generate --config tools/unity-codegen/wiregen.json

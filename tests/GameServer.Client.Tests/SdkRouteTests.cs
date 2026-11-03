@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using GameServer.Actors;
 using GameServer.Platform.Testing;
 using GameServer.Platform.Web.Catalog;
+using GameServer.Platform.Web.Validation;
 using GameServer.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using sdk::GameServer.Client;
@@ -52,6 +53,7 @@ public sealed partial class SdkRouteTests
 
         members.ShouldBe(expected, ignoreOrder: true);
         members.ShouldNotContain(m => m.StartsWith("Gm", StringComparison.Ordinal));
+        members.ShouldNotContain(m => m.StartsWith("PlatformHealth", StringComparison.Ordinal), "the load-balancer probes are not client routes (T086)");
     }
 
     [Fact]
@@ -119,13 +121,14 @@ public sealed partial class SdkRouteTests
     private static IEnumerable<string> SampleClientLiterals(string source, IReadOnlySet<string> sectionIds) =>
         Literals("SampleGameClient.cs", source, value => RouteLike().IsMatch(value) || sectionIds.Contains(value));
 
-    /// <summary>The SampleHost local composition's framework routes the generator selects (data-model §3.1).</summary>
+    /// <summary>The SampleHost local composition's framework routes the generator selects (data-model §3.1; no unversioned health probe).</summary>
     private static async Task<RouteDeclaration[]> PlayerFacingFrameworkRoutesAsync()
     {
         await using var factory = SampleHostFactory();
         return factory.Services.GetRequiredService<WireCatalog>().Routes
             .Where(r => r.Origin == CatalogOrigin.Framework && !r.ServiceOnly &&
-                        GeneratedSurfaces.Contains(r.Declaration.Surface) && GeneratedProfiles.Contains(r.Declaration.Profile))
+                        GeneratedSurfaces.Contains(r.Declaration.Surface) && GeneratedProfiles.Contains(r.Declaration.Profile) &&
+                        !(r.Declaration.Surface == RouteSurface.Host && EndpointSecurityValidator.UnversionedProbeRoutes.Contains(r.Declaration.Template)))
             .Select(r => r.Declaration)
             .ToArray();
     }

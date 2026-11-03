@@ -3,13 +3,13 @@ using GameServer.Platform.Web.Aggregates;
 
 namespace GameServer.TestKit;
 
-/// <summary>One step from a state document's root to a value: a property, the first element, a dictionary entry's value or its key.</summary>
-internal sealed record JsonStep(JsonStepKind Kind, string Name = "");
+/// <summary>One step from a state document's root to a value: a property, an element (by index), a dictionary entry's value or its key.</summary>
+internal sealed record JsonStep(JsonStepKind Kind, string Name = "", int Index = 0);
 
 internal enum JsonStepKind
 {
     Property,
-    FirstElement,
+    Element,
     EntryValue,
     EntryKey,
 }
@@ -21,11 +21,15 @@ internal sealed record LeafSlot(string Path, Type Type, IReadOnlyList<JsonStep> 
 internal sealed record SampleWalk(IReadOnlyList<LeafSlot> Leaves, IReadOnlyList<(string Path, string Reason)> Unfillable, IReadOnlyList<string> Supplied);
 
 /// <summary>
-/// The JSON document of a sample state (data-model §7.2): built from the member tree (one element per collection, one entry per
-/// dictionary, a distinct ordinal per leaf), walked to find every leaf, and copied with one leaf perturbed.
+/// The JSON document of a sample state (data-model §7.2): built from the member tree (two elements per collection, two entries per
+/// dictionary, a distinct ordinal per leaf), walked to find every leaf, and copied with one leaf perturbed. The walk takes the last
+/// element or entry, so a mapper that keeps only the first (<c>.First()</c>, <c>Take(1)</c>) leaves the wire unchanged and is caught.
 /// </summary>
 internal static class SampleDocument
 {
+    /// <summary>Elements per collection and entries per dictionary in a built sample; the walk perturbs the last one.</summary>
+    private const int SampleCount = 2;
+
     public static JsonNode? Build(StateMembers members)
     {
         var ordinal = 0;
@@ -60,8 +64,8 @@ internal static class SampleDocument
             case JsonStepKind.EntryValue:
                 parent.AsObject()[last.Name] = PerturbValue(parent.AsObject()[last.Name], leaf.Type);
                 break;
-            case JsonStepKind.FirstElement:
-                parent.AsArray()[0] = PerturbValue(parent.AsArray()[0], leaf.Type);
+            case JsonStepKind.Element:
+                parent.AsArray()[last.Index] = PerturbValue(parent.AsArray()[last.Index], leaf.Type);
                 break;
             default:
                 var entries = parent.AsObject();
@@ -80,7 +84,7 @@ internal static class SampleDocument
 
     private static JsonNode Child(JsonNode node, JsonStep step) => step.Kind switch
     {
-        JsonStepKind.FirstElement => node.AsArray()[0]!,
+        JsonStepKind.Element => node.AsArray()[step.Index]!,
         _ => node.AsObject()[step.Name]!,
     };
 
@@ -99,12 +103,22 @@ internal static class SampleDocument
             case StateNullable nullable:
                 return Build(nullable.Inner, ref ordinal);
             case StateCollection collection:
-                return new JsonArray(Build(collection.Element, ref ordinal));
-            case StateDictionary dictionary:
-                var entries = new JsonObject();
-                if (SampleStates.KeySample(dictionary.KeyType, ++ordinal) is { } key)
+                var elements = new JsonArray();
+                for (var i = 0; i < SampleCount; i++)
                 {
-                    entries[SampleStates.KeyToJson(key, dictionary.KeyType)] = Build(dictionary.Value, ref ordinal);
+                    elements.Add(Build(collection.Element, ref ordinal));
+                }
+
+                return elements;
+            case StateDictionary dictionary:
+                // Enum keys have one sample value, so their two entries collapse into one: the walk then takes that one.
+                var entries = new JsonObject();
+                for (var i = 0; i < SampleCount; i++)
+                {
+                    if (SampleStates.KeySample(dictionary.KeyType, ++ordinal) is { } key)
+                    {
+                        entries[SampleStates.KeyToJson(key, dictionary.KeyType)] = Build(dictionary.Value, ref ordinal);
+                    }
                 }
 
                 return entries;
@@ -146,13 +160,14 @@ internal static class SampleDocument
                     Visit(nullable.Inner, json, path, steps);
                     break;
                 case StateCollection collection when json is JsonArray { Count: > 0 } elements:
-                    Visit(collection.Element, elements[0], path, [.. steps, new JsonStep(JsonStepKind.FirstElement)]);
+                    var index = elements.Count - 1;
+                    Visit(collection.Element, elements[index], path, [.. steps, new JsonStep(JsonStepKind.Element, Index: index)]);
                     break;
                 case StateDictionary dictionary when !SampleStates.IsSupportedKey(dictionary.KeyType):
                     Unfillable.Add((path, $"dictionary key type {dictionary.KeyType.Name} has no sample value"));
                     break;
                 case StateDictionary dictionary when json is JsonObject { Count: > 0 } entries:
-                    var (key, entry) = entries.First();
+                    var (key, entry) = entries.Last();
                     Leaves.Add(new LeafSlot(path, dictionary.KeyType, [.. steps, new JsonStep(JsonStepKind.EntryKey, key)]));
                     Visit(dictionary.Value, entry, path, [.. steps, new JsonStep(JsonStepKind.EntryValue, key)]);
                     break;

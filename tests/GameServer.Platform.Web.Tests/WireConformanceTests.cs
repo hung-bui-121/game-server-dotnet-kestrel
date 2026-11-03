@@ -41,6 +41,11 @@ public sealed record DatedState
     public DateTimeOffset At { get; init; }
 }
 
+public sealed record ListedState
+{
+    public IReadOnlyList<string> Items { get; init; } = [];
+}
+
 public sealed record LooseState
 {
     public long Value { get; init; }
@@ -187,6 +192,33 @@ public sealed class WireConformanceTests
             Probe, () => new WalletState(), s => new EconomyWire.WalletState { Balances = { ["fixed"] = s.Balances.Values.Sum() } }));
 
         Problems(report).ShouldBe([(WireConformanceProblem.MemberNotOnWire, "Balances")]);
+    }
+
+    // T086 minor 6: with one sample element, .First()/Take(1) mapped every element the kit perturbed.
+    [Fact]
+    public void A_mapper_that_keeps_only_the_first_element_is_caught()
+    {
+        var report = Check(new ConformanceProbeModule<ListedState, ListValue>(
+            Probe, () => new ListedState(), s => new ListValue { Values = { Value.ForString(s.Items.First()) } }));
+
+        Problems(report).ShouldBe([(WireConformanceProblem.MemberNotOnWire, "Items")]);
+    }
+
+    [Fact]
+    public void A_mapper_that_keeps_only_the_first_entry_is_caught()
+    {
+        var report = Check(new ConformanceProbeModule<WalletState, EconomyWire.WalletState>(
+            Probe, () => new WalletState(), s => new EconomyWire.WalletState { Balances = { s.Balances.Take(1).ToDictionary() } }));
+
+        Problems(report).ShouldBe([(WireConformanceProblem.MemberNotOnWire, "Balances")]);
+    }
+
+    [Fact]
+    public void A_mapper_of_every_element_passes()
+    {
+        Check(new ConformanceProbeModule<ListedState, ListValue>(
+                Probe, () => new ListedState(), s => new ListValue { Values = { s.Items.Select(Value.ForString) } }))
+            .ThrowIfFailed();
     }
 
     [Fact]

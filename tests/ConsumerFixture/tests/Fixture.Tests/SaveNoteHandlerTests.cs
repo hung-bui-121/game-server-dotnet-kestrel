@@ -52,4 +52,17 @@ public sealed class SaveNoteHandlerTests
         context.Writes.ShouldBeEmpty();
         context.CheckCommit(outcome).ShouldBeEmpty();
     }
+
+    // Consumer guide §5.1: a rejection is the declared ErrorCode on the outcome, not a code string.
+    [Fact]
+    public async Task A_note_that_is_too_long_is_rejected_and_writes_nothing()
+    {
+        var context = Context();
+
+        var outcome = await new SaveNoteHandler().HandleAsync(new SaveNote("far too long"), context);
+
+        outcome.IsOk.ShouldBeFalse();
+        outcome.Error.ShouldBe(FixtureErrors.TooLong);
+        context.Writes.ShouldBeEmpty();
+    }
 }

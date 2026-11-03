@@ -210,8 +210,8 @@ internal sealed record WireGenConfig(
             var lineEndings = LineEnding.Lf;
             if (output.ValueKind == JsonValueKind.Object)
             {
-                marker = Under(outputRoot, String(output, "marker", required: false, field: "output.marker"));
-                directory = Under(outputRoot, String(output, "directory", required: true, field: "output.directory")) ?? outputRoot;
+                marker = Under(outputRoot, String(output, "marker", required: false, field: "output.marker"), "output.marker");
+                directory = Under(outputRoot, String(output, "directory", required: true, field: "output.directory"), "output.directory") ?? outputRoot;
                 layout = String(output, "layout", required: false, field: "output.layout") switch
                 {
                     null or "flat" => OutputLayout.Flat,
@@ -325,14 +325,40 @@ internal sealed record WireGenConfig(
             return value;
         }
 
-        private static string? Under(string outputRoot, string? relative)
+        /// <summary>
+        /// <paramref name="relative"/> resolved under the output root; an absolute path or a <c>..</c> that leaves the root is one line
+        /// (the generator writes only inside the output root, FR-025).
+        /// </summary>
+        private string? Under(string outputRoot, string? relative, string field)
         {
             if (relative is null)
             {
                 return null;
             }
 
-            return Full(System.IO.Path.Combine(outputRoot, Normalize(relative)));
+            var normalized = Normalize(relative);
+            var full = Full(System.IO.Path.Combine(outputRoot, normalized));
+            if (System.IO.Path.IsPathRooted(normalized) || !IsUnder(outputRoot, full))
+            {
+                _errors.Add($"[config] {file}: {field} '{relative}' is absolute or leaves the output root {outputRoot} (resolves to {full}). " +
+                    "Fix: use a path relative to output.root that stays inside it.");
+                return null;
+            }
+
+            return full;
+        }
+
+        /// <summary>The root itself or a path below it, with the tool's path rule (<see cref="Protoc"/>: case-insensitive on Windows only).</summary>
+        private static bool IsUnder(string root, string full)
+        {
+            var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            if (string.Equals(full, root, comparison))
+            {
+                return true;
+            }
+
+            var prefix = System.IO.Path.EndsInDirectorySeparator(root) ? root : root + System.IO.Path.DirectorySeparatorChar;
+            return full.StartsWith(prefix, comparison);
         }
 
         private string? Path(JsonElement element, string name, string field, bool required) =>

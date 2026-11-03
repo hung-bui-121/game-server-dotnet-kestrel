@@ -147,6 +147,32 @@ public sealed class CliTests : IDisposable
         code.ShouldBe(WireGenExitCodes.Ok, error);
     }
 
+    // T086 minor 2: exit codes are a contract; a bug of the tool is exit 1 with one line, not an unhandled exception.
+    [Fact]
+    public async Task An_unexpected_failure_exits_1_with_an_internal_line_and_writes_nothing()
+    {
+        var broken = Repo.Tool with { GrpcToolsRoot = null! };
+        var before = _tree.Snapshot();
+        var (output, error) = (new StringWriter(), new StringWriter());
+
+        var code = await WireGenCli.RunAsync(["generate", "--config", _tree.Path("game/wiregen.json")], output, error, broken);
+
+        code.ShouldBe(WireGenExitCodes.InvalidInput);
+        error.ToString().ShouldStartWith("[internal] ArgumentNullException: ");
+        _tree.Snapshot().ShouldBe(before);
+    }
+
+    [Fact]
+    public void A_temp_folder_that_cannot_be_deleted_is_a_note_not_an_exception()
+    {
+        var gone = new DirectoryInfo(_tree.Path("already-deleted"));
+        var error = new StringWriter();
+
+        WireGenCli.DeleteTemp(gone, error);
+
+        error.ToString().ShouldStartWith($"note: the temp folder {gone.FullName} could not be deleted (");
+    }
+
     private static async Task<(int Code, string Output, string Error)> RunAsync(params string[] args)
     {
         var output = new StringWriter();

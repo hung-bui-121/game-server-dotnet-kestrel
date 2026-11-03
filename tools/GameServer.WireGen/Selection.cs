@@ -1,20 +1,25 @@
+using System.Text.RegularExpressions;
+
 namespace GameServer.WireGen;
 
 /// <summary>
 /// Which catalog entries a run generates (data-model §3.1, FR-031, FR-032, research R13): routes of the configured origin on the
 /// player API or host surface with profile Player, Public or Dev and an owner that is not service-only (the GM surface never,
-/// Public GM routes included); sections of the configured origin.
+/// Public GM routes included; the unversioned host routes, i.e. the load-balancer health probes, never); sections of the
+/// configured origin.
 /// </summary>
-internal static class Selection
+internal static partial class Selection
 {
-    private static readonly HashSet<string> Surfaces = new(StringComparer.Ordinal) { "PlayerApi", "Host" };
+    private const string HostSurface = "Host";
+
+    private static readonly HashSet<string> Surfaces = new(StringComparer.Ordinal) { "PlayerApi", HostSurface };
 
     private static readonly HashSet<string> Profiles = new(StringComparer.Ordinal) { "Player", "Public", "Dev" };
 
     public static IReadOnlyList<ContractRoute> Routes(WireContract contract, string origin)
     {
         var selected = contract.Routes
-            .Where(r => r.Origin == origin && Surfaces.Contains(r.Surface) && Profiles.Contains(r.Profile) && !r.ServiceOnly)
+            .Where(r => r.Origin == origin && Surfaces.Contains(r.Surface) && Profiles.Contains(r.Profile) && !r.ServiceOnly && !IsHealthProbe(r))
             .OrderBy(r => r.Name, StringComparer.Ordinal)
             .ToArray();
         var errors = selected
@@ -27,4 +32,13 @@ internal static class Selection
 
     public static IReadOnlyList<ContractSection> Sections(WireContract contract, string origin) =>
         contract.Sections.Where(s => s.Origin == origin).OrderBy(s => s.Id, StringComparer.Ordinal).ToArray();
+
+    /// <summary>
+    /// The host accepts an unversioned template only for its health probes (<c>/health/live</c>, <c>/health/ready</c>, API-02): they
+    /// serve load balancers, not the client.
+    /// </summary>
+    private static bool IsHealthProbe(ContractRoute route) => route.Surface == HostSurface && !VersionSegment().IsMatch(route.Template);
+
+    [GeneratedRegex("(^|/)v[0-9]+(/|$)")]
+    private static partial Regex VersionSegment();
 }

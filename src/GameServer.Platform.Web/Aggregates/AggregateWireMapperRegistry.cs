@@ -29,6 +29,15 @@ public interface IAggregateWireContract
     IReadOnlyList<string> MayStayDefaultFields { get; }
 }
 
+/// <summary>
+/// A mapper registered by <c>ReplaceWireMapper</c> over a typed one: the message of the mapper it replaced, which the override must
+/// keep (FG-021: the client parses the section with the parser of that message).
+/// </summary>
+internal interface IWireMapperReplacement
+{
+    string? ReplacedMessage { get; }
+}
+
 public sealed class AggregateWireMapper<TState>(string aggregateId, Func<TState, IMessage> map) : IAggregateWireMapper
 {
     public string AggregateId { get; } = aggregateId;
@@ -37,7 +46,7 @@ public sealed class AggregateWireMapper<TState>(string aggregateId, Func<TState,
 }
 
 /// <summary>A wire mapper that knows its state and message types (FG-028), with the members it keeps off the wire (FR-060).</summary>
-public sealed class AggregateWireMapper<TState, TWire> : IAggregateWireMapper, IAggregateWireContract
+public sealed class AggregateWireMapper<TState, TWire> : IAggregateWireMapper, IAggregateWireContract, IWireMapperReplacement
     where TState : class
     where TWire : class, IMessage<TWire>, new()
 {
@@ -66,6 +75,11 @@ public sealed class AggregateWireMapper<TState, TWire> : IAggregateWireMapper, I
     public IReadOnlyList<string> HiddenMembers { get; }
 
     public IReadOnlyList<string> MayStayDefaultFields { get; }
+
+    /// <summary>Set by <c>ReplaceWireMapper</c>: the message full name of the typed mapper this one replaced; null otherwise.</summary>
+    internal string? ReplacedMessage { get; init; }
+
+    string? IWireMapperReplacement.ReplacedMessage => ReplacedMessage;
 
     public TWire Map(TState state) => _map(state);
 

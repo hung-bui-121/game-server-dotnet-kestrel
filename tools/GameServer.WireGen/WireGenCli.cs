@@ -79,6 +79,13 @@ internal static class WireGenCli
             await error.WriteLineAsync($"[io] {ex.Message}");
             return WireGenExitCodes.InvalidInput;
         }
+#pragma warning disable CA1031 // Exit codes are a contract (§3): a bug of the tool is exit 1 with one line, never an unhandled crash.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            await error.WriteLineAsync($"[internal] {ex.GetType().Name}: {ex.Message} Fix: report this generator failure with the command line used.");
+            return WireGenExitCodes.InvalidInput;
+        }
     }
 
     internal static WireGenOptions Parse(string[] args)
@@ -142,13 +149,25 @@ internal static class WireGenCli
         var temp = Directory.CreateTempSubdirectory("wiregen-");
         try
         {
-            // Steps 4-5: catalog and versions.
-            var dotnet = config.CatalogFile is null || options.Dotnet is not null ? DotnetHost.Resolve(options.Dotnet) : null;
-            var contract = await CatalogSource.LoadAsync(config, dotnet!, options.Configuration, options.NoBuild, temp.FullName);
-            var errors = VersionGuard.CheckExport(contract, tool).ToList();
-            if (config.CatalogFile is null)
+            // Steps 4-5: catalog and versions; a committed export needs no dotnet (a given --dotnet is still checked).
+            WireContract contract;
+            List<string> errors;
+            if (config.CatalogFile is { } catalogFile)
             {
-                errors.AddRange(await VersionGuard.CheckHostPackagesAsync(dotnet!, config.HostProject!, tool, note => error.WriteLine(note)));
+                if (options.Dotnet is not null)
+                {
+                    DotnetHost.Resolve(options.Dotnet);
+                }
+
+                contract = CatalogSource.Read(catalogFile);
+                errors = [.. VersionGuard.CheckExport(contract, tool)];
+            }
+            else
+            {
+                var dotnet = DotnetHost.Resolve(options.Dotnet);
+                contract = await CatalogSource.ExportAsync(config, dotnet, options.Configuration, options.NoBuild, temp.FullName);
+                errors = [.. VersionGuard.CheckExport(contract, tool)];
+                errors.AddRange(await VersionGuard.CheckHostPackagesAsync(dotnet, config.HostProject!, tool, note => error.WriteLine(note)));
             }
 
             if (errors.Count > 0)
@@ -196,7 +215,23 @@ internal static class WireGenCli
         }
         finally
         {
+            DeleteTemp(temp, error);
+        }
+    }
+
+    /// <summary>
+    /// The temp folder (export, descriptor sets) goes away after every run; a delete that fails (a scanner holding a file) leaves a
+    /// note and never changes the exit code or hides the error that ended the run.
+    /// </summary>
+    internal static void DeleteTemp(DirectoryInfo temp, TextWriter error)
+    {
+        try
+        {
             temp.Delete(recursive: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            error.WriteLine($"note: the temp folder {temp.FullName} could not be deleted ({ex.Message}); delete it by hand.");
         }
     }
 
