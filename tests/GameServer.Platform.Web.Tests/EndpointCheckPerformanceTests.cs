@@ -74,7 +74,7 @@ public sealed class EndpointCheckPerformanceTests
         var endpoints = routes.DataSources.SelectMany(source => source.Endpoints).ToArray();
         var materialize = watch.Elapsed.TotalMilliseconds;
         watch.Restart();
-        var errors = EndpointValidation.Run(endpoints, services, includeUnmapped: true);
+        var errors = EndpointValidation.Run(endpoints, services, includeUnmapped: true, reported: []);
         var validate = watch.Elapsed.TotalMilliseconds;
         errors.ShouldBeEmpty();
         return (endpoints.Length, materialize, validate);

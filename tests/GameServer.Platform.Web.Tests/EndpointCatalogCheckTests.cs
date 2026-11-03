@@ -9,6 +9,7 @@ using GameServer.Routing;
 using GameServer.Tests.Shared;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Sample.Counter;
 using Shouldly;
 using Wire = Sample.Counter.Protocol.V1;
@@ -24,6 +25,9 @@ public sealed class EndpointCatalogCheckTests
     private const string NotDeclared =
         "is not declared in the route catalog. Fix: declare it in the module's ModuleDescriptor.Routes " +
         "(or GameServerBuilder.DeclareRoutes for a host endpoint) and map it from the declaration (FG-026).";
+
+    private const string KeyedCondition = "probe.keyed";
+    private const string KeyMissing = "[probe] Probe:Key is not set. Fix: set it in the configuration.";
 
     private static async Task<IReadOnlyList<string>> Violations(
         Action<GameServerBuilder>? extra = null,
@@ -120,9 +124,10 @@ public sealed class EndpointCatalogCheckTests
             ]);
     }
 
-    // T086 minor 1: a Public route whose condition does not hold opens no public template and must not be mapped.
+    // T086 minor 1 (round 2 m4): a Public route mapped while its condition does not hold is one fault, so one line (data-model
+    // §2.2); it stays a public template, so no second "add it to the allowlist" line.
     [Fact]
-    public async Task A_public_route_mapped_while_its_condition_does_not_hold_is_reported_twice_over()
+    public async Task A_public_route_mapped_while_its_condition_does_not_hold_is_one_line()
     {
         var route = RouteDeclaration.Get("probe.open", "/v1/probe/open", SecurityProfile.Public, RouteSurface.Host, condition: "probe.off");
 
@@ -132,9 +137,37 @@ public sealed class EndpointCatalogCheckTests
                 services: s => s.AddRouteCondition("probe.off", _ => false)))
             .ShouldBe(
             [
-                "[endpoint GET /v1/probe/open] is Public but not in GameServer:PublicEndpointAllowlist. Fix: add it to the allowlist and the PCR (SEC-09) " +
-                "or change its profile.",
                 "[route probe.open] is mapped but its condition 'probe.off' does not hold. " +
+                "Fix: map it only when the condition holds, or correct the declaration's condition (FG-026).",
+            ]);
+    }
+
+    // T086 round 2 m1: options with Validate() but no ValidateOnStart are validated nowhere else, so a condition reading them used
+    // to be silently false and the host started with the options invalid.
+    [Fact]
+    public async Task A_condition_reading_options_without_validate_on_start_fails_startup_with_the_options_line()
+    {
+        var route = RouteDeclaration.Post("probe.keyed", "/api/v1/probe/keyed", SecurityProfile.Player, condition: KeyedCondition);
+
+        (await Violations(
+                gs => gs.AddModule(new CatalogProbeModule(routes: [route], card: false)),
+                services: s => AddKeyedCondition(s, validateOnStart: false)))
+            .ShouldBe([KeyMissing]);
+    }
+
+    [Fact]
+    public async Task A_condition_reading_options_validated_on_start_reports_the_options_line_once()
+    {
+        var route = RouteDeclaration.Post("probe.keyed", "/api/v1/probe/keyed", SecurityProfile.Player, condition: KeyedCondition);
+
+        (await Violations(
+                gs => gs.AddModule(new CatalogProbeModule(routes: [route], card: false)),
+                app => app.MapDeclared(route, () => "x").AsPlayerEndpoint(),
+                services: s => AddKeyedCondition(s, validateOnStart: true)))
+            .ShouldBe(
+            [
+                KeyMissing,
+                $"[route probe.keyed] is mapped but its condition '{KeyedCondition}' does not hold. " +
                 "Fix: map it only when the condition holds, or correct the declaration's condition (FG-026).",
             ]);
     }
@@ -277,6 +310,23 @@ public sealed class EndpointCatalogCheckTests
         code.ShouldBe(HostExitCodes.InvalidConfiguration);
         error.ToString().ShouldContain("[route counter.get] is declared by sample.counter and host.");
         provisioner.Calls.ShouldBe(0);
+    }
+
+    /// <summary>A hosting condition reading <see cref="ProbeKeyOptions"/>, which fail validation unless <c>Probe:Key</c> is set.</summary>
+    private static void AddKeyedCondition(IServiceCollection services, bool validateOnStart)
+    {
+        var options = services.AddOptions<ProbeKeyOptions>().Validate(o => o.Key is not null, KeyMissing);
+        if (validateOnStart)
+        {
+            options.ValidateOnStart();
+        }
+
+        services.AddRouteCondition(KeyedCondition, sp => sp.GetRequiredService<IOptions<ProbeKeyOptions>>().Value.Key is not null);
+    }
+
+    private sealed class ProbeKeyOptions
+    {
+        public string? Key { get; set; }
     }
 
     private sealed class CountingProvisioner : IStoreProvisioner

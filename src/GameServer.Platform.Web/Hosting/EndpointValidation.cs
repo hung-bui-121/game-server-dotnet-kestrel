@@ -15,40 +15,53 @@ namespace GameServer.Platform.Web.Hosting;
 /// </summary>
 internal static class EndpointValidation
 {
-    public static IReadOnlyList<string> Run(IReadOnlyList<Endpoint> endpoints, IServiceProvider services, bool includeUnmapped)
+    /// <summary>
+    /// The endpoint lines, then the option failures met while evaluating hosting conditions that are not in
+    /// <paramref name="reported"/> yet (lines the caller's report already holds, e.g. from <c>ValidateModuleOptions</c>).
+    /// </summary>
+    public static IReadOnlyList<string> Run(IReadOnlyList<Endpoint> endpoints, IServiceProvider services, bool includeUnmapped, IReadOnlyCollection<string> reported)
     {
         var options = services.GetRequiredService<GameServerOptions>();
         var registry = services.GetRequiredService<ModuleRegistry>();
         var catalog = services.GetRequiredService<WireCatalog>();
-        var context = CheckContext(services, options);
+        var optionFailures = new List<string>();
+        var context = CheckContext(services, options, optionFailures);
         var errors = new List<string>();
         errors.AddRange(EndpointSecurityValidator.Validate(
             endpoints,
             options,
-            PublicTemplates(registry, catalog, context.ConditionHolds),
+            PublicTemplates(registry, catalog),
             registry.Modules.SelectMany(m => m.Descriptor.Permissions)));
         errors.AddRange(CommandRouteValidator.Validate(endpoints, registry.Commands));
         errors.AddRange(EndpointCatalogValidator.Validate(endpoints, catalog, context, includeUnmapped));
+        foreach (var failure in optionFailures)
+        {
+            if (!reported.Contains(failure) && !errors.Contains(failure))
+            {
+                errors.Add(failure);
+            }
+        }
+
         return errors;
     }
 
     /// <summary>
     /// Public routes besides the operator allowlist (SEC-09, FR-006): module <c>PublicEndpoints</c> and the templates of Public
-    /// declarations owned by modules or the platform whose hosting condition, if any, holds (a route that must not be mapped
-    /// opens no template). Host Public declarations still need <c>GameServer:PublicEndpointAllowlist</c> (plan N6).
+    /// declarations owned by modules or the platform. A conditional one stays a public template whether or not its condition
+    /// holds: mapping it while the condition does not hold is the one condition line of the catalog check (data-model §2.2).
+    /// Host Public declarations still need <c>GameServer:PublicEndpointAllowlist</c> (plan N6).
     /// </summary>
-    internal static IEnumerable<string> PublicTemplates(ModuleRegistry registry, WireCatalog catalog, Func<string, bool> conditionHolds) =>
+    internal static IEnumerable<string> PublicTemplates(ModuleRegistry registry, WireCatalog catalog) =>
         registry.Modules.SelectMany(m => m.Descriptor.PublicEndpoints)
             .Concat(catalog.Routes
                 .Where(r => r.Declaration.Profile == SecurityProfile.Public && r.Owner != RouteEntry.HostOwner)
-                .Where(r => r.Declaration.Condition is not { } condition || conditionHolds(condition))
                 .Select(r => r.Declaration.Template));
 
     /// <summary>
     /// The host facts of FR-011; a condition is evaluated only when a declaration names it (last registration wins), at most once
-    /// per check run.
+    /// per check run. Option failures met while evaluating are added to <paramref name="optionFailures"/>.
     /// </summary>
-    private static EndpointCheckContext CheckContext(IServiceProvider services, GameServerOptions options)
+    private static EndpointCheckContext CheckContext(IServiceProvider services, GameServerOptions options, List<string> optionFailures)
     {
         var conditions = services.GetServices<RouteConditionRegistration>().ToArray();
         var evaluated = new Dictionary<string, bool>(StringComparer.Ordinal);
@@ -59,7 +72,7 @@ internal static class EndpointValidation
             {
                 if (!evaluated.TryGetValue(name, out var holds))
                 {
-                    holds = Holds(conditions.LastOrDefault(c => string.Equals(c.Name, name, StringComparison.Ordinal)), services);
+                    holds = Holds(conditions.LastOrDefault(c => string.Equals(c.Name, name, StringComparison.Ordinal)), services, optionFailures);
                     evaluated[name] = holds;
                 }
 
@@ -68,17 +81,19 @@ internal static class EndpointValidation
     }
 
     /// <summary>
-    /// A condition reading module options that fail validation (GM SSO in a host with nothing configured) does not hold: that failure
-    /// is already one line of the report (<c>ValidateModuleOptions</c>), and the module could not map the route either.
+    /// A condition reading options that fail validation does not hold, and the failure joins the report (FR-009): options with
+    /// <c>ValidateOnStart</c> are reported by <c>ValidateModuleOptions</c> too (kept once by <see cref="Run"/>), options with only
+    /// <c>Validate()</c> nowhere else, so the host would otherwise start with them invalid.
     /// </summary>
-    private static bool Holds(RouteConditionRegistration? condition, IServiceProvider services)
+    private static bool Holds(RouteConditionRegistration? condition, IServiceProvider services, List<string> optionFailures)
     {
         try
         {
             return condition?.Holds(services) == true;
         }
-        catch (OptionsValidationException)
+        catch (OptionsValidationException ex)
         {
+            optionFailures.AddRange(ex.Failures);
             return false;
         }
     }

@@ -1474,8 +1474,9 @@ suite; guides and PCRs describe the shipped behaviour.
     (`Contains`); a bound endpoint whose declaration is not listed is "not declared", or "mapped from a declaration named N
     that is not the one {owner} lists" when another instance has the name. Tests: `EndpointCatalogValidatorTests.An_endpoint_mapped_from_a_declaration_the_catalog_does_not_list_is_not_declared`,
     `…_from_a_copy_of_a_listed_declaration_names_the_owner`; `EndpointCatalogCheckTests.An_endpoint_mapped_from_a_declaration_no_module_lists_is_one_line`,
-    `…_from_a_copy_of_the_listed_declaration_names_the_owner`, `The_export_of_that_host_does_not_list_the_route` (export
-    mode, documents why). Full suites green after the fix: no test or sample relied on the gap.
+    `…_from_a_copy_of_the_listed_declaration_names_the_owner`. `The_export_of_that_host_does_not_list_the_route` (export
+    mode) documents why and passes with or without the fix, so it is not one of the failing-without-the-fix tests (round 2
+    m5). Full suites green after the fix: no test or sample relied on the gap.
   - M1 (`ReplaceWireMapper` with another `TWire`): the replacement records the replaced typed mapper's message (chained
     overrides keep the original); `ValidateContract` reports `[aggregate id] ReplaceWireMapper must keep {message}; a new
     payload needs a new aggregate (FG-021).` Tests: `WireMapperRegistrationTests.Replace_wire_mapper_with_another_message_fails_startup`,
@@ -1485,7 +1486,8 @@ suite; guides and PCRs describe the shipped behaviour.
     takes X but the aggregate holds Y. Fix: AddAggregateWireMapper<Y, TWire>(…) (API-10).` Tests:
     `WireMapperRegistrationTests.A_mapper_typed_for_another_state_fails_startup_naming_both_types`,
     `A_replacement_typed_for_another_state_fails_startup_too`. `WireConformance` itself does not add this check (startup does).
-  - m1 conditions: `PublicTemplates` keeps only declarations whose condition is null or holds; bound and template-matched
+  - m1 conditions (`PublicTemplates` part and the swallowed options failure superseded by round 2 m4 and m1 below):
+    `PublicTemplates` kept only declarations whose condition is null or holds; bound and template-matched
     endpoints get `[route X] is mapped but its condition 'c' does not hold` (registered conditions only; an unknown one stays
     the single declaration line). A condition whose options fail validation does not hold (`OptionsValidationException`
     caught; already reported by `ValidateModuleOptions`; `FlavorValidationTests.Production_with_nothing_configured…` caught
@@ -1526,6 +1528,50 @@ suite; guides and PCRs describe the shipped behaviour.
   - Run: Debug and Release 0 warnings, 0 errors; in memory and `GAMESERVER_TEST_STORE=File` (no `COUCHBASE_PW`):
     **1858 total, 1762 passed, 96 skipped, 0 failed** each (T080: 1828 / 1732 / 96; +30 = 28 framework tests + 2 fixture
     tests for the new guide samples). Open: T083 opt-in perf run and T084 Couchbase suite were not rerun here.
+  Note (2026-11-03, round-2 review: CONDITIONAL, 0 blockers, 0 majors; every minor fixed; each code test below was checked to
+  fail with its fix temporarily reverted, the revert compiling, then restored):
+  - m1 options read by a condition: `EndpointValidation.Holds` no longer swallows `OptionsValidationException`; it collects
+    `ex.Failures` and `Run` appends them after the validator lines, skipping lines the caller's report already holds
+    (`reported`: the `UseGameServer` errors, so a `ValidateOnStart` failure from `ValidateModuleOptions` stays one line; the
+    pre-serving run passes none) and repeats. The condition still does not hold. Options with `Validate()` but no
+    `ValidateOnStart()` now fail startup instead of starting invalid. Tests:
+    `EndpointCatalogCheckTests.A_condition_reading_options_without_validate_on_start_fails_startup_with_the_options_line`
+    (host started without the fix), `A_condition_reading_options_validated_on_start_reports_the_options_line_once` (line twice
+    without the de-duplication). `FlavorValidationTests.Production_with_nothing_configured…` now asserts one
+    `Gm:Oidc:Authority` line (a guard: it passes either way, the GM SSO routes are never bound there). Conditions are still
+    evaluated lazily, so in a report that already has other faults an options failure appears only when an endpoint bound to
+    that condition is mapped (the pre-serving run, which also checks unmapped routes, evaluates every condition it needs).
+  - m4 conditional Public templates: `PublicTemplates` drops the condition filter (and its `conditionHolds` parameter); a
+    Public route mapped while its condition does not hold is the one condition line (data-model §2.2). Tests:
+    `EndpointCatalogCheckTests.A_public_route_mapped_while_its_condition_does_not_hold_is_one_line` (was `…_is_reported_twice_over`),
+    `LateEndpointValidationTests.A_late_dev_endpoint_outside_development_tools_is_refused` (GM OpenAPI: condition line only).
+  - m2 conformance samples: enum leaves (and enum dictionary keys) take the non-zero values in turn by the 1-based index of
+    the innermost collection element or dictionary entry, `values[(p - 1) % count]`. The ordinal `n` could not be used: it
+    runs over every leaf in tree order, so element 2's enum got the same value as element 1's whenever an element has an
+    even number of leaves. Perturbations avoid the value the same member holds in the other elements or entries of its
+    innermost collection or dictionary (keys avoid the other keys and keep their place in the entry order): without that,
+    the perturbed element collided with the other one and the same valid mapper failed at `Items.Kind`. The walk perturbs
+    index 0 and the last index of every collection and dictionary (dedup by path keeps one finding). Bools stay `true` (a
+    `false` sample would be a proto default). Tests: `WireConformanceTests.A_mapper_keying_the_elements_by_their_enum_passes`
+    (fails with either the position or the collision part reverted), `A_mapper_that_keeps_only_the_last_element_is_caught`,
+    `A_mapper_that_skips_the_first_entry_is_caught`. Docs: the "enum keys collapse" caveat now only covers an enum with a
+    single non-zero value (consumer guide §5.5, data-model §7.2, release notes FG-027).
+  - m3 base-class `TState`: `AggregateConformance.Run` takes the `PlayerAggregateDescriptor`; `StateMembers.Of`,
+    `SampleDocument.Build`, the `Deserialize` and the `WithSampleState` type check use `aggregate.StateType`; the contract
+    still gives the parser and the hidden/may-stay-default lists. Tests:
+    `WireConformanceTests.A_mapper_typed_on_a_base_state_that_drops_a_derived_member_is_reported`,
+    `A_mapper_typed_on_a_base_state_that_maps_the_derived_member_passes` (without the fix its cast to the derived state threw).
+  - m5 nits: `The_export_of_that_host_does_not_list_the_route` taken off the failing-without-the-fix list (B1 above); the
+    export temp file is `<file name>.<guid>.wire-contract.tmp` (`GameServerRunExtensions.ExportTempPath`). Test:
+    `WireContractExportTests.The_temp_file_is_named_after_the_export_and_ends_in_wire_contract_tmp`. Docs: wiregen-cli §1,
+    consumer guide §10.3, release notes (export mode), PCR platform §20 (a killed export can leave the temp file).
+  - Conformance rerun on framework, sample, template (`WireConformanceTests.Framework_sample_and_template_mappers_pass_conformance`,
+    `Check_all_covers_…`) and fixture (`FixtureConformanceTests`): no new real finding (all pass unchanged).
+  - Docs also: data-model §2.2/§7.2, consumer guide §5.5/§10.1, PCR platform §20, release notes FG-026/FG-027.
+  - Run (changed files touched before the final build): Debug and Release 0 warnings, 0 errors; in memory and
+    `GAMESERVER_TEST_STORE=File` (no `COUCHBASE_PW`): **1866 total, 1770 passed, 96 skipped, 0 failed** each (round 1:
+    1858 / 1762 / 96; +8 = 2 `EndpointCatalogCheckTests`, 5 `WireConformanceTests`, 1 `WireContractExportTests`; the renamed
+    Public-condition test is not new). T083 and T084 were not rerun here.
 - [ ] T087 Resume update `AgentMemories/features/p05-speckit/00_summary.md` (after T086): 014 row DONE with task count
   and review result; "Technical notes from 014" (catalog + check incl. the hook chosen in T002, export mode, WireGen
   commands and exit codes, `wiregen.json` locations, typed mapper + `ReplaceWireMapper`, `WireConformance`, SDK typed

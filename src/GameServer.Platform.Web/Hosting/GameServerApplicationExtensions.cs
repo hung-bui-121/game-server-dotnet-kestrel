@@ -115,7 +115,7 @@ public static class GameServerApplicationExtensions
             // One report (FR-009): the endpoints mapped so far join the other faults. Enumerating DataSources builds every
             // endpoint (research V16), so a passing configuration leaves the endpoint check to the pre-serving run alone.
             var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints).ToArray();
-            errors.AddRange(EndpointValidation.Run(endpoints, services, includeUnmapped: false));
+            errors.AddRange(EndpointValidation.Run(endpoints, services, includeUnmapped: false, reported: errors));
             throw new GameServerStartupException(errors);
         }
 

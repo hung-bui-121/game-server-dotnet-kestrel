@@ -59,7 +59,8 @@ public static class WireConformance
         options ??= new WireConformanceOptions();
         var findings = new List<WireConformanceFinding>();
         var notes = new List<string>();
-        var ids = aggregates.Select(a => a.AggregateId).Order(StringComparer.Ordinal).ToArray();
+        var byId = aggregates.ToDictionary(a => a.AggregateId, StringComparer.Ordinal);
+        var ids = byId.Keys.Order(StringComparer.Ordinal).ToArray();
         foreach (var id in ids)
         {
             if (!mappers.Has(id))
@@ -74,7 +75,7 @@ public static class WireConformance
             }
             else
             {
-                AggregateConformance.Run(id, contract, mappers, options, findings, notes);
+                AggregateConformance.Run(byId[id], contract, mappers, options, findings, notes);
             }
         }
 

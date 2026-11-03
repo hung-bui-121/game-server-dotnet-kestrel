@@ -7,8 +7,9 @@ namespace GameServer.TestKit;
 
 /// <summary>
 /// Sample and perturbation values per leaf kind (data-model §7.2). Each leaf gets a distinct ordinal <c>n</c>, so a mapper that
-/// copies one member into another field is caught; every perturbation moves the wire value by at least one unit. Values are written
-/// through <see cref="GameServerJson.Options"/>, so the document converters (camelCase enums, dates) apply.
+/// copies one member into another field is caught (enums take their values by element position instead, bools are always true);
+/// every perturbation moves the wire value by at least one unit. Values are written through <see cref="GameServerJson.Options"/>,
+/// so the document converters (camelCase enums, dates) apply.
 /// </summary>
 internal static class SampleStates
 {
@@ -18,16 +19,22 @@ internal static class SampleStates
     /// <summary>Small integer types wrap their ordinal into 1..SmallRange so the +1 perturbation stays in range.</summary>
     private const int SmallRange = 100;
 
-    public static bool IsSupported(Type type) => Sample(type, 1) is not null;
+    public static bool IsSupported(Type type) => Sample(type, 1, 1) is not null;
 
     public static bool IsSupportedKey(Type type) => type == typeof(string) || type == typeof(Guid) || type.IsEnum || IsInteger(type);
 
-    /// <summary>The sample of leaf type <paramref name="type"/> for ordinal <paramref name="n"/>; null when the type is not supported.</summary>
-    public static object? Sample(Type type, int n)
+    /// <summary>
+    /// The sample of leaf type <paramref name="type"/> for ordinal <paramref name="n"/>; null when the type is not supported. An enum
+    /// takes its non-zero values in turn by <paramref name="position"/> (1-based index of the innermost collection element or
+    /// dictionary entry, 1 outside any), so the elements of one collection differ (a mapper keying them by the enum is valid); the
+    /// ordinal would repeat a value whenever an element has an even number of leaves.
+    /// </summary>
+    public static object? Sample(Type type, int n, int position)
     {
         if (type.IsEnum)
         {
-            return NonZeroValues(type).FirstOrDefault();
+            var values = NonZeroValues(type).ToArray();
+            return values.Length == 0 ? null : values[(position - 1) % values.Length];
         }
 
         return type switch
@@ -47,8 +54,38 @@ internal static class SampleStates
         };
     }
 
+    /// <summary>
+    /// A value at least one wire unit away from <paramref name="value"/> (same type) for which <paramref name="taken"/> is false when
+    /// one is reachable: the same member in the other elements or entries of its collection (or the other keys of its dictionary)
+    /// holds <paramref name="takenCount"/> values, and a perturbation landing on one of them would turn a valid mapper that keys by
+    /// the member into a duplicate key. When every candidate is taken, the plain perturbation is returned.
+    /// </summary>
+    public static object Perturb(Type type, object value, Func<object, bool> taken, int takenCount)
+    {
+        var first = Perturb(type, value);
+        if (!taken(first))
+        {
+            return first;
+        }
+
+        if (type.IsEnum)
+        {
+            return NonZeroValues(type).Append(Enum.ToObject(type, 0)).FirstOrDefault(v => !v.Equals(value) && !taken(v)) ?? first;
+        }
+
+        // Integers, strings, dates, Guids and byte arrays move strictly away from the value at each step, so takenCount + 1 steps
+        // reach a free value (bool has none: it falls back to the first perturbation).
+        var next = first;
+        for (var step = 0; step < takenCount && taken(next); step++)
+        {
+            next = Perturb(type, next);
+        }
+
+        return taken(next) || next.Equals(value) ? first : next;
+    }
+
     /// <summary>A value at least one wire unit away from <paramref name="value"/> (same type).</summary>
-    public static object Perturb(Type type, object value)
+    private static object Perturb(Type type, object value)
     {
         if (type.IsEnum)
         {
@@ -101,9 +138,9 @@ internal static class SampleStates
         return dictionary.Keys.Cast<object>().Single();
     }
 
-    /// <summary>Dictionary key sample: string <c>k{n}</c>, integer <c>n</c>, enum, Guid (data-model §7.2).</summary>
-    public static object? KeySample(Type keyType, int n) =>
-        keyType == typeof(string) ? "k" + n.ToString(CultureInfo.InvariantCulture) : IsSupportedKey(keyType) ? Sample(keyType, n) : null;
+    /// <summary>Dictionary key sample: string <c>k{n}</c>, integer <c>n</c>, enum (by entry <paramref name="position"/>), Guid (data-model §7.2).</summary>
+    public static object? KeySample(Type keyType, int n, int position) =>
+        keyType == typeof(string) ? "k" + n.ToString(CultureInfo.InvariantCulture) : IsSupportedKey(keyType) ? Sample(keyType, n, position) : null;
 
     private static bool IsInteger(Type type) =>
         type == typeof(byte) || type == typeof(sbyte) || type == typeof(short) || type == typeof(ushort) ||

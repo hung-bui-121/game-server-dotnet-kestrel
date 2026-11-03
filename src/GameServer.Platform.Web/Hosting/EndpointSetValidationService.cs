@@ -20,7 +20,8 @@ internal sealed class EndpointSetValidationService(EndpointValidationState state
         }
 
         var endpoints = routes.DataSources.SelectMany(source => source.Endpoints).ToArray();
-        var errors = EndpointValidation.Run(endpoints, services, includeUnmapped: true);
+        // Nothing is reported before this run: a configuration that reached it passed every check of UseGameServer.
+        var errors = EndpointValidation.Run(endpoints, services, includeUnmapped: true, reported: []);
         if (errors.Count > 0)
         {
             throw new GameServerStartupException(errors);

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using GameServer.Aggregates;
 using GameServer.Platform;
 using GameServer.Platform.Web.Aggregates;
 using Google.Protobuf;
@@ -14,36 +15,43 @@ namespace GameServer.TestKit;
 internal sealed class AggregateConformance
 {
     private readonly string _id;
+    private readonly Type _stateType;
     private readonly IAggregateWireContract _contract;
     private readonly AggregateWireMapperRegistry _mappers;
     private readonly List<WireConformanceFinding> _findings;
     private readonly HashSet<(WireConformanceProblem, string)> _reported = [];
 
-    private AggregateConformance(string id, IAggregateWireContract contract, AggregateWireMapperRegistry mappers, List<WireConformanceFinding> findings)
+    private AggregateConformance(string id, Type stateType, IAggregateWireContract contract, AggregateWireMapperRegistry mappers, List<WireConformanceFinding> findings)
     {
         _id = id;
+        _stateType = stateType;
         _contract = contract;
         _mappers = mappers;
         _findings = findings;
     }
 
+    /// <summary>
+    /// Checks the mapper of <paramref name="aggregate"/>. The sample is built from the aggregate's state type (the type the store
+    /// deserializes), not the mapper's <c>TState</c>: a mapper typed on a base class must still carry the derived-only members. The
+    /// contract gives the parser and the hidden and may-stay-default declarations.
+    /// </summary>
     public static void Run(
-        string id,
+        PlayerAggregateDescriptor aggregate,
         IAggregateWireContract contract,
         AggregateWireMapperRegistry mappers,
         WireConformanceOptions options,
         List<WireConformanceFinding> findings,
         List<string> notes) =>
-        new AggregateConformance(id, contract, mappers, findings).Run(options, notes);
+        new AggregateConformance(aggregate.AggregateId, aggregate.StateType, contract, mappers, findings).Run(options, notes);
 
     private void Run(WireConformanceOptions options, List<string> notes)
     {
-        var members = StateMembers.Of(_contract.StateType);
+        var members = StateMembers.Of(_stateType);
         var supplied = options.MemberValuesOf(_id);
         foreach (var path in supplied.Keys.Where(path => !members.Resolve(path, out _)))
         {
             throw new ArgumentException(
-                $"[aggregate {_id}] WithMemberValue path '{path}' does not exist on {_contract.StateType.Name}. Fix: use C# member names joined by '.'.",
+                $"[aggregate {_id}] WithMemberValue path '{path}' does not exist on {_stateType.Name}. Fix: use C# member names joined by '.'.",
                 nameof(options));
         }
 
@@ -98,13 +106,13 @@ internal sealed class AggregateConformance
     {
         if (state is null)
         {
-            return SampleDocument.Build(StateMembers.Of(_contract.StateType));
+            return SampleDocument.Build(StateMembers.Of(_stateType));
         }
 
-        return _contract.StateType.IsInstanceOfType(state)
-            ? SampleStates.ToJson(state, _contract.StateType)
+        return _stateType.IsInstanceOfType(state)
+            ? SampleStates.ToJson(state, _stateType)
             : throw new ArgumentException(
-                $"[aggregate {_id}] WithSampleState got a {state.GetType().Name}; the aggregate's state type is {_contract.StateType.Name}.", nameof(state));
+                $"[aggregate {_id}] WithSampleState got a {state.GetType().Name}; the aggregate's state type is {_stateType.Name}.", nameof(state));
     }
 
     /// <summary>Deserializes the document as the store would, maps it with the registered mapper and parses the payload.</summary>
@@ -114,7 +122,7 @@ internal sealed class AggregateConformance
         object? state;
         try
         {
-            state = json.Deserialize(_contract.StateType, GameServerJson.Options);
+            state = json.Deserialize(_stateType, GameServerJson.Options);
         }
         catch (Exception ex) when (ex is JsonException or NotSupportedException or InvalidOperationException or ArgumentException)
         {

@@ -165,6 +165,9 @@ public sealed class FlavorValidationTests
 
         // GM SSO comes from the module's ValidateOnStart validator (IStartupValidator), the others from UseGameServer (US3-7, FR-009).
         ex.Message.ShouldContain("Gm:Oidc:Authority");
+
+        // Once, although the module's mapping and the gm.sso condition read the same failing options (T086 round 2 m1).
+        ex.Violations.Count(v => v.Contains("Gm:Oidc:Authority", StringComparison.Ordinal)).ShouldBe(1);
         ex.Message.ShouldContain("DataProtection:MasterKey is not set in 'Production'");
         ex.Message.ShouldContain("Identity:GuestPepper is not set");
     }

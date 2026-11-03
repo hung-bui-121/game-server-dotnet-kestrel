@@ -93,6 +93,19 @@ public sealed class WireContractExportTests : IDisposable
         Directory.GetFiles(_folder).ShouldBe([file]);
     }
 
+    // T086 round 2 m5: a killed export can leave its temp file next to the target; the name says what it is.
+    [Fact]
+    public void The_temp_file_is_named_after_the_export_and_ends_in_wire_contract_tmp()
+    {
+        var file = Path.Combine(_folder, "wire.json");
+
+        var temp = GameServerRunExtensions.ExportTempPath(_folder, file);
+
+        Path.GetDirectoryName(temp).ShouldBe(_folder);
+        Path.GetFileName(temp).ShouldMatch(@"^wire\.json\.[0-9a-f]{32}\.wire-contract\.tmp$");
+        GameServerRunExtensions.ExportTempPath(_folder, file).ShouldNotBe(temp);
+    }
+
     [Fact]
     public async Task The_export_overwrites_an_existing_file()
     {

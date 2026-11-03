@@ -75,7 +75,9 @@ table) and the hidden-field comment become removable.
   `dotnet run --project <host> --no-launch-profile [--no-build] -c <cfg> -- --environment Local --export-wire-contract <file>`
   checks the composition (deployment identity, module rules, route and section declarations; no game config) and writes the
   catalog export (format `gameserver.wire-contract/1`, UTF-8 without BOM, LF, no timestamp, path, machine or environment
-  value) to `<file>`, then exits 0. It never maps or serves, starts no hosted service, opens no store and reads no secret.
+  value) to `<file>`, then exits 0. The file is written next to `<file>` as `<file name>.<guid>.wire-contract.tmp` and moved
+  over it, so `<file>` never holds a partial export; a process killed in between can leave that temp file behind (safe to
+  delete). It never maps or serves, starts no hosted service, opens no store and reads no secret.
   Exit 1 with one line per fault, or when the folder of `<file>` does not exist. Refused like `--provision`:
   `--export-wire-contract=…`, `-export-wire-contract`, `/export-wire-contract`, the switch without a path, twice, or with
   `--provision`. Hosts already written as `GameServerCommandLine.Parse(args)` + `app.RunGameServerAsync(mode)` need no change.
@@ -168,8 +170,10 @@ table) and the hidden-field comment become removable.
   module, platform or host lists, so the export cannot silently lose a route; bound to a copy of a listed declaration;
   template/method/profile/operation/permission differs; mapped while its registered condition does not hold; declared but not
   mapped while its surface is mapped, its owner is not service-only and its condition holds). One report line per fault,
-  naming the route and the fix; exit 1. `--provision` checks the declarations too. A Public declaration whose condition does
-  not hold is not a public endpoint.
+  naming the route and the fix; exit 1. `--provision` checks the declarations too. A Public route of a module or the platform
+  mapped while its condition does not hold gets only the condition line (no allowlist line). A condition that reads options
+  failing validation does not hold, and the options failure joins the report once, also for options validated with
+  `Validate()` but no `ValidateOnStart()` (the host used to start with those invalid).
 - **Endpoints mapped after `UseGameServer`** are validated before the server listens, with every endpoint rule (catalog,
   security profile, version segment, duplicates, Public allowlist, Dev rule, command route). The request-time Dev refusal of
   slice 013 stays as defense in depth.
@@ -239,10 +243,13 @@ table) and the hidden-field comment become removable.
 - **`WireConformance` in `GameServer.TestKit`** (no test framework, no host, no store):
   `WireConformance.CheckModules([new EconomyModule(), new GameModule()]).ThrowIfFailed();` (modules' `ConfigureServices` run
   against a bare service collection), `Check(module, aggregateId)`, `CheckAll(app.Services)` (every client-visible aggregate
-  of a built composition). The kit builds a sample state from the persisted members (System.Text.Json contract of
-  `GameServerJson.Options`: members with a setter or a constructor parameter; collections get two elements, dictionaries
-  two entries, each leaf a distinct value; the last element or entry is perturbed, so a mapper that keeps only the first is
-  caught), maps it, and reports: `FieldAtDefault` (a proto field still default; repeated/map
+  of a built composition). The kit builds a sample state from the persisted members of the **aggregate's** state type
+  (System.Text.Json contract of `GameServerJson.Options`: members with a setter or a constructor parameter; a mapper typed
+  on a base class is still checked for the members only the derived state has; collections get two elements, dictionaries
+  two entries, each leaf a distinct value, enums their non-zero values in turn per element so elements keyed by an enum
+  stay distinct; the first and the last element or entry are perturbed, never onto the value the same member has in
+  another element, so a mapper that keeps only one end — `.First()`, `Take(1)`, `.Last()`, `Skip(1)` — is caught), maps it,
+  and reports: `FieldAtDefault` (a proto field still default; repeated/map
   empty; presence fields absent; oneof unset), `MemberNotOnWire` (perturbing a non-hidden member leaves the message
   unchanged, nested paths such as `ActiveBattle.Seed`), `HiddenMemberOnWire` (a hidden member reaches the wire, or the
   declaration is stale), `MemberNotFillable` (a member type the kit cannot sample, e.g. `object`: supply it with

@@ -501,8 +501,8 @@ public void The_game_and_framework_mappers_pass()
 - `ThrowIfFailed()` throws `WireConformanceException` with one line per finding:
   `[aggregate {id}] {problem}: {path} — {fix}`. `report.Findings` lists them as data (`AggregateId`, `Problem`, `Path`,
   `Message`); `report.Passed` is true when there is none.
-- How it works: the kit builds a sample state from the state type's JSON contract (`GameServerJson.Options`), maps it, and
-  parses the wire bytes. A proto field still at its default is `FieldAtDefault` (proto field path, e.g.
+- How it works: the kit builds a sample state from the JSON contract (`GameServerJson.Options`) of the aggregate's state
+  type (a mapper typed on a base class is still checked for the derived members), maps it, and parses the wire bytes. A proto field still at its default is `FieldAtDefault` (proto field path, e.g.
   `slots.unlock_end_utc_ms`). Then it changes one state member at a time; when the wire message does not change, the
   member is `MemberNotOnWire` (C# member path, e.g. `Slots.UnlockEndUtc`), unless it is declared hidden. A hidden member
   that does change the wire is `HiddenMemberOnWire`.
@@ -514,19 +514,19 @@ public void The_game_and_framework_mappers_pass()
   | `float`, `double`, `decimal` | `n + 0.5` | `+1` |
   | `bool` | `true` | `false` |
   | `string` | `"s{n}"` | `+ "x"` |
-  | enum | first defined value other than 0 | another non-zero value |
+  | enum | the defined values other than 0 in turn, one per element of a list (the first one outside a list) | another value, not the one the same member has in the other element |
   | `DateTimeOffset`, `DateTime` (UTC) | `2026-01-02T03:04:05.006Z` + `n` minutes | `+1 s` (survives a millisecond wire field) |
   | `TimeSpan` | `n` s | `+1 s` |
   | `Guid` | deterministic from `n` | another deterministic value |
   | `byte[]` | `[n]` | `[n, 1]` |
   | `T?` | sample of `T` | change of `T` |
-  | list / collection | two elements | the last element's members, one at a time (a mapper that keeps only the first element, `.First()` or `Take(1)`, is `MemberNotOnWire`) |
-  | dictionary | two entries (`"k{n}"`, `n`, enum or `Guid` key; enum keys collapse into one entry) | the last entry's key, then its value's members |
+  | list / collection | two elements | the first and the last element's members, one at a time (a mapper that keeps only one end, `.First()`, `Take(1)`, `.Last()` or `Skip(1)`, is `MemberNotOnWire`) |
+  | dictionary | two entries (`"k{n}"`, `n`, enum or `Guid` key; an enum with a single non-zero value gives one entry) | the first and the last entry's key, then its value's members |
   | anything else (`object`, `JsonNode`, an interface) | none: `MemberNotFillable` | — |
 
 - `WireConformanceOptions`: `WithMemberValue(aggregateId, memberPath, value)` supplies the sample for a member the kit
   cannot fill (`MemberNotFillable`; that member is then not changed); `WithSampleState(aggregateId, state)` uses your own
-  state as the sample (the changes still apply to it; give its collections two elements, since the last one is changed).
+  state as the sample (the changes still apply to it; give its collections two elements, since the first and the last are changed).
   Each `With*` returns the options, so they chain. Pass the options as the last argument of `Check*` (from
   `FixtureConformanceTests.cs`):
 
@@ -742,7 +742,9 @@ Routes = [FixtureRoutes.Save, FixtureRoutes.Card],
   it with `services.AddRouteCondition("x", sp => …)`. Built in: `development_tools` (Development/Test servers), which Dev
   routes use. The check holds both ways: a declaration whose condition holds must be mapped, and an endpoint mapped while
   its condition does not hold fails startup (`[route {name}] is mapped but its condition 'x' does not hold. …`); a Public
-  route whose condition does not hold is not a public endpoint either.
+  route mapped while its condition does not hold gets that line only. A condition that reads options failing validation
+  does not hold, and the options failure is a line of the report (also for options with `Validate()` but no
+  `ValidateOnStart()`).
 
 ### 10.2 The endpoint check and typed section mappers
 
@@ -816,7 +818,7 @@ The zh-pvp shape (server repository with the framework at `framework/`, Unity cl
 
 | Field | Meaning |
 | --- | --- |
-| `catalog.hostProject` | the game host project; the tool runs it with `--environment <catalog.environment> --export-wire-contract <temp file>` (default flavor `Local`). Or `catalog.file`: a committed export instead of a host run |
+| `catalog.hostProject` | the game host project; the tool runs it with `--environment <catalog.environment> --export-wire-contract <temp file>` (default flavor `Local`). Or `catalog.file`: a committed export instead of a host run. The host writes the export next to its path as `<file name>.<guid>.wire-contract.tmp` and moves it over the path; a run killed in between can leave that file behind (safe to delete) |
 | `origin` | `game` (default): only the game's own routes and sections are generated (the framework's are in the package) |
 | `protos[]` | the game's `.proto` files, each list under its protoc import root. Framework protos (`gameserver/core/v1/core.proto`, identity, economy, iap) are always import roots: import them, never list or copy them. `importRoots[]` adds the game's other import roots |
 | `output.root` | the Unity project folder (must exist); `--output-root <dir>` overrides it for another checkout |

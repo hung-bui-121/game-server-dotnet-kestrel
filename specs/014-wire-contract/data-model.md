@@ -152,7 +152,8 @@ One line per fault, prefixed like the existing validators; every line names the 
 | --- | --- |
 | Not declared (also: bound to a declaration instance nobody lists, T086) | `[endpoint {label}] is not declared in the route catalog. Fix: declare it in the module's ModuleDescriptor.Routes (or GameServerBuilder.DeclareRoutes for a host endpoint) and map it from the declaration (FG-026).` |
 | Bound to a copy of a listed declaration (same name, other instance, T086) | `[endpoint {label}] is mapped from a declaration named {name} that is not the one {owner} lists. Fix: map it from the declaration instance listed in ModuleDescriptor.Routes (or GameServerBuilder.DeclareRoutes), not a copy (FG-026).` |
-| Mapped while its registered condition does not hold (T086) | `[route {name}] is mapped but its condition '{condition}' does not hold. Fix: map it only when the condition holds, or correct the declaration's condition (FG-026).` |
+| Mapped while its registered condition does not hold (T086) | `[route {name}] is mapped but its condition '{condition}' does not hold. Fix: map it only when the condition holds, or correct the declaration's condition (FG-026).` (the only line: a conditional Public route of a module or the platform stays a public template, so no allowlist line) |
+| Condition reads options that fail validation (T086 round 2) | the options failure line itself (`OptionsValidationException.Failures`), after the endpoint lines, once (not repeated when `ValidateModuleOptions` already reported it); the condition does not hold |
 | Template differs (metadata-bound) | `[route {name}] declared at {declared template} but mapped at {mapped template}. Fix: map it with the declaration and no route group prefix, or correct the declaration (FG-026).` |
 | Method differs | `[endpoint {label}] maps method {method} but route {name} declares {declared methods}. Fix: declare one route per method or correct the mapping (FG-026).` |
 | Profile differs | `[endpoint {label}] has profile {mapped} but route {name} declares {declared}. Fix: use the As*Endpoint helper of the declared profile or correct the declaration (SEC-08).` |
@@ -267,21 +268,26 @@ kind), collection (`IEnumerable<T>` other than string/dictionary: element node, 
 | `float`, `double`, `decimal` | `n + 0.5` | `+1` |
 | `bool` | `true` | `false` |
 | `string` | `"s{n}"` | `+ "x"` |
-| enum | first defined value ≠ 0 (if only 0 exists: unsupported) | next defined value, wrapping to another non-zero value when possible |
+| enum | defined values ≠ 0 in turn by position: `values[(p - 1) % count]`, `p` = 1-based index of the innermost collection element or dictionary entry (1 outside any), so the elements of one collection differ (T086 round 2; if only 0 exists: unsupported) | next defined value, wrapping to another non-zero value when possible |
 | `DateTimeOffset`, `DateTime` (UTC) | `2026-01-02T03:04:05.006Z + n minutes` | `+1 s` |
 | `TimeSpan` | `n s` | `+1 s` |
 | `Guid` | deterministic from `n` | another deterministic value |
 | `byte[]` | `[n]` | `[n, 1]` |
 | nullable `T?` | sample of `T` | perturbation of `T` |
-| collection | two elements (distinct samples of the element) | leaves of the **last** element perturbed, so a mapper keeping only the first (`.First()`, `Take(1)`) is caught (T086) |
-| dictionary | two entries: key samples (string `"k{n}"`, integer `n`, enum, `Guid`; enum keys collapse into one entry), value samples | last entry: perturbed key; value leaves perturbed inside that entry |
+| collection | two elements (distinct samples of the element) | leaves of the **first** and of the **last** element perturbed, so a mapper keeping only one end (`.First()`, `Take(1)`, `.Last()`, `Skip(1)`) is caught (T086) |
+| dictionary | two entries: key samples (string `"k{n}"`, integer `n`, enum by entry position, `Guid`; an enum with a single non-zero value collapses into one entry), value samples | first and last entry: perturbed key (keeps its place in the entry order); value leaves perturbed inside that entry |
 | anything else (`object`, `JsonNode`, interfaces without a known collection shape) | unsupported → `MemberNotFillable` unless `WithMemberValue` | — |
 
-Values are written into JSON through `JsonSerializer.SerializeToNode(value, GameServerJson.Options)`, so converters
-(camelCase enums, dates) apply. `WithMemberValue(aggregate, path, value)` replaces the sample of that member (its
+A perturbation never lands on the value the same member holds in the other elements or entries of its innermost collection
+or dictionary (a key never on another key): the next step of the same kind is taken, for an enum another non-zero value or
+0, so a valid mapper keying elements by a member does not throw a duplicate key (T086 round 2). The sample is built from
+the **aggregate's** state type (`PlayerAggregateDescriptor.StateType`), not the mapper's `TState`, so a mapper typed on a
+base class is checked for the derived members too; the mapper's contract gives the parser and the hidden and
+may-stay-default lists. Values are written into JSON through `JsonSerializer.SerializeToNode(value, GameServerJson.Options)`,
+so converters (camelCase enums, dates) apply. `WithMemberValue(aggregate, path, value)` replaces the sample of that member (its
 perturbation is then skipped, reported in `CheckedAggregates` notes); `WithSampleState(aggregate, state)` replaces the whole
-sample (perturbations are applied to its serialized JSON; give collections at least two elements there, since the last one
-is perturbed).
+sample (perturbations are applied to its serialized JSON; give collections at least two elements there, since the first and
+the last are perturbed).
 
 ### 7.3 Proto "default" (FR-061)
 

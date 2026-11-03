@@ -46,6 +46,49 @@ public sealed record ListedState
     public IReadOnlyList<string> Items { get; init; } = [];
 }
 
+public enum ItemKind
+{
+    None,
+    Sword,
+    Shield,
+}
+
+public sealed record KindedItem(ItemKind Kind, int Count);
+
+/// <summary>A list whose elements a valid mapper keys by their enum member (T086 round 2 m2).</summary>
+public sealed record KindedState
+{
+    public IReadOnlyList<KindedItem> Items { get; init; } = [];
+}
+
+/// <summary>A base state a mapper may be typed on; the aggregate holds <see cref="DerivedCounterState"/> (T086 round 2 m3).</summary>
+public record BaseCounterState
+{
+    public long Value { get; init; }
+
+    public int Increments { get; init; }
+}
+
+public sealed record DerivedCounterState : BaseCounterState
+{
+    public string Extra { get; init; } = string.Empty;
+}
+
+/// <summary>A module whose aggregate holds <see cref="DerivedCounterState"/> while its mapper is typed on the base state.</summary>
+public sealed class BaseTypedMapperModule(Func<BaseCounterState, CounterWire.CounterState> map) : IGameModule
+{
+    public const string Id = "probe_derived";
+
+    public ModuleDescriptor Describe() => new()
+    {
+        Name = "probe.derived",
+        Aggregates = [new PlayerAggregateDescriptor<DerivedCounterState>(Id, 1, clientVisible: true, () => new DerivedCounterState())],
+    };
+
+    public void ConfigureServices(IServiceCollection services, ModuleContext context) =>
+        services.AddAggregateWireMapper(Id, map);
+}
+
 public sealed record LooseState
 {
     public long Value { get; init; }
@@ -211,6 +254,58 @@ public sealed class WireConformanceTests
             Probe, () => new WalletState(), s => new EconomyWire.WalletState { Balances = { s.Balances.Take(1).ToDictionary() } }));
 
         Problems(report).ShouldBe([(WireConformanceProblem.MemberNotOnWire, "Balances")]);
+    }
+
+    // T086 round 2 m2: with one perturbed end, .Last()/Skip(1) mapped every element the kit perturbed.
+    [Fact]
+    public void A_mapper_that_keeps_only_the_last_element_is_caught()
+    {
+        var report = Check(new ConformanceProbeModule<ListedState, ListValue>(
+            Probe, () => new ListedState(), s => new ListValue { Values = { Value.ForString(s.Items.Last()) } }));
+
+        Problems(report).ShouldBe([(WireConformanceProblem.MemberNotOnWire, "Items")]);
+    }
+
+    [Fact]
+    public void A_mapper_that_skips_the_first_entry_is_caught()
+    {
+        var report = Check(new ConformanceProbeModule<WalletState, EconomyWire.WalletState>(
+            Probe, () => new WalletState(), s => new EconomyWire.WalletState { Balances = { s.Balances.Skip(1).ToDictionary() } }));
+
+        Problems(report).ShouldBe([(WireConformanceProblem.MemberNotOnWire, "Balances")]);
+    }
+
+    // T086 round 2 m2: every enum leaf used to get the same value, so two elements gave a valid mapper a duplicate key
+    // (SampleNotSerializable); a perturbation must not land on the other element's value either.
+    [Fact]
+    public void A_mapper_keying_the_elements_by_their_enum_passes()
+    {
+        Check(new ConformanceProbeModule<KindedState, Struct>(
+                Probe,
+                () => new KindedState(),
+                s => new Struct { Fields = { s.Items.ToDictionary(item => item.Kind.ToString(), item => Value.ForNumber(item.Count)) } }))
+            .ThrowIfFailed();
+    }
+
+    // T086 round 2 m3: the sample used to be built from the mapper's TState, so members only the aggregate's state type has were
+    // never checked.
+    [Fact]
+    public void A_mapper_typed_on_a_base_state_that_drops_a_derived_member_is_reported()
+    {
+        var report = Check(new BaseTypedMapperModule(s => new CounterWire.CounterState { Value = s.Value, Increments = s.Increments }));
+
+        Problems(report).ShouldBe([(WireConformanceProblem.MemberNotOnWire, "Extra")]);
+    }
+
+    [Fact]
+    public void A_mapper_typed_on_a_base_state_that_maps_the_derived_member_passes()
+    {
+        Check(new BaseTypedMapperModule(s => new CounterWire.CounterState
+            {
+                Value = s.Value + ((DerivedCounterState)s).Extra.Length,
+                Increments = s.Increments,
+            }))
+            .ThrowIfFailed();
     }
 
     [Fact]

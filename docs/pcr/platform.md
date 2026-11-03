@@ -1176,7 +1176,8 @@ qua. Template so sau khi chuẩn hoá `/` đầu, phân biệt hoa thường.
 | --- | --- |
 | Chưa khai (kể cả endpoint gắn khai báo không ai liệt kê) | `[endpoint {label}] is not declared in the route catalog. Fix: declare it in the module's ModuleDescriptor.Routes (or GameServerBuilder.DeclareRoutes for a host endpoint) and map it from the declaration (FG-026).` |
 | Gắn bản sao của khai báo đã liệt kê (cùng tên, khác instance) | `[endpoint {label}] is mapped from a declaration named {name} that is not the one {owner} lists. Fix: map it from the declaration instance listed in ModuleDescriptor.Routes (or GameServerBuilder.DeclareRoutes), not a copy (FG-026).` |
-| Map khi condition sai | `[route {name}] is mapped but its condition '{condition}' does not hold. Fix: map it only when the condition holds, or correct the declaration's condition (FG-026).` |
+| Map khi condition sai | `[route {name}] is mapped but its condition '{condition}' does not hold. Fix: map it only when the condition holds, or correct the declaration's condition (FG-026).` (dòng duy nhất: route Public có condition của module/platform vẫn là public template, không thêm dòng allowlist) |
+| Condition đọc options không hợp lệ | chính dòng lỗi options (`OptionsValidationException.Failures`), sau các dòng endpoint, một lần (không lặp khi `ValidateModuleOptions` đã báo); condition coi là sai. Options chỉ có `Validate()` (không `ValidateOnStart`) cũng làm startup fail |
 | Template khác (endpoint gắn khai báo) | `[route {name}] declared at {declared template} but mapped at {mapped template}. Fix: map it with the declaration and no route group prefix, or correct the declaration (FG-026).` |
 | Method khác | `[endpoint {label}] maps method {method} but route {name} declares {declared methods}. Fix: declare one route per method or correct the mapping (FG-026).` |
 | Profile khác | `[endpoint {label}] has profile {mapped} but route {name} declares {declared}. Fix: use the As*Endpoint helper of the declared profile or correct the declaration (SEC-08).` |
@@ -1209,8 +1210,9 @@ khác). Profile chỉ được so khi endpoint có đúng một `SecurityProfile
 `<host> --environment <flavor> --export-wire-contract <file>` (qua `GameServerCommandLine.Parse` + `RunGameServerAsync`;
 host phải dùng hai API này): `Build()`, `ModuleRegistry.Validate` (deployment identity, luật module như `--provision`) và
 `WireCatalog.Validate()` (lỗi → mỗi dòng một dòng stderr, exit 1, không ghi file), thư mục của file phải tồn tại (không thì
-exit 1 nêu tên), ghi `ToExportJson()` (UTF-8 không BOM, LF; ghi vào file tạm cùng thư mục rồi move đè lên path, nên path không
-bao giờ chứa export dở), dispose, exit 0. **Không bao giờ** `UseGameServer`, hosted
+exit 1 nêu tên), ghi `ToExportJson()` (UTF-8 không BOM, LF; ghi vào file tạm `<tên file>.<guid>.wire-contract.tmp` cùng thư mục rồi
+move đè lên path, nên path không bao giờ chứa export dở; process bị kill giữa hai bước có thể để lại file tạm đó, xoá được),
+dispose, exit 0. **Không bao giờ** `UseGameServer`, hosted
 service, store, game config, secret, socket. Bị từ chối (exit 1): thiếu path, dạng `=`, `-export-wire-contract`,
 `/export-wire-contract`, switch hai lần, argument tiếp theo bắt đầu bằng `-`, kết hợp với `--provision`, file không ghi được.
 
@@ -1246,7 +1248,10 @@ major khác.
   startup fail (dòng ở trên); payload mới cần aggregate mới. `TState` của mapper (thay hoặc không) phải nhận được state của
   aggregate (`IsAssignableFrom`), nếu không startup fail thay vì 500 ở mỗi snapshot.
 - `WireConformance.Check`/`CheckModules` chỉ thấy mapper do module đăng ký; override `ReplaceWireMapper` của host chỉ được
-  kiểm qua `CheckAll(services)` trên host đã build.
+  kiểm qua `CheckAll(services)` trên host đã build. Sample dựng từ state type của **aggregate** (không phải `TState` của
+  mapper), nên mapper khai trên lớp cơ sở vẫn bị kiểm member chỉ lớp dẫn xuất có; collection/dictionary hai phần tử, perturb
+  phần tử đầu và cuối (bắt `.First()`/`.Last()`), enum lấy lần lượt các giá trị khác 0 theo vị trí phần tử, perturbation
+  không trùng giá trị cùng member ở phần tử khác (data-model §7.2).
 - **FR-055:** slice này không đổi message wire, route player, document hay response GM API nào; payload của section framework
   giữ nguyên từng byte (`WireMapperRegistrationTests`).
 

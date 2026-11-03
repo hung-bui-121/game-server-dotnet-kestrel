@@ -71,7 +71,7 @@ public static class GameServerRunExtensions
             }
 
             // Next to the target and moved over it: a reader (or a run cut short) sees the old file or the new one, never a part.
-            var temp = Path.Combine(folder, $".{Path.GetFileName(file)}.{Guid.NewGuid():N}.tmp");
+            var temp = ExportTempPath(folder, file);
             try
             {
                 await File.WriteAllTextAsync(temp, catalog.ToExportJson(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
@@ -93,6 +93,14 @@ public static class GameServerRunExtensions
             await app.DisposeAsync();
         }
     }
+
+    /// <summary>
+    /// The export's temp file in <paramref name="folder"/>, the folder of <paramref name="file"/>: <c>{file name}.{guid}.wire-contract.tmp</c>.
+    /// A process killed between the write and the move leaves it behind; the name says what it is and that it may be deleted
+    /// (wiregen-cli §1).
+    /// </summary>
+    internal static string ExportTempPath(string folder, string file) =>
+        Path.Combine(folder, $"{Path.GetFileName(file)}.{Guid.NewGuid():N}.wire-contract.tmp");
 
     private static void TryDelete(string file)
     {
