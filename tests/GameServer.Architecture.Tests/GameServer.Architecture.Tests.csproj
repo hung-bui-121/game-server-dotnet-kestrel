@@ -15,6 +15,8 @@
     <ProjectReference Include="../../samples/SampleHost/SampleHost.csproj" />
     <ProjectReference Include="../../src/GameServer.TestKit/GameServer.TestKit.csproj" />
     <ProjectReference Include="../../tools/GameServer.LocalRun/GameServer.LocalRun.csproj" />
+    <!-- VersionTests: the generator's baked Grpc.Tools pin equals CPM (FR-022). -->
+    <ProjectReference Include="../../tools/GameServer.WireGen/GameServer.WireGen.csproj" />
     <!-- The module template is framework-owned: ErrorCodeBandTests checks its range too (FR-062). -->
     <ProjectReference Include="../../templates/module/Template.Module.Adapters/Template.Module.Adapters.csproj" />
   </ItemGroup>

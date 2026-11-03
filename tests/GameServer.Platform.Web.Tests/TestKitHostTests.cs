@@ -5,6 +5,7 @@ using GameServer.Platform.Testing;
 using GameServer.Platform.Web.Endpoints;
 using GameServer.Platform.Web.Hosting;
 using GameServer.Protocol.Core.V1;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Sample.Counter.Protocol.V1;
@@ -154,6 +155,38 @@ public sealed class TestKitHostTests
 
         entries.ShouldNotContain(e => e.Category == GameServerApplicationExtensions.StartupLogCategory && e.Message.StartsWith("Starting ", StringComparison.Ordinal));
     }
+
+    /// <summary>Slice 014 T035: an otherwise valid configuration reports its endpoint faults when the host starts, before the start line.</summary>
+    [Fact]
+    public async Task An_endpoint_fault_fails_the_start_and_logs_no_startup_line()
+    {
+        var entries = new ConcurrentQueue<(string Category, string Message)>();
+
+        var ex = await Should.ThrowAsync<GameServerStartupException>(async () =>
+        {
+            await using var host = await TestHost.StartAsync(
+                beforeUseGameServer: app => app.MapGet(UndeclaredRoute, () => "x"),
+                services: s => s.AddSingleton<ILoggerProvider>(new RecordingLoggerProvider(entries)));
+        });
+
+        ex.Message.ShouldContain($"[endpoint GET {UndeclaredRoute}] is not declared in the route catalog.");
+        entries.ShouldNotContain(e => e.Category == GameServerApplicationExtensions.StartupLogCategory && e.Message.StartsWith("Starting ", StringComparison.Ordinal));
+    }
+
+    /// <summary>Slice 014 T035 (FR-009 kept): with another fault, UseGameServer still gives one report with the endpoint lines.</summary>
+    [Fact]
+    public async Task A_configuration_fault_and_an_endpoint_fault_give_one_report()
+    {
+        await using var app = TestHost.BuildApp(settings: s => s["GameServer:Gate:CacheSeconds"] = "11");
+        app.MapGet(UndeclaredRoute, () => "x");
+
+        var ex = Should.Throw<GameServerStartupException>(() => app.UseGameServer());
+
+        ex.Violations.ShouldContain("[gate] GameServer:Gate:CacheSeconds must be 0..10 (PERF-08: a maintenance toggle applies within 10 s).");
+        ex.Violations.ShouldContain(v => v.StartsWith($"[endpoint GET {UndeclaredRoute}] is not declared in the route catalog.", StringComparison.Ordinal));
+    }
+
+    private const string UndeclaredRoute = "/api/v1/probe/undeclared";
 
     private sealed class RecordingLoggerProvider(ConcurrentQueue<(string Category, string Message)> sink) : ILoggerProvider
     {

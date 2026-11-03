@@ -16,6 +16,8 @@ public sealed partial class VersionTests
 {
     private const string PackageJson = "sdk/unity/com.gameserver.client/package.json";
 
+    private const string UnityProtobufDll = "sdk/unity/com.gameserver.client/Runtime/Plugins/Google.Protobuf.dll";
+
     private static readonly string[] StampedAssemblyPatterns = ["GameServer.*.dll", "Sample*.dll", "Template.*.dll"];
 
     [Fact]
@@ -74,6 +76,57 @@ public sealed partial class VersionTests
         GameServerVersion.Framework.ShouldBe(declared);
         GameServerVersion.FrameworkInformational.ShouldStartWith(declared);
         GameServerVersion.Of(Assembly.Load(new AssemblyName("SampleHost"))).ShouldBe(declared, "SampleHost is built with the framework's props");
+    }
+
+    /// <summary>
+    /// Slice 014 T044 (FR-022, V11): the Unity package's Google.Protobuf.dll is the CPM version (product version up to '+'), and the
+    /// generator's baked Grpc.Tools (protoc) pin is the CPM one.
+    /// </summary>
+    [Fact]
+    public void The_unity_protobuf_dll_and_the_generator_protoc_match_central_package_management()
+    {
+        var props = Path.Combine(RepositoryTooling.Root, "Directory.Packages.props");
+        var dll = FileVersionInfo.GetVersionInfo(Path.Combine(RepositoryTooling.Root, UnityProtobufDll)).ProductVersion;
+        var wireGen = Assembly.Load(new AssemblyName("GameServer.WireGen")).GetCustomAttributes<AssemblyMetadataAttribute>()
+            .Single(a => a.Key == "GameServer.WireGen.Version.Grpc.Tools").Value;
+
+        PinMismatch(props, "Google.Protobuf", dll, UnityProtobufDll).ShouldBeNull();
+        PinMismatch(props, "Grpc.Tools", wireGen, "tools/GameServer.WireGen (baked)").ShouldBeNull();
+    }
+
+    [Fact]
+    public void A_pin_mismatch_names_both_values_and_the_fix()
+    {
+        var folder = Directory.CreateTempSubdirectory("gs-props-").FullName;
+        try
+        {
+            var props = Path.Combine(folder, "Directory.Packages.props");
+            File.WriteAllText(
+                props,
+                File.ReadAllText(Path.Combine(RepositoryTooling.Root, "Directory.Packages.props"))
+                    .Replace("\"Google.Protobuf\" Version=\"3.36.2\"", "\"Google.Protobuf\" Version=\"3.37.0\"", StringComparison.Ordinal));
+
+            PinMismatch(props, "Google.Protobuf", "3.36.2+2c74169b", UnityProtobufDll).ShouldBe(
+                $"Google.Protobuf version mismatch: Directory.Packages.props pins '3.37.0', {UnityProtobufDll} is '3.36.2'. Fix: change both together " +
+                "(the Unity package ships the dll the generated code targets; Grpc.Tools must generate for it) (FR-022).");
+            PinMismatch(props, "Google.Protobuf", "3.37.0", UnityProtobufDll).ShouldBeNull();
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    /// <summary>Null when the CPM version of <paramref name="package"/> equals <paramref name="actual"/> up to '+'; else the failure text.</summary>
+    internal static string? PinMismatch(string propsFile, string package, string? actual, string where)
+    {
+        var pinned = System.Xml.Linq.XDocument.Load(propsFile).Descendants("PackageVersion")
+            .Single(p => (string?)p.Attribute("Include") == package).Attribute("Version")!.Value;
+        var core = (actual ?? string.Empty).Split('+')[0];
+        return string.Equals(pinned, core, StringComparison.Ordinal)
+            ? null
+            : $"{package} version mismatch: Directory.Packages.props pins '{pinned}', {where} is '{core}'. Fix: change both together (the Unity " +
+              "package ships the dll the generated code targets; Grpc.Tools must generate for it) (FR-022).";
     }
 
     /// <summary>Null when equal; otherwise the failure text naming both declarations.</summary>

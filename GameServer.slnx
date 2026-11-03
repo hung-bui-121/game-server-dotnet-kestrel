@@ -39,6 +39,7 @@
   <Folder Name="/tools/">
     <Project Path="tools/GameServer.LoadTest/GameServer.LoadTest.csproj" />
     <Project Path="tools/GameServer.LocalRun/GameServer.LocalRun.csproj" />
+    <Project Path="tools/GameServer.WireGen/GameServer.WireGen.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/GameServer.Architecture.Tests/GameServer.Architecture.Tests.csproj" />
@@ -50,8 +51,10 @@
     <Project Path="tests/GameServer.Platform.Web.Tests/GameServer.Platform.Web.Tests.csproj" />
     <Project Path="tests/Sample.Counter.Tests/Sample.Counter.Tests.csproj" />
     <Project Path="tests/SampleGame.Tests/SampleGame.Tests.csproj" />
+    <Project Path="tests/GameServer.WireGen.Tests/GameServer.WireGen.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/ConsumerFixture/">
+    <Project Path="tests/ConsumerFixture/client/Fixture.Client.csproj" />
     <Project Path="tests/ConsumerFixture/src/Fixture.Game/Fixture.Game.csproj" />
     <Project Path="tests/ConsumerFixture/src/Fixture.Host/Fixture.Host.csproj" />
     <Project Path="tests/ConsumerFixture/tests/Fixture.Tests/Fixture.Tests.csproj" />

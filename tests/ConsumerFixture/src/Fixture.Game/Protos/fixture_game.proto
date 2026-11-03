@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+// The fixture game's wire contract (slice 014): no csharp_namespace on purpose, so the C# namespace follows protoc's package
+// rule (fixture.v1 -> Fixture.V1, research V8). Imports the framework core contract without regenerating it (FR-021).
+package fixture.v1;
+
+import "gameserver/core/v1/core.proto";
+
+// Client-visible aggregate "card" (FG-028). Times are UTC milliseconds.
+message CardState {
+  message Slot {
+    string item = 1;
+    int64 unlock_end_utc_ms = 2;
+  }
+
+  string title = 1;
+  map<string, int32> counts = 2;
+  repeated Slot slots = 3;
+  optional string nickname = 4;
+  int64 updated_utc_ms = 5;
+}
+
+// Route fixture.card (POST, Player): the player's card, no command.
+message GetCardRequest {}
+
+message GetCardResponse {
+  // Section "card": rev and the CardState payload, as a snapshot carries it.
+  gameserver.core.v1.Section card = 1;
+}

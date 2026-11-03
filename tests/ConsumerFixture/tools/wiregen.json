@@ -1,0 +1,18 @@
+{
+  "format": "gameserver.wiregen/1",
+  "catalog": { "hostProject": "../src/Fixture.Host/Fixture.Host.csproj", "environment": "Local" },
+  "origin": "game",
+  "protos": [
+    { "root": "../src/Fixture.Game/Protos", "files": ["fixture_game.proto"] }
+  ],
+  "output": {
+    "root": "../client",
+    "marker": "Assets",
+    "directory": "Assets/Generated",
+    "layout": "flat",
+    "lineEndings": "lf"
+  },
+  "namespace": "Fixture.Client",
+  "routesClass": "FixtureRoutes",
+  "sectionsClass": "FixtureSections"
+}

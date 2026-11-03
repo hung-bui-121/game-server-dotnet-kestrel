@@ -1,9 +1,10 @@
 # Release notes draft — v0.7.0 (slice 014 wire-contract)
 
 Framework `0.7.0` (unreleased). Input of the `v0.7.0` annotated tag message (FR-090), merged with the notes of slices 013,
-015 and 016 at the end of the round (one tag). Each user story of this slice appends its part; this draft holds US1.
+015 and 016 at the end of the round (one tag). Each user story of this slice appends its part; this draft holds US1 and US2.
 
-FG ids addressed so far: FG-026 (1) route catalog, FG-026 (3) endpoint check. Breaking changes so far: BC-1, BC-2, BC-4, BC-5.
+FG ids addressed so far: FG-026 (1) route catalog, FG-026 (3) endpoint check, FG-021 consumer Unity code generation. Breaking
+changes so far: BC-1, BC-2, BC-4, BC-5.
 
 ## FG-026 (1), (3) — one route catalog, checked against what is mapped
 
@@ -83,8 +84,69 @@ FG ids addressed so far: FG-026 (1) route catalog, FG-026 (3) endpoint check. Br
 - Host-level endpoints of `ZhPvp.Host`, if any, are declared with `gameServer.DeclareRoutes(...)`; Public ones stay on
   `GameServer:PublicEndpointAllowlist`.
 
+## FG-021 — a game generates its Unity C# from its own repository
+
+### New
+
+- **Host export mode** `--export-wire-contract <path>` (`HostMode.ExportWireContract`, `GameServerCommandLine.ExportPath`):
+  `dotnet run --project <host> --no-launch-profile [--no-build] -c <cfg> -- --environment Local --export-wire-contract <file>`
+  checks the composition (deployment identity, module rules, route and section declarations; no game config) and writes the
+  catalog export (format `gameserver.wire-contract/1`, UTF-8 without BOM, LF, no timestamp, path, machine or environment
+  value) to `<file>`, then exits 0. It never maps or serves, starts no hosted service, opens no store and reads no secret.
+  Exit 1 with one line per fault, or when the folder of `<file>` does not exist. Refused like `--provision`:
+  `--export-wire-contract=…`, `-export-wire-contract`, `/export-wire-contract`, the switch without a path, twice, or with
+  `--provision`. Hosts already written as `GameServerCommandLine.Parse(args)` + `app.RunGameServerAsync(mode)` need no change.
+- **`tools/GameServer.WireGen`** (framework tool, in `GameServer.slnx`): one committed `wiregen.json` (format
+  `gameserver.wiregen/1`) per output, two verbs:
+  `dotnet run --project <framework>/tools/GameServer.WireGen -c Release -- generate|verify --config <wiregen.json>
+  [--output-root <client>] [--catalog <export>] [--configuration <cfg>] [--no-build] [--dotnet <path>]`.
+  It runs the host export (or reads `catalog.file` / `--catalog`), checks the versions, runs the framework-pinned protoc over
+  the game's protos and writes, into `output.directory`: one message file per listed proto, `<routesClass>.cs` (a constant
+  per player-facing route of the game, no leading slash, `…Method` constants, parameter helpers with escaped values) and
+  `<sectionsClass>.cs` (typed `SectionKey<T>` per section, `…Id` constants, `Table`). Framework routes, sections and proto
+  types are never generated into a game's output: they ship in the Unity package.
+- **Framework proto roots without listing**: `proto/`, the identity, economy and IAP `Protos` folders and the well-known types
+  are always import roots; a game proto imports `gameserver/core/v1/core.proto` as is.
+- **Version pair**: `Grpc.Tools` 2.84.0 (protoc 35.1) generating for `Google.Protobuf` 3.36.2, the dll shipped in
+  `Runtime/Plugins` of the Unity package. The tool uses its own restored protoc, never the game's, and fails naming both
+  versions when the export was made by another framework version, when the host resolves another `Google.Protobuf`, or when
+  the host's central package versions pin another `Grpc.Tools` or `Google.Protobuf` (`VersionOverride` in other projects is
+  not seen). A framework test keeps CPM and the Unity dll equal.
+- **Deterministic, write-if-changed output**: the same inputs give byte-identical files on any checkout path (mixed `/` and
+  `\` accepted), in `lf` (default) or `crlf`, UTF-8 without BOM, no timestamp, absolute path, user or machine; an unchanged
+  file is not rewritten (no Unity reimport). The tool never deletes a file and never reads, writes or deletes a `.meta`; for
+  each new file it prints `new file <path>: Unity creates <path>.meta on import; commit it`.
+- **`verify` for CI**: writes nothing, lists every differing or missing file relative to the output root, exit 2.
+- **Errors before any write** (exit 1, one line naming the input and the fix): unreadable config or unknown format major,
+  missing `output.root` / `output.marker` / `output.directory` (never created), missing proto, protoc compile error
+  (`file:line` relayed), a game message duplicating a framework message (protoc "already defined", or the same C# type name
+  through `csharp_namespace`), a section whose message the client does not have, colliding generated names, a player-facing
+  route with several methods or with a constraint, optional, default or catch-all parameter.
+- **Clean-safe**: the outputs are not items of any MSBuild project, so `dotnet clean` or a rebuild never deletes them.
+- A section registered with the untyped wire mapper gets its `…Id` constant only, and the tool prints a warning (exit code
+  unchanged).
+
+### zh-pvp-server (first consumer)
+
+- Replace `tools/UnityProtoGen/UnityProtoGen.csproj` by a committed `tools/unity-codegen/wiregen.json`:
+  `{ "format": "gameserver.wiregen/1", "catalog": { "hostProject": "../../src/ZhPvp.Host" }, "protos": [ { "root":
+  "../../src/ZhPvp.Game.Adapters/Protos", "files": ["zhpvp_game.proto"] } ], "output": { "root":
+  "../../../research-and-development-games/src/GameClient", "marker": "Assets/MadProject/Scripts", "directory":
+  "Assets/MadProject/Scripts/Online/Generated", "lineEndings": "crlf" }, "namespace": "<game's choice>" }`.
+- Generate with `dotnet run --project framework/tools/GameServer.WireGen -c Release -- generate --config
+  tools/unity-codegen/wiregen.json` (add `--output-root <client checkout>` when the client is elsewhere; CI: `verify …
+  --no-build`). The project may stay as a thin `Exec` of that command, or be deleted.
+- Delete the `NormalizeDirectory` workaround, the CRLF inline task, the clean warning and the `FRAMEWORK-GAP FG-021` marker.
+- `ZhPvp.Host` `Program` must use `GameServerCommandLine.Parse(args)` + `app.RunGameServerAsync(mode)` (the export mode is
+  part of `RunGameServerAsync`).
+- The first generation adds `<routesClass>.cs` and `<sectionsClass>.cs` next to the message file: commit the `.meta` files
+  Unity creates for them.
+
 ### Known before the tag
 
-- **Startup cost of the pre-serving check (SC-007 not met).** Validating the final endpoint set materializes every endpoint
-  once more (ASP.NET Core `RequestDelegateFactory` per endpoint): measured median ≈ 440 ms for 217 endpoints on the reference
-  machine (validation itself ≈ 1 ms), ≈ 2 ms per endpoint, once per start. Decision pending (slice 014 tasks, T035).
+- **When endpoint faults surface (SC-007).** Endpoint faults of an otherwise valid configuration are reported when the host
+  starts (`StartAsync`, before any hosted service I/O and before Kestrel binds): same report lines, exit 1 through
+  `RunGameServerAsync`, nothing bound. With another fault, `UseGameServer` still throws one report holding the endpoint lines
+  too. The startup line (`Starting {game} … on framework …`) is logged after the endpoint check. The endpoint set is built
+  once before serving, as in 0.6.0: no added startup cost beyond the check itself (≈ 1 ms for 217 endpoints on the reference
+  machine).

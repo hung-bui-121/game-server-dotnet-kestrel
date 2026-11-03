@@ -13,11 +13,11 @@ dotnet run --project <host.csproj> --no-launch-profile [--no-build] [-c <cfg>] -
 
 | Item | Behaviour |
 | --- | --- |
-| Parsing | `GameServerCommandLine.Parse`: the switch (any letter case) and the next argument are removed from `HostArgs`; `Mode = ExportWireContract`, `ExportPath = <path>` |
-| Refused (exit 1) | no path after the switch; `--export-wire-contract=…`, `-export-wire-contract`, `/export-wire-contract`; combined with `--provision` |
-| Run | `RunGameServerAsync`: resolve `WireCatalog` → `Validate(options)` → write `ToExportJson()` to `<path>` (folder must exist; UTF-8 without BOM, LF) → dispose → exit 0 |
+| Parsing | `GameServerCommandLine.Parse`: the switch (any letter case) and the next argument are removed from `HostArgs`; `Mode = ExportWireContract`, `ExportPath = <path>`; the path reaches `RunGameServerAsync(mode)` as one appended internal argument `--GameServerCommandLine:ExportWireContract=<path>` (the host passes only the mode) |
+| Refused (exit 1) | no path after the switch (none, or the next argument starts with `-`); `--export-wire-contract=…`, `-export-wire-contract`, `/export-wire-contract`; given twice; combined with `--provision` |
+| Run | `RunGameServerAsync`: resolve `WireCatalog` → registry rules (`ModuleRegistry.Validate(options)`, no game config, as `--provision`) + `WireCatalog.Validate()` → write `ToExportJson()` to `<path>` (folder must exist; UTF-8 without BOM, LF) → dispose → exit 0 |
 | Never | `UseGameServer`, hosted services, store open, game config load, secret read, port bind, traffic |
-| Errors (exit 1) | declaration faults (data-model §2.1) on stderr, one line each; output folder missing |
+| Errors (exit 1) | registry and declaration faults (data-model §2.1) on stderr, one line each; output folder missing; file not writable |
 | Requirement on the host | `Program` uses `GameServerCommandLine.Parse(args)` + `app.RunGameServerAsync(mode)` (as `samples/SampleHost/Program.cs`); composition decisions that depend on the flavor run with the flavor passed by `--environment` |
 
 ## 2. WireGen command line
@@ -35,7 +35,11 @@ options:
   --catalog <file>         use this export instead of config.catalog (no host run)
   --configuration <cfg>    configuration used to build/run the host (default Release)
   --no-build               pass --no-build to the host run (CI after a solution build)
+  --dotnet <path>          dotnet executable for the host run and the version evaluation (default: DOTNET_HOST_PATH,
+                           the dotnet running the tool, DOTNET_ROOT/dotnet, dotnet on PATH; V15)
 ```
+
+`--help` prints the usage (exit 0). The host run uses the host project's folder as working directory.
 
 ## 3. Exit codes
 

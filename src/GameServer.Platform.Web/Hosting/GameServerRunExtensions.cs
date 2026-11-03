@@ -1,4 +1,7 @@
 using System.Net;
+using System.Text;
+using GameServer.Platform.Registry;
+using GameServer.Platform.Web.Catalog;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
@@ -14,12 +17,76 @@ public static class GameServerRunExtensions
     /// Runs the host in the given mode and returns the process exit code (<see cref="HostExitCodes"/>). Serve:
     /// <see cref="GameServerApplicationExtensions.UseGameServer"/> then <c>RunAsync</c>; a <see cref="GameServerStartupException"/>
     /// from validation or from a hosted service's start prints the violations on stderr and returns 1. Provision: see
-    /// contracts/operations-cli.md §2. Never calls <c>Environment.Exit</c> (WebApplicationFactory runs the same entry point).
+    /// contracts/operations-cli.md §2. ExportWireContract: see <see cref="ExportAsync"/>. Never calls <c>Environment.Exit</c>
+    /// (WebApplicationFactory runs the same entry point).
     /// </summary>
     public static Task<int> RunGameServerAsync(this WebApplication app, HostMode mode)
     {
         ArgumentNullException.ThrowIfNull(app);
-        return mode == HostMode.Provision ? ProvisionAsync(app) : ServeAsync(app, Console.Error);
+        return mode switch
+        {
+            HostMode.Provision => ProvisionAsync(app),
+            HostMode.ExportWireContract => ExportAsync(app, Console.Out, Console.Error),
+            _ => ServeAsync(app, Console.Error),
+        };
+    }
+
+    /// <summary>
+    /// Export mode (FR-030, slice 014 contracts/wiregen-cli.md §1): reports the registry rules of the composition (deployment
+    /// identity, modules; no game config) and the declaration faults of the <see cref="WireCatalog"/> (exit 1, no file), then writes <see cref="WireCatalog.ToExportJson"/> to the path given with
+    /// <see cref="GameServerCommandLine.ExportWireContractSwitch"/> (UTF-8 without BOM, LF; its folder must exist) and disposes
+    /// the app. Never calls <c>UseGameServer</c>, starts no hosted service and resolves no store, game config or secret.
+    /// </summary>
+    internal static async Task<int> ExportAsync(WebApplication app, TextWriter output, TextWriter error)
+    {
+        try
+        {
+            if (app.Configuration[GameServerCommandLine.ExportPathKey] is not { Length: > 0 } path)
+            {
+                await error.WriteLineAsync(new GameServerStartupException(
+                    $"[export] no output file: export mode needs {GameServerCommandLine.ExportWireContractSwitch} <path> parsed by " +
+                    "GameServerCommandLine.Parse(args). Fix: pass commandLine.HostArgs to WebApplication.CreateBuilder (contracts/wiregen-cli.md §1).").Message);
+                return HostExitCodes.InvalidConfiguration;
+            }
+
+            // The composition the export describes must be valid itself (deployment identity, module rules), as for --provision.
+            var errors = app.Services.GetRequiredService<ModuleRegistry>().Validate(app.Services.GetRequiredService<GameServerOptions>(), config: null).ToList();
+            var catalog = app.Services.GetRequiredService<WireCatalog>();
+            errors.AddRange(catalog.Validate());
+            if (errors.Count > 0)
+            {
+                await error.WriteLineAsync(new GameServerStartupException(errors).Message);
+                return HostExitCodes.InvalidConfiguration;
+            }
+
+            var file = Path.GetFullPath(path);
+            var folder = Path.GetDirectoryName(file);
+            if (folder is null || !Directory.Exists(folder))
+            {
+                await error.WriteLineAsync(new GameServerStartupException(
+                    $"[export] the folder of the export file '{path}' does not exist ({folder}). Fix: create the folder or pass another path " +
+                    "(contracts/wiregen-cli.md §1).").Message);
+                return HostExitCodes.InvalidConfiguration;
+            }
+
+            try
+            {
+                await File.WriteAllTextAsync(file, catalog.ToExportJson(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                await error.WriteLineAsync(new GameServerStartupException(
+                    $"[export] the export file '{path}' cannot be written: {ex.Message} Fix: pass a writable file path (contracts/wiregen-cli.md §1).").Message);
+                return HostExitCodes.InvalidConfiguration;
+            }
+
+            await output.WriteLineAsync($"export: {catalog.Routes.Count} routes, {catalog.Sections.Count} sections written to {path}");
+            return HostExitCodes.Ok;
+        }
+        finally
+        {
+            await app.DisposeAsync();
+        }
     }
 
     internal static async Task<int> ServeAsync(WebApplication app, TextWriter error)

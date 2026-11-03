@@ -6,6 +6,7 @@ using GameServer.Platform.Web.Hosting;
 using GameServer.Platform.Web.Routing;
 using GameServer.Routing;
 using GameServer.Tests.Shared;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Shouldly;
@@ -13,37 +14,57 @@ using Shouldly;
 namespace GameServer.Platform.Web.Tests;
 
 /// <summary>
-/// Opt-in measurement (slice 014 T035, SC-007, VERIFY V2; <c>GAMESERVER_PERF=1</c>): the pre-serving run — materializing the final
-/// endpoint set again and every endpoint validator over it — for a host with 200 declared and mapped endpoints.
+/// Slice 014 T035 (SC-007, research V16): the endpoint set of a passing configuration is built once before serving (ASP.NET Core
+/// caches no built endpoint, so every enumeration of <c>DataSources</c> builds each endpoint again), and the endpoint check over
+/// it stays within budget. The build count runs always; the 200-endpoint measurement is opt-in (<c>GAMESERVER_PERF=1</c>).
 /// </summary>
 public sealed class EndpointCheckPerformanceTests
 {
-    private const string OptIn = "Opt-in: set GAMESERVER_PERF=1 to measure the pre-serving endpoint check (SC-007: <= 50 ms for 200 endpoints).";
+    private const string OptIn = "Opt-in: set GAMESERVER_PERF=1 to measure the pre-serving endpoint check (SC-007: validation <= 50 ms for 200 endpoints).";
     private const int RouteCount = 200;
     private const int Samples = 5;
     private const double BudgetMs = 50;
 
     [Fact]
-    public async Task The_pre_serving_check_of_200_endpoints_takes_at_most_50_ms()
+    public async Task Each_endpoint_is_built_once_before_serving()
     {
-        Assert.SkipUnless(Environment.GetEnvironmentVariable("GAMESERVER_PERF") == "1", OptIn);
+        var module = new SyntheticModule(3);
+
         await using var host = await SampleTestHost.StartAsync(gs =>
         {
             SampleTestHost.DefaultModules(gs);
-            gs.AddModule(new SyntheticModule());
+            gs.AddModule(module);
         });
+
+        // Started and validated, no request yet: one build per endpoint (the pre-serving check), not one more in UseGameServer.
+        module.Builds.ShouldBe(3);
+    }
+
+    [Fact]
+    public async Task The_pre_serving_check_of_200_endpoints_validates_in_at_most_50_ms()
+    {
+        Assert.SkipUnless(Environment.GetEnvironmentVariable("GAMESERVER_PERF") == "1", OptIn);
+        var module = new SyntheticModule(RouteCount);
+        await using var host = await SampleTestHost.StartAsync(gs =>
+        {
+            SampleTestHost.DefaultModules(gs);
+            gs.AddModule(module);
+        });
+        var buildsBeforeServing = module.Builds;
         var routes = (IEndpointRouteBuilder)host.App;
 
         Measure(routes, host.Services);
         var samples = Enumerable.Range(0, Samples).Select(_ => Measure(routes, host.Services)).ToArray();
-        var median = Median(samples.Select(s => s.Materialize + s.Validate));
+        var validation = Median(samples.Select(s => s.Validate));
 
-        // Both parts are printed: the materialization of the endpoint set (RequestDelegateFactory per endpoint) dominates.
+        // The build of the endpoint set (RequestDelegateFactory per endpoint) is paid once before serving, as in 013: information only.
         var report = string.Create(
             CultureInfo.InvariantCulture,
-            $"pre-serving endpoint check, {samples[0].Endpoints} endpoints: median {median:0.0} ms = materialization {Median(samples.Select(s => s.Materialize)):0.0} ms + validation {Median(samples.Select(s => s.Validate)):0.0} ms");
+            $"pre-serving endpoint check, {samples[0].Endpoints} endpoints ({buildsBeforeServing} synthetic built before serving): validation median " +
+            $"{validation:0.0} ms; one build of the set {Median(samples.Select(s => s.Materialize)):0.0} ms");
         TestContext.Current.SendDiagnosticMessage(report);
-        median.ShouldBeLessThanOrEqualTo(BudgetMs, report);
+        buildsBeforeServing.ShouldBe(RouteCount, report);
+        validation.ShouldBeLessThanOrEqualTo(BudgetMs, report);
     }
 
     /// <summary>What <see cref="EndpointSetValidationService"/> does: materialize the final endpoint set, then every validator over it.</summary>
@@ -65,14 +86,18 @@ public sealed class EndpointCheckPerformanceTests
         return sorted[sorted.Length / 2];
     }
 
-    /// <summary>200 Player routes, declared in the descriptor and mapped from the declarations.</summary>
-    private sealed class SyntheticModule : IGameModule, IPlayerApiModule
+    /// <summary>Player routes declared in the descriptor and mapped from the declarations, each counting how often it is built.</summary>
+    private sealed class SyntheticModule(int count) : IGameModule, IPlayerApiModule
     {
-        private static readonly RouteDeclaration[] Routes = Enumerable.Range(0, RouteCount)
+        private readonly RouteDeclaration[] _routes = Enumerable.Range(0, count)
             .Select(i => RouteDeclaration.Post($"synthetic.route_{i:000}", $"/api/v1/synthetic/route-{i:000}", SecurityProfile.Player))
             .ToArray();
 
-        public ModuleDescriptor Describe() => new() { Name = "synthetic", Routes = Routes };
+        private int _builds;
+
+        public int Builds => Volatile.Read(ref _builds);
+
+        public ModuleDescriptor Describe() => new() { Name = "synthetic", Routes = _routes };
 
         public void ConfigureServices(IServiceCollection services, ModuleContext context)
         {
@@ -80,9 +105,10 @@ public sealed class EndpointCheckPerformanceTests
 
         public void MapPlayerApi(IEndpointRouteBuilder routes)
         {
-            foreach (var route in Routes)
+            foreach (var route in _routes)
             {
-                routes.MapDeclared(route, () => "ok").AsPlayerEndpoint();
+                IEndpointConventionBuilder builder = routes.MapDeclared(route, () => "ok").AsPlayerEndpoint();
+                builder.Add(_ => Interlocked.Increment(ref _builds));
             }
         }
     }

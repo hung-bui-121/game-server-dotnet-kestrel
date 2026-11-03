@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Stand-in for the game's Unity client (slice 014 T052, FR-028, SC-004): compiles Assets/**/*.cs (the WireGen output in
+    Assets/Generated and the game's own client code) under the Unity package constraints, C# 9 and netstandard2.1, against the
+    SDK sources only. Nothing server-side is referenced. The generated files are committed and never MSBuild outputs of any
+    project, so a clean or rebuild never deletes them (FR-026).
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <!-- Global usings need C# 10 (CS8773, V14). -->
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>Fixture.Client</RootNamespace>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Assets/**/*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(GameServerRoot)sdk/GameServer.Client/GameServer.Client.csproj" />
+  </ItemGroup>
+</Project>

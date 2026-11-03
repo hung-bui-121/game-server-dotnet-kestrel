@@ -4,7 +4,7 @@ namespace GameServer.Platform.Web.Hosting;
 
 /// <summary>
 /// Hand-over from <c>UseGameServer</c> to <see cref="EndpointSetValidationService"/> (research R8): the application whose final
-/// endpoint set is validated before serving. Written once, after <c>UseGameServer</c>'s own validation succeeded.
+/// endpoint set is validated before serving. Written once, after <c>UseGameServer</c>'s non-endpoint checks succeeded.
 /// </summary>
 internal sealed class EndpointValidationState
 {

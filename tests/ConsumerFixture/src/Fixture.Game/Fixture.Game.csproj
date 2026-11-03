@@ -5,4 +5,11 @@
   <ItemGroup>
     <ProjectReference Include="$(GameServerRoot)src/GameServer.Platform.Web/GameServer.Platform.Web.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Grpc.Tools" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Server C# of the game contract (a normal consumer server build); the Unity C# comes from WireGen (tools/wiregen.json). -->
+    <Protobuf Include="Protos/fixture_game.proto" GrpcServices="None" ProtoRoot="Protos" AdditionalImportDirs="$(GameServerRoot)proto" />
+  </ItemGroup>
 </Project>

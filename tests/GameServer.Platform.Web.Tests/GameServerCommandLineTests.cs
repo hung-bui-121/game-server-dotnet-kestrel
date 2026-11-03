@@ -75,6 +75,65 @@ public sealed class GameServerCommandLineTests
         parsed.HostArgs.ShouldBe(["--GameServer:GameId", "provision", "--provisioning=1"]);
     }
 
+    /// <summary>Slice 014 T039 (contracts/wiregen-cli.md §1): the switch and its path leave the ordinary arguments.</summary>
+    [Theory]
+    [InlineData("--export-wire-contract")]
+    [InlineData("--EXPORT-WIRE-CONTRACT")]
+    [InlineData("--Export-Wire-Contract")]
+    public void The_export_switch_selects_export_mode_in_any_letter_case_and_takes_the_next_argument(string spelled)
+    {
+        var parsed = GameServerCommandLine.Parse(["--environment", "Local", spelled, "out/wire.json", "--urls", "x"]);
+
+        parsed.Mode.ShouldBe(HostMode.ExportWireContract);
+        parsed.ExportPath.ShouldBe("out/wire.json");
+        parsed.HostArgs.ShouldBe(["--environment", "Local", "--urls", "x", $"--{GameServerCommandLine.ExportPathKey}=out/wire.json"]);
+    }
+
+    [Fact]
+    public void Serve_and_provision_have_no_export_path()
+    {
+        GameServerCommandLine.Parse(["--urls", "x"]).ExportPath.ShouldBeNull();
+        GameServerCommandLine.Parse(["--provision"]).ExportPath.ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData("--export-wire-contract=wire.json", "[export] '--export-wire-contract=…' is not the export switch.")]
+    [InlineData("-export-wire-contract", "[export] '-export-wire-contract' is not the export switch.")]
+    [InlineData("/export-wire-contract", "[export] '/export-wire-contract' is not the export switch.")]
+    [InlineData("/Export-Wire-Contract=x", "[export] '/Export-Wire-Contract=…' is not the export switch.")]
+    public void A_misspelled_export_switch_is_refused_without_echoing_its_value(string spelled, string expected)
+    {
+        var ex = Should.Throw<GameServerStartupException>(() => GameServerCommandLine.Parse(["--urls", "x", spelled]));
+
+        ex.Violations.ShouldHaveSingleItem().ShouldBe(
+            expected + " Fix: write --export-wire-contract <path>, the path as the next argument (contracts/wiregen-cli.md §1).");
+        ex.Message.ShouldNotContain("wire.json");
+    }
+
+    [Theory]
+    [InlineData("--export-wire-contract")]
+    [InlineData("--export-wire-contract", "--environment", "Local")]
+    public void The_export_switch_without_a_path_is_refused(params string[] args)
+    {
+        var ex = Should.Throw<GameServerStartupException>(() => GameServerCommandLine.Parse(args));
+
+        ex.Violations.ShouldHaveSingleItem().ShouldBe(
+            "[export] --export-wire-contract needs the output file as the next argument. Fix: --export-wire-contract <path> (contracts/wiregen-cli.md §1).");
+    }
+
+    [Fact]
+    public void The_export_switch_cannot_be_combined_with_provision_or_repeated()
+    {
+        var combined = Should.Throw<GameServerStartupException>(() => GameServerCommandLine.Parse(["--provision", "--export-wire-contract", "a.json"]));
+        var twice = Should.Throw<GameServerStartupException>(() =>
+            GameServerCommandLine.Parse(["--export-wire-contract", "a.json", "--export-wire-contract", "b.json"]));
+
+        combined.Violations.ShouldHaveSingleItem().ShouldBe(
+            "[export] --export-wire-contract cannot be combined with --provision. Fix: run the host once per mode (contracts/wiregen-cli.md §1).");
+        twice.Violations.ShouldHaveSingleItem().ShouldBe(
+            "[export] --export-wire-contract is given 2 times. Fix: give it once (contracts/wiregen-cli.md §1).");
+    }
+
     [Fact]
     public async Task Provisioning_success_prints_each_item_and_the_summary()
     {

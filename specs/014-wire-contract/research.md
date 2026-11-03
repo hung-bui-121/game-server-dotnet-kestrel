@@ -196,14 +196,18 @@ every endpoint (rejected: FR-005 keeps plain strings possible).
 ## R8 — Validating the final endpoint set before listening (FR-012, FR-013, BC-2)
 
 **Decision.** `EndpointSetValidationService : IHostedLifecycleService` (internal), registered by `AddGameServer` as the
-**first** hosted service. `UseGameServer`, after its own validation succeeded, stores the application
-(`IEndpointRouteBuilder`) in `EndpointValidationState` (internal singleton). `StartingAsync` enumerates
+**first** hosted service. `UseGameServer` runs every check that is not an endpoint check; when they all pass it stores the
+application (`IEndpointRouteBuilder`) in `EndpointValidationState` (internal singleton) **without enumerating the
+endpoints** (V16: the endpoint set is built once before serving, here). When they do not pass, `UseGameServer` also runs
+the endpoint validators over the endpoints mapped so far (`includeUnmapped: false`) so the failing start keeps one complete
+report (013 FR-009), and throws. `StartingAsync` enumerates
 `state.Routes.DataSources.SelectMany(d => d.Endpoints)` and runs `EndpointValidation.Run(endpoints, services,
 includeUnmapped: true)` — `EndpointSecurityValidator`, `CommandRouteValidator`, `EndpointCatalogValidator` with the same
 inputs `UseGameServer` uses — and throws one `GameServerStartupException` with every line. `RunGameServerAsync` already turns
 it into stderr + exit 1; `TestHost` / `WebApplicationFactory` see the exception from `StartAsync`. When `UseGameServer` was
 never called (state empty) the service does nothing. No setting disables it (FR-013). The request-time Dev refusal (013)
-stays.
+stays. The 013 startup line ("Starting {GameId} …") moves from `UseGameServer` to the end of a passing `StartingAsync`, so
+it still means "every startup validation passed" (013 FR-054).
 
 **Rationale.** `IHostedLifecycleService.StartingAsync` (Microsoft.Extensions.Hosting 8+) runs for every lifecycle
 service before any hosted service's `StartAsync`; `GenericWebHostService.StartAsync` is where ASP.NET Core builds the
@@ -219,8 +223,14 @@ time the host starts, `Program` has finished mapping. Registering first puts the
 3. `IServer` decoration (rejected: replaces Kestrel/TestServer registration, fragile).
 4. `EndpointDataSource` change tokens (rejected: `RouteEndpointDataSource` returns a null change token).
 
-**Trade-offs.** Endpoints are materialized twice before serving (cost V2). Lines for endpoints already checked in
-`UseGameServer` cannot reappear (that run succeeded), so the second report contains only late faults and unmapped routes.
+**Trade-offs.** On a passing configuration the endpoint lines surface from the host start (`StartingAsync`), not from
+`UseGameServer`: same text, same report, same exit code 1 through `ServeAsync`, still before any port is bound (V1). A caller
+that runs `UseGameServer` and never starts the host gets no endpoint check — nothing serves, so nothing is exposed. The
+endpoint set is built once before serving, as in 013; the validation itself costs about 1 ms for 217 endpoints (V2, V16).
+Rejected for cost: running the endpoint validators in both places (committed first, f2be391) builds every endpoint once more
+— about 2 ms each, 440 ms for 217 — and delays the first response by that much (V16). Rejected as fragile: replacing
+`app.DataSources` with a snapshot of the built endpoints so routing reuses them (freezes data sources that have change
+tokens and relies on the order inside `GenericWebHostService`; see V16, deferred).
 
 ## R9 — Host export mode (FR-030, FR-031)
 
@@ -409,7 +419,7 @@ persists", and handles `required`, `init`, positional records and read-only coll
 | # | Outcome | Consequence |
 | --- | --- | --- |
 | V1 | **Holds.** A lifecycle service registered first runs `StartingAsync` before the server starts (no address bound, the port is free) on Kestrel `RunAsync`, `TestServer` `StartAsync` and `WebApplicationFactory.CreateClient()`; it sees endpoints mapped after the hand-over, also inside `MapGroup`; its `GameServerStartupException` surfaces unwrapped in all three; the port is bindable afterwards | R8 primary hook kept (T033); no fallback, no doc change |
-| V2 | **Fails.** 217 endpoints: median 439.9 ms = materialization of the endpoint set 439.2 ms (RequestDelegateFactory, about 2 ms per endpoint) + validation 1.0 ms (T035) | The stated fallback (skip re-validation of seen endpoints) cannot help: the cost is the materialization. SC-007 open, decision recorded in tasks.md T035 |
+| V2 | **Fails.** 217 endpoints: median 439.9 ms = materialization of the endpoint set 439.2 ms (RequestDelegateFactory, about 2 ms per endpoint) + validation 1.0 ms (T035) | The stated fallback (skip re-validation of seen endpoints) cannot help: the cost is the materialization. **Decided (V16):** endpoints are built once before serving — `UseGameServer` runs the endpoint validators only on its failure path; the pre-serving run is the only one on success. SC-007 restated (validation ≤ 50 ms, at most one build before serving). R8 updated; T035 |
 | V3 | **Holds.** Two consecutive enumerations of `DataSources.Endpoints` carry the same `HttpMethodMetadata` and custom metadata | — |
 | V4 | **Holds for the composition part.** `Build()` of the SampleHost and Fixture.Host Local compositions (no `COUCHBASE_*`, no user secrets) creates or modifies no file under the host folders, `samples/_database/` or `tests/ConsumerFixture/` | Final check with the export in T039. Fixture `appsettings.Local.json` sets `Urls http://localhost:5180`: export never listens; tests serving the fixture host override `Urls` |
 | V5 | **Holds.** `--environment Local` passes `GameServerCommandLine.Parse` unchanged and selects the Local flavor in `CreateBuilder(HostArgs)` | — |
@@ -423,3 +433,4 @@ persists", and handles `required`, `init`, positional records and read-only coll
 | V13 | **Holds.** Default interface member builds clean under the framework analyzers | — |
 | V14 | **Holds.** Protoc output + generated-files §3–§4 shapes compile clean as netstandard2.1 / C# 9 under the consumer fixture props once `ImplicitUsings` is disabled (else CS8773) | `Fixture.Client.csproj` overrides: TFM, `LangVersion 9.0`, `ImplicitUsings disable`, explicit `Compile` glob |
 | V15 | **Differs.** `DOTNET_HOST_PATH` and `DOTNET_ROOT` are not set under `dotnet test` (MTP runner, apphost) nor under `dotnet run`; resolution falls back to PATH | Tool keeps `--dotnet <path>`; e2e tests pass the resolved host explicitly |
+| V16 | **Holds: nothing is cached.** ASP.NET Core 10.0.14 builds every endpoint again (conventions, `RequestDelegateFactory`) on each enumeration of `DataSources[i].Endpoints`; `EndpointRoutingMiddleware` holds its own `CompositeEndpointDataSource` and builds the set once more on the **first request**, whatever was enumerated before. Scratch probe (Kestrel on port 0, 217 `MapPost` endpoints with timeout + limiter conventions, a convention counting builds, Release, 3 runs): builds before the first response = 217 × (pre-start enumerations + 1); time to first response ≈ 660 ms with 0 pre-start enumerations, ≈ 1120 ms with 1 (013), ≈ 1620 ms with 2 (014 as committed in f2be391, same whether the second runs inline or in `StartingAsync`); each enumeration ≈ 480 ms (≈ 2.2 ms per endpoint, also on the second pass: not JIT warm-up) | The second pre-start build is pure added cost (≈ 2 ms per endpoint to time-to-first-response). Decision (T035): one build before serving — the pre-serving run on success, `UseGameServer` only on its failure path. Deferred: reusing the pre-serving build for routing (snapshot `DefaultEndpointDataSource` swap, would save the first-request build too) and the Request Delegate Generator (cannot intercept `MapDeclared(…, Delegate)`) — both beyond SC-007 |

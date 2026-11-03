@@ -727,7 +727,10 @@ with CRLF. The game must also act on BC-1 and BC-3 when it bumps.
   message as `Get<T>(id, parser)` with the correct parser in 100% of SDK tests, and an unknown section id is reported, not
   parsed.
 - **SC-007**: The pre-serving endpoint check adds at most 50 ms to startup for a composition of 200 endpoints on the
-  reference development machine.
+  reference development machine, compared with the startup of slice 013. Measured as two parts: (1) a passing start
+  builds the endpoint set at most once before serving, as slice 013 does (ASP.NET Core builds every endpoint on each
+  enumeration, about 2 ms per endpoint, and its routing builds them once more at the first request; neither build is part of
+  the budget); (2) running every endpoint validator over that set takes at most 50 ms.
 - **SC-008**: The public API diff of the Unity package between `main` before this slice and after it shows 0 removed or
   changed public members, and the package version stays `0.7.0`.
 - **SC-009**: After the game bumps to `v0.7.0`, the FG-021 marker and the FG-026/FG-028 hand copies listed in "Consumer

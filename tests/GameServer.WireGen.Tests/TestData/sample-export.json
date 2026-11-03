@@ -1,0 +1,68 @@
+{
+  "format": "gameserver.wire-contract/1",
+  "frameworkVersion": "0.7.0",
+  "protobufVersion": "3.36.2",
+  "routes": [
+    {
+      "name": "battle.end",
+      "methods": ["POST"],
+      "template": "/api/v1/battle/end",
+      "profile": "Player",
+      "surface": "PlayerApi",
+      "owner": "sample.game",
+      "origin": "game",
+      "operation": "battle.end"
+    },
+    {
+      "name": "cheat.grant",
+      "methods": ["POST"],
+      "template": "/api/v1/cheat/grant",
+      "profile": "Dev",
+      "surface": "PlayerApi",
+      "owner": "economy.cheat",
+      "origin": "framework",
+      "operation": "cheat.grant"
+    },
+    {
+      "name": "gm.sso_start",
+      "methods": ["GET"],
+      "template": "/gm/v1/auth/sso/start",
+      "profile": "Public",
+      "surface": "GmApi",
+      "owner": "gm",
+      "origin": "framework",
+      "condition": "gm.sso"
+    },
+    {
+      "name": "platform.health_live",
+      "template": "/health/live",
+      "profile": "Public",
+      "surface": "Host",
+      "owner": "platform.observability",
+      "origin": "framework"
+    },
+    {
+      "name": "platform.receipt",
+      "methods": ["GET"],
+      "template": "/api/v1/player/receipts/{receiptId}",
+      "profile": "Player",
+      "surface": "PlayerApi",
+      "owner": "platform",
+      "origin": "framework"
+    }
+  ],
+  "sections": [
+    {
+      "id": "battle",
+      "owner": "sample.game",
+      "origin": "game",
+      "message": "samplegame.v1.BattleState"
+    },
+    {
+      "id": "wallet",
+      "owner": "economy",
+      "origin": "framework",
+      "message": "gameserver.economy.v1.WalletState"
+    }
+  ]
+}

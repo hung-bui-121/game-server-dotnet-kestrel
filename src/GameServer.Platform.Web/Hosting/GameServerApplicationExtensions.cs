@@ -109,21 +109,25 @@ public static class GameServerApplicationExtensions
             GameServer.Platform.Web.OpenApi.GmOpenApi.Map(app);
         }
 
-        var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints).ToArray();
-        errors.AddRange(EndpointValidation.Run(endpoints, services, includeUnmapped: false));
         if (errors.Count > 0)
         {
+            // One report (FR-009): the endpoints mapped so far join the other faults. Enumerating DataSources builds every
+            // endpoint (research V16), so a passing configuration leaves the endpoint check to the pre-serving run alone.
+            var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints).ToArray();
+            errors.AddRange(EndpointValidation.Run(endpoints, services, includeUnmapped: false));
             throw new GameServerStartupException(errors);
         }
 
-        // Endpoints mapped from now on are validated again, with every mapped one, before the server listens (FR-012).
+        // Endpoints are validated, all of them (also those mapped after this call), before the server listens (FR-012, T035).
         services.GetRequiredService<EndpointValidationState>().Validated(app);
-        LogStartup(services);
         return app;
     }
 
-    /// <summary>FR-054: one line naming what starts, logged only after the validation succeeded (provision mode never gets here).</summary>
-    private static void LogStartup(IServiceProvider services)
+    /// <summary>
+    /// FR-054: one line naming what starts, logged by the pre-serving endpoint check once the whole validation succeeded (provision
+    /// and export modes never get there).
+    /// </summary>
+    internal static void LogStartup(IServiceProvider services)
     {
         var runtime = services.GetRequiredService<GameServerRuntimeInfo>();
         services.GetRequiredService<ILoggerFactory>().CreateLogger(StartupLogCategory).LogInformation(

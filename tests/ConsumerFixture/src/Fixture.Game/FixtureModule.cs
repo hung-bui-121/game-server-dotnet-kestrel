@@ -1,29 +1,81 @@
 using GameServer.Errors;
 using GameServer.Modules;
+using GameServer.Platform.Aggregates;
+using GameServer.Platform.Web.Aggregates;
+using GameServer.Platform.Web.Auth;
 using GameServer.Platform.Web.Commands;
+using GameServer.Platform.Web.Protobuf;
 using GameServer.Platform.Web.Routing;
+using GameServer.Protocol.Core.V1;
+using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using Wire = Fixture.V1;
 
 namespace Fixture.Game;
 
-/// <summary>Adapter half of the fixture module: one player command over a well-known Protobuf type (no game proto needed).</summary>
+/// <summary>
+/// Adapter half of the fixture module: one player command over a well-known Protobuf type, and the client-visible <c>card</c>
+/// section with its typed wire mapper and a query route returning it (slice 014).
+/// </summary>
 public sealed class FixtureModule : IGameModule, IPlayerApiModule
 {
     public const string SaveRoute = FixtureRoutes.SaveTemplate;
 
     public ModuleDescriptor Describe() => FixtureModuleDefinition.Describe();
 
-    public void ConfigureServices(IServiceCollection services, ModuleContext context)
-    {
-    }
+    public void ConfigureServices(IServiceCollection services, ModuleContext context) =>
+        services.AddAggregateWireMapper<CardState, Wire.CardState>(FixtureModuleDefinition.CardAggregate, ToWire, o => o.Hidden(nameof(CardState.InternalNote)));
 
-    public void MapPlayerApi(IEndpointRouteBuilder routes) =>
+    public void MapPlayerApi(IEndpointRouteBuilder routes)
+    {
         routes.MapPlayerCommand<StringValue, SaveNote, SaveNoteResult>(
             FixtureRoutes.Save,
             ToDomain,
             result => new StringValue { Value = result.Text });
+
+        routes.MapDeclared(FixtureRoutes.Card, async (HttpContext http) =>
+            {
+                var services = http.RequestServices;
+                var actor = services.GetRequiredService<ActorContextAccessor>().GetActor(http);
+                var loaded = await services.GetRequiredService<PlayerSnapshotReader>()
+                    .ReadOneAsync(actor.PlayerId!, FixtureModuleDefinition.CardAggregate, http.RequestAborted);
+                await ProtobufBinding.WriteAsync(http, new Wire.GetCardResponse
+                {
+                    Card = new Section
+                    {
+                        Id = FixtureModuleDefinition.CardAggregate,
+                        Rev = loaded.Rev,
+                        Payload = ToWire((CardState)loaded.State).ToByteString(),
+                    },
+                });
+            })
+            .AsPlayerEndpoint();
+    }
+
+    /// <summary>State → wire: dates as UTC milliseconds; <see cref="CardState.InternalNote"/> stays on the server.</summary>
+    internal static Wire.CardState ToWire(CardState state)
+    {
+        var wire = new Wire.CardState { Title = state.Title, UpdatedUtcMs = state.UpdatedUtc.ToUnixTimeMilliseconds() };
+        foreach (var (key, count) in state.Counts)
+        {
+            wire.Counts[key] = count;
+        }
+
+        foreach (var slot in state.Slots)
+        {
+            wire.Slots.Add(new Wire.CardState.Types.Slot { Item = slot.Item, UnlockEndUtcMs = slot.UnlockEndUtc.ToUnixTimeMilliseconds() });
+        }
+
+        if (state.Nickname is not null)
+        {
+            wire.Nickname = state.Nickname;
+        }
+
+        return wire;
+    }
 
     private static SaveNote ToDomain(StringValue request) =>
         string.IsNullOrWhiteSpace(request.Value)

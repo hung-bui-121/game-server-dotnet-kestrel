@@ -29,7 +29,8 @@ apply the stated fallback and record the deviation (contract, messages, docs).
 | Item | Fact | Fallback | Check | Used by |
 | --- | --- | --- | --- | --- |
 | V1 | A lifecycle service registered first in `AddGameServer` runs `StartingAsync` before `GenericWebHostService.StartAsync` (pipeline + Kestrel bind) on 10.0.x; `app.DataSources` then holds endpoints mapped after `UseGameServer` (incl. `MapGroup`); its `GameServerStartupException` reaches `RunAsync`/`FindStartupException`, `TestServer` and `WebApplicationFactory` start; no port bound | 1. `IStartupFilter`; 2. first-request refusal + `StopApplication` (never silent) | T002 (**decision gate**) | T033 |
-| V2 | Re-materializing `DataSources.Endpoints` + validation for 200 endpoints ≤ 50 ms | skip per-endpoint re-validation for endpoints already seen by `UseGameServer` (key `METHOD template`) | T035 (needs the implementation) | T033 |
+| V2 | Re-materializing `DataSources.Endpoints` + validation for 200 endpoints ≤ 50 ms | skip per-endpoint re-validation for endpoints already seen by `UseGameServer` (key `METHOD template`) — **failed, superseded by V16** | T035 (needs the implementation) | T033 |
+| V16 | ASP.NET Core 10.0.14 caches no built endpoint: each `DataSources[i].Endpoints` enumeration rebuilds every endpoint (~2 ms each), and routing builds once more at the first request (research V16, probe 2026-11-03) | — (fact, confirmed) | T035 | T035 |
 | V3 | A second `Endpoints` enumeration carries the same metadata (conventions applied) | validate in `IStartupFilter` after the pipeline's own materialization | T002 | T033 |
 | V4 | Export mode (`Build()` + resolve `WireCatalog`) on SampleHost and Fixture.Host, Local flavor, empty environment: no store open, no socket, no secret read; side effects listed | resolve the catalog through a minimal provider scope; document side effects | T004 (composition part), T039 (final) | T039, T042 |
 | V5 | `dotnet run --project <host> --no-launch-profile [--no-build] -c <cfg> -- --environment Local --export-wire-contract <f>`: `--environment` reaches `WebApplication.CreateBuilder` and is not swallowed | child environment `ASPNETCORE_ENVIRONMENT`/`DOTNET_ENVIRONMENT` | T004, T039 | T042, T053 |
@@ -45,7 +46,8 @@ apply the stated fallback and record the deviation (contract, messages, docs).
 | V15 | The tool and the tests start child `dotnet` processes with the same host that runs them (`DOTNET_HOST_PATH` → `DOTNET_ROOT/dotnet` → PATH, as `tests/GameServer.Architecture.Tests/RepositoryTooling.cs`); on this machine `dotnet` is `$HOME/.dotnet10/dotnet.exe` and may not be on PATH | config/CLI option `--dotnet <path>` documented in wiregen-cli §2 | T004 | T042, T053, T063, T071 |
 
 V1–V14 are the `[VERIFY]` items of research.md; V15 is added here (the tool runs the host with `dotnet run`, and the
-framework suite runs the tool; the existing tests already needed this resolution order).
+framework suite runs the tool; the existing tests already needed this resolution order). V16 was added by the SC-007
+decision (T035).
 
 **Environment**: `"$HOME/.dotnet10/dotnet.exe"`; build `build GameServer.slnx -c Release`; test
 `test --solution GameServer.slnx -c Release --no-build` (one class: `--project X --filter-class "*Name"`). Couchbase
@@ -571,14 +573,42 @@ unchanged.
   in-memory store without its Development/Test marker) with generated secrets (`StagingSecrets` moved from the Couchbase
   integration tests to `tests/Shared`). All 20 flavor x hosting variants start; the service-only composition uses
   `SampleTestHost`; framework completeness = the 47 names.
-- [ ] T035 [P] [US1] Opt-in performance check (after T033; V2, SC-007): new file
-  `tests/GameServer.Platform.Web.Tests/EndpointCheckPerformanceTests.cs` (skips unless `GAMESERVER_PERF=1`): a synthetic
-  module declaring and mapping 200 endpoints; measure `EndpointValidation.Run` over the final set (median of 5 after one
-  warm-up).
-  Done when: a Note records the median on the reference machine; ≤ 50 ms, or the V2 fallback (skip re-validation of
-  endpoints already checked in `UseGameServer`, key `METHOD template`) is implemented in T033's service with a test and
-  re-measured. (SC-007)
-  Note (2026-11-03, OPEN -- needs a decision): `GAMESERVER_PERF=1`, Release, 200 synthetic + 17 default endpoints (217): median
+- [X] T035 [US1] Build the endpoint set once before serving, and measure it (after T033; V2, V16, SC-007, research R8).
+  Not `[P]`: it edits T033's files. Decided 2026-11-03 (option (b) below; research V16 shows ASP.NET caches nothing, so
+  the second pre-start build of f2be391 adds about 2 ms per endpoint to time-to-first-response, and (b) builds once, as 013).
+  Code (the only behaviour change: where the endpoint lines of a passing configuration surface, and when the start line is
+  logged):
+  1. `src/GameServer.Platform.Web/Hosting/GameServerApplicationExtensions.cs` `UseGameServer`: enumerate
+     `DataSources` and run `EndpointValidation.Run(…, includeUnmapped: false)` **only inside** `if (errors.Count > 0)`,
+     then throw; on success enumerate nothing, call `EndpointValidationState.Validated(app)` and return. Remove the
+     `LogStartup(services)` call there; make `LogStartup` `internal` (keep its text and category). Update the comment above
+     `Validated(app)` ("endpoints are validated, all of them, before the server listens").
+  2. `src/GameServer.Platform.Web/Hosting/EndpointSetValidationService.cs` `StartingAsync`: unchanged check; when `errors`
+     is empty call `GameServerApplicationExtensions.LogStartup(services)` before returning. Update the class summary (the
+     only endpoint run on a passing configuration; `UseGameServer` runs it only on its failure path).
+  3. `EndpointValidationState.cs`: summary "written once, after `UseGameServer`'s non-endpoint checks succeeded". No other
+     file, no public API change, no new type.
+  Tests:
+  - `tests/GameServer.Platform.Web.Tests/EndpointCheckPerformanceTests.cs`: (always on) `Each_endpoint_is_built_once_before_serving`
+    — a test module maps 3 declared Player endpoints, each with a counting convention
+    (`((IEndpointConventionBuilder)builder).Add(_ => Interlocked.Increment(ref builds))`); after `SampleTestHost.StartAsync`
+    and before any request, `builds == 3` (today 6). (Opt-in `GAMESERVER_PERF=1`) keep the 217-endpoint measurement but
+    assert only the validation median ≤ 50 ms and the build count (217) before serving; print the materialization median
+    as information (the one build 013 also pays). Update the class summary.
+  - `tests/GameServer.Platform.Web.Tests/TestKitHostTests.cs`: next to `A_failed_validation_logs_no_startup_line`, an
+    endpoint fault (undeclared endpoint via `TestHost` `modules`/`beforeUseGameServer`) → `StartAsync` throws
+    `GameServerStartupException` and no "Starting " line is logged; the existing passing-start line test stays green.
+  - Config fault + endpoint fault together (`TestHost.BuildApp` with `GameServer:Gate:CacheSeconds=11` and an undeclared
+    endpoint mapped before `UseGameServer`): `UseGameServer` throws one report containing both lines (FR-009 kept).
+  - `LateEndpointValidationTests`, `EndpointCatalogCheckTests`, `CatalogCompositionTests` unchanged and green (they start
+    the host, so early endpoint faults now come from `StartAsync`: same lines).
+  Docs: `specs/014-wire-contract/release-notes-draft.md` "Known before the tag" → replace the SC-007 bullet with: endpoint
+  faults of an otherwise valid configuration are reported when the host starts (same report, exit 1, nothing bound);
+  the startup line is logged after the endpoint check; no added startup cost beyond the check (~1 ms / 200 endpoints).
+  Done when: green in memory and with `GAMESERVER_TEST_STORE=File`; `GAMESERVER_PERF=1` run Note records validation
+  median and build count (217) on the reference machine; `DataSources` is enumerated in `src/` only by the pre-serving
+  service and by `UseGameServer`'s failure branch. (SC-007, FR-012, FR-013)
+  Note (2026-11-03, decided -- see above; the measurement that led to it): `GAMESERVER_PERF=1`, Release, 200 synthetic + 17 default endpoints (217): median
   **439.9 ms = materialization 439.2 ms + validation 1.0 ms** (5 samples after one warm-up). SC-007 (<= 50 ms added to
   startup) is not met, and the V2 fallback cannot meet it: the cost is not the validation but enumerating
   `DataSources.Endpoints` again, which runs ASP.NET Core's `RequestDelegateFactory` for every endpoint (about 2 ms each; the
@@ -588,6 +618,21 @@ unchanged.
   appear and the 013 start-line order); (c) let `UseGameServer` hand its materialized endpoints to the pre-serving run and
   re-materialize only data sources added later (needs a data-source swap; fragile, like the rejected `IServer` decoration).
   Not changed here (design decision). The opt-in test asserts the SC and prints both parts.
+  Decision (architect, 2026-11-03): **(b)**, for every host (not only `RunGameServerAsync`/`TestHost`). (a) rejected: the
+  second build is pure cost — probe (research V16) shows ASP.NET caches no endpoint, routing builds the set again at the
+  first request anyway, so time-to-first-response grows ≈ 480 ms for 217 endpoints (1120 → 1620 ms) for no extra
+  coverage. (c) rejected for this slice: a `DefaultEndpointDataSource` snapshot swap freezes change-token data sources and
+  depends on `GenericWebHostService` internals; recorded as deferred in V16. The "later" in (b) is not observable outside
+  the process: both throw sites are before any hosted service I/O and before Kestrel binds (V1), with the same stderr
+  report and exit 1 through `ServeAsync`. The 013 start-line order is kept by moving the start line behind the check.
+  Note (2026-11-03, implemented): `UseGameServer` enumerates `DataSources` only inside its failure branch; the pre-serving
+  service logs the startup line after a passing check (`LogStartup` internal). `Each_endpoint_is_built_once_before_serving`
+  (always on): 3 counted builds after `StartAsync`, no request. `GAMESERVER_PERF=1` (Release, two runs): 217 endpoints,
+  **validation median 1.1 ms**, the 200 synthetic endpoints each built once before serving (the build count is taken on
+  the synthetic module's counting convention, so it reads 200 of the 217; the 17 framework endpoints are built in the same
+  enumeration), one build of the set 439–444 ms (information, paid once as in 013). New tests in `TestKitHostTests`: endpoint
+  fault → `StartAsync` throws, no `Starting ` line; gate + endpoint fault → one `UseGameServer` report with both. Suite
+  in memory and File: 1652 / 1556 / 96 / 0 (with T039's tests).
 - [X] T036 [US1] Route name on the request outcome and event (after T003, T032; FR-015, data-model §6):
   `src/GameServer.Platform.Web/Requests/IRequestOutcomeFeature.cs` default member `string? RouteName => null;` (V13, else
   the fallback extension), `RequestOutcome.cs` implements it, `RequestLogMiddleware.cs` sets it at finalization from the
@@ -636,7 +681,7 @@ netstandard2.1 compile).
 Depends on: Phase 2 (catalog, export, `SectionKey`), US1 declarations (T019–T029; the export validates them). The tool
 tasks T040–T050 are one project: `[P]` only where files are disjoint and the task says so.
 
-- [ ] T039 [US2] Host export mode (after T016, T029; research R9, contracts/wiregen-cli.md §1):
+- [X] T039 [US2] Host export mode (after T016, T029; research R9, contracts/wiregen-cli.md §1):
   `src/GameServer.Platform.Web/Hosting/GameServerCommandLine.cs`: `HostMode.ExportWireContract`,
   `ExportWireContractSwitch`, `ExportPath`; `--export-wire-contract <path>` (any letter case) and its argument removed
   from `HostArgs`; missing path, `=`-form, `-export-wire-contract`, `/export-wire-contract`, combined with `--provision`
@@ -651,7 +696,17 @@ tasks T040–T050 are one project: `[P]` only where files are disjoint and the t
   --no-build -c Release -- --environment Local --export-wire-contract <scratch>/sample.json` and the same for
   `tests/ConsumerFixture/src/Fixture.Host` with no `COUCHBASE_*`: exit 0, files written, side effects as recorded in T004.
   Done when: green; a Note records the final V4/V5 result. (FR-030, FR-031 groundwork, US2-1 catalog source)
-- [ ] T040 [US2] WireGen and its test project skeletons (after T005; research R10, plan Structure): new
+  Note (2026-11-03): **final V4/V5 hold.** `dotnet run --project samples/SampleHost --no-launch-profile --no-build -c Release
+  -- --environment Local --export-wire-contract <scratch>/sample.json` → exit 0, 54 routes, 6 sections; Fixture.Host the
+  same → exit 0, 17 routes, 1 section; no `COUCHBASE_*` in the child environment; no file created or changed under
+  `samples/SampleHost`, `samples/_database`, `tests/ConsumerFixture` (`find -newer`, outside `bin/obj`), nothing listened.
+  Two runs byte-identical. `--environment Nope` → exit 1 (`GameServer:EnvironmentId '' is missing`). Deviations: (1) the host
+  passes only the mode to `RunGameServerAsync(mode)`, so `Parse` hands the path over as one internal configuration
+  argument `--GameServerCommandLine:ExportWireContract=<path>` appended to `HostArgs` (the switch and its path are removed
+  as specified; hosts unchanged); (2) "Validate(options)" = `ModuleRegistry.Validate(options, config: null)` (deployment
+  identity, module rules, as `--provision`) + `WireCatalog.Validate()`; (3) also refused: the switch twice, and a next
+  argument starting with `-` (taken as "no path"); an unwritable file → exit 1. Contract wiregen-cli §1 updated.
+- [X] T040 [US2] WireGen and its test project skeletons (after T005; research R10, plan Structure): new
   `tools/GameServer.WireGen/GameServer.WireGen.csproj` (net10.0 console, framework build props, `PackageReference
   Google.Protobuf` and `Grpc.Tools` with `GeneratePathProperty="true"` and no `<Protobuf>` items; `AssemblyMetadata`
   baked at build: framework root, `$(PkgGrpc_Tools)`, `Grpc.Tools` and `Google.Protobuf` versions from CPM,
@@ -661,7 +716,12 @@ tasks T040–T050 are one project: `[P]` only where files are disjoint and the t
   Done when: Release build 0 warnings; a smoke test reads the baked metadata (versions `2.84.0`, `3.36.2`, `0.7.0`, the
   `Grpc.Tools` root exists and contains the V6 protoc for the current OS); `dotnet msbuild … -getProperty:IsTestProject`
   true only for the test project. (FR-020, FR-022)
-- [ ] T041 [US2] Configuration (after T040; data-model §4, contracts/wiregen-cli.md §4 steps 1–3): new
+  Note (2026-11-03): metadata baked by a target `BeforeTargets="GetAssemblyAttributes"` from `@(PackageVersion)` (keys
+  `GameServer.WireGen.{FrameworkRoot,GrpcToolsRoot,FrameworkVersion,Version.Grpc.Tools,Version.Google.Protobuf}`, read by
+  `ToolInfo`). `-getProperty:IsTestProject`: tool empty (IsFrameworkCode true: analyzers + banned APIs), test project `true`.
+  `ToolInfoTests` compares with the props files. The test project has a build-order-only reference to `Fixture.Host`
+  (`ReferenceOutputAssembly=false`) so `CatalogSourceTests` can run it with `--no-build`.
+- [X] T041 [US2] Configuration (after T040; data-model §4, contracts/wiregen-cli.md §4 steps 1–3): new
   `tools/GameServer.WireGen/WireGenConfig.cs`: JSON `gameserver.wiregen/1` (unknown major → error), required fields,
   defaults (`environment Local`, `origin game`, `layout flat`, `lineEndings lf`, `routesClass GameRoutes`,
   `sectionsClass GameSections`), paths relative to the config folder normalized with `Path.GetFullPath` (mixed `/` and
@@ -671,7 +731,11 @@ tasks T040–T050 are one project: `[P]` only where files are disjoint and the t
   field; bad `format`; mixed separators resolve to the same full path; missing root, marker, directory, proto → message
   names it and no folder exists afterwards (assert the temp tree is unchanged).
   Done when: green. (FR-020, FR-024, FR-025, US2-5)
-- [ ] T042 [US2] Catalog source (after T039, T041, T004 V15): new `tools/GameServer.WireGen/CatalogSource.cs`: from
+  Note (2026-11-03): also checked before anything else: `namespace`/class names are C# identifiers, `routesClass` !=
+  `sectionsClass`, a proto path stays inside its root (relative, no `..`, `.proto`), `importRoots`, `catalog.hostProject` and
+  `catalog.file` exist; exactly one of `catalog.hostProject`/`catalog.file` unless `--catalog` is given. Paths lose a
+  trailing separator (`../client/` = `..\client`).
+- [X] T042 [US2] Catalog source (after T039, T041, T004 V15): new `tools/GameServer.WireGen/CatalogSource.cs`: from
   `catalog.hostProject` run `<dotnet> run --project <host> --no-launch-profile [--no-build] -c <cfg> -- --environment
   <env> --export-wire-contract <temp file>` (dotnet resolved as V15; temp file deleted after reading), else read
   `--catalog` / `catalog.file`; parse the export (format major 1, ignore unknown properties); host exit ≠ 0 → exit 1
@@ -681,20 +745,28 @@ tasks T040–T050 are one project: `[P]` only where files are disjoint and the t
   property ignored; host run against `tests/ConsumerFixture/src/Fixture.Host` with `--no-build` (after the solution
   build) yields the fixture routes; a host that exits 1 (bad `--environment Nope`) → error with the host's lines.
   Done when: green. (FR-030, US2-1)
-- [ ] T043 [US2] Version guard (after T042, T007 V10; research R12, plan N3): new `tools/GameServer.WireGen/VersionGuard.cs`:
+  Note (2026-11-03): the host run uses the host project folder as working directory and drops `MSBuild*` variables;
+  a failure relays the host's stderr lines (stdout when stderr is empty: a failed `dotnet run` build reports there).
+  dotnet resolution (V15): `--dotnet` → `DOTNET_HOST_PATH` → the dotnet running the tool → `DOTNET_ROOT` → PATH;
+  `--dotnet` documented in wiregen-cli §2. `--environment Nope` → exit 1 relaying `GameServer:EnvironmentId '' is missing`
+  (relies on T039's registry check).
+- [X] T043 [US2] Version guard (after T042, T007 V10; research R12, plan N3): new `tools/GameServer.WireGen/VersionGuard.cs`:
   export `frameworkVersion` = baked framework version, export `protobufVersion` = pinned `Google.Protobuf`; with
   `hostProject`, `<dotnet> msbuild <host> -getItem:PackageVersion` → `Grpc.Tools` and `Google.Protobuf` items (when
   present) = pinned; messages name both versions and which side to change (texts of research R12).
   Tests in a new file `tests/GameServer.WireGen.Tests/VersionGuardTests.cs`: each mismatch message (fake export values;
   fake msbuild JSON per V10), no CPM → note printed and only the export checks run.
   Done when: green. (FR-022, US2-4)
-- [ ] T044 [P] [US2] Version pair test (after T007 V11): `tests/GameServer.Architecture.Tests/VersionTests.cs` new test:
+  Note (2026-11-03): as specified; `The_fixture_host_resolves_the_pinned_versions` runs the real `-getItem` on Fixture.Host.
+- [X] T044 [P] [US2] Version pair test (after T007 V11): `tests/GameServer.Architecture.Tests/VersionTests.cs` new test:
   CPM `Google.Protobuf` version in `Directory.Packages.props` == product version of
   `sdk/unity/com.gameserver.client/Runtime/Plugins/Google.Protobuf.dll` (`FileVersionInfo`), and the WireGen baked
   `Grpc.Tools` version == CPM `Grpc.Tools`; failure names both values and the fix.
   Done when: green; a deliberately edited copy of the props in a temp folder makes the comparison fail (unit-level
   helper test). (FR-022)
-- [ ] T045 [US2] protoc runner and proto model (after T040, T005 V6/V8; research R11): new
+  Note (2026-11-03): `GameServer.Architecture.Tests` now references `tools/GameServer.WireGen` (the baked pin is read from
+  its `AssemblyMetadata`); the dll product version is compared up to `+` (V11).
+- [X] T045 [US2] protoc runner and proto model (after T040, T005 V6/V8; research R11): new
   `tools/GameServer.WireGen/Protoc.cs` (locate `protoc` under the baked `Grpc.Tools` root `tools/<os>_<arch>/`, set the
   Unix exec bit when missing, framework import roots always added: `proto/`,
   `src/GameServer.Modules.{Identity,Economy,Iap}.Adapters/Protos`, `Grpc.Tools` `build/native/include`; descriptor pass
@@ -711,7 +783,12 @@ tasks T040–T050 are one project: `[P]` only where files are disjoint and the t
   `csharp_namespace` + message name as a framework message → clash error; `by-root` puts `core.proto` output under
   `gameserver/core/v1/`; the `source:` header carries only the relative proto path.
   Done when: green. (FR-020, FR-021, FR-022, FR-024, FR-025, US2-2)
-- [ ] T046 [P] [US2] Template parser, names and selection (after T040; research R13, data-model §3.1, §5): new
+  Note (2026-11-03): **deviation**: "expected output for <proto> missing" exits **1**, not 2 (contracts/wiregen-cli.md §3
+  reserves 2 for `verify`; §4 step 9 lists it among the exit-1 failures). Protos are passed as full paths inside their `-I`
+  root (protoc maps them to the relative virtual name; the `source:` header carries only that, asserted). Windows on Arm
+  uses `windows_x64` (no arm64 protoc). Through the tool, the SDK's `Core.cs` (by-root), `Identity.cs`, `Economy.cs` and
+  `Iap.cs` are byte-identical to the committed files (scratch run; V7 confirmed again).
+- [X] T046 [P] [US2] Template parser, names and selection (after T040; research R13, data-model §3.1, §5): new
   `tools/GameServer.WireGen/TemplateParser.cs` (literal segments and `{name}` parameters, also inside a segment
   `{id}.json`; `:` constraint, `?` optional, `=` default, `*` catch-all → error naming the route),
   `tools/GameServer.WireGen/Names.cs` (split on `.` and `_`, PascalCase, C# keyword parameters prefixed with `@`),
@@ -723,7 +800,9 @@ tasks T040–T050 are one project: `[P]` only where files are disjoint and the t
   each unsupported template form → error naming the route; GM Public routes (`gm.auth_login`, `gm.sso_start`) excluded;
   Dev `cheat.grant` included; service-only owner excluded; host Public `platform.health_live` included with method `*`.
   Done when: green. (FR-032 rules, FR-031, US3-1, US3-2 rules)
-- [ ] T047 [US2] Route renderer (after T046, T008 V14): new `tools/GameServer.WireGen/RouteRenderer.cs` producing the
+  Note (2026-11-03): protoc's package rule lives in `Names.ProtocNamespace` (V8 pairs tested incl. `my_game.v2beta` →
+  `MyGame.V2Beta`, against real protoc output). A member named like its class is also refused (CS0542).
+- [X] T047 [US2] Route renderer (after T046, T008 V14): new `tools/GameServer.WireGen/RouteRenderer.cs` producing the
   file of contracts/generated-files.md §3 (header with framework version, `#nullable enable`, block namespace, `const
   string X` without leading slash, `const string XMethod` right after each route, `static string X(params)` helpers with
   `global::System.Uri.EscapeDataString` per parameter in template order, members ordered ordinally by route name, doc
@@ -732,7 +811,9 @@ tasks T040–T050 are one project: `[P]` only where files are disjoint and the t
   data-model §5.1 (constants and values), `PlatformReceipt("a/b c")` helper source escapes, `{id}.json` segment, `@class`
   parameter, any-method `"*"`, output contains no `{`; deterministic for shuffled input order.
   Done when: green. (FR-032, FR-023 ordering, US3-1, US3-2)
-- [ ] T048 [US2] Section renderer (after T045, T046, T018; research R13, contracts/generated-files.md §4): new
+  Note (2026-11-03): golden `tests/GameServer.WireGen.Tests/TestData/FrameworkRoutes.golden.txt` (14 framework routes, the
+  contract §3 shape; identical to a scratch run from the SampleHost export).
+- [X] T048 [US2] Section renderer (after T045, T046, T018; research R13, contracts/generated-files.md §4): new
   `tools/GameServer.WireGen/SectionRenderer.cs`: per section `static readonly SectionKey<T> X`, `const string XId`,
   `Table` last; types `global::`-qualified from `ProtoModel`; untyped section → `XId` only with the "(registered without
   its message type: no parser)" comment + a generator warning line; a section whose message is in neither the consumer
@@ -741,7 +822,9 @@ tasks T040–T050 are one project: `[P]` only where files are disjoint and the t
   Tests in a new file `tests/GameServer.WireGen.Tests/SectionRendererTests.cs`: golden text for wallet/inventory/profile
   (generated-files.md §4), untyped id-only + warning, unknown message error, collision `X`/`XId`/`Table` → error.
   Done when: green. (FR-052, FR-051 generator part, N12, US3-5)
-- [ ] T049 [US2] Output writer (after T040; research R10, contracts/wiregen-cli.md §4 steps 10–11, §5): new
+  Note (2026-11-03): golden `TestData/FrameworkSections.golden.txt` = the contract §4 text. Today's framework mappers are
+  untyped (typed in T055), so a framework-origin run emits id constants only, with three warnings.
+- [X] T049 [US2] Output writer (after T040; research R10, contracts/wiregen-cli.md §4 steps 10–11, §5): new
   `tools/GameServer.WireGen/OutputWriter.cs`: normalize every file (`\r\n`/`\n` → selected ending, UTF-8 without BOM);
   compare bytes with disk; write only changed files (temp file in the same folder, then replace); create subfolders only
   inside `output.directory` (`by-root`); never delete; never read/write/delete `.meta`; `verify` writes nothing and lists
@@ -751,7 +834,8 @@ tasks T040–T050 are one project: `[P]` only where files are disjoint and the t
   file keeps its `LastWriteTimeUtc`; changed file rewritten; verify lists an edited and a missing file and writes nothing;
   a `.meta` next to an output is byte- and timestamp-unchanged; a stray file in the output folder is left alone.
   Done when: green. (FR-023, FR-026, FR-027, US2-3, US2-6, US2-7)
-- [ ] T050 [US2] CLI and orchestration (after T041–T049): `tools/GameServer.WireGen/Program.cs`: verbs `generate` /
+  Note (2026-11-03): temp file `.<name>.wiregen-tmp` (leading dot: Unity ignores it), replaced with `File.Move(overwrite)`.
+- [X] T050 [US2] CLI and orchestration (after T041–T049): `tools/GameServer.WireGen/Program.cs`: verbs `generate` /
   `verify`, options `--config` (required), `--output-root`, `--catalog`, `--configuration` (default Release),
   `--no-build`, (`--dotnet` only if T004 chose that fallback); step order of contracts/wiregen-cli.md §4 (everything that
   can fail runs before any write); exit codes 0/1/2; summary lines (written, unchanged count, new-file `.meta` hints,
@@ -761,7 +845,9 @@ tasks T040–T050 are one project: `[P]` only where files are disjoint and the t
   naming it; a protoc error after a valid config → exit 1 and nothing written (output tree hash unchanged).
   Done when: green; `dotnet run --project tools/GameServer.WireGen -- --help` prints the contract's usage. (FR-020,
   FR-025, FR-027)
-- [ ] T051 [US2] Consumer fixture game proto and client-visible aggregate `card` (after T012, T029; data-model §1.4,
+  Note (2026-11-03): `--help` prints the usage (exit 0); `--dotnet` added (T042). `CliTests` also cover an export version
+  mismatch (exit 1, tree unchanged) and `--catalog` overriding the config.
+- [X] T051 [US2] Consumer fixture game proto and client-visible aggregate `card` (after T012, T029; data-model §1.4,
   §1.5; also the US4 fixture input): new `tests/ConsumerFixture/src/Fixture.Game/Protos/fixture_game.proto`
   (`package fixture.v1;`, **no** `csharp_namespace` (V8), imports `gameserver/core/v1/core.proto` and uses one of its
   messages, `CardState` with a nested message, a map, a repeated field, an optional field, `int64` UTC milliseconds,
@@ -775,7 +861,11 @@ tasks T040–T050 are one project: `[P]` only where files are disjoint and the t
   Done when: fixture builds 0 warnings; `FixtureHostSmokeTests` green (update any assertion on snapshot section count or
   ids — the snapshot now carries `card`; Note); `FixtureCatalogTests` sees section `card` with message
   `fixture.v1.CardState` and hidden `InternalNote`. (FR-003, FR-050, FR-060 fixture input)
-- [ ] T052 [US2] Fixture stand-in Unity client and committed generation (after T050, T051, T008 V14; plan US5 fixture
+  Note (2026-11-03): `FixtureHostSmokeTests` needed no change (it asserts no section count). `GetCardResponse { Section card }`
+  uses the core message; `CardState` record: `Title`, `Counts` (dictionary), `Slots` (`CardSlot(Item, UnlockEndUtc)` list),
+  `Nickname` (nullable, proto `optional`), `UpdatedUtc` (UTC ms on the wire), `InternalNote` (hidden). Added
+  `The_card_route_returns_the_card_section` (round trip on the Local flavor factory).
+- [X] T052 [US2] Fixture stand-in Unity client and committed generation (after T050, T051, T008 V14; plan US5 fixture
   bullet): new `tests/ConsumerFixture/client/Fixture.Client.csproj` (`netstandard2.1`, `LangVersion 9.0`,
   `ImplicitUsings disable`, `Nullable enable`, `TreatWarningsAsErrors`, other overrides from T008; compiles
   `Assets/**/*.cs`; references `$(GameServerRoot)sdk/GameServer.Client/GameServer.Client.csproj` and nothing server-side),
@@ -791,7 +881,12 @@ tasks T040–T050 are one project: `[P]` only where files are disjoint and the t
   Done when: solution Release build 0 warnings including `Fixture.Client` (C# 9 / netstandard2.1 compile of protoc,
   route and section output, SC-004); `git status` shows no framework file modified by the generation; the generated
   files contain no `gameserver.core.v1` type definition. (FR-020, FR-021, FR-028, FR-031, SC-004, US2-1, US2-2)
-- [ ] T053 [US2] Fixture codegen end to end (after T052, T004 V15): new file
+  Note (2026-11-03): `generate --config tests/ConsumerFixture/tools/wiregen.json --no-build` wrote `FixtureGame.cs`,
+  `FixtureRoutes.cs` (`FixtureCard`, `FixtureSave`), `FixtureSections.cs` (`Card`, `CardId`, `Table`); `Fixture.Client` builds
+  0 warnings (effective `latest-recommended`, C# 9, netstandard2.1); `git status` shows no framework file changed by the
+  run; no core type is defined in the output (it references `global::GameServer.Protocol.Core.V1.Section`).
+  `FixtureClientUsage.cs` uses `FixtureRoutes.FixtureSave` and `FixtureSections.Card.TypedParser` (extend in T060).
+- [X] T053 [US2] Fixture codegen end to end (after T052, T004 V15): new file
   `tests/ConsumerFixture/tests/Fixture.Tests/FixtureCodegenTests.cs` (runs the tool in-process or `dotnet run --project
   $(GameServerRoot)tools/GameServer.WireGen --no-build`; decide by speed, Note): `verify` of the committed config → 0;
   generate into two temp copies of the client folder from two config locations (different absolute paths, one written
@@ -803,7 +898,13 @@ tasks T040–T050 are one project: `[P]` only where files are disjoint and the t
   → exit 1 before any write.
   Done when: green; SC-003 per line-ending style shown by the test names; Linux/macOS run recorded as a manual check
   (N9). (FR-021, FR-023, FR-024, FR-025, FR-026, FR-027, FR-028, SC-003, SC-004, US2-1..US2-7)
-- [ ] T054 [US2] Release notes + checkpoint: `specs/014-wire-contract/release-notes-draft.md` "FG-021" section (the tool,
+  Note (2026-11-03): runs the built tool as `dotnet <framework>/tools/GameServer.WireGen/bin/<cfg>/net10.0/GameServer.WireGen.dll`
+  (no build check per run; a game test references no framework tool project, so the solution build must come first);
+  the host export runs once per class (class fixture) and feeds the `--catalog` cases; one case verifies the committed
+  config through the real host run. 10 tests, about 11 s. The clean case builds and cleans **copies** of `Fixture.Client`
+  and `Fixture.Game` (`-p:BuildProjectReferences=false`), so the real outputs other tests use stay. Linux/macOS run:
+  manual check still open (N9).
+- [X] T054 [US2] Release notes + checkpoint: `specs/014-wire-contract/release-notes-draft.md` "FG-021" section (the tool,
   `wiregen.json`, the version pair `Grpc.Tools` 2.84.0 / protoc 35.1 / `Google.Protobuf` 3.36.2, verify for CI, clean,
   `.meta`); zh-pvp: replace `tools/UnityProtoGen/UnityProtoGen.csproj` by a committed `wiregen.json` (`lineEndings:
   crlf`, marker `Assets/MadProject/Scripts`, data-model §4 illustrative row) and the documented `dotnet run --project
@@ -812,6 +913,9 @@ tasks T040–T050 are one project: `[P]` only where files are disjoint and the t
   host `Program` must use `GameServerCommandLine.Parse` + `RunGameServerAsync` (N2). Then Debug and Release build; full
   suite in memory and File.
   Done when: section present; 0 warnings, 0 failures; counts recorded. (FR-090, FR-091 partial)
+  Note (2026-11-03): "FG-021" section and zh-pvp steps in `release-notes-draft.md`. Debug and Release 0 warnings, 0 errors;
+  in memory and `GAMESERVER_TEST_STORE=File`: **1771 total, 1675 passed, 96 skipped, 0 failed** (T038: 1632 / 1536 / 96;
+  + the T035/T039 tests, `GameServer.WireGen.Tests` 105, fixture +12, architecture +2).
 
 **Checkpoint**: a consumer generates message, route and section C# for its own protos from its own repo, deterministically,
 with verify for CI and no framework file touched.

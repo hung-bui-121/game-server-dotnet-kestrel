@@ -42,4 +42,36 @@ public sealed class FixtureCatalogTests
         login!.Owner.ShouldBe(IdentityModule.ModuleName);
         catalog.FindRouteName("POST", FixtureModule.SaveRoute).ShouldBe("fixture.save");
     }
+
+    /// <summary>Slice 014 T051 (FR-003, FR-050): the client-visible card section names its message and its hidden member.</summary>
+    [Fact]
+    public async Task The_card_section_carries_its_message_and_hidden_member()
+    {
+        await using var factory = new LocalFlavorFactory<Program>();
+
+        var catalog = factory.Services.GetRequiredService<WireCatalog>();
+
+        catalog.TryGetSection(FixtureModuleDefinition.CardAggregate, out var card).ShouldBeTrue();
+        card!.MessageFullName.ShouldBe("fixture.v1.CardState");
+        card.HiddenMembers.ShouldBe([nameof(CardState.InternalNote)]);
+        card.Owner.ShouldBe(FixtureModuleDefinition.ModuleName);
+        card.Origin.ShouldBe(CatalogOrigin.Game);
+        catalog.TryGetRoute(FixtureRoutes.Card.Name, out var route).ShouldBeTrue();
+        route!.Declaration.Operation.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task The_card_route_returns_the_card_section()
+    {
+        await using var factory = new LocalFlavorFactory<Program>();
+        var login = await factory.CreateClient().LoginAsync(IdentityHttp.NewLocalId(), IdentityHttp.NewSecret());
+        var player = factory.CreateClient();
+        player.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", login.SessionToken);
+
+        var response = await player.PostProtobufAsync(FixtureRoutes.CardTemplate, new Fixture.V1.GetCardRequest(), ProtobufHttp.NewRequestId());
+        var card = (await response.ReadProtobufAsync<Fixture.V1.GetCardResponse>()).Card;
+
+        card.Id.ShouldBe(FixtureModuleDefinition.CardAggregate);
+        Fixture.V1.CardState.Parser.ParseFrom(card.Payload).Title.ShouldBeEmpty();
+    }
 }

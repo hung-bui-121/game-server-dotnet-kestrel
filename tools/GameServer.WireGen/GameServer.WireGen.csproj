@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Consumer Unity code generation (slice 014 FG-021, contracts/wiregen-cli.md): protoc message C# for a game's protos plus
+    route and section files from the host's catalog export. Runs the framework-pinned protoc of its own Grpc.Tools package
+    (no <Protobuf> items: nothing is compiled into this project, so a clean never deletes generated files). Not part of the
+    deployable server.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" />
+    <PackageReference Include="Grpc.Tools" GeneratePathProperty="true" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="GameServer.WireGen.Tests" />
+  </ItemGroup>
+
+  <!-- Baked at build (ToolInfo): framework checkout, the restored Grpc.Tools folder and the pinned versions from CPM. -->
+  <Target Name="WireGenBakeMetadata" BeforeTargets="GetAssemblyAttributes">
+    <ItemGroup>
+      <_WireGenPin Include="@(PackageVersion)" Condition="'%(Identity)' == 'Grpc.Tools' Or '%(Identity)' == 'Google.Protobuf'" />
+      <AssemblyMetadata Include="GameServer.WireGen.FrameworkRoot" Value="$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', '..'))" />
+      <AssemblyMetadata Include="GameServer.WireGen.GrpcToolsRoot" Value="$(PkgGrpc_Tools)" />
+      <AssemblyMetadata Include="GameServer.WireGen.FrameworkVersion" Value="$(GameServerFrameworkVersion)" />
+      <AssemblyMetadata Include="@(_WireGenPin->'GameServer.WireGen.Version.%(Identity)')" Value="%(_WireGenPin.Version)" />
+    </ItemGroup>
+  </Target>
+</Project>

@@ -17,9 +17,11 @@ FG-028, FG-021 and FG-027, before tag `v0.7.0`.
   permission are written once.
 - **Endpoint check (FG-026 (3)).** `EndpointCatalogValidator` compares every mapped `RouteEndpoint` with the catalog:
   undeclared, template/method/profile/operation/permission differs, declared-but-unmapped (surface mapped, module not
-  service-only, hosting condition holds). It runs in `UseGameServer` (aggregated report, as today) and again over the
-  **final** endpoint set in a framework `IHostedLifecycleService.StartingAsync` that runs before the web host builds its
-  pipeline and binds Kestrel, together with every existing endpoint validator (late-mapped endpoints, FR-012).
+  service-only, hosting condition holds). Together with every existing endpoint validator it runs once, over the
+  **final** endpoint set, in a framework `IHostedLifecycleService.StartingAsync` that runs before the web host builds its
+  pipeline and binds Kestrel (late-mapped endpoints, FR-012). `UseGameServer` runs the endpoint validators only when its
+  other checks already failed, so a failing start still gives one complete report (research R8, V16: the endpoint set is
+  built once before serving, as in 013).
 - **Consumer codegen (FG-021).** A framework tool `tools/GameServer.WireGen` (`generate` / `verify`) driven by a
   committed `wiregen.json`: it gets the catalog from the host itself (`--export-wire-contract`, a new host mode next to
   `--provision`: builds the composition, writes a deterministic JSON export, never starts), runs the framework-pinned
@@ -61,7 +63,7 @@ submodule; Unity 2021.3+ clients (IL2CPP)
 
 **Project Type**: web-service framework + Unity SDK + consumer tooling
 
-**Performance Goals**: pre-serving endpoint check ≤ 50 ms for 200 endpoints (SC-007); request path +1 metadata lookup
+**Performance Goals**: endpoint set built once before serving (as 013) and pre-serving validation ≤ 50 ms for 200 endpoints (SC-007, V16); request path +1 metadata lookup
 (route name, FR-015)
 
 **Constraints**: ARC-01 (Core free of ASP.NET/Protobuf), ARC-07, API-02, API-10, SEC-07/08/09, SDK-01..03, PCR-01,
@@ -86,9 +88,10 @@ changes (BC-1..BC-6)
             └──────────── RouteDeclarationMetadata on the endpoint ─────────────┘
                                                              │
   UseGameServer ── WireCatalog.Validate (names, dupes, templates, Public, conditions, hidden paths, duplicate mappers)
-               └── endpoint validators over endpoints mapped so far (security, commands, catalog per endpoint)
+               └── only if errors so far: endpoint validators over endpoints mapped so far ─► one report, exit 1
   EndpointSetValidationService.StartingAsync  (before GenericWebHostService builds the pipeline and binds Kestrel)
-               └── same validators over the FINAL endpoint set + declared-but-unmapped ─► GameServerStartupException → exit 1
+               └── endpoint validators (security, commands, catalog) over the FINAL endpoint set + declared-but-unmapped
+                   ─► GameServerStartupException → exit 1; pass → startup line (013 FR-054)
 
   host --export-wire-contract <file>  ─► wire-contract.json (format gameserver.wire-contract/1)
                                                 │
@@ -214,10 +217,12 @@ data-model §2:
 | Unmapped (pre-serving only) | declaration pair with no endpoint pair, when owner registered and not service-only, surface mapped (`PlayerApi` ↔ `Hosting:MapPlayerApi`, `GmApi` ↔ `Hosting:MapGmApi`, `Host` always), condition holds |
 
 **Where it runs** (`GameServerApplicationExtensions.UseGameServer`): after the existing validators, `catalog.Validate()`
-and `EndpointValidation.Run(endpoints, …, includeUnmapped: false)` join `errors`; on success `UseGameServer` hands the
-application (`IEndpointRouteBuilder`) to `EndpointValidationState`. `EndpointSetValidationService.StartingAsync` runs
+joins `errors`. If `errors` is not empty, `EndpointValidation.Run(endpoints mapped so far, …, includeUnmapped: false)`
+joins it too and `UseGameServer` throws (one complete report). Otherwise `UseGameServer` enumerates no endpoint and hands
+the application (`IEndpointRouteBuilder`) to `EndpointValidationState`. `EndpointSetValidationService.StartingAsync` runs
 `EndpointValidation.Run(finalEndpoints, …, includeUnmapped: true)` and throws one `GameServerStartupException` with every
-line; `RunGameServerAsync` already maps it to stderr + exit 1 (`FindStartupException`). `EndpointSecurityValidator` and
+line, or logs the 013 startup line on success; `RunGameServerAsync` already maps it to stderr + exit 1
+(`FindStartupException`). Building the endpoint set once before serving is the SC-007 rule (research V16). `EndpointSecurityValidator` and
 `CommandRouteValidator` keep their signatures; the Public allowlist passed to them becomes operator allowlist ∪ module
 `PublicEndpoints` ∪ templates of Public declarations owned by modules or the platform. `--provision` runs
 `catalog.Validate()` only (spec edge case).
@@ -329,10 +334,10 @@ old generator project can be deleted or reduced to an `Exec` of the documented c
 **Startup (serve).** `AddGameServer` registers `WireCatalog`, `HostRouteDeclarations`, condition `development_tools`,
 `EndpointValidationState` and `EndpointSetValidationService` (first hosted service) → modules add declarations
 (descriptor) and typed mappers (DI instances) → host `DeclareRoutes` → `Build()` → `RunGameServerAsync` →
-`UseGameServer`: registry/options checks + `catalog.Validate()` + endpoint validators (catalog per endpoint) over the
-current set → aggregated report or success → state gets the app → `RunAsync` → host `StartAsync` →
+`UseGameServer`: registry/options checks + `catalog.Validate()` → errors: + endpoint validators over the current set,
+aggregated report (exit 1) / success: state gets the app (no endpoint enumerated) → `RunAsync` → host `StartAsync` →
 `EndpointSetValidationService.StartingAsync` (before `GenericWebHostService`): all endpoint validators over the final set
-+ unmapped → throw (exit 1) or continue → pipeline built, Kestrel binds.
++ unmapped → throw (exit 1) or startup line and continue → pipeline built, Kestrel binds.
 
 **Export.** `host --export-wire-contract f` → `Build()` → `WireCatalog` (registry, platform, host, mapper registry) →
 `Validate()` → `ToExportJson()` → file → exit 0.
@@ -354,9 +359,11 @@ service. Export: a file the tool deletes after reading (temp) or the consumer co
 
 ## Performance
 
-- Pre-serving check: one more materialization of `DataSources.Endpoints` (RequestDelegateFactory per endpoint, already
-  done once in `UseGameServer`) + O(n) dictionary work. Budget SC-007 50 ms / 200 endpoints, measured by an opt-in test
-  (`GAMESERVER_PERF=1`) on a synthetic 200-endpoint composition (V2).
+- Pre-serving check: the one materialization of `DataSources.Endpoints` before serving (RequestDelegateFactory per
+  endpoint, about 2 ms each; 013 paid it in `UseGameServer`, 014 pays it in `StartingAsync` instead, never both) + O(n)
+  dictionary work (about 1 ms for 217 endpoints). ASP.NET caches nothing: routing builds the set again at the first
+  request in any case (V16). SC-007: build count before serving = 1 (always-on test) and validation ≤ 50 ms / 200 endpoints
+  (opt-in `GAMESERVER_PERF=1`, synthetic 200-endpoint composition) (V2, V16, T035).
 - Catalog: built once (~100 entries), dictionaries by name and by `METHOD template`.
 - Request path: `RouteName` = one `EndpointMetadataCollection.GetMetadata<T>()` (cached by ASP.NET) per request at
   finalization; the catalog lookup fallback (plain-mapped consumer endpoints only) allocates one key string.
@@ -474,7 +481,7 @@ gets one data file.
 | Story / rule | Tests |
 | --- | --- |
 | US1 declarations (FR-001..FR-008) | `RouteDeclarationTests` (factories, canonical template, command defaults); `WireCatalogTests` (owner/origin, platform + host entries, export determinism, FR-007 faults: duplicate name, duplicate method+template naming both owners, invalid template, missing version segment, bad name, Public in `PublicEndpoints` but other profile, unknown condition); consumer read of `PlatformRoutes.Config` in `FixtureCatalogTests` |
-| US1 check (FR-010..FR-014, SC-001) | `EndpointCatalogCheckTests`: 9 fault classes (undeclared player/GM/host, method, profile, operation, permission, declared-unmapped, duplicate name, late-mapped) each → exactly one line; health probe `*`; two methods; group prefix; service-only and `MapPlayerApi/MapGmApi=false` not reported; GM OpenAPI and SSO conditions; `LateEndpointValidationTests` (afterUseGameServer hook: undeclared, Dev outside dev via settings flip, no version, duplicate, Public not allowlisted, command operation unknown → exit 1 through `ServeAsync`, port not bound; WebApplicationFactory start throws); `CatalogCompositionTests` (SampleHost flavors local/dev/beta/uat/live × player/GM on/off, service-only module: 100% mapped ⊆ catalog); opt-in `EndpointCheckPerformanceTests` (SC-007) |
+| US1 check (FR-010..FR-014, SC-001) | `EndpointCatalogCheckTests`: 9 fault classes (undeclared player/GM/host, method, profile, operation, permission, declared-unmapped, duplicate name, late-mapped) each → exactly one line; health probe `*`; two methods; group prefix; service-only and `MapPlayerApi/MapGmApi=false` not reported; GM OpenAPI and SSO conditions; `LateEndpointValidationTests` (afterUseGameServer hook: undeclared, Dev outside dev via settings flip, no version, duplicate, Public not allowlisted, command operation unknown → exit 1 through `ServeAsync`, port not bound; WebApplicationFactory start throws); `CatalogCompositionTests` (SampleHost flavors local/dev/beta/uat/live × player/GM on/off, service-only module: 100% mapped ⊆ catalog); `EndpointCheckPerformanceTests` (SC-007: always-on build count = 1 per endpoint before serving + no startup line on an endpoint fault; opt-in validation ≤ 50 ms) |
 | US1 FR-015 | `RouteNameOutcomeTests` (outcome + event carry the name for metadata-bound and plain-mapped endpoints; null for unmatched) |
 | US2 (FR-020..FR-028, SC-003, SC-004) | `WireGen.Tests`: config errors (missing proto, missing folder, missing marker, nothing created), protoc error relayed, duplicate full name, framework type never in output, deterministic bytes (two temp checkouts, mixed separators), LF/CRLF, no BOM, unchanged timestamp on rerun, verify lists edited and missing files and writes nothing, no `.meta` touched, version mismatch messages (export framework version, protobuf, CPM Grpc.Tools); `FixtureCodegenTests` (end to end with `hostProject` from the fixture, committed client output verifies; `Fixture.Client.csproj` builds in the solution with 0 warnings = C# 9 / netstandard2.1 compile); `dotnet clean` of the fixture leaves the client files (test) |
 | US3 (FR-030..FR-035, FR-052, FR-053, SC-002, SC-006) | `WireGen.Tests` renderer (constant names, collisions, helper escaping, unsupported templates, method constants, GM excluded, Dev included, untyped section id only, unknown message fails); committed-output verify for SDK and KestrelDemo; `SdkRouteTests` (catalog ↔ `FrameworkRoutes`, `GameServerClient` constants unchanged in value, literal scan of SDK runtime and `SampleGameClient.cs`); `SectionTableTests` (wallet/inventory/profile + a sample section after snapshot and `SectionUpdate`: typed = `Get<T>(id, parser)`; unknown id stored raw and `TryRead` → `Unknown`; conflicting table → exception); existing SDK tests unchanged |
@@ -528,7 +535,7 @@ docs/close 10).
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
 | `StartingAsync` does not see late endpoints or runs after Kestrel binds on 10.0.x (V1) | FR-012 not met | Verify first (phase 1); fallback `IStartupFilter`, then first-request refusal with the same report + `StopApplication` (never silent) |
-| Second endpoint materialization exceeds 50 ms on large hosts (V2) | SC-007 | Measure; if over, keep the per-endpoint checks only in the pre-serving run when `UseGameServer` was called from `RunGameServerAsync`/`TestHost` (nothing can be mapped between) — documented trade-off |
+| Second endpoint materialization exceeds 50 ms on large hosts (V2) | SC-007 | **Occurred** (440 ms / 217 endpoints, V2/V16). Resolved: the endpoint validators run once before serving (pre-serving run); `UseGameServer` runs them only on its failure path — for every host, not only `RunGameServerAsync`/`TestHost`. Endpoint lines of a passing configuration now surface from the host start (same text, exit 1, port unbound) (T035) |
 | Export mode has side effects or needs secrets for some compositions (V4) | Codegen cannot run from a clean checkout | Export never resolves stores/options; consumer guide: run with the local flavor; record the Serilog log-file side effect |
 | BC-1 floods framework tests with undeclared ad-hoc endpoints | Many red tests during migration | Phase 2 migrates all framework routes before the check is switched on; ad-hoc test endpoints (~18 in 8 files) declared through the `modules` callback |
 | WireGen protoc output differs from the Grpc.Tools-generated committed files (V7) | One-time diff in package/KestrelDemo | Accept once, record; paths and `.meta` GUIDs unchanged (FR-034) |
