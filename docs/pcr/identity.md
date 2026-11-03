@@ -2,11 +2,13 @@
 
 Module framework `identity` (slice 002; version 0.10.0 sau slice 010; slice 012: event analytics `login`). Nguồn: IDN-01..12, BAN-01, SEC-02, SEC-13, PRIV-01.
 
+Đúng với framework v0.7.0 (chưa phát hành).
+
 ## Aggregate
 
 | Aggregate | Collection | Schema | Client-visible | Wire |
 | --- | --- | --- | --- | --- |
-| `profile` | `pa_profile` | 1 | có | `ProfileState{display_name, session_epoch}` — `ban`, `deleted`, `identities` không gửi |
+| `profile` | `pa_profile` | 1 | có | `ProfileState{display_name, session_epoch}` — `ban`, `deleted`, `identities` không gửi (khai `Hidden`, slice 014) |
 
 State: `displayName`, `sessionEpoch`, `ban{reason, untilUtc, scope[], actor}`, `deleted{requestedAtUtc, purgeAfterUtc,
 purgeStartedAtUtc?}` (`purgeStartedAtUtc` thêm ở slice 010, additive, `schemaVersion` vẫn 1), `identities[]`.
@@ -30,7 +32,7 @@ Tên collection `identities` công bố ở `IdentityCollections.Identities` (mo
 
 | Route | Profile | Ghi chú |
 | --- | --- | --- |
-| `POST /api/v1/identity/login/guest` | Public (allowlist qua `PublicEndpoints`), Protobuf, gated | `GuestLoginRequest{local_id, secret}` → `LoginResponse` |
+| `POST /api/v1/identity/login/guest` | Public (allowlist qua declaration Public trong catalog, slice 014), Protobuf, gated | `GuestLoginRequest{local_id, secret}` → `LoginResponse` |
 | `POST /api/v1/identity/logout` | Player | xoá session hiện tại |
 | `POST /api/v1/identity/login/provider` | Public, Protobuf, gated | `ProviderLoginRequest{credential, switch_account}` → `LoginResponse`; gửi kèm `Authorization` của phiên đang có (nếu có) |
 | `POST /api/v1/identity/link` | Player command `identity.link` | `LinkIdentityRequest{credential}` → `LinkIdentityResult{provider, already_linked}` |
@@ -151,3 +153,35 @@ Quy tắc (semantic):
 - **JOB-02 — mất được chấp nhận:** record login/resume đi qua hàng đợi trong bộ nhớ (best effort): hàng đợi đầy, sink lỗi, dừng
   quá ngân sách drain hoặc crash làm mất record (đếm ở `analytics_events_dropped_total{event="login"}`, trừ crash). Login
   không bao giờ chờ hay thất bại vì analytics.
+
+## Route catalog và section (slice 014 — FG-026, FG-027, FG-028)
+
+Mỗi route của module khai đúng một lần (`RouteDeclaration`) trong `IdentityRoutes`
+(`src/GameServer.Modules.Identity.Adapters/IdentityRoutes.cs`), liệt kê ở `ModuleDescriptor.Routes`; endpoint map từ
+chính declaration (`MapPlayerCommand`/`MapGmCommand`, `MapDeclared(...).AsPublicEndpoint()`/`AsPlayerEndpoint()`). Hai
+route login Public được allowlist qua declaration Public (không còn `PublicEndpoints`). Bảng route lấy từ export của
+SampleHost (`--environment Local --export-wire-contract`, format `gameserver.wire-contract/1`). Endpoint check lúc khởi
+động, quy tắc đặt tên và điều kiện hosting: PCR platform mục 20. Route player-facing có hằng số sinh trong
+`FrameworkRoutes` của gói Unity (`identity.login_guest` → `FrameworkRoutes.IdentityLoginGuest`); route GM không sinh.
+
+| Route | Method | Template | Profile | Operation | Permission | Condition |
+| --- | --- | --- | --- | --- | --- | --- |
+| `identity.ban` | POST | `/gm/v1/players/{playerId}/ban` | Gm | `identity.ban` | `player.ban` | — |
+| `identity.cancel_deletion` | POST | `/gm/v1/players/{playerId}/deletion/cancel` | Gm | `identity.cancel_deletion` | `player.ban` | — |
+| `identity.link` | POST | `/api/v1/identity/link` | Player | `identity.link` | — | — |
+| `identity.login_guest` | POST | `/api/v1/identity/login/guest` | Public | — | — | — |
+| `identity.login_provider` | POST | `/api/v1/identity/login/provider` | Public | — | — | — |
+| `identity.logout` | POST | `/api/v1/identity/logout` | Player | — | — | — |
+| `identity.request_deletion` | POST | `/api/v1/identity/delete-account` | Player | `identity.request_deletion` | — | — |
+| `identity.set_display_name` | POST | `/api/v1/identity/display-name` | Player | `identity.set_display_name` | — | — |
+| `identity.unban` | POST | `/gm/v1/players/{playerId}/unban` | Gm | `identity.unban` | `player.ban` | — |
+
+Section (mapper typed `AddAggregateWireMapper<ProfileState, Wire.ProfileState>` trong `IdentityModule.cs`; Unity
+`FrameworkSections.Profile` / `FrameworkSections.ProfileId`):
+
+| Section | Message | Hidden (không lên wire) | May-stay-default |
+| --- | --- | --- | --- |
+| `profile` | `gameserver.identity.v1.ProfileState` | `Ban`, `Deleted`, `Identities` — chi tiết ban, yêu cầu xoá và mapping key liên kết chỉ dùng ở server (GM, flow tài khoản) | — |
+
+`WireConformance` (TestKit) kiểm mapper mang mọi member không hidden lên wire và set mọi field proto
+(`tests/GameServer.Platform.Web.Tests/WireConformanceTests.cs`).

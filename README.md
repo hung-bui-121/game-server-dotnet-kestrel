@@ -69,6 +69,8 @@ test kit `src/GameServer.TestKit` (`TestHost`, `LocalFlavorFactory<Program>`, `C
 version (`GameServerVersion`, dòng log khởi động, GM `GET /gm/v1/ops/version`), request log, dải error code của game 50000–89999, gói
 Unity theo tag và checklist khi nâng tag: `docs/guides/consumer-guide.md` (tiếng Anh). Framework version `0.7.0` (chưa phát hành) khai
 một lần trong `Directory.Build.props` (`GameServerFrameworkVersion`), bằng version của gói Unity; tag phát hành là `v0.7.0`.
+Khai báo route, kiểm tra endpoint lúc startup và sinh code Unity (route, section, message) từ repo game bằng `tools/GameServer.WireGen`:
+`docs/guides/consumer-guide.md` mục 10.
 
 ## Build và test
 

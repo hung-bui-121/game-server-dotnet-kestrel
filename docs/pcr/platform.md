@@ -6,7 +6,8 @@ thay đổi mục **vận hành** chỉ cần ghi changelog. Nguồn yêu cầu:
 Phiên bản: 0.7.0 (slice 001 + sửa sau review + slice 002 identity + slice 004 GM + slice 005 observability, 2026-10-26;
 slice 010 lease job và xoá tài khoản, 2026-10-30 — mục 16; slice 011 môi trường theo flavor, file store, setting Couchbase,
 `--provision`, 2026-10-30 — mục 17; slice 012 analytics login và payment, 2026-10-31 — mục 18; slice 013 consumer
-readiness, 2026-11-03 — mục 19). Đúng với framework v0.7.0 (chưa phát hành).
+readiness, 2026-11-03 — mục 19; slice 014 wire contract, 2026-11-03 — mục 20 và `RouteName` ở mục 13). Đúng với framework
+v0.7.0 (chưa phát hành / unreleased).
 
 ## 1. Limits và timeout theo nhóm endpoint (vận hành — API-06, PERF-04)
 
@@ -293,6 +294,7 @@ category, event id, result code cố định hoặc setting dưới đây là br
 | --- | --- | --- |
 | `HttpMethod` | string | `GET`, `POST`, … |
 | `Route` | string | template của endpoint (`/api/v1/player/receipts/{receiptId}`); không khớp endpoint (404, 405, scanner): chỉ segment đầu của path rồi `/...` (`/api/v1/nope` → `/api/...`, gốc → `/`; phần còn lại do client đặt, có thể chứa id/token), đã làm sạch (ký tự điều khiển → `?`, cắt 120 ký tự + `...`), không bao giờ có query string |
+| `RouteName` | string? | tên route trong catalog (slice 014, mục 20: `battle.start`, `platform.config`): từ `RouteDeclarationMetadata` của endpoint, không có thì `WireCatalog.FindRouteName(method, template)`; null khi không khớp endpoint. Đứng ngay sau `Route`; không có trong dòng console; các thuộc tính của slice 013 không đổi |
 | `Profile` | string? | `Public`, `Player`, `Gm`, `Dev`; null khi không khớp endpoint |
 | `Operation` | string? | operation của command (`counter.increment`), cả khi command bị từ chối trước runner; null cho route không phải command |
 | `ActorType` | string? | `player`, `gm`; null khi chưa xác thực |
@@ -322,7 +324,9 @@ category, event id, result code cố định hoặc setting dưới đây là br
 
 **Outcome feature (semantic với code consumer, FR-084):** `IRequestOutcomeFeature` (namespace `GameServer.Platform.Web.Requests`)
 trên `HttpContext.Features`, lấy bằng `context.RequestOutcome()` (không bao giờ null; host không có middleware thì tạo khi dùng lần
-đầu). Thành viên: `ResultCode`, `Operation`, `Replayed`, `NotModified` (get/set), `StatusCode`, `Aborted`, `Completed` (get).
+đầu). Thành viên: `ResultCode`, `Operation`, `Replayed`, `NotModified` (get/set), `StatusCode`, `Aborted`, `Completed` (get),
+`RouteName` (get; slice 014, default interface member trả `null` — implementation của consumer không phải sửa; framework đặt
+cùng giá trị với request event khi chốt).
 
 ```csharp
 app.Use(async (HttpContext context, RequestDelegate next) =>   // middleware của game, đặt TRƯỚC app.UseGameServer()
@@ -1085,3 +1089,161 @@ Thuộc tính của event, level và outcome feature: mục 13. Dung lượng: `
 | BC-7 | một request event mỗi request ở Development/Test (mặc định) và console tuỳ chọn; tăng dung lượng log nơi bật | Staging/Production không đổi trừ khi bật; xoá request log tự viết của game; bật console trong file flavor local của game |
 
 Bước chuyển đầy đủ: release notes `v0.7.0` (bản nháp `specs/013-consumer-readiness/release-notes-draft.md`).
+
+## 20. Wire contract: route catalog, endpoint check, export, section contract (slice 014 — FG-026, FG-027, FG-028, ARC-07, API-02, API-10, SEC-07..09)
+
+Mỗi route HTTP được khai **một lần** dưới dạng dữ liệu (`RouteDeclaration`); mapping, check khi khởi động, request log
+(`RouteName`, mục 13) và code sinh cho Unity (`tools/GameServer.WireGen`, PCR unity-sdk) đều đọc cùng khai báo đó. Không có
+setting nào tắt check (FR-013). Đúng với framework v0.7.0 (chưa phát hành / unreleased).
+
+### Catalog entry (semantic với code consumer và generator)
+
+`WireCatalog` (namespace `GameServer.Platform.Web.Catalog`, singleton DI, có sau `Build()` mà không cần start) giữ `Routes`
+(ordinal theo `Name`) và `Sections` (ordinal theo `Id`); `TryGetRoute`, `TryGetSection`, `FindRouteName(method, template)`
+(khai báo any-method khớp mọi method), `Validate()` (lỗi khai báo, dưới đây), `ToExportJson()`.
+
+| Trường `RouteDeclaration` (Core, `GameServer.Routing`) | Luật |
+| --- | --- |
+| `Name` | `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`, ≤ 64 ký tự, duy nhất mỗi host; route command mặc định lấy tên = operation (`RouteDeclaration.Command`). **Ổn định: đổi tên là breaking (ARC-08)** |
+| `Methods` | HTTP method viết hoa, sắp ordinal, không trùng; rỗng = mọi method (health probe, `AnyMethod`) |
+| `Template` | đúng một `/` đầu; route template ASP.NET hợp lệ; có segment version `(^\|/)v[0-9]+(/\|$)` trừ `/health/live`, `/health/ready` (API-02) |
+| `Profile` | `Public`, `Player`, `Gm`, `Dev` (`SecurityProfile`) |
+| `Surface` | `PlayerApi` (map khi `GameServer:Hosting:MapPlayerApi`), `GmApi` (khi `GameServer:Hosting:MapGmApi`), `Host` (luôn map) |
+| `Operation` | operation của command; null cho route không phải command |
+| `Permission` | permission GM; bắt buộc với profile `Gm`, null với profile khác (SEC-07) |
+| `Condition` | tên một hosting condition đã đăng ký; null = luôn map khi surface được map |
+
+`RouteEntry(Declaration, Owner, Origin, ServiceOnly)`: `Owner` = tên module, `platform` (`RouteEntry.PlatformOwner`) hoặc
+`host` (`RouteEntry.HostOwner`, khai bằng `GameServerBuilder.DeclareRoutes(...)` trước `Build()`; route Public của host vẫn
+cần `GameServer:PublicEndpointAllowlist`); `ServiceOnly` = owner đăng ký bằng `ServiceOnly()`. Module khai route trong
+`ModuleDescriptor.Routes` (project business); route Public trong `Routes` cũng tính là public endpoint (SEC-09, mục 9).
+Platform: `PlatformRoutes` (`Time`, `Snapshot`, `Config`, `Receipt`, `GmOpenApi`, `All`); module framework: `IdentityRoutes`,
+`IapRoutes`, `EconomyRoutes`, `CheatRoutes`, `GmRoutes`, `ObservabilityRoutes` (`Live`, `Ready`). Bảng route của từng module:
+PCR của module.
+
+**Luật đặt tên:** `<area>.<route>` chữ thường, phần cách bằng `.`, chữ trong phần cách bằng `_` (`identity.login_guest`,
+`gm.ops_gate_min_client_version`). Tên sinh trong Unity = tách theo `.` và `_`, viết hoa chữ đầu mỗi phần, nối lại
+(`identity.login_guest` → `IdentityLoginGuest`; section `wallet` → `Wallet`/`WalletId`).
+
+**Origin:** `Framework` khi owner là `platform` hoặc tên assembly của kiểu module bắt đầu bằng `GameServer.` (prefix dành riêng
+cho framework — game không đặt assembly bắt đầu bằng `GameServer.`); còn lại `Game`. Khai báo của host là `Game`.
+
+**Hosting condition:** `services.AddRouteCondition(name, sp => bool)` (Platform.Web) trong module; khai báo tham chiếu bằng
+tên. Có sẵn: `development_tools` (`RouteConditions.DevelopmentTools`, platform, = `GameServerOptions.AllowsDevelopmentTools`:
+`platform.gm_openapi`, `gm.auth_login`) và `gm.sso` (module GM, = `Gm:Oidc` đã cấu hình: `gm.sso_start`, `gm.sso_callback`).
+Condition chỉ quyết định khai báo chưa map có phải lỗi hay không; tên không đăng ký là lỗi khai báo.
+
+**Mapping từ khai báo:** `MapPlayerCommand`/`MapDevCommand(declaration, …)`, `MapGmCommand(declaration, …)` (operation và
+permission lấy từ khai báo; thiếu → `ArgumentException`), `MapDeclared(declaration, handler).As*Endpoint()` cho route không
+phải command, `.WithDeclaration(declaration)` cho endpoint do thư viện map (`MapHealthChecks`, `MapOpenApi`). Endpoint mang
+`RouteDeclarationMetadata`; endpoint map bằng chuỗi được khớp theo cặp (method, template).
+
+### Lỗi khai báo (semantic — dòng startup, `WireCatalog.Validate`)
+
+Chạy trong `UseGameServer`, `--provision` và export mode; mỗi lỗi một dòng, exit 1, không bind port.
+
+| Lỗi | Dòng |
+| --- | --- |
+| Tên sai | `[route {name}] (owner {owner}) name does not match ^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$ (≤ 64). Fix: use <area>.<route> in lower case (FG-026).` |
+| Tên trùng | `[route {name}] is declared by {ownerA} and {ownerB}. Fix: give each route a unique name (FG-026).` |
+| Trùng method + template | `[route {method} {template}] is declared twice: {nameA} ({ownerA}) and {nameB} ({ownerB}). Fix: declare it once (ARC-07).` |
+| Template không hợp lệ | `[route {name}] template '{template}' is not a valid route template: {parser message}. Fix: correct the declaration (FG-026).` |
+| Thiếu version | `[route {name}] template '{template}' has no version segment. Fix: prefix with /v{n}/ (API-02).` |
+| Gm không permission / không phải Gm mà có permission | `[route {name}] has profile {profile} and permission '{permission}'. Fix: GM routes declare their permission, other routes none (SEC-07).` |
+| Condition chưa đăng ký | `[route {name}] uses hosting condition '{condition}' which is not registered. Fix: services.AddRouteCondition("{condition}", …) in the module (FG-026).` |
+| `PublicEndpoints` khác profile (BC-5) | `[module {module}] lists {template} in PublicEndpoints but route {name} declares profile {profile}. Fix: declare it Public or remove it from PublicEndpoints (SEC-09).` |
+| Hai mapper cho một aggregate (BC-4) | `[aggregate {id}] has {n} wire mappers. Fix: register one mapper per aggregate; replace a framework mapper with ConfigureExtensions(e => e.ReplaceWireMapper<TState, TWire>(…)) (API-10).` |
+| Hidden member không tồn tại | `[aggregate {id}] hidden member '{path}' does not exist on {TState}. Fix: use C# member names joined by '.' (FG-027).` |
+| Field may-stay-default không tồn tại | `[aggregate {id}] field '{path}' does not exist on {message full name}. Fix: use proto field names joined by '.' (FG-027).` |
+| Mapper không kiểu (Warning, không phải lỗi) | `[aggregate {id}] wire mapper registered without its message type: the catalog has no message for this section and Unity gets no parser. Fix: AddAggregateWireMapper<TState, TWire>(…) (FG-028).` |
+
+`{method}` của dòng trùng là các method chung, nối bằng `,`; `{TState}` là tên kiểu state. Warning được ghi một lần mỗi
+section không kiểu, category `GameServer.Startup` (cùng đường với warning của `IStartupCheck`, mục 17); host vẫn chạy.
+
+### Lỗi endpoint (semantic — dòng startup, `EndpointCatalogValidator`)
+
+Mọi endpoint route đã map ↔ catalog, ở **mọi** môi trường; `{label}` = `METHODS /template`. Endpoint không phải route bị bỏ
+qua. Template so sau khi chuẩn hoá `/` đầu, phân biệt hoa thường.
+
+| Lỗi | Dòng |
+| --- | --- |
+| Chưa khai | `[endpoint {label}] is not declared in the route catalog. Fix: declare it in the module's ModuleDescriptor.Routes (or GameServerBuilder.DeclareRoutes for a host endpoint) and map it from the declaration (FG-026).` |
+| Template khác (endpoint gắn khai báo) | `[route {name}] declared at {declared template} but mapped at {mapped template}. Fix: map it with the declaration and no route group prefix, or correct the declaration (FG-026).` |
+| Method khác | `[endpoint {label}] maps method {method} but route {name} declares {declared methods}. Fix: declare one route per method or correct the mapping (FG-026).` |
+| Profile khác | `[endpoint {label}] has profile {mapped} but route {name} declares {declared}. Fix: use the As*Endpoint helper of the declared profile or correct the declaration (SEC-08).` |
+| Operation khác | `[endpoint {label}] runs command '{mapped}' but route {name} declares '{declared}'. Fix: map it with MapPlayerCommand/MapDevCommand/MapGmCommand(declaration, …) (ARC-07).` |
+| Permission khác | `[endpoint {label}] requires permission '{mapped}' but route {name} declares '{declared}'. Fix: map it with the declaration (SEC-07).` |
+| Khai mà không map | `[route {name}] ({label}, owner {owner}, surface {surface}) is declared but not mapped. Fix: map it in the module's {map method} method or remove the declaration (FG-026).` |
+
+`{map method}` = `MapPlayerApi` (surface `PlayerApi`), `MapGmApi` (`GmApi`), `MapHostEndpoints` (`Host`). "Khai mà không map"
+chỉ báo khi owner đã đăng ký và không `ServiceOnly()`, surface của nó được map và condition đúng. Endpoint map bằng chuỗi gõ
+sai cho hai dòng (chưa khai + khai mà không map); endpoint gắn khai báo trong `MapGroup` có prefix cho một dòng (template
+khác). Profile chỉ được so khi endpoint có đúng một `SecurityProfileMetadata`.
+
+### Kiểm tra trước khi phục vụ (semantic — FR-012)
+
+- `EndpointSetValidationService` (`IHostedLifecycleService`, đăng ký **đầu tiên** trong `AddGameServer`) chạy trong
+  `StartingAsync`, trước `GenericWebHostService.StartAsync` (pipeline + Kestrel bind) và trước mọi hosted service khác: dựng
+  tập endpoint cuối cùng **một lần** (kể cả endpoint map sau `UseGameServer`, trực tiếp hoặc trong `MapGroup`) và chạy cùng ba
+  validator (security, command route, catalog — gồm "khai mà không map"). Lỗi → một `GameServerStartupException` chứa mọi
+  dòng, exit 1 qua `RunGameServerAsync`, không port nào được bind; `TestServer` và `WebApplicationFactory` ném cùng exception.
+- `UseGameServer` chạy các check không phải endpoint; nó chỉ dựng endpoint (để gộp vào cùng một báo cáo) khi đã có lỗi khác.
+  Cấu hình hợp lệ chỉ có lỗi endpoint → báo khi host start (cùng dòng, exit 1, không bind). Dòng `Starting …` (mục 19) được
+  ghi sau khi check endpoint đạt.
+- Endpoint map muộn nhận đúng các dòng trên (và các dòng security/command sẵn có); không có gì đánh dấu "muộn". Từ chối Dev
+  lúc request của slice 013 vẫn giữ.
+- Chi phí: validation ≈ 1 ms cho 217 endpoint; mỗi endpoint được build một lần trước khi phục vụ, như slice 013 (đo
+  2026-11-03, `EndpointCheckPerformanceTests`, `GAMESERVER_PERF=1`).
+
+### Export (semantic với generator — FR-030, format `gameserver.wire-contract/1`)
+
+`<host> --environment <flavor> --export-wire-contract <file>` (qua `GameServerCommandLine.Parse` + `RunGameServerAsync`;
+host phải dùng hai API này): `Build()`, `ModuleRegistry.Validate` (deployment identity, luật module như `--provision`) và
+`WireCatalog.Validate()` (lỗi → mỗi dòng một dòng stderr, exit 1, không ghi file), thư mục của file phải tồn tại (không thì
+exit 1 nêu tên), ghi `ToExportJson()` (UTF-8 không BOM, LF), dispose, exit 0. **Không bao giờ** `UseGameServer`, hosted
+service, store, game config, secret, socket. Bị từ chối (exit 1): thiếu path, dạng `=`, `-export-wire-contract`,
+`/export-wire-contract`, switch hai lần, argument tiếp theo bắt đầu bằng `-`, kết hợp với `--provision`, file không ghi được.
+
+| Thuộc tính | Kiểu | Ý nghĩa |
+| --- | --- | --- |
+| `format` | string | `gameserver.wire-contract/1` |
+| `frameworkVersion` | string | `GameServerVersion.Framework` (`0.7.0`) |
+| `protobufVersion` | string | informational version của `Google.Protobuf` mà host nạp |
+| `routes[]` | object | `name`, `methods[]` (bỏ = mọi method), `template`, `profile`, `surface`, `owner`, `origin` (`framework`/`game`), `operation?`, `permission?`, `condition?`, `serviceOnly?` (chỉ khi true) |
+| `sections[]` | object | `id`, `owner`, `origin`, `message?`, `hiddenMembers[]?`, `mayStayDefault[]?` |
+
+Tất định: thuộc tính theo thứ tự trên, indent 2 space, null và mảng rỗng bị bỏ, `routes` theo `name`, `sections` theo `id`
+(ordinal); không timestamp, path, máy, user, game id hay environment — hai lần chạy cho cùng bytes. **Versioning:** thêm thuộc
+tính là thay đổi minor (reader bỏ qua thuộc tính lạ); đổi nghĩa hay xoá thuộc tính là major mới (`/2`) và reader fail với
+major khác.
+
+### Section contract (semantic với Unity — FG-027, FG-028, API-10)
+
+- Một aggregate client-visible có wire mapper = một section `SectionEntry(Id, Owner, Origin, MessageFullName, HiddenMembers,
+  MayStayDefaultFields)`. Đăng ký: `services.AddAggregateWireMapper<TState, TWire>(aggregateId, map,
+  o => o.Hidden(...).MayStayDefault(...))` — `MessageFullName` = full name proto của `TWire`.
+- `Hidden("A.B", …)`: member của state giữ trên server có chủ đích (tên member C# nối bằng `.`, phần tử collection trong suốt);
+  `MayStayDefault("a.b", …)`: field proto mà giá trị có nghĩa có thể là default (enum 0; tên field proto nối bằng `.`). Hai danh
+  sách sắp ordinal, có trong catalog và export (nguồn của PCR module), được kiểm ở startup (dòng ở trên) và bởi
+  `WireConformance` của test kit.
+- `AddAggregateWireMapper<TState>(id, Func<TState, IMessage>)` (không kiểu) là `[Obsolete]` (BC-3, giữ qua v0.7.x; CS0618 thành
+  lỗi build dưới `TreatWarningsAsErrors`): section không có `message`, Unity không có parser, một Warning lúc start.
+- Một mapper mỗi aggregate id: registry giữ mapper **đầu tiên** và báo trùng (BC-4; không còn last-wins). Thay mapper (kể cả của
+  framework): `ConfigureExtensions(e => e.ReplaceWireMapper<TState, TWire>(id, map, configure))` — xoá các mapper đăng ký trước
+  đó cho id bằng `AddAggregateWireMapper` (instance) rồi đăng ký mapper có kiểu; id chưa có mapper → chỉ đăng ký (không lỗi).
+  Mapper đăng ký bằng kiểu hoặc factory không bị xoá và vẫn bị báo trùng.
+- **FR-055:** slice này không đổi message wire, route player, document hay response GM API nào; payload của section framework
+  giữ nguyên từng byte (`WireMapperRegistrationTests`).
+
+### Breaking (slice 014 — so với `v0.6.0`)
+
+| # | Thay đổi | Lộ ra thế nào | Cách chuyển |
+| --- | --- | --- | --- |
+| BC-1 | mọi endpoint đã map phải có trong catalog; endpoint chưa khai hoặc lệch khai báo làm startup fail ở mọi môi trường | exit 1, một dòng mỗi endpoint (method, route, fix) | khai route trong `ModuleDescriptor.Routes` của module (hoặc `GameServerBuilder.DeclareRoutes` cho endpoint của host) và map từ khai báo |
+| BC-2 | endpoint map sau `UseGameServer` được kiểm trước khi phục vụ: catalog, profile, segment version, trùng, allowlist Public, luật Dev, route command | exit 1, cùng dòng như endpoint trong pipeline | sửa endpoint theo dòng báo, hoặc chuyển nó vào một module |
+| BC-4 | hai wire mapper cho một aggregate id làm startup fail (trước: cái sau thắng) | exit 1, dòng nêu aggregate | một mapper mỗi aggregate; thay bằng `ConfigureExtensions(e => e.ReplaceWireMapper<TState, TWire>(…))` |
+| BC-5 | route liệt kê trong `ModuleDescriptor.PublicEndpoints` mà khai profile khác làm startup fail | exit 1, dòng nêu module, template và route | khai profile `Public` hoặc bỏ khỏi `PublicEndpoints` |
+
+BC-3 (mapper không kiểu `[Obsolete]`): "Section contract" ở trên. BC-6 (`sdk/GameServer.Client` không còn sinh code cho
+KestrelDemo): PCR unity-sdk. Bước chuyển đầy đủ: release notes `v0.7.0` (bản nháp
+`specs/014-wire-contract/release-notes-draft.md`).

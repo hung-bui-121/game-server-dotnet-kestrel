@@ -3,20 +3,28 @@ using Shouldly;
 namespace GameServer.WireGen.Tests;
 
 /// <summary>
-/// FR-034, FR-035, US5-1 (slice 014 T063): the committed generated files are exactly what the committed configs produce from the
-/// current server (every framework build runs this, so the Unity package cannot drift from the catalog). The host export runs for
-/// real (<c>--no-build</c>, the test's configuration: the solution build comes first).
+/// FR-034, FR-035, US5-1 (slice 014 T063, T071): the committed generated files (SDK package, consumer fixture, KestrelDemo) are
+/// exactly what the committed configs produce from the current server (every framework build runs this, so the Unity package and
+/// the sample client cannot drift from the catalog). The host export runs for real (<c>--no-build</c>, the test's configuration:
+/// the solution build comes first).
 /// </summary>
 public sealed class CommittedOutputTests
 {
     private const string SdkConfig = "sdk/GameServer.Client/wiregen.json";
     private const string FixtureConfig = "tests/ConsumerFixture/tools/wiregen.json";
+    private const string SampleConfig = "samples/SampleGame/wiregen.json";
+
+    /// <summary>KestrelDemo's generated folder (opened by exact path: never a recursive scan of samples/, Unity's Library is there).</summary>
+    private const string SampleGenerated = "samples/SampleGame/KestrelDemo/Assets/SampleGame/Generated";
+
+    private static readonly string[] SampleGeneratedFiles = ["SampleGame.cs", "SampleCounter.cs", "SampleGameRoutes.cs", "SampleGameSections.cs"];
 
     private static readonly string Dotnet = DotnetHost.Resolve(null);
 
     [Theory]
     [InlineData(SdkConfig)]
     [InlineData(FixtureConfig)]
+    [InlineData(SampleConfig)]
     public async Task Verify_of_a_committed_config_passes(string config)
     {
         var (code, output, error) = await VerifyAsync(Repo.Path(config));
@@ -46,6 +54,27 @@ public sealed class CommittedOutputTests
         code.ShouldBe(WireGenExitCodes.OutOfDate, output + error);
         (output + error).ShouldContain("Runtime/Generated/FrameworkRoutes.cs");
         (output + error).ShouldNotContain("Runtime/Generated/FrameworkSections.cs");
+        tree.Snapshot().ShouldBe(before);
+    }
+
+    [Fact]
+    public async Task An_edited_generated_file_of_the_sample_client_fails_verify_naming_it()
+    {
+        using var tree = new TempTree();
+        var generated = tree.Folder("Assets/SampleGame/Generated");
+        foreach (var name in SampleGeneratedFiles)
+        {
+            File.Copy(Repo.Path($"{SampleGenerated}/{name}"), Path.Combine(generated, name));
+        }
+
+        File.AppendAllText(tree.Path("Assets/SampleGame/Generated/SampleGameRoutes.cs"), "// edited\n");
+        var before = tree.Snapshot();
+
+        var (code, output, error) = await VerifyAsync(Repo.Path(SampleConfig), "--output-root", tree.Root);
+
+        code.ShouldBe(WireGenExitCodes.OutOfDate, output + error);
+        (output + error).ShouldContain("Assets/SampleGame/Generated/SampleGameRoutes.cs");
+        (output + error).ShouldNotContain("Assets/SampleGame/Generated/SampleGameSections.cs");
         tree.Snapshot().ShouldBe(before);
     }
 

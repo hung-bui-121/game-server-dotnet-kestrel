@@ -2,6 +2,8 @@
 
 Module framework `iap` (slice 003, version 0.1.0; slice 012: event analytics `payment`). Nguồn: IAP-01, IAP-02, ECO-08, SMP-04, ANA-01.
 
+Đúng với framework v0.7.0 (chưa phát hành).
+
 ## Luồng
 
 `POST /api/v1/iap/purchase` (Player, `X-Request-Id`) → adapter gọi `IStoreReceiptVerifier` **trước** transaction →
@@ -83,3 +85,16 @@ token > 226 byte làm purchase lỗi `INTERNAL` trên Couchbase sau khi người
 **Cho slice iap-notifications (refund/void):** purchase Google không có `orderId` được ghi `transactionID = google:h:{hash}`;
 record refund/void sau này mang `orderId` sẽ **không khớp** `transactionID` đó. Slice đó phải ghép theo hash của purchase
 token (hoặc theo `receiptId`/ledger), không theo `orderId`.
+
+## Route catalog và section (slice 014 — FG-026, FG-027, FG-028)
+
+`IapRoutes` (`src/GameServer.Modules.Iap/IapRoutes.cs`) nằm trong business project cùng descriptor (`IapModel.cs`,
+`IapModuleDefinition.Routes`); adapter map endpoint từ declaration. Bảng route lấy từ export của SampleHost
+(`--environment Local --export-wire-contract`, format `gameserver.wire-contract/1`). Endpoint check lúc khởi động, quy
+tắc đặt tên và điều kiện hosting: PCR platform mục 20. Unity: `FrameworkRoutes.IapPurchase`.
+
+| Route | Method | Template | Profile | Operation | Permission | Condition |
+| --- | --- | --- | --- | --- | --- | --- |
+| `iap.purchase` | POST | `/api/v1/iap/purchase` | Player | `iap.purchase` | — | — |
+
+Module không có aggregate client-visible riêng (cấp quà vào section `wallet`, `inventory` của PCR economy).

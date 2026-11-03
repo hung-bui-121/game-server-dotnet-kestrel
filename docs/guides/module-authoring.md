@@ -25,7 +25,8 @@ public static PlayerAggregateDescriptor<MyState> Descriptor { get; } =
 
 - Id `[a-z][a-z0-9_]{1,31}`, lưu ở collection `pa_mything`, key = `playerId`.
 - Tăng `schemaVersion` thì thêm một `IAggregateUpgrader` cho mỗi bước (`DelegateAggregateUpgrader`).
-- Client-visible thì adapter phải đăng ký `services.AddAggregateWireMapper<MyState>("mything", s => new Wire.MyState {...})`.
+- Client-visible thì adapter phải đăng ký wire mapper **kèm kiểu message** (mục 5.2):
+  `services.AddAggregateWireMapper<MyState, Wire.MyState>("mything", s => new Wire.MyState { ... })`.
 
 ## 3. Command
 
@@ -71,6 +72,7 @@ public ModuleDescriptor Describe() => new()
     Permissions = ["mything.read"],
     Aggregates = [Descriptor],
     Commands = [Command.Define<EarnCommand, EarnResult>(EarnHandler.Descriptor).HandledBy<EarnHandler>()],
+    Routes = [MyRoutes.Earn],                       // mục 5
     ErrorCodes = MyErrors.All,
     OutboxProjections = [new OutboxProjection("mything_log", "mything_log")],
     // Log giữ lịch sử, player id được ẩn danh khi xoá tài khoản (PRIV-01, FR-019).
@@ -105,28 +107,89 @@ public ModuleDescriptor Describe() => new()
 Host: `builder.AddGameServer().AddModule<IdentityModule>().AddModule<MyModule>();` — host đầy đủ (chạy bằng
 `app.RunGameServerAsync(mode)`, slice 011) xem `samples/SampleHost/Program.cs`.
 
-## 5. Endpoint
+## 5. Route và endpoint
+
+### 5.1 Khai báo route
+
+Mỗi route HTTP được khai **một lần**, dạng dữ liệu, trong project nghiệp vụ (cạnh command, không ASP.NET, không Protobuf)
+và liệt kê trong `ModuleDescriptor.Routes` (mục 4):
+
+```csharp
+public static class MyRoutes
+{
+    public const string EarnTemplate = "/api/v1/mything/earn";
+
+    public static RouteDeclaration Earn { get; } = RouteDeclaration.Command(EarnHandler.Descriptor, EarnTemplate);
+}
+```
+
+- `RouteDeclaration.Command(descriptor, template, name?, condition?)`: `POST` chạy command; tên = operation
+  (`mything.earn`), profile và permission lấy từ `CommandDescriptor`. Route không phải command:
+  `RouteDeclaration.Get/Post/Put/Delete(name, template, profile, surface = PlayerApi, permission, condition)`; probe nhận
+  mọi method: `AnyMethod`.
+- Luật đặt tên: `<area>.<route>` chữ thường, `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`, tối đa 64 ký tự, duy nhất trong host.
+  Tên quyết định tên member sinh cho Unity (tách theo `.` và `_`, viết hoa chữ đầu mỗi phần: `mything.earn` →
+  `GameRoutes.MythingEarn`, lớp theo `routesClass` của `wiregen.json`, mục 9) và có trong request log (`RouteName`); đổi tên
+  là breaking change với client.
+- Template có `/` đầu và segment version (`/v{n}/`). Route player-facing (client gọi) chỉ dùng tham số `{name}` đơn giản
+  (kể cả trong segment, `{id}.json`): không constraint, optional, default hay catch-all; mỗi khai báo một method.
+- Route có `condition: "x"` chỉ được map khi condition `x` đúng; module đăng ký nó bằng
+  `services.AddRouteCondition("x", sp => …)`. Có sẵn: `development_tools` (server Development/Test).
+- Route trong `PublicEndpoints` phải khai profile `Public`, nếu không startup fail (BC-5).
+
+### 5.2 Map từ khai báo và wire mapper
 
 ```csharp
 public void MapPlayerApi(IEndpointRouteBuilder routes) =>
-    routes.MapPlayerCommand<Wire.EarnRequest, EarnCommand, EarnResult>(
-        "/api/v1/mything/earn", "mything.earn", ToDomain, r => new Wire.EarnResult { Points = r.Points });
+    routes.MapPlayerCommand<Wire.EarnRequest, EarnCommand, EarnResult>(MyRoutes.Earn, ToDomain, r => new Wire.EarnResult { Points = r.Points });
+
+// Endpoint không phải command (MyRoutes.Status = RouteDeclaration.Post("mything.status", "/api/v1/mything/status", SecurityProfile.Player)):
+routes.MapDeclared(MyRoutes.Status, (HttpContext http) => { /* … */ }).AsPlayerEndpoint();
+
+// Section client-visible: wire mapper kèm kiểu message, khai cái server giữ lại có chủ ý.
+services.AddAggregateWireMapper<MyState, Wire.MyState>("mything", ToWire, o => o.Hidden("Internal.Note"));
 ```
 
+- `MapPlayerCommand`/`MapDevCommand`/`MapGmCommand(declaration, …)` lấy method, template, operation, permission từ khai
+  báo. `MapDeclared(declaration, handler)` map method + template; vẫn gọi helper `As*Endpoint()` đúng profile đã khai.
+  Endpoint do thư viện map (`MapHealthChecks`) gắn khai báo bằng `.WithDeclaration(route)`.
+- `o.Hidden("Member", "Nested.Member")`: member của state không bao giờ gửi cho client (tên member C# nối bằng `.`, phần tử
+  collection/value của dictionary trong suốt). `o.MayStayDefault("field")`: field proto mà giá trị có nghĩa có thể là
+  default (enum 0), tên field proto nối bằng `.`. Đường dẫn không tồn tại → startup fail nêu aggregate và path.
+- Overload một kiểu `AddAggregateWireMapper<TState>(id, Func<TState, IMessage>)` đã obsolete (CS0618 = lỗi build với
+  `TreatWarningsAsErrors`): section vẫn chạy nhưng có Warning lúc startup và Unity không có parser.
+- Một aggregate một mapper: đăng ký lần hai cùng id → startup fail. Game thay mapper của framework bằng
+  `ConfigureExtensions(e => e.ReplaceWireMapper<TState, TWire>(id, map, o => …))` (mục 6).
+
+### 5.3 Kiểm tra endpoint lúc startup
+
 Mọi endpoint phải có đúng một profile (`AsPlayerEndpoint`, `AsGmEndpoint(permission)`, `AsPublicEndpoint` +
-allowlist, `AsDevEndpoint` — chỉ khi development tools được phép: local, dev, test; chặt hơn OPS-09) và route có `/v{n}/`. Validation wire nằm trong `ToDomain`
-(ném `GameServerException(CoreErrorCodes.BadRequest)`). Operation truyền cho `MapPlayerCommand`/`MapDevCommand`/
-`MapGmCommand` phải là command đã khai trong `Commands` của một module đã `AddModule`, nếu không startup fail:
-`[endpoint POST /api/v1/mything/earn] runs command 'mything.earn' which no registered module declares. …`. Profile của
-route phải đúng profile của command (`MapPlayerCommand` ↔ Player, `MapDevCommand` ↔ Dev, `MapGmCommand` ↔ Gm) và
-permission truyền cho `MapGmCommand` phải đúng `CommandDescriptor.Permission`, nếu không startup fail.
+allowlist, `AsDevEndpoint` — chỉ khi development tools được phép: local, dev, test; chặt hơn OPS-09) và route có
+`/v{n}/`. Validation wire nằm trong `ToDomain` (ném `GameServerException(CoreErrorCodes.BadRequest)`). Operation truyền cho
+`MapPlayerCommand`/`MapDevCommand`/`MapGmCommand` phải là command đã khai trong `Commands` của một module đã `AddModule`,
+nếu không startup fail: `[endpoint POST /api/v1/mything/earn] runs command 'mything.earn' which no registered module
+declares. …`. Profile của route phải đúng profile của command (`MapPlayerCommand` ↔ Player, `MapDevCommand` ↔ Dev,
+`MapGmCommand` ↔ Gm) và permission truyền cho `MapGmCommand` phải đúng `CommandDescriptor.Permission`, nếu không startup
+fail.
+
+Host so mọi endpoint đã map với catalog route ở mọi môi trường và không phục vụ khi có lỗi (exit 1, mỗi lỗi một dòng nêu
+cách sửa): endpoint chưa khai, template/method/profile/command/permission khác khai báo, route khai mà không map. Endpoint
+map **sau** `UseGameServer` (trực tiếp trên `app`, trong `MapGroup`) cũng được kiểm cùng luật trước khi server nhận kết
+nối. Ví dụ:
+
+```text
+[endpoint POST /api/v1/mything/earn] is not declared in the route catalog. Fix: declare it in the module's ModuleDescriptor.Routes (or GameServerBuilder.DeclareRoutes for a host endpoint) and map it from the declaration (FG-026).
+```
+
+Endpoint host tự map (ngoài module) khai bằng `gameServer.DeclareRoutes(...)` trước `Build()` (consumer guide §4).
 
 ## 6. Override của game
 
 ```csharp
 gameServer.ConfigureExtensions(x => x
     .ReplacePolicy<IMyPolicy, GamePolicy>()
-    .ReplaceHandler<EarnCommand, EarnResult, GameEarnHandler>("mything.earn"));
+    .ReplaceHandler<EarnCommand, EarnResult, GameEarnHandler>("mything.earn")
+    .ReplaceWireMapper<MyState, Wire.MyState>("mything", GameToWire, o => o.Hidden("Internal.Note")));
 ```
 
 Gọi sau `AddModule` của module gốc. Handler thay thế vẫn chạy trong pipeline chung (auth, gate, idempotency,
@@ -185,5 +248,43 @@ public async Task Save_replaces_the_note_and_the_runner_would_commit_it()
   Identity, config rỗng); flavor thật của host game: `new LocalFlavorFactory<Program>()` (thư mục tạm riêng, xoá khi
   dispose).
 
+**Test conformance của wire mapper** (bắt buộc cho module có aggregate client-visible): mapper quên một member thì Unity
+nhận giá trị default mà không có lỗi nào. `WireConformance` (kit, không host, không store, không test framework) dựng state
+mẫu từ JSON contract của state, map, rồi đổi từng member một: field proto còn default → `FieldAtDefault`, member đổi mà
+wire không đổi → `MemberNotOnWire`, member khai `Hidden` mà lại lên wire → `HiddenMemberOnWire`.
+
+```csharp
+[Fact]
+public void The_wire_mappers_pass() =>
+    WireConformance.CheckModules([new IdentityModule(), new MyModule()]).ThrowIfFailed();
+```
+
+`ThrowIfFailed()` ném `WireConformanceException`, mỗi finding một dòng `[aggregate {id}] {problem}: {path} — {fix}`. Sửa
+mapper, hoặc khai `o.Hidden(...)`/`o.MayStayDefault(...)` ở chỗ đăng ký (mục 5.2). Member kit không tự điền được
+(`object`, interface) → `MemberNotFillable`: cấp giá trị bằng `new WireConformanceOptions().WithMemberValue(id, path,
+value)` (hoặc cả state mẫu bằng `WithSampleState(id, state)`). Bảng giá trị mẫu và cách đổi: consumer guide §5.5. Trong
+repo framework, module của framework/sample/template được kiểm trong `tests/GameServer.Platform.Web.Tests/WireConformanceTests.cs`.
+
+## 9. Sinh code Unity
+
+Route, section và message `.proto` của module được sinh sang C# cho Unity bằng `tools/GameServer.WireGen` (không sửa file
+nào của framework, không cần item MSBuild nào: file sinh ra được commit):
+
+- **Trong repo framework** (module ở `modules/` hoặc `samples/`, client mẫu KestrelDemo): thêm `.proto` của module vào
+  `protos[]` của `samples/SampleGame/wiregen.json`, rồi chạy
+
+  ```text
+  dotnet run --project tools/GameServer.WireGen -- generate --config samples/SampleGame/wiregen.json
+  ```
+
+  File sinh nằm ở `samples/SampleGame/KestrelDemo/Assets/SampleGame/Generated/` (`SampleGameRoutes.cs`,
+  `SampleGameSections.cs`, một file C# mỗi proto). Commit chúng cùng `.meta` Unity tạo khi mở project.
+  `CommittedOutputTests` chạy `verify` của config này trong mỗi lần test framework.
+- **Trong repo game**: `wiregen.json` riêng của game (consumer guide §10.3), `dotnet run --project
+  framework/tools/GameServer.WireGen -c Release -- generate --config <file>`, `verify --no-build` trong CI.
+
+Client dùng hằng sinh ra thay vì chuỗi copy: `client.SendCommandAsync(SampleGameRoutes.CounterIncrement, …)`,
+`client.Sections.Register(SampleGameSections.Table)` một lần, `client.Sections.Get(SampleGameSections.Counter)`.
+
 Cập nhật PCR của module (`docs/pcr/<module>.md`): aggregate, bảng command → Touches/Reads, error codes, capability
-thay được.
+thay được, bảng route (tên, method, template, profile) và section (message, hidden member).

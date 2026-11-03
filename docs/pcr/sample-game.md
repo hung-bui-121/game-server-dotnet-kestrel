@@ -2,6 +2,8 @@
 
 Module game mẫu (slice 003). Nguồn: SMP-01..05, 8.4, PLY-04/05, G7.
 
+Đúng với framework v0.7.0 (chưa phát hành).
+
 ## Aggregate
 
 | Aggregate | Collection | Client-visible | State |
@@ -43,3 +45,31 @@ nguyên. Audit ghi `before`/`after` (progression không có ledger).
 
 `STAGE_LOCKED` 40001, `BATTLE_IN_PROGRESS` 40002, `NO_ACTIVE_BATTLE` 40003, `BATTLE_EXPIRED` 40004 (commit),
 `UNKNOWN_SHOP_ITEM` 40005, `BATTLE_RESULT_REJECTED` 40006.
+
+## Route catalog và section (slice 014 — FG-026, FG-027, FG-028)
+
+`SampleGameRoutes` (`samples/SampleGame/SampleGame/SampleGameRoutes.cs`, namespace server `SampleGame`; class client
+cùng tên nằm ở namespace `SampleGame.Client`), liệt kê ở `SampleGameModuleDefinition.Routes`; endpoint map từ
+declaration. Bảng route lấy từ export của SampleHost (`--environment Local --export-wire-contract`, format
+`gameserver.wire-contract/1`). Endpoint check lúc khởi động, quy tắc đặt tên và điều kiện hosting: PCR platform mục 20.
+Hằng số Unity sinh vào KestrelDemo (`samples/SampleGame/wiregen.json` → `Assets/SampleGame/Generated/`):
+`SampleGameRoutes.BattleStart`, `BattleEnd`, `ShopBuy`; route GM không sinh.
+
+| Route | Method | Template | Profile | Operation | Permission | Condition |
+| --- | --- | --- | --- | --- | --- | --- |
+| `battle.end` | POST | `/api/v1/battle/end` | Player | `battle.end` | — | — |
+| `battle.start` | POST | `/api/v1/battle/start` | Player | `battle.start` | — | — |
+| `progression.set` | POST | `/gm/v1/players/{playerId}/progression` | Gm | `progression.set` | `progression.edit` | — |
+| `shop.buy` | POST | `/api/v1/shop/buy` | Player | `shop.buy` | — | — |
+
+Section (mapper typed `AddAggregateWireMapper<ProgressionState, Wire.ProgressionState>` và `<BattleState,
+Wire.BattleState>` trong `SampleGameModule.cs`; Unity `SampleGameSections.Progression` / `Battle`, client gọi
+`client.Sections.Register(SampleGameSections.Table)`):
+
+| Section | Message | Hidden (không lên wire) | May-stay-default |
+| --- | --- | --- | --- |
+| `battle` | `samplegame.v1.BattleState` | `ActiveBattle.ConfigVersion`, `ActiveBattle.Drops`, `ActiveBattle.Rewards`, `ActiveBattle.Xp` — phần thưởng chụp lúc start (PLY-05) và config version của trận chỉ dùng ở server | — |
+| `progression` | `samplegame.v1.ProgressionState` | — | — |
+
+`WireConformance` (TestKit) kiểm mapper mang mọi member không hidden lên wire và set mọi field proto
+(`tests/GameServer.Platform.Web.Tests/WireConformanceTests.cs`).

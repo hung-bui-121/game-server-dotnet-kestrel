@@ -15,7 +15,8 @@ namespace GameServer.Client.Tests;
 
 /// <summary>
 /// FG-026 (2), FR-033, FR-035 (SC-001, SC-002 SDK part): the SDK's route constants are the server catalog's player-facing framework
-/// routes (generated <see cref="FrameworkRoutes"/>), and the SDK's own code holds no route literal.
+/// routes (generated <see cref="FrameworkRoutes"/>), and neither the SDK's own code nor the KestrelDemo client script holds a route
+/// literal (the client script also no section id literal: T071, SC-002).
 /// </summary>
 public sealed partial class SdkRouteTests
 {
@@ -91,17 +92,56 @@ public sealed partial class SdkRouteTests
         RouteLiterals("copy.cs", seeded).ShouldBe(["copy.cs:\"api/v1/seeded\"", "copy.cs:\"health/\"live\"\"", "copy.cs:\"v2/x\""]);
     }
 
+    [Fact]
+    public async Task The_sample_client_has_no_route_or_section_id_literal()
+    {
+        var sectionIds = await SampleHostSectionIdsAsync();
+        var source = File.ReadAllText(SampleClientFile);
+
+        sectionIds.ShouldBe(["battle", "counter", "inventory", "profile", "progression", "wallet"], ignoreOrder: true);
+        SampleClientLiterals(source, sectionIds).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task The_sample_client_scan_finds_a_seeded_route_and_section_id()
+    {
+        var sectionIds = await SampleHostSectionIdsAsync();
+        var seeded = File.ReadAllText(SampleClientFile) +
+                     "\n// \"wallet\" in a comment\nclass Seeded { string A = \"api/v1/battle/start\"; string B = \"wallet\"; string C = \"gold\"; }\n";
+
+        SampleClientLiterals(seeded, sectionIds).ShouldBe(["SampleGameClient.cs:\"api/v1/battle/start\"", "SampleGameClient.cs:\"wallet\""]);
+    }
+
+    /// <summary>KestrelDemo's client script, opened by exact path (never a recursive scan of samples/: Unity's Library is there).</summary>
+    private static string SampleClientFile =>
+        Path.Combine(Root, "samples", "SampleGame", "KestrelDemo", "Assets", "SampleGame", "SampleGameClient.cs");
+
+    private static IEnumerable<string> SampleClientLiterals(string source, IReadOnlySet<string> sectionIds) =>
+        Literals("SampleGameClient.cs", source, value => RouteLike().IsMatch(value) || sectionIds.Contains(value));
+
     /// <summary>The SampleHost local composition's framework routes the generator selects (data-model §3.1).</summary>
     private static async Task<RouteDeclaration[]> PlayerFacingFrameworkRoutesAsync()
     {
-        var options = new LocalFlavorOptions { Environment = "Local" };
-        options.Settings["Observability:Logging:Console:Enabled"] = "false";
-        await using var factory = new LocalFlavorFactory<Program>(options);
+        await using var factory = SampleHostFactory();
         return factory.Services.GetRequiredService<WireCatalog>().Routes
             .Where(r => r.Origin == CatalogOrigin.Framework && !r.ServiceOnly &&
                         GeneratedSurfaces.Contains(r.Declaration.Surface) && GeneratedProfiles.Contains(r.Declaration.Profile))
             .Select(r => r.Declaration)
             .ToArray();
+    }
+
+    /// <summary>Every section id of the SampleHost local catalog (framework and game).</summary>
+    private static async Task<HashSet<string>> SampleHostSectionIdsAsync()
+    {
+        await using var factory = SampleHostFactory();
+        return factory.Services.GetRequiredService<WireCatalog>().Sections.Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
+    }
+
+    private static LocalFlavorFactory<Program> SampleHostFactory()
+    {
+        var options = new LocalFlavorOptions { Environment = "Local" };
+        options.Settings["Observability:Logging:Console:Enabled"] = "false";
+        return new LocalFlavorFactory<Program>(options);
     }
 
     /// <summary>data-model §5: split on '.' and '_', upper-case the first letter of each part.</summary>
@@ -125,12 +165,15 @@ public sealed partial class SdkRouteTests
     private static string ExpectedPath(string template) =>
         TemplateParameter().Replace(template.TrimStart('/'), _ => Uri.EscapeDataString(SampleArgument));
 
+    /// <summary>String literals of <paramref name="source"/> that start like a route (<c>api/</c>, <c>gm/</c>, <c>health/</c>, <c>v{n}/</c>).</summary>
+    internal static IEnumerable<string> RouteLiterals(string file, string source) => Literals(file, source, RouteLike().IsMatch);
+
     /// <summary>
-    /// String literals of <paramref name="source"/> that start like a route (<c>api/</c>, <c>gm/</c>, <c>health/</c>, <c>v{n}/</c>), as
-    /// <c>file:"value"</c>. A small lexer: comments and char literals are skipped, regular and verbatim strings are read with their
-    /// escapes (interpolated strings count as regular ones).
+    /// String literals of <paramref name="source"/> that <paramref name="match"/> accepts, as <c>file:"value"</c>. A small lexer:
+    /// comments and char literals are skipped, regular and verbatim strings are read with their escapes (interpolated strings count as
+    /// regular ones).
     /// </summary>
-    internal static IEnumerable<string> RouteLiterals(string file, string source)
+    internal static IEnumerable<string> Literals(string file, string source, Func<string, bool> match)
     {
         var hits = new List<string>();
         var i = 0;
@@ -190,7 +233,7 @@ public sealed partial class SdkRouteTests
                     }
                 }
 
-                if (RouteLike().IsMatch(value.ToString()))
+                if (match(value.ToString()))
                 {
                     hits.Add($"{file}:\"{value}\"");
                 }

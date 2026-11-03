@@ -1187,7 +1187,7 @@ build exercises the path (verify tests); the guides describe the shipped behavio
 Independent test: T071 (committed outputs verify, literal scan), T072 (Unity smoke, manual), T081 (reviewer walkthrough).
 Depends on: US3 (T059–T063); docs tasks also on US1, US2 and US4.
 
-- [ ] T070 [US5] KestrelDemo regeneration and client update — **one change** (after T059, T060; research R17; generated
+- [X] T070 [US5] KestrelDemo regeneration and client update — **one change** (after T059, T060; research R17; generated
   and hand-written classes share the name `SampleGame.Client.SampleGameRoutes`, so they cannot coexist): new
   `samples/SampleGame/wiregen.json` (contracts/generated-files.md §2: host `../SampleHost/SampleHost.csproj` Local, protos
   `sample_game.proto` + `../../modules/Sample.Counter/Sample.Counter.Adapters/Protos/sample_counter.proto`, root
@@ -1202,14 +1202,30 @@ Depends on: US3 (T059–T063); docs tasks also on US1, US2 and US4.
   Done when: the tool prints the three "new file … commit .meta" lines; `git diff` of `SampleGameClient.cs` shows only
   those changes; a scratch compile of the four generated files + the package `Runtime/**` (no `UnityEngine`) under C# 9
   is clean (the MonoBehaviour itself compiles only in Unity: T072). (FR-031, FR-033, FR-052, BC-6, US5-2)
-- [ ] T071 [US5] Committed sample output and literal scan (after T070, T062, T063): `tests/GameServer.WireGen.Tests/CommittedOutputTests.cs`
+  Note (2026-11-03): `samples/SampleGame/wiregen.json` = contracts/generated-files.md §2 verbatim. `generate --no-build`: 3
+  written, 1 unchanged, the three "new file … commit it" lines printed; `SampleGame.cs` byte-identical (SHA-256 `06d25432…`,
+  no git diff: V7 holds, no fallback). `SampleGameRoutes`: `BattleEnd`, `BattleStart`, `CounterGet`, `CounterIncrement`,
+  `ShopBuy` (+ `…Method`); `SampleGameSections`: `Battle`, `Counter`, `Progression` (+ `…Id`, `Table`). `SampleGameClient.cs`
+  diff: hand-written `SampleGameRoutes` class deleted, the three generated constants, `Register(SampleGameSections.Table)` in
+  `SampleGameFlow.CreateClient` (shared by the scene client and the E2E entry), `Get(FrameworkSections.Wallet)` and
+  `RevOf(FrameworkSections.WalletId)` ×2, plus removal of the now-unused `using GameServer.Modules.Economy.Protocol.V1;`
+  (only consequence of `Get(key)`). Scratch compile (netstandard2.1, C# 9, `Nullable`, `TreatWarningsAsErrors`) of the four
+  generated files + a usage file against `sdk/GameServer.Client`: 0 warnings, 0 errors.
+- [X] T071 [US5] Committed sample output and literal scan (after T070, T062, T063): `tests/GameServer.WireGen.Tests/CommittedOutputTests.cs`
   (after T063) adds `verify --config samples/SampleGame/wiregen.json` → 0; `tests/GameServer.Client.Tests/SdkRouteTests.cs`
   (after T062) opens `samples/SampleGame/KestrelDemo/Assets/SampleGame/SampleGameClient.cs` **by exact path** (never a
   recursive scan of `samples/`) and fails on any route-shaped literal and on any literal equal to a known section id of
   the SampleHost catalog (`wallet`, `inventory`, `profile`, `progression`, `battle`, `counter`).
   Done when: green; both checks fail on a seeded literal / edited output in a temp copy. (FR-027, FR-033, FR-035,
   SC-002, US5-1, US5-2)
-- [ ] T072 [US5] **Manual / owner-assisted** Unity smoke of KestrelDemo (after T070; FR-091 manual check): with the
+  Note (2026-11-03): `CommittedOutputTests`: `[InlineData]` for `samples/SampleGame/wiregen.json` (verify through the real
+  SampleHost export, exit 0, no warning) and `An_edited_generated_file_of_the_sample_client_fails_verify_naming_it` (temp copy of
+  the four generated files, `SampleGameRoutes.cs` edited → exit 2 naming only it, tree unchanged). `SdkRouteTests`: the lexer is
+  now `Literals(file, source, match)` (`RouteLiterals` = route-shaped filter); `The_sample_client_has_no_route_or_section_id_literal`
+  reads the section ids from the SampleHost Local catalog (asserts the six ids) and scans `SampleGameClient.cs` by exact path → 0;
+  `The_sample_client_scan_finds_a_seeded_route_and_section_id` (seeded `"api/v1/battle/start"`, `"wallet"`; a comment and
+  `"gold"` not reported). Green: SdkRouteTests 6/6, CommittedOutputTests 5/5.
+- [X] T072 [US5] **Manual / owner-assisted** Unity smoke of KestrelDemo (after T070; FR-091 manual check): with the
   owner's Unity 6 (`smoke-build.ps1 -Unity "<path>\Unity.exe"`): `sdk/unity/ci/smoke-build.ps1 -CompileOnly`, then
   start SampleHost (`tools/local/run-local.ps1`, port 5080, never `-Reset`) and `smoke-build.ps1 -E2E`. Commit the three
   `.meta` files Unity created next to `SampleCounter.cs`, `SampleGameRoutes.cs`, `SampleGameSections.cs`. Check that
@@ -1219,15 +1235,29 @@ Depends on: US3 (T059–T063); docs tasks also on US1, US2 and US4.
   Done when: a Note records both runs (exit codes, E2E log lines: login, battle start/end, buy, gold), the three new
   `.meta` paths/GUIDs, and an empty `git status sdk/unity`. If the agent cannot start Unity, the task stays open with
   the exact commands for the owner and the release notes list it as pending. (FR-028 in Unity, FR-034, FR-091, US5-2)
-- [ ] T073 [US5] Own-path stability (after T063, T071): run `generate` for `sdk/GameServer.Client/wiregen.json`,
+  Note (2026-11-03): run by the agent (no Editor had KestrelDemo open: no `Temp/UnityLockfile`, no `Unity.exe` process),
+  Unity 6000.3.22f1 at `D:\DevTools\Unity\Unity 6000.3.22f1\Editor\Unity.exe` (Hub `editors-v2.json`, not under
+  `C:\Program Files\Unity\Hub\Editor`). `smoke-build.ps1 -Unity <that> -CompileOnly` → exit 0 (72 s; `compile.log`: Bee
+  compiled `SampleGame.Client.dll`, `Assembly-CSharp(-Editor).dll`, no `error CS`/`warning CS`). SampleHost via
+  `tools/local/run-local.ps1 -Port 5080` (no `-Reset`; ready in 2 s; stopped after the run, nothing left on 5080; 5180
+  untouched). `-E2E` → exit 0 (18 s): `Player p_d0rrn5afefe4p7ej2rw03394t4`, `Config sample-1+0a58d1cc006c`, `StartBattle →
+  OK`, `EndBattle → OK`, `Buy → INSUFFICIENT_FUNDS` (fresh player, 50 gold: the E2E check does not include the buy),
+  `Gold: 50 (rev 1)`, `result=OK`. New `.meta` (to commit): `SampleCounter.cs.meta` 1cffd8ca56b79a3499e205639a12b8d9,
+  `SampleGameRoutes.cs.meta` ea2fdc69845fa2d4ba916cc40f405e92, `SampleGameSections.cs.meta` f4b3977fa3538b74fb467b90dabb0f47.
+  `SampleGame.cs.meta` unchanged (8cf98e8e…); `git status sdk/unity` empty; no other tracked file changed by Unity.
+- [X] T073 [US5] Own-path stability (after T063, T071): run `generate` for `sdk/GameServer.Client/wiregen.json`,
   `samples/SampleGame/wiregen.json` and `tests/ConsumerFixture/tools/wiregen.json` twice each and a Release solution
   build in between.
   Done when: `git status` clean after both rounds (SC-003 "0 changes after a rerun"); no generated file timestamp changed
   on the second run; `CommittedOutputTests` green. (FR-023, FR-026, SC-003, US5-1)
+  Note (2026-11-03): built tool (`bin/Release/net10.0/GameServer.WireGen.dll generate --config <c> --no-build`), round 1 → Release
+  solution build (0 warnings) → round 2: each round "0 written, 6 / 4 / 3 unchanged" (SDK / sample / fixture). Snapshots (path,
+  mtime, SHA-256 of every file incl. `.meta` under the three output folders, plus `git status --short`) identical before round
+  1, after round 1 and after round 2. `CommittedOutputTests` green (T071).
 
 ### Documentation (FR-070..FR-073; Vietnamese except the consumer guide; pages state "framework 0.7.0, chưa phát hành / unreleased")
 
-- [ ] T074 [US5] Consumer guide `docs/guides/consumer-guide.md` (after T054, T064, T069): §4 host composition — declare
+- [X] T074 [US5] Consumer guide `docs/guides/consumer-guide.md` (after T054, T064, T069): §4 host composition — declare
   host-only endpoints with `DeclareRoutes` before `Build()`, host Public routes still need the operator allowlist, the
   `Program` must use `GameServerCommandLine.Parse` + `RunGameServerAsync` (export mode, N2), the `GameServer.` assembly
   prefix is reserved (origin rule); §5 tests — the conformance test (`WireConformance.CheckModules(...)`,
@@ -1239,14 +1269,35 @@ Depends on: US3 (T059–T063); docs tasks also on US1, US2 and US4.
   client files, act on BC-1/BC-3. Version stamp.
   Done when: no "coming in slice 014" left; every FR-070 bullet has a paragraph (checklist in a Note); commands copied
   from contracts/wiregen-cli.md §6 run as written in this repo. (FR-070, FR-073)
-- [ ] T075 [P] [US5] `docs/guides/module-authoring.md`, `templates/module/README.md`, `README.md` (after T069): routes in
+  Note (2026-11-03): §4 four new bullets (keep `Parse` + `RunGameServerAsync` = export mode; `DeclareRoutes` before `Build()` +
+  `MapDeclared` example, Public host routes still need `GameServer:PublicEndpointAllowlist`; the `GameServer.` assembly prefix
+  is reserved, host routes are origin game); §5.4 `RouteName`; new §5.5 conformance (`CheckModules`/`Check`/`CheckAll`,
+  `ThrowIfFailed` line format, algorithm, sample/perturbation table, `WithMemberValue`/`WithSampleState`, other problems);
+  §10 rewritten: 10.1 route declaration, 10.2 endpoint check (every environment, late endpoints) + typed mapper with
+  `Hidden`/`MayStayDefault`, obsolete overload, `ReplaceWireMapper`, 10.3 `wiregen.json` inputs (zh-pvp shape, field table)
+  and line endings, 10.4 generate/verify, exit codes, options, determinism, version pair, cleaning, `.meta` (Unity project
+  vs UPM package), IL2CPP/`link.xml` (none needed), 10.5 generated code in Unity (`Register`, `Get(key)`, `TryRead`), 10.6
+  checklist; §11 bump steps 5–6 (BC-1/BC-3, regenerate + commit + verify). FR-070 checklist: inputs 10.3, line endings 10.3,
+  version pair 10.4, verify 10.4, cleaning 10.4, `.meta` 10.4, IL2CPP 10.4, generated code 10.5, route declaration 10.1,
+  endpoint check 10.2, typed mapper + hidden 10.2, conformance 5.5 — all present; "coming in slice 014" gone. The two
+  framework-repo commands of wiregen-cli §6 ran as written (`dotnet run --project tools/GameServer.WireGen -- generate
+  --config sdk/GameServer.Client/wiregen.json` / `samples/SampleGame/wiregen.json`: 0 written, 6 / 4 unchanged); the game-repo
+  commands are shown as in §6 (checked through T082).
+- [X] T075 [P] [US5] `docs/guides/module-authoring.md`, `templates/module/README.md`, `README.md` (after T069): routes in
   `ModuleDescriptor.Routes` (business project), `RouteDeclaration.Command(...)`, mapping from the declaration
   (`MapPlayerCommand(decl, …)`, `MapDeclared(...).As*Endpoint()`), naming rule, typed mapper with hidden members,
   conformance test, generation step (in-repo: `samples/SampleGame/wiregen.json`; consumer: own config); README one line
   pointing to the consumer guide §10. Version stamp.
   Done when: no page tells a consumer to edit a framework file (`grep -n "GameServer.Client.csproj\|<Protobuf"` in these
   files only in a "framework maintainers" context). (FR-071, FR-073)
-- [ ] T076 [P] [US5] `docs/html/02-them-command.html` (Vietnamese; after T069, T070): §4.4 (`Routes` in the
+  Note (2026-11-03): `module-authoring.md`: §2 typed mapper, §4 `Routes = [MyRoutes.Earn]`, §5 rewritten into 5.1 (declaration,
+  naming rule, template rule, conditions, BC-5), 5.2 (map from the declaration, `MapDeclared`, `Hidden`/`MayStayDefault`,
+  obsolete overload, duplicates), 5.3 (existing endpoint rules + the endpoint check incl. late endpoints, example line), §6
+  `ReplaceWireMapper`, §8 conformance test, new §9 generation (in-repo `samples/SampleGame/wiregen.json`, consumer own
+  config). `templates/module/README.md`: steps 3–7 (route, typed mapper + conformance test, host, generation, PCR).
+  `README.md`: one line → consumer guide mục 10. Stamps were already "v0.7.0 (chưa phát hành)". `grep -n
+  "GameServer.Client.csproj\|<Protobuf"` in the three files: 0 hits.
+- [X] T076 [P] [US5] `docs/html/02-them-command.html` (Vietnamese; after T069, T070): §4.4 (`Routes` in the
   `ModuleDescriptor`), §4.5 (map from the declaration, typed mapper registration with `Hidden`), §4.8 (conformance test),
   §4.10 (WireGen: in-repo variant with `samples/SampleGame/wiregen.json`, consumer-repo variant with the game's own
   config and CRLF; the generated constant used from Unity; remove the "add a `<Protobuf>` line to the csproj"
@@ -1256,7 +1307,22 @@ Depends on: US3 (T059–T063); docs tasks also on US1, US2 and US4.
   `muc-4-4` … `muc-10`, `checklist-them-command`).
   Done when: `grep -c '"api/v1/counter/reset"' docs/html/02-them-command.html` = 0; no instruction to edit a framework
   file; the page opens without broken anchors (manual check in a browser or a link-check script, Note). (FR-071, FR-073)
-- [ ] T077 [P] [US5] PCR platform `docs/pcr/platform.md` new `## 20.` (after T036, T058): catalog entry fields, naming
+  Note (2026-11-03): §4.4 (title "đăng ký command và route", TOC too; `Routes = CounterRoutes.All`, the real `CounterRoutes`
+  class, naming rule, startup check), §4.5 (typed `AddAggregateWireMapper<CounterState, Wire.CounterState>`,
+  `MapPlayerCommand(CounterRoutes.Increment, …)`, `MapDeclared`, `Hidden`/`MayStayDefault`, obsolete overload, duplicates /
+  `ReplaceWireMapper`), §4.6 (game host: `DeclareRoutes`, keep `Parse` + `RunGameServerAsync` for export mode), §4.8
+  (conformance test from `FixtureConformanceTests`), §4.9 (`MapDeclared(CounterRoutes.Get, …)`), §4.10 rewritten (WireGen;
+  in-repo `samples/SampleGame/wiregen.json` + command; consumer-repo variant with CRLF + verify; generated constants
+  `SampleGameRoutes.ShopBuy`/`CounterIncrement`, `SampleGameSections.Counter`, `FrameworkSections.Wallet`; the `<Protobuf>`
+  instruction and the "sample_counter not generated" note removed), §5 steps 4 (declare `CounterRoutes.Reset`), 5 (map from
+  it), 7 (conformance), 8 (generate + `SampleGameRoutes.CounterReset`, repo-game variant), checklist rows 6–12 (declare, map,
+  typed mapper, PCR, test, conformance, generate/verify; provisioning row now 13, text reference updated), §10 eight new rows
+  (not declared, declared not mapped, template differs under `MapGroup`, duplicate/bad name, two mappers, unknown hidden
+  member, untyped Warning, WireGen/verify failure); §4.1 says the adapter `<Protobuf>` is the server-side compile; meta line
+  names branch `014-wire-contract`. `grep -c '"api/v1/counter/reset"'` = 0; no `GameServer.Client.csproj` reference left.
+  Link check (scratch PowerShell script: every `#id` anchor exists, every relative `href` path exists, no duplicate id):
+  0 problems on `02-them-command.html` and `index.html`. `index.html` stamp already "v0.7.0 (chưa phát hành)", unchanged.
+- [X] T077 [P] [US5] PCR platform `docs/pcr/platform.md` new `## 20.` (after T036, T058): catalog entry fields, naming
   rule, declaration faults (data-model §2.1) and endpoint faults (§2.2), pre-serving validation of late-mapped endpoints
   (the hook chosen in T002), hosting conditions (`development_tools`, `gm.sso`, `AddRouteCondition`), origin rule, export
   format `gameserver.wire-contract/1` (fields, determinism, versioning rule), section contract (typed mapper, untyped
@@ -1264,24 +1330,48 @@ Depends on: US3 (T059–T063); docs tasks also on US1, US2 and US4.
   request event gains the `RouteName` row; breaking changes BC-1, BC-2, BC-4, BC-5 listed like §17. Version stamp.
   Done when: every data-model §2 line appears verbatim once; `DocumentedConfigurationKeysTests` green (no new key).
   (FR-072, FR-008, FR-015 docs)
-- [ ] T078 [P] [US5] PCR Unity SDK `docs/pcr/unity-sdk.md` (after T064): generated files and layout (`Core.cs` nested,
+  Note (2026-11-03): `docs/pcr/platform.md` new `## 20.` (entry fields, naming rule, origin rule, hosting conditions
+  `development_tools`/`gm.sso`/`AddRouteCondition`, mapping from the declaration, declaration and endpoint faults as tables,
+  pre-serving check = `EndpointSetValidationService.StartingAsync` registered first (T002) with the T035 build-once
+  behaviour, export mode and `gameserver.wire-contract/1` fields/determinism/versioning, section contract incl.
+  `ReplaceWireMapper` without an earlier mapper, FR-055, BC-1/BC-2/BC-4/BC-5 table with "how it surfaces"); §13 `RouteName`
+  row + outcome member; stamp. Each data-model §2 line appears exactly once, texts taken from `WireCatalogRules` /
+  `EndpointCatalogValidator`. **Doc ↔ code differences found** (code wins, specs not edited): the "declared, not mapped" fix
+  names the real method (`MapPlayerApi`/`MapGmApi`/`MapHostEndpoints`), data-model §2.2 writes `Map{Surface}`;
+  `WireCatalog.Validate()` has no parameter (contracts/public-api.md §2.3 shows `Validate(GameServerOptions)`).
+  `DocumentedConfigurationKeysTests` (in `tests/SampleGame.Tests`) 23/23 green.
+- [X] T078 [P] [US5] PCR Unity SDK `docs/pcr/unity-sdk.md` (after T064): generated files and layout (`Core.cs` nested,
   module files flat, `FrameworkRoutes`/`FrameworkSections`), `GameServerClient.*Route` defined from generated constants,
   typed accessor (`SectionKey`, `SectionTable`, `Register`, `Get(key)`, `TryRead`, unknown ids raw), the version pair
   and its test, `.meta` rule for the UPM package, BC-6 regeneration command, package version `0.7.0`.
   Done when: section present; values match `FrameworkRoutes.cs`. (FR-072)
-- [ ] T079 [P] [US5] Module PCRs `docs/pcr/identity.md`, `economy.md`, `iap.md`, `gm.md`, `sample-counter.md`,
+  Note (2026-11-03): `docs/pcr/unity-sdk.md` new "Code sinh từ wire contract": `by-root` layout (`gameserver/core/v1/Core.cs`,
+  `Identity/Economy/Iap.cs` flat, `FrameworkRoutes`/`FrameworkSections`), the 14 `FrameworkRoutes` members with values and
+  methods copied from the generated file, `GameServerClient.*Route` → generated constants, typed accessor (`SectionKey`,
+  `SectionTable`, `Register`, `Get(key)`, `TryRead`, unknown ids raw), version pair 2.84.0 / 35.1 / 3.36.2 and its tests,
+  `.meta` rules (UPM package vs Unity project, GUIDs of the two package metas), BC-6 commands; package rows, the KestrelDemo
+  row and a T072 row in "Nghiệm thu" updated; stamp 0.7.0 (chưa phát hành / unreleased).
+- [X] T079 [P] [US5] Module PCRs `docs/pcr/identity.md`, `economy.md`, `iap.md`, `gm.md`, `sample-counter.md`,
   `sample-game.md` (after T066): route-name table per module (name, method, template, profile, operation, condition)
   generated from the SampleHost export (T039) and pasted, sections with message full name, hidden members and
   may-stay-default fields (T066 Notes); corrections for any method/permission difference recorded in T019–T029 Notes.
   Done when: every catalog route and section of those modules appears exactly once; a Note records the export command
   used. (FR-072, FR-008, FR-065 docs)
+  Note (2026-11-03): export `dotnet run --project samples/SampleHost --no-launch-profile --no-build -c Release --
+  --environment Local --export-wire-contract <scratch>/sample.json` (54 routes, 6 sections); each module PCR gained "Route
+  catalog và section (slice 014)" with Route/Method/Template/Profile/Operation/Permission/Condition rows (Permission column
+  added: GM rows need it) and its sections (message, hidden + reason, no may-stay-default): identity 9/1, economy+cheat 3/2,
+  iap 1/0, gm 27/0, sample.counter 3/1, sample.game 4/2; a scratch script checked each route/section exactly once with cells
+  equal to the export (platform/observability routes are in platform §20). Corrections: identity login allowlist comes from
+  the Public declaration (not `PublicEndpoints`, removed in T021), `gm.staff_revoke_sessions` = `gm.access` (T024), GM
+  conditions `development_tools`/`gm.sso`. Stamp "Đúng với framework v0.7.0 (chưa phát hành)" (the 013 style of the PCRs).
 
 **Checkpoint**: KestrelDemo, the package and the fixture are all produced by the consumer step and verified by the
 suite; guides and PCRs describe the shipped behaviour.
 
 ## Phase 8: Release notes, verification, review and close
 
-- [ ] T080 Release notes final pass `specs/014-wire-contract/release-notes-draft.md` (after T074–T079; FR-090): one
+- [X] T080 Release notes final pass `specs/014-wire-contract/release-notes-draft.md` (after T074–T079; FR-090): one
   section per fixed FG (FG-021, FG-026, FG-027, FG-028) in round order; table BC-1..BC-6 with "how it surfaces" and the
   fix (plan migration notes); zh-pvp migration checklist in order: (1) typed mappers at `GameModule.cs:28-30` with the
   four hidden members (CS0618 first, it blocks the build), (2) `account.init` declaration + `Routes` + mapping from it
@@ -1292,6 +1382,20 @@ suite; guides and PCRs describe the shipped behaviour.
   changes; Unity package stays 0.7.0".
   Done when: every BC and FG id of the spec appears; every zh-pvp file:line of the spec's consumer-impact table is
   referenced. (FR-090, SC-009)
+  Note (2026-11-03): restructured: summary (fixed FG, BC list, obsolete, "no player API route, wire message, document or GM
+  API response changes; Unity package stays 0.7.0"), BC-1..BC-6 table (change, how it surfaces, fix), the six-step zh-pvp
+  checklist in the required order, the spec's consumer-impact table (removable vs stays), then one section per FG in round
+  order FG-021 (BC-6 moved here), FG-026 ((1)/(3) + the (2) route constants; BC-1, BC-2, BC-5), FG-027, FG-028 (typed mapper,
+  `FrameworkSections`, typed reader, untyped Warning; BC-3, BC-4 merged), framework repository (KestrelDemo + docs), manual
+  checks table (T072 done, T081 pending, T082 done, Linux/macOS N9 pending), "Known before the tag". Every FG and BC id
+  appears; every zh-pvp file:line of the spec table (`GameModule.cs:20`, `:28-30`, `RequestOutcome.cs:22`,
+  `OnlineSession.cs:39`, `PlayerReadModel.cs:31-37`, `:173-193`, `GameWireMapping.cs:6-9`, `GameAggregates.cs`,
+  `UnityProtoGen.csproj`, `docs/COMMANDS.md`, `docs/pcr/game.md`) is referenced (grep counts). T082 fixes applied: the
+  `InitAccountRoute` alias must stay a `const` with the same literal; a host build failure is relayed only as the `dotnet
+  run` summary (also in consumer guide §10.3). Pre-pass copy kept in the session scratchpad only.
+  Batch check after T070–T082: Debug and Release 0 warnings, 0 errors; in memory and `GAMESERVER_TEST_STORE=File` (no
+  `COUCHBASE_*` in the test environment): **1828 total, 1732 passed, 96 skipped, 0 failed** each (T069: 1824 / 1728 / 96;
+  +4 from T071). `git status` shows no file created by the runs.
 - [ ] T081 Reviewer walkthrough (story 5, FR-091 manual; after T074–T076): a fresh agent (no context beyond the docs)
   follows the consumer guide §10 and `02-them-command.html` §4.10/§5 in a **temp copy** of the repository: add a
   `fixture.rename` command to the consumer fixture (declaration, mapping from it, typed mapper unchanged, conformance
@@ -1299,7 +1403,7 @@ suite; guides and PCRs describe the shipped behaviour.
   from `Fixture.Client`, build and run the fixture tests; then the in-repo variant for `counter.reset` per §5.
   Done when: the agent's list of missing or wrong steps is recorded as a Note and each item is fixed in the docs (or
   answered); the temp copy is deleted; nothing of it is committed. (FR-070, FR-071, US5-3)
-- [ ] T082 **Manual / owner-assisted** first-consumer CRLF regeneration (FR-091, SC-009; never edit
+- [X] T082 **Manual / owner-assisted** first-consumer CRLF regeneration (FR-091, SC-009; never edit
   `E:\ProjGits\zh-pvp-server` or `E:\ProjGits\research-and-development-games`): in a temp clone of the game repo with its
   `framework/` submodule checked out at this branch's head, write the illustrative config of data-model §4 (crlf,
   `--output-root` = a temp copy of the client's `src/GameClient`), run `generate`, and compare the game's message C# with
@@ -1307,6 +1411,26 @@ suite; guides and PCRs describe the shipped behaviour.
   game build may fail on BC-1/BC-3 — then apply the release-notes steps in the temp clone only.
   Done when: a Note records the result and any doc fix, or — if the owner prefers the game session to run it after the
   tag — the release notes list it as pending with the exact commands. (FR-091, SC-009)
+  Note (2026-11-03): temp clone of zh-pvp-server (7911f20) in the session scratchpad, `framework/` = a clone of this repo at
+  `2dc74e8` (the uncommitted T070–T080 changes do not affect the generator), client = copy of research-and-development-games
+  `src/GameClient/Assets/MadProject/Scripts` (49df950ad); config = the release-notes FG-021 shape (`crlf`, namespace
+  `ZhPvp.Client`). First `generate` exit 1: the host build failed on CS0618 (BC-3, `GameModule.cs:28-30`). Applied in the
+  clone: typed mappers + the four `Hidden` (BC-3/FG-027) and the `account.init` declaration + `Routes` + mapping from it
+  (BC-1; without it the host exits 1 with the documented "is not declared" line). Then `generate`: `ZhpvpGame.cs`
+  byte-identical to the committed client file (CRLF, no BOM, SHA-256 `3e91955a…`, timestamp and `.meta` untouched), new
+  `GameRoutes.cs` (`AccountInit` = `api/v1/account/init`, `POST`) and `GameSections.cs` (`Armory`, `Chests`, `Progress`,
+  `Table`) only, CRLF, two "commit .meta" hints; rerun "0 written, 3 unchanged", `verify` 0, no warning. Conformance over
+  `[EconomyModule, IdentityModule, GameModule]` passes (scratch console: `tests/ZhPvp.Tests` does not build because of 013
+  BC-4, `tests/Shared` → TestKit — 013 scope). 5180: curl probes refused before, during and after (export mode never
+  listens); host start checks used 5097. Every file:line of the release notes matches the game files. Doc fixes: the
+  `InitAccountRoute` alias must stay a `const` with the same literal (a `static readonly` alias broke a `const` in the game
+  tests); a host build failure is relayed only as the `dotnet run` summary → "run `dotnet build <host>`" added (release
+  notes FG-021, consumer guide §10.3). **Finding for T085/T086 (not fixed here)**: an endpoint mapped from a
+  `RouteDeclaration` that no `ModuleDescriptor.Routes` lists passes the endpoint check
+  (`src/GameServer.Platform.Web/Validation/EndpointCatalogValidator.cs:34-42` compares the endpoint only with its own
+  declaration metadata): reproduced with `Routes` removed — host started and served the route, the export (and so
+  `GameRoutes`) silently lost `account.init`; expected the "is not declared" line. Temp clone and `D:/zt082` deleted;
+  `E:\ProjGits\*` untouched.
 - [ ] T083 Final verification (after T080–T082): Debug and Release build of `GameServer.slnx`; full suite in memory and
   with `GAMESERVER_TEST_STORE=File`; opt-in `GAMESERVER_PERF=1` run of `EndpointCheckPerformanceTests`; `git diff --stat
   main -- proto src/*/Protos samples/SampleGame/SampleGame.Adapters/Protos modules/Sample.Counter/Sample.Counter.Adapters/Protos`

@@ -4,6 +4,8 @@ Module framework `gm` (slice 004 + 007, version 0.8.0 sau slice 010). Nguồn: G
 OPS-04, ACC-09/10/11/24/27/45/49. Ban (GM-07), maintenance toggle: slice 008. GM frontend đầy đủ (GM-01, TBD-21): dev
 khác làm dựa trên OpenAPI `docs/api/gm-openapi.json` (owner 2026-10-27); trang tĩnh `/gm/v1/ui` chỉ còn mức P0.
 
+Đúng với framework v0.7.0 (chưa phát hành).
+
 ## Permission catalog (semantic — SEC-07)
 
 Mỗi module khai permission của mình trong `ModuleDescriptor.Permissions`; endpoint/command GM dùng permission ngoài
@@ -202,3 +204,48 @@ Mã lỗi module gm (13000–13099): `STAFF_EXISTS` (13000, 409), `LAST_STAFF_MA
 | `Gm:Bootstrap:Staff[]` | — | `{staffId, displayName, password, roles[], permissions[], disabled, gameId?, environmentId?}`; **chỉ Development/Test** (môi trường khác → startup fail). Password hash PBKDF2-SHA256 100 000 vòng |
 
 Production: không có login local; staff đầu tiên qua `Gm:Oidc:BootstrapManagers`, sau đó quản lý qua API staff.
+
+## Route catalog và section (slice 014 — FG-026, FG-027, FG-028)
+
+27 route `gm.*` khai trong `GmRoutes` (`src/GameServer.Modules.Gm.Adapters/GmRoutes.cs`, `Routes = GmRoutes.All`);
+permission chép từ lời gọi `AsGmEndpoint(...)` trước đây; route Public được allowlist qua declaration (không còn
+`PublicEndpoints`). Điều kiện hosting: `gm.auth_login` chỉ map khi `development_tools` (Development/Test),
+`gm.sso_start`/`gm.sso_callback` chỉ khi `gm.sso` (`AddRouteCondition("gm.sso", …)` = `Gm:Oidc` đã cấu hình); route có
+condition tắt không map và không bị endpoint check đòi. Bảng route lấy từ export của SampleHost (`--environment Local
+--export-wire-contract`, format `gameserver.wire-contract/1`). Endpoint check lúc khởi động, quy tắc đặt tên và điều
+kiện hosting: PCR platform mục 20. Surface `GmApi` không sinh hằng số Unity. `gm.staff_revoke_sessions` cần `gm.access`
+(handler tự kiểm `staff.manage` khi thu hồi phiên của người khác). OpenAPI GM (`/gm/v1/openapi/{documentName}.json`) là
+route `platform.gm_openapi` của platform (PCR platform mục 20). Route GM của module khác (`identity.ban`,
+`economy.adjust`, `progression.set`, …) nằm ở PCR của module đó.
+
+| Route | Method | Template | Profile | Operation | Permission | Condition |
+| --- | --- | --- | --- | --- | --- | --- |
+| `gm.auth_csrf` | GET | `/gm/v1/auth/csrf` | Public | — | — | — |
+| `gm.auth_login` | POST | `/gm/v1/auth/login` | Public | — | — | `development_tools` |
+| `gm.auth_logout` | POST | `/gm/v1/auth/logout` | Gm | — | `gm.access` | — |
+| `gm.health` | GET | `/gm/v1/health` | Gm | — | `ops.read` | — |
+| `gm.me` | GET | `/gm/v1/me` | Gm | — | `gm.access` | — |
+| `gm.ops_gate` | GET | `/gm/v1/ops/gate` | Gm | — | `ops.read` | — |
+| `gm.ops_gate_maintenance` | PUT | `/gm/v1/ops/gate/maintenance` | Gm | — | `ops.maintenance` | — |
+| `gm.ops_gate_min_client_version` | PUT | `/gm/v1/ops/gate/min-client-version` | Gm | — | `ops.maintenance` | — |
+| `gm.ops_rotate_keys` | POST | `/gm/v1/ops/dataprotection/rotate` | Gm | — | `ops.keys.rotate` | — |
+| `gm.ops_version` | GET | `/gm/v1/ops/version` | Gm | — | `ops.read` | — |
+| `gm.player` | GET | `/gm/v1/players/{playerId}` | Gm | — | `player.read` | — |
+| `gm.player_audit` | GET | `/gm/v1/players/{playerId}/audit` | Gm | — | `player.read` | — |
+| `gm.player_by_mapping` | GET | `/gm/v1/players/by-mapping/{mappingKey}` | Gm | — | `player.read` | — |
+| `gm.player_receipts` | GET | `/gm/v1/players/{playerId}/receipts` | Gm | — | `player.read` | — |
+| `gm.player_search` | GET | `/gm/v1/players/search` | Gm | — | `player.read` | — |
+| `gm.receipt` | GET | `/gm/v1/receipts/{receiptId}` | Gm | — | `player.read` | — |
+| `gm.sso_callback` | GET | `/gm/v1/auth/sso/callback` | Public | — | — | `gm.sso` |
+| `gm.sso_start` | GET | `/gm/v1/auth/sso/start` | Public | — | — | `gm.sso` |
+| `gm.staff` | GET | `/gm/v1/staff/{staffId}` | Gm | — | `staff.read` | — |
+| `gm.staff_audit` | GET | `/gm/v1/staff/{staffId}/audit` | Gm | — | `staff.read` | — |
+| `gm.staff_create` | POST | `/gm/v1/staff` | Gm | — | `staff.manage` | — |
+| `gm.staff_disable` | POST | `/gm/v1/staff/{staffId}/disable` | Gm | — | `staff.manage` | — |
+| `gm.staff_enable` | POST | `/gm/v1/staff/{staffId}/enable` | Gm | — | `staff.manage` | — |
+| `gm.staff_grant` | PUT | `/gm/v1/staff/{staffId}/grant` | Gm | — | `staff.manage` | — |
+| `gm.staff_list` | GET | `/gm/v1/staff` | Gm | — | `staff.read` | — |
+| `gm.staff_revoke_sessions` | POST | `/gm/v1/staff/{staffId}/sessions/revoke` | Gm | — | `gm.access` | — |
+| `gm.ui` | GET | `/gm/v1/ui` | Public | — | — | — |
+
+Module không có aggregate client-visible.

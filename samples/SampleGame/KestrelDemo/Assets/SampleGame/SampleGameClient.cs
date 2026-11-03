@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
 using GameServer.Client;
-using GameServer.Modules.Economy.Protocol.V1;
 using SampleGame.Protocol.V1;
 using UnityEngine;
 
@@ -114,6 +113,7 @@ namespace SampleGame.Client
             client.Maintenance += _ => log("Server maintenance.");
             client.UpdateRequired += _ => log("Please update the game.");
             client.ConfigVersionChanged += version => log($"New config {version} available.");
+            client.Sections.Register(SampleGameSections.Table);
             return client;
         }
 
@@ -138,33 +138,26 @@ namespace SampleGame.Client
                 log($"Config {client.Config.Version}: {string.Join(", ", client.Config.Files.Keys)}");
             }
 
-            var start = await client.SendCommandAsync(SampleGameRoutes.StartBattle, new StartBattleRequest { Stage = 1 }, StartBattleResult.Parser);
+            var start = await client.SendCommandAsync(SampleGameRoutes.BattleStart, new StartBattleRequest { Stage = 1 }, StartBattleResult.Parser);
             log($"StartBattle → {start.Code}");
             string? endCode = null;
             if (start.IsOk)
             {
                 var end = await client.SendCommandAsync(
-                    SampleGameRoutes.EndBattle,
+                    SampleGameRoutes.BattleEnd,
                     new EndBattleRequest { BattleId = start.Result!.BattleId, Won = true },
                     EndBattleResult.Parser);
                 endCode = end.Code;
                 log($"EndBattle → {end.Code}");
             }
 
-            var buy = await client.SendCommandAsync(SampleGameRoutes.Buy, new BuyItemRequest { ShopItemId = "potion_pack", Quantity = 1 }, BuyItemResult.Parser);
+            var buy = await client.SendCommandAsync(SampleGameRoutes.ShopBuy, new BuyItemRequest { ShopItemId = "potion_pack", Quantity = 1 }, BuyItemResult.Parser);
             log($"Buy → {buy.Code}");
 
-            var wallet = client.Sections.Get("wallet", WalletState.Parser);
+            var wallet = client.Sections.Get(FrameworkSections.Wallet);
             var gold = wallet != null && wallet.Balances.TryGetValue("gold", out var value) ? value : 0;
-            log($"Gold: {gold} (rev {client.Sections.RevOf("wallet")})");
-            return new SampleGameRun(login.PlayerId, start.Code, endCode, buy.Code, gold, client.Sections.RevOf("wallet"));
+            log($"Gold: {gold} (rev {client.Sections.RevOf(FrameworkSections.WalletId)})");
+            return new SampleGameRun(login.PlayerId, start.Code, endCode, buy.Code, gold, client.Sections.RevOf(FrameworkSections.WalletId));
         }
-    }
-
-    public static class SampleGameRoutes
-    {
-        public const string StartBattle = "api/v1/battle/start";
-        public const string EndBattle = "api/v1/battle/end";
-        public const string Buy = "api/v1/shop/buy";
     }
 }

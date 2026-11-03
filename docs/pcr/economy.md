@@ -2,6 +2,8 @@
 
 Module framework `economy` (slice 003, version 0.2.0 từ slice 004). Nguồn: ECO-01..08, OPS-09, GM-03.
 
+Đúng với framework v0.7.0 (chưa phát hành).
+
 ## Aggregate
 
 | Aggregate | Collection | Schema | Client-visible | State / wire |
@@ -76,3 +78,30 @@ mục 16), `extref_claims` = `Anonymize` (index `ix_extref_claims_player_ref` do
 id (`playerId`, `actorId` khi là player…) bằng anonymous id; số bản ghi, `delta`, `balanceAfter`, `externalReference`, `orderId`,
 `receiptId`, thời gian giữ nguyên — tổng theo resource không đổi (SC-003). Ledger không bao giờ bị xoá (ngoại lệ ghi đè CMD-08,
 PCR platform mục 16). `economy.adjust` trên player đang chờ xoá/đang purge → 404 (`IGmTargetValidator`).
+
+## Route catalog và section (slice 014 — FG-026, FG-027, FG-028)
+
+Route khai trong business project: `EconomyRoutes` (`src/GameServer.Modules.Economy/EconomyRoutes.cs`, module `economy`)
+và `CheatRoutes` (`src/GameServer.Modules.Economy/CheatRoutes.cs`, module `economy.cheat`), liệt kê ở
+`ModuleDescriptor.Routes` của từng module; endpoint map từ declaration. Bảng route lấy từ export của SampleHost
+(`--environment Local --export-wire-contract`, format `gameserver.wire-contract/1`). Endpoint check lúc khởi động, quy
+tắc đặt tên và điều kiện hosting: PCR platform mục 20. `cheat.grant` (profile Dev) có hằng số
+`FrameworkRoutes.CheatGrant` trong gói Unity; route GM không sinh.
+
+| Route | Method | Template | Profile | Operation | Permission | Condition |
+| --- | --- | --- | --- | --- | --- | --- |
+| `cheat.grant` | POST | `/api/v1/cheat/grant` | Dev | `cheat.grant` | — | — |
+| `economy.adjust` | POST | `/gm/v1/players/{playerId}/resources/adjust` | Gm | `economy.adjust` | `resource.adjust` | — |
+| `economy.ledger` | GET | `/gm/v1/players/{playerId}/ledger` | Gm | — | `player.read` | — |
+
+Section (mapper typed `AddAggregateWireMapper<WalletState, Wire.WalletState>` và `<InventoryState, Wire.InventoryState>`
+trong `EconomyModule.cs`, không member hidden; Unity `FrameworkSections.Wallet` / `Inventory` và `WalletId` /
+`InventoryId`):
+
+| Section | Message | Hidden (không lên wire) | May-stay-default |
+| --- | --- | --- | --- |
+| `inventory` | `gameserver.economy.v1.InventoryState` | — | — |
+| `wallet` | `gameserver.economy.v1.WalletState` | — | — |
+
+`WireConformance` (TestKit) kiểm mapper mang mọi member không hidden lên wire và set mọi field proto
+(`tests/GameServer.Platform.Web.Tests/WireConformanceTests.cs`).

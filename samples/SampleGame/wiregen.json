@@ -1,0 +1,19 @@
+{
+  "format": "gameserver.wiregen/1",
+  "catalog": { "hostProject": "../SampleHost/SampleHost.csproj", "environment": "Local" },
+  "origin": "game",
+  "protos": [
+    { "root": "SampleGame.Adapters/Protos", "files": ["sample_game.proto"] },
+    { "root": "../../modules/Sample.Counter/Sample.Counter.Adapters/Protos", "files": ["sample_counter.proto"] }
+  ],
+  "output": {
+    "root": "KestrelDemo",
+    "marker": "Assets/SampleGame",
+    "directory": "Assets/SampleGame/Generated",
+    "layout": "flat",
+    "lineEndings": "lf"
+  },
+  "namespace": "SampleGame.Client",
+  "routesClass": "SampleGameRoutes",
+  "sectionsClass": "SampleGameSections"
+}

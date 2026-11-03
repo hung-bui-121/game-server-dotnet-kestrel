@@ -261,6 +261,33 @@ public partial class Program;
   `environmentVariables.ASPNETCORE_ENVIRONMENT` (= flavor). run-local needs both (section 6).
 - A game middleware that needs the request result is registered on `app` before `RunGameServerAsync` (so it wraps the
   framework pipeline) and reads `HttpContext.RequestOutcome()` after `await next(context)`; never parse response bodies.
+- **Keep `GameServerCommandLine.Parse(args)` and `app.RunGameServerAsync(mode)`** as above. Besides `--provision`, they
+  implement the export mode the Unity code generation runs (`--export-wire-contract <file>`, section 10.3): the host builds
+  its composition, writes the route and section catalog and exits without serving, opening the store, loading game config
+  or reading a secret. A `Program` that calls `app.Run()` itself cannot be used by the generator.
+- **Every endpoint is declared** (section 10.1). Module endpoints are declared in `ModuleDescriptor.Routes`. An endpoint the
+  host maps itself, outside any module, is declared on the builder before `Build()` and mapped from the declaration:
+
+  ```csharp
+  // Before builder.Build():
+  gameServer.DeclareRoutes(HostRoutes.Status);
+
+  // After Build(), anywhere before RunGameServerAsync (also after UseGameServer):
+  app.MapDeclared(HostRoutes.Status, () => Results.Ok()).AsPublicEndpoint(protobuf: false);
+
+  public static class HostRoutes
+  {
+      public static RouteDeclaration Status { get; } = RouteDeclaration.Get("host.status", "/v1/status", SecurityProfile.Public, RouteSurface.Host);
+  }
+  ```
+
+  A host route with profile `Public` still needs its template in the operator allowlist `GameServer:PublicEndpointAllowlist`
+  (SEC-09); declaring it does not open it. An endpoint that is mapped but not declared fails startup in every environment
+  (section 10.2).
+- **The assembly name prefix `GameServer.` is reserved for the framework.** The catalog gives every module from an assembly
+  named `GameServer.*` the origin `framework`; the generator then leaves its routes and sections out of the game's
+  generated files (they belong to the Unity package). Name game assemblies after the game (`ZhPvp.Game`, `Fixture.Game`).
+  Host-level routes (`DeclareRoutes`) always have the origin `game`.
 
 ## 5. Tests
 
@@ -406,7 +433,67 @@ game config. `storeKind: TestStoreKind.File` (or `GAMESERVER_TEST_STORE=File`) r
 The fixture's middleware (section 4) counts `HttpContext.RequestOutcome().ResultCode` per code; its smoke test reads the
 counts after each response returned (`OutcomeCounts`), e.g. `OK` for the save and `NOT_FOUND` for an unknown route — the
 codes the client received. In a `TestHost`, the request event itself is a `LogEntries` entry of category
-`GameServer.Requests` (event id 1) with `ResultCode`, `Status`, `Operation`, `Replayed`, `NotModified`.
+`GameServer.Requests` (event id 1) with `ResultCode`, `Status`, `Operation`, `Replayed`, `NotModified`, `RouteName` (the
+catalog name of the matched route; also `HttpContext.RequestOutcome().RouteName`).
+
+### 5.5 Wire-mapper conformance — `WireConformance`
+
+A wire mapper that forgets a state member sends a default value to Unity without any error. The kit's conformance check
+proves that every client-visible aggregate's mapper carries every persisted member that is not declared hidden, and that
+every proto field it sets is not left at its default. It needs no host, no store and no test framework. From
+`tests/ConsumerFixture/tests/Fixture.Tests/FixtureConformanceTests.cs`:
+
+```csharp
+[Fact]
+public void The_game_and_framework_mappers_pass()
+{
+    var report = WireConformance.CheckModules([new IdentityModule(), new FixtureModule()]);
+
+    report.CheckedAggregates.ShouldBe([FixtureModuleDefinition.CardAggregate, IdentityAggregates.Profile]);
+    report.ThrowIfFailed();
+}
+```
+
+- `WireConformance.CheckModules(modules, options?)` runs each module's `ConfigureServices` against a bare service collection
+  and checks every client-visible aggregate the modules declare. Pass the framework modules whose sections the game
+  sends too (`IdentityModule`, `EconomyModule`). `Check(module, aggregateId, options?)` checks one aggregate;
+  `CheckAll(services, options?)` checks every client-visible aggregate of a built composition (`factory.Services` of a
+  `LocalFlavorFactory`, `TestHost.BuildApp(...).Services`).
+- `ThrowIfFailed()` throws `WireConformanceException` with one line per finding:
+  `[aggregate {id}] {problem}: {path} — {fix}`. `report.Findings` lists them as data (`AggregateId`, `Problem`, `Path`,
+  `Message`); `report.Passed` is true when there is none.
+- How it works: the kit builds a sample state from the state type's JSON contract (`GameServerJson.Options`), maps it, and
+  parses the wire bytes. A proto field still at its default is `FieldAtDefault` (proto field path, e.g.
+  `slots.unlock_end_utc_ms`). Then it changes one state member at a time; when the wire message does not change, the
+  member is `MemberNotOnWire` (C# member path, e.g. `Slots.UnlockEndUtc`), unless it is declared hidden. A hidden member
+  that does change the wire is `HiddenMemberOnWire`.
+- Sample and change per member type:
+
+  | Member type | Sample | Change |
+  | --- | --- | --- |
+  | integer types | `n` (ordinal of the member) | `+1` |
+  | `float`, `double`, `decimal` | `n + 0.5` | `+1` |
+  | `bool` | `true` | `false` |
+  | `string` | `"s{n}"` | `+ "x"` |
+  | enum | first defined value other than 0 | another non-zero value |
+  | `DateTimeOffset`, `DateTime` (UTC) | `2026-01-02T03:04:05.006Z` + `n` minutes | `+1 s` (survives a millisecond wire field) |
+  | `TimeSpan` | `n` s | `+1 s` |
+  | `Guid` | deterministic from `n` | another deterministic value |
+  | `byte[]` | `[n]` | `[n, 1]` |
+  | `T?` | sample of `T` | change of `T` |
+  | list / collection | one element | the element's members, one at a time |
+  | dictionary | one entry (`"k{n}"`, `n`, enum or `Guid` key) | the key, then the value's members |
+  | anything else (`object`, `JsonNode`, an interface) | none: `MemberNotFillable` | — |
+
+- `WireConformanceOptions`: `WithMemberValue(aggregateId, memberPath, value)` supplies the sample for a member the kit
+  cannot fill (`MemberNotFillable`; that member is then not changed); `WithSampleState(aggregateId, state)` uses your own
+  state as the sample (the changes still apply to it). Pass the options as the last argument of `Check*`.
+- Other problems: `SampleNotSerializable` (the sample does not deserialize into the state type, or the mapper throws),
+  `UntypedMapper` (registered with the obsolete one-type `AddAggregateWireMapper<TState>`, section 10.2), `NoMapper` (a
+  client-visible aggregate without a mapper).
+- Fix a finding in the mapper, or declare at the registration what the server keeps on purpose (section 10.2):
+  `o.Hidden("ActiveBattle.ConfigVersion")` for a state member, `o.MayStayDefault("mode")` for a proto field whose
+  meaningful value is its default (an enum zero).
 
 ## 6. Local run
 
@@ -520,9 +607,213 @@ project):
 https://github.com/hung-bui-121/game-server-dotnet-kestrel.git?path=sdk/unity/com.gameserver.client#v0.7.0
 ```
 
-The package version equals the framework version (`0.7.0`). Code generation of the game's own `.proto` messages for Unity
-is **coming in slice 014**; until then generate them in the game repository as the sample client does
-(`samples/SampleGame/KestrelDemo`, `docs/pcr/unity-sdk.md`) and preserve their assembly in `link.xml`.
+The package version equals the framework version (`0.7.0`). It ships the framework's messages and two generated files,
+`Runtime/Generated/FrameworkRoutes.cs` (player-facing framework routes) and `FrameworkSections.cs` (framework sections:
+`wallet`, `inventory`, `profile`). The game generates the same three kinds of file for its own routes, sections and
+`.proto` messages from its own repository with the framework's generator, **WireGen** (sections 10.3–10.6). Nothing in the
+framework is edited or copied.
+
+### 10.1 Declare every route
+
+A route is declared once, as data, in the module's business project (no ASP.NET, no Protobuf), and listed in
+`ModuleDescriptor.Routes`. From `tests/ConsumerFixture/src/Fixture.Game/FixtureModuleDefinition.cs`:
+
+```csharp
+public static class FixtureRoutes
+{
+    public const string SaveTemplate = "/api/v1/fixture/save";
+
+    public const string CardTemplate = "/api/v1/fixture/card";
+
+    public static RouteDeclaration Save { get; } = RouteDeclaration.Command(SaveNoteHandler.Descriptor, SaveTemplate);
+
+    /// <summary>The player's card (a query: no command, returns the <c>card</c> section).</summary>
+    public static RouteDeclaration Card { get; } = RouteDeclaration.Post("fixture.card", CardTemplate, SecurityProfile.Player);
+}
+
+// In Describe():
+Routes = [FixtureRoutes.Save, FixtureRoutes.Card],
+```
+
+- `RouteDeclaration.Command(descriptor, template, name?, condition?)`: `POST` running the command; the name is the
+  operation (`fixture.save`), profile and permission come from the command descriptor. `Get`/`Post`/`Put`/`Delete`
+  (name, template, profile, surface = `PlayerApi`, permission, condition) for other routes; `AnyMethod` for a probe.
+- Name rule: `<area>.<route>` in lower case, `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`, at most 64 characters, unique in the
+  host. The name is the generated member name in Unity (`fixture.save` → `FixtureRoutes.FixtureSave`) and appears in the
+  request log (`RouteName`); renaming it is a breaking change for the client.
+- Template: one leading `/` and a version segment (`/api/v1/…`). A player-facing route the client calls can use plain
+  `{name}` parameters (also inside a segment, `{id}.json`), no constraints, optional parameters, defaults or catch-alls,
+  and one method per declaration.
+- Map the endpoint from the declaration in the adapter (`FixtureModule.cs`):
+
+  ```csharp
+  routes.MapPlayerCommand<StringValue, SaveNote, SaveNoteResult>(FixtureRoutes.Save, ToDomain, result => new StringValue { Value = result.Text });
+
+  routes.MapDeclared(FixtureRoutes.Card, async (HttpContext http) => { /* … */ }).AsPlayerEndpoint();
+  ```
+
+  `MapPlayerCommand`/`MapDevCommand`/`MapGmCommand(declaration, …)` take method, template, operation and permission from
+  the declaration. `MapDeclared(declaration, handler)` maps its methods and template; call the `As*Endpoint()` helper of
+  the declared profile as before. A library helper endpoint (`MapHealthChecks`) is tagged with `.WithDeclaration(route)`.
+- A route listed in `ModuleDescriptor.PublicEndpoints` must be declared with profile `Public` (else startup fails, BC-5).
+- Hosting conditions: a declaration with `condition: "x"` is mapped only where condition `x` holds; the module registers
+  it with `services.AddRouteCondition("x", sp => …)`. Built in: `development_tools` (Development/Test servers), which Dev
+  routes use.
+
+### 10.2 The endpoint check and typed section mappers
+
+At startup the host compares every mapped endpoint with the declarations and refuses to serve on any fault (exit 1, one
+line per fault, each naming the fix), in every environment. Checked: an endpoint that is not declared, a template,
+method, profile, command or permission that differs from its declaration, and a declaration that is never mapped. The
+check also covers endpoints mapped **after** `UseGameServer` (directly on `app`, inside `MapGroup`): they are validated with
+the same rules before the server accepts a connection. Example line:
+
+```text
+[endpoint POST /api/v1/account/init] is not declared in the route catalog. Fix: declare it in the module's ModuleDescriptor.Routes (or GameServerBuilder.DeclareRoutes for a host endpoint) and map it from the declaration (FG-026).
+```
+
+Register each client-visible aggregate's wire mapper **with its message type**, and declare what the server keeps on
+purpose next to it (`FixtureModule.cs`):
+
+```csharp
+services.AddAggregateWireMapper<CardState, Wire.CardState>(FixtureModuleDefinition.CardAggregate, ToWire, o => o.Hidden(nameof(CardState.InternalNote)));
+```
+
+- The message type gives the section its message in the catalog, so the generator emits a typed key and Unity gets a
+  parser (section 10.5).
+- `o.Hidden("Member", "Nested.Member")`: state members that never reach the client, as C# member names joined by `.`
+  (collection elements and dictionary values are transparent). `o.MayStayDefault("field")`: proto fields whose meaningful
+  value may be the default, as proto field names joined by `.`. An unknown path fails startup naming the aggregate and the
+  path. Both lists are in the catalog export (`hiddenMembers`, `mayStayDefault`) and are checked by the conformance test
+  (section 5.5).
+- The one-type `AddAggregateWireMapper<TState>(id, Func<TState, IMessage>)` is obsolete (CS0618, a build error under
+  `TreatWarningsAsErrors`); a section registered that way still works but gets a startup Warning and no parser in Unity.
+- One mapper per aggregate: a second registration for the same id fails startup. To replace a framework mapper use
+  `gameServer.ConfigureExtensions(e => e.ReplaceWireMapper<WalletState, Wire.WalletState>("wallet", map, o => …))`.
+
+### 10.3 Generator config — `wiregen.json`
+
+Commit one config in the game repository. Paths are relative to the config file's folder (`/` and `\` both accepted).
+The zh-pvp shape (server repository with the framework at `framework/`, Unity client in a sibling checkout):
+
+```json
+{
+  "format": "gameserver.wiregen/1",
+  "catalog": { "hostProject": "../../src/ZhPvp.Host", "environment": "Local" },
+  "origin": "game",
+  "protos": [
+    { "root": "../../src/ZhPvp.Game.Adapters/Protos", "files": ["zhpvp_game.proto"] }
+  ],
+  "output": {
+    "root": "../../../research-and-development-games/src/GameClient",
+    "marker": "Assets/MadProject/Scripts",
+    "directory": "Assets/MadProject/Scripts/Online/Generated",
+    "layout": "flat",
+    "lineEndings": "crlf"
+  },
+  "namespace": "ZhPvp.Client",
+  "routesClass": "GameRoutes",
+  "sectionsClass": "GameSections"
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `catalog.hostProject` | the game host project; the tool runs it with `--environment <catalog.environment> --export-wire-contract <temp file>` (default flavor `Local`). Or `catalog.file`: a committed export instead of a host run |
+| `origin` | `game` (default): only the game's own routes and sections are generated (the framework's are in the package) |
+| `protos[]` | the game's `.proto` files, each list under its protoc import root. Framework protos (`gameserver/core/v1/core.proto`, identity, economy, iap) are always import roots: import them, never list or copy them. `importRoots[]` adds the game's other import roots |
+| `output.root` | the Unity project folder (must exist); `--output-root <dir>` overrides it for another checkout |
+| `output.marker` | a path that must exist under the root (guards against a wrong root) |
+| `output.directory` | the folder that receives the files (must exist; the tool never creates it) |
+| `output.layout` | `flat` (file name only, default) or `by-root` (the proto's folder under its root) |
+| `output.lineEndings` | `lf` (default) or `crlf` |
+| `namespace`, `routesClass`, `sectionsClass` | namespace and class names of the route and section files (defaults `GameRoutes`, `GameSections`) |
+
+Outputs: one C# file per listed proto (`zhpvp_game.proto` → `ZhpvpGame.cs`, protoc naming), `<routesClass>.cs` and
+`<sectionsClass>.cs`. Every input or contract error (missing path, protoc error, a game message that redefines a
+framework message, a route template the client cannot express, a name collision) stops the run with exit 1 before any
+file is written; each line names the fix. When the host project itself does not build, the tool relays only the
+`dotnet run` summary ("The build failed…"): run `dotnet build <host project>` to see the compiler errors.
+
+**Line endings.** Every output file is normalized to `output.lineEndings`, UTF-8 without BOM. Choose what the client
+repository has in its working tree: the zh-pvp client commits CRLF, so its config says `crlf`. If git converts line
+endings on checkout there (`core.autocrlf`, `.gitattributes`), `verify` compares with the converted files, so the config
+must match the checkout.
+
+### 10.4 Generate and verify
+
+```text
+# game repo (framework submodule at framework/), client in a sibling checkout
+dotnet run --project framework/tools/GameServer.WireGen -c Release -- generate --config tools/unity-codegen/wiregen.json
+dotnet run --project framework/tools/GameServer.WireGen -c Release -- generate --config tools/unity-codegen/wiregen.json --output-root D:/work/research-and-development-games/src/GameClient
+
+# game CI, after the solution build
+dotnet run --project framework/tools/GameServer.WireGen -c Release -- verify --config tools/unity-codegen/wiregen.json --no-build
+```
+
+- `generate` writes only the files whose bytes differ (an unchanged file keeps its timestamp, so Unity does not
+  reimport it) and prints one line per written file. `verify` writes nothing and exits 2 listing each file that differs
+  or is missing: run it in CI so the committed client files cannot drift from the server. Exit codes: 0 done, 1 input or
+  contract error (nothing written), 2 `verify` found differences.
+- Options: `--output-root <dir>`, `--catalog <export file>` (no host run), `--configuration <cfg>` (default `Release`),
+  `--no-build` (the host is already built), `--dotnet <path>` (the dotnet executable to run the host with).
+- The run is deterministic: the same inputs give the same bytes on every machine and checkout path (no timestamp,
+  absolute path, user or machine name in the output).
+- **Version pair.** The tool generates with the framework's pinned protoc (`Grpc.Tools` 2.84.0, `libprotoc 35.1`), and
+  the Unity package ships `Runtime/Plugins/Google.Protobuf.dll` 3.36.2. The game must use the same versions: the tool
+  stops with exit 1 when the export's `frameworkVersion` is not the tool's, when the host's `Google.Protobuf` is not
+  3.36.2, or when the host project's `Grpc.Tools`/`Google.Protobuf` package versions (central package management) differ
+  from the pin; the message names both versions and which side to change. Mirror the framework's
+  `Directory.Packages.props` versions (section 2).
+- **Cleaning.** The generated files are not outputs of any MSBuild project: `dotnet clean` or a rebuild never deletes them,
+  and the tool itself never deletes a file. When a proto is removed from the config, delete its generated file (and its
+  `.meta`) by hand.
+- **`.meta` files.** The tool never reads, writes or deletes `.meta` files. For a file it creates it prints
+  `new file <path>: Unity creates <path>.meta on import; commit it`: in a Unity project (`Assets/…`), open the project
+  once and commit the `.meta` Unity created with the file. Inside a UPM package folder (immutable when installed from
+  git) Unity cannot create it: the `.meta` must be written and committed with the file (the framework does this for its
+  package).
+- **IL2CPP / `link.xml`.** The generated route and section files reference their messages' `Parser` directly, so
+  managed stripping keeps what they use: no `link.xml` entry is needed for generated code. An existing `link.xml` that
+  preserves the message assembly may stay.
+
+### 10.5 Use the generated code in Unity
+
+```csharp
+// Unity game code
+client.Sections.Register(GameSections.Table);                          // once, after creating the client
+var progress = client.Sections.Get(GameSections.Progress);              // ProgressState or null
+var wallet = client.Sections.Get(FrameworkSections.Wallet);
+var init = await client.SendCommandAsync(GameRoutes.AccountInit, new InitAccountRequest(), InitAccountResult.Parser);
+
+client.Sections.SectionChanged += id =>
+{
+    switch (client.Sections.TryRead(id, out var message))
+    {
+        case SectionRead.Parsed when message is ProgressState p: /* … */ break;
+        case SectionRead.Unknown: /* newer server: section kept raw, update the client */ break;
+    }
+};
+```
+
+- Routes: `GameRoutes.X` is the route path without the leading slash (relative to the SDK base URL), `GameRoutes.XMethod`
+  its HTTP method; a route with parameters is a method, `GameRoutes.X(string id)`, which escapes each value. Only
+  player-facing routes (profiles Player, Public, Dev; never GM) are generated.
+- Sections: `GameSections.X` is a typed key (`SectionKey<TMessage>`), `GameSections.XId` the id constant,
+  `GameSections.Table` every key. `FrameworkSections.Table` is registered by the SDK itself; register the game's table
+  once. `Get(key)` returns the parsed message or null when the client has not received it; `TryRead(id, out message)`
+  returns `Absent`, `Unknown` (no registered table knows the id: kept raw, never parsed) or `Parsed`.
+  `Get<T>(id, parser)`, `TryGet`, `RevOf(id)` and `SectionChanged` are unchanged.
+- No route string or section id literal is needed in client code any more; the framework's own sample client
+  (`samples/SampleGame/KestrelDemo/Assets/SampleGame/SampleGameClient.cs`) is checked for that by a test.
+
+### 10.6 Checklist for the game
+
+1. Declare every route (`ModuleDescriptor.Routes`, `DeclareRoutes` for host endpoints) and map from the declaration.
+2. Register every section mapper typed, with `Hidden`/`MayStayDefault` where the server keeps data on purpose.
+3. Add the conformance test (section 5.5).
+4. Commit `wiregen.json`; run `generate`; commit the generated files and the `.meta` files Unity creates.
+5. Add `verify --no-build` to CI after the solution build.
 
 ## 11. Bump checklist
 
@@ -535,6 +826,12 @@ is **coming in slice 014**; until then generate them in the game repository as t
    `Directory.Packages.props` (game props mirror them);
    `samples/SampleHost/Program.cs` and its flavor files (the host is a copy until FG-009).
 4. Update every place that names the tag (game props, README, UPM URL `#vX.Y.Z` in the Unity project).
-5. Build Debug and Release (0 warnings) and run the full game test suite; run the host once with `run-local`.
-6. Remove the workarounds the release notes list as removable (code, `FRAMEWORK-GAP` markers, friction-log entries).
-7. Commit the gitlink, the copied files, the docs and the removed workarounds together (`chore: bump framework to vX.Y.Z`).
+5. Act on the breaking changes the release notes list. For 0.7.0: declare every route and map it from the declaration
+   (an undeclared endpoint fails startup, BC-1) and switch every section mapper to the typed
+   `AddAggregateWireMapper<TState, TWire>` (the one-type overload is CS0618, BC-3) — section 10.
+6. Regenerate the client files (`generate`, section 10.4), commit them and the `.meta` files Unity creates in the client
+   repository, and check that `verify --no-build` passes (the framework's protoc, messages or generator may have changed).
+7. Build Debug and Release (0 warnings) and run the full game test suite; run the host once with `run-local`.
+8. Remove the workarounds the release notes list as removable (code, `FRAMEWORK-GAP` markers, friction-log entries).
+9. Commit the gitlink, the copied files, the regenerated client files, the docs and the removed workarounds together
+   (`chore: bump framework to vX.Y.Z`).
