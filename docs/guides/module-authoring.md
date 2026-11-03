@@ -107,6 +107,56 @@ public ModuleDescriptor Describe() => new()
 Host: `builder.AddGameServer().AddModule<IdentityModule>().AddModule<MyModule>();` — host đầy đủ (chạy bằng
 `app.RunGameServerAsync(mode)`, slice 011) xem `samples/SampleHost/Program.cs`.
 
+### Config: file, luật và catalog (slice 015 — FG-018)
+
+Module khai **mọi** file config nó đọc trong descriptor; framework kiểm chúng ở khối đầu tiên của `UseGameServer`, một dòng mỗi
+lỗi (module, file, row/key/path, fix), trước mọi traffic. Ví dụ của template (`templates/module/Template.Module/TemplateModuleDefinition.cs`):
+
+```csharp
+// Every config file the module reads, with its content rules (checked at every start, FG-018). Use Required(...) for a
+// file the module cannot work without.
+ConfigFiles = [ConfigFileDeclaration.Optional(ConfigFile, TemplateConfigRules.Points)],
+
+// A typed catalog built once from the files before traffic; handlers take it from DI. Declare it here, never register
+// it in ConfigureServices (an undeclared catalog stays lazy and its faults surface on the first request):
+// ConfigCatalogs = [ConfigCatalogDeclaration.Of(c => TemplateCatalog.Load(c.Config), ConfigFile)],
+```
+
+```csharp
+public static class TemplateConfigRules
+{
+    /// <summary>Rule <c>template.points</c>: <c>maxPoints</c> is an integer of at least 1.</summary>
+    public static ConfigRule Points { get; } = new("template.points", CheckPoints);
+
+    private static void CheckPoints(ConfigContext context) =>
+        ConfigJson.RequiredInteger(
+            context.Json(TemplateModuleDefinition.ConfigFile),
+            "maxPoints",
+            ConfigLocation.WholeFile,
+            context.Problems,
+            min: 1,
+            fix: "set the most points a player may hold, at least 1");
+}
+```
+
+- `RequiredConfigFiles` = file bắt buộc **không** luật (vẫn dùng được). `ConfigFiles` = `ConfigFileDeclaration.Required(name,
+  rules…)` hoặc `Optional(name, rules…)` (file vắng → luật không chạy; template dùng `Optional` để host không có `template.json`
+  vẫn start). `ConfigCatalogs` = `ConfigCatalogDeclaration.Of<T>(build, files…)`; file của catalog là bắt buộc trừ khi module
+  khai nó `Optional`.
+- Luật viết bằng `ConfigJson` (`RequiredString`, `RequiredInteger`, `OptionalInteger`, `TryGetObject`, `TryGetArray`,
+  `RequireObject`, `PathOf`) để câu chữ giống mọi module (`'maxPoints' is missing`, `… must be an integer of at least 1, found
+  "5"`); báo qua `context.Problems.Error/Warning(ConfigLocation…, problem, fix)`, **không ném** (luật ném → một dòng "rule threw").
+  "Số nguyên JSON" là `TryGetInt64` (`1.0`, `1e3`, `"5"` là lỗi). Luật đọc lỏng file của module khác (ví dụ
+  `ResourceReferences.Read(context)` cho `resources.json`) chỉ so với row hợp lệ.
+- **Khai mọi catalog.** Catalog khai báo được platform build một lần và đăng ký vào DI; module **không** đăng ký nó trong
+  `ConfigureServices` (test `ConfigCatalogArchitectureTests` bắt lỗi này ở module của framework, sample và template). Catalog
+  không khai báo vẫn lazy: lỗi của nó chỉ lộ ở request đầu tiên đọc nó. Host/test đăng ký instance của kiểu đó (trước hoặc sau
+  `AddModule`) thì instance đó thắng.
+- Dữ liệu suy ra từ config (bảng tra, index) chỉ để trong catalog khai báo, không trong singleton tự dựng (seam FG-020).
+- Startup check của module đọc config qua `GameConfigStatus` (`TryGetConfig`, `DeclarationsPassed`), không nhận `IGameConfig`
+  (PCR platform §17, §21).
+- Định dạng dòng và thứ tự: PCR platform §21.
+
 ## 5. Route và endpoint
 
 ### 5.1 Khai báo route
@@ -247,6 +297,20 @@ public async Task Save_replaces_the_note_and_the_runner_would_commit_it()
 - Host test: `TestHost.StartAsync(modules: b => b.AddModule<IdentityModule>().AddModule<MyModule>())` (mặc định chỉ
   Identity, config rỗng); flavor thật của host game: `new LocalFlavorFactory<Program>()` (thư mục tạm riêng, xoá khi
   dispose).
+
+**Luật config trong test** (slice 015, không host): `ConfigDeclarationCheck.Check(config, modules…)` cho đúng các dòng mà host
+in khi khởi động (ví dụ từ `tests/ConsumerFixture/tests/Fixture.Tests/FixtureConfigTests.cs`):
+
+```csharp
+var config = TestGameConfig.FromJson(new Dictionary<string, string> { [FixtureModuleDefinition.RulesFile] = notes }, "fixture-test");
+
+var report = ConfigDeclarationCheck.Check(config, new IdentityModule(), new FixtureModule());
+
+report.Passed.ShouldBeFalse();
+```
+
+`Errors`, `Warnings`, `Passed`, `ThrowIfFailed()`, `Catalog<T>()`/`TryGetCatalog<T>()`, `AddCatalogsTo(services)` (dựng
+services cho test không có host).
 
 **Test conformance của wire mapper** (bắt buộc cho module có aggregate client-visible): mapper quên một member thì Unity
 nhận giá trị default mà không có lỗi nào. `WireConformance` (kit, không host, không store, không test framework) dựng state

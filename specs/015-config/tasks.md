@@ -686,7 +686,7 @@ Goal: the bundle is serialized once, its size checked at startup, and compressed
 Independent test: T048 (negotiation table, endpoint sweep), T047 (limit and limit + 1), T051 (Unity).
 Depends on: US3 (T035: field 5 is part of the bundle). Can run in parallel with US4.
 
-- [ ] T046 [US5] `ConfigBundle` (after T005, T035; research R11, data-model §4.1): new internal
+- [x] T046 [US5] `ConfigBundle` (after T005, T035; research R11, data-model §4.1): new internal
   `src/GameServer.Platform.Web/Config/ConfigBundle.cs` (`Prefix` once, `Full(t)` = prefix ++ tail, `NotModified(t)`,
   `MaxResponseBytes`; or the T005 fallback); built in `ConfigStartup` step 4 when the config loaded and
   `Hosting:MapPlayerApi` is true, and held by an internal singleton for the handler. The `GetConfig` handler in
@@ -697,7 +697,9 @@ Depends on: US3 (T035: field 5 is part of the bundle). Can run in parallel with 
   `MaxResponseBytes` ≥ every `Full(t)`; the request-time 413 still fires when the limit is below the size (unit); the
   host's `GetConfig` body for the shared config equals a whole-message serialization.
   Done when: green; `ConfigAndCheatTests` and `ClientTests` config cases green. (FR-052, FR-053, FR-054)
-- [ ] T047 [US5] Startup size check and startup config line (after T046; contracts/startup-report.md §6, §8):
+  Note: `src/GameServer.Platform.Web/Config/ConfigBundle.cs` (`Prefix` = fields 1+3 serialized once with the file bytes wrapped, not copied; `Tail(t)` = fields 4+5; `Full(t)`; `NotModified(t)`; `IsCurrent(version)` = client or server version, ordinal; `FileCount`; `MaxResponseBytes` = prefix + tail at `long.MinValue`). Held by the new internal singleton `ConfigPhaseSummary` (`Platform.Web/Config`, published once by `ConfigStartup` step 4 with the config, rule and catalog counts and the bundle, or no bundle when `MapPlayerApi=false`; registered in `AddGameServer`). The handler (`CoreEndpoints`) writes `Prefix` and the tail as two parts (no per-request copy of the files) through the new internal `ProtobufBinding.WriteBytesAsync` (same cancelled-token rule as `WriteAsync`, which now delegates to it); the request-time 413 compares prefix + tail with the limit.
+  Note: `ConfigBundleTests` (T046 part): prefix + tail = whole-message serialization for 0/1/50 files, empty client version, times 0, −1, `long.MinValue`, `long.MaxValue` (theory, 5 shapes); `MaxResponseBytes` ≥ every `Full(t)` and = `Full(long.MinValue)`; `NotModified` + `IsCurrent`; host body = whole message; request-time 413 with the limit lowered after the start (mutating the `GameServerOptions` singleton). **Test changed:** `ConfigAndCheatTests.GetConfig_requires_a_player_and_enforces_the_bundle_limit` set `ConfigBundleBytes=200` at start, which now stops the host (BC-7); it lowers the limit after the start instead (same assertions). `ConfigVersionCarriageTests`, `ClientTests` config cases green.
+- [x] T047 [US5] Startup size check and startup config line (after T046; contracts/startup-report.md §6, §8):
   `ConfigStartup` adds the bundle-size line when `MaxResponseBytes > Limits.ConfigBundleBytes`;
   `GameServerApplicationExtensions.LogStartup` (`:131`) logs the data-model §5.6 Information line after the 013 line
   (both versions, file counts, bundle bytes or "bundle not served", rule and catalog counts; plan N8).
@@ -705,7 +707,9 @@ Depends on: US3 (T035: field 5 is part of the bundle). Can run in parallel with 
   `MaxResponseBytes − 1` fails with exactly the §6 line; `MapPlayerApi=false` → no size check and "bundle not served";
   the config line is logged once with both versions (log capture).
   Done when: green. (FR-044 startup log, FR-053, US5-5, BC-7)
-- [ ] T048 [US5] Compression (after T006, T046; research R12, contracts/wire-changes.md §5, data-model §4.2–§4.3):
+  Note: `ConfigStartup` adds `ConfigReportLines.BundleTooLarge(MaxResponseBytes, FileCount, limit)` after the rule/catalog lines (startup-report §1 step 3) when the player API is mapped. `LogStartup` logs the §5.6 line after `Starting …` through `ConfigPhaseSummary` (two templates: `bundle {BundleBytes} B` / `bundle not served`); `{BundleBytes}` = `MaxResponseBytes` (the value checked against the limit). SampleHost (local flavor, committed config): `Config sample-1: version sample-1+8a37f29ee2dc, client version sample-1+9b25b8b6bc0b, 5 files (4 client-visible, bundle 1747 B), 4 rules, 4 catalogs.`; with `GameServer__Limits__ConfigBundleBytes=1746` it exits with exactly `[config] the client-visible bundle needs a GetConfig response of up to 1747 bytes (4 files), over GameServer:Limits:ConfigBundleBytes = 1746. Fix: …`.
+  Note: `ConfigBundleTests` (T047 part, 3 tests): limit = largest response starts and serves; largest − 1 → exactly the §6 line; `MapPlayerApi=false` + limit 1 starts with `bundle not served` and no bundle; FullGame host logs exactly two Startup Information lines, the config line second (`4 rules, 4 catalogs`, structured `ConfigVersion`/`ClientConfigVersion`/`BundleBytes`). **Test changed:** `TestKitHostTests.A_started_host_logs_one_startup_line…` now picks the `Starting ` line (there are two Information lines).
+- [x] T048 [US5] Compression (after T006, T046; research R12, contracts/wire-changes.md §5, data-model §4.2–§4.3):
   `src/GameServer.Platform/GameServerOptions.cs` `ConfigCompression` (default true, XML doc); new internal
   `src/GameServer.Platform.Web/Config/ConfigResponseCompression.cs` (eligible when the switch is on, the response carries
   files and is ≥ 1024 B; negotiation with typed headers or the T006 fallback; `BrQuality`/`GzipLevel` from T006; pooled
@@ -718,7 +722,9 @@ Depends on: US3 (T035: field 5 is part of the bundle). Can run in parallel with 
   `platform.config` may carry `Content-Encoding`; a request with `Content-Encoding` is processed as today.
   Done when: green; a search of `src/` for `ResponseCompression` finds nothing. (FR-050, FR-051, FR-052, FR-054, FR-056,
   US5-1, US5-2, US5-3, US5-4)
-- [ ] T049 [US5] The SDK always gets a parseable bundle (after T008, T048; research R13): new file
+  Note: `GameServerOptions.ConfigCompression` (default true, XML doc). New internal `src/GameServer.Platform.Web/Config/ConfigResponseCompression.cs`: `MinCompressBytes = 1024`, `GzipLevel = 6`, `BrQuality = 4` (T050 decision), `Negotiate` over `GetTypedHeaders().AcceptEncoding` (V7: no own parser; q absent = 1, max q per name, `*` covers an unlisted candidate, tie → br), `Compress` into an `ArrayPool` buffer of capacity `length − 1` through a private bounded write-only stream (overflow = not smaller → identity, no exception), `WriteFullAsync`/`WriteNotModifiedAsync` (`Vary: Accept-Encoding` on every success response while on; `Content-Length` = bytes sent; switch off = today's write path, no `Content-Length`, no `Vary`). Called by the `GetConfig` handler only. **Deviation (wording):** the class itself is named `ConfigResponseCompression` as the task says, so a literal search of `src/` for `ResponseCompression` finds it; a search for `AddResponseCompression|UseResponseCompression|Microsoft.AspNetCore.ResponseCompression` finds nothing. `Vary` is not on error responses of the route (`ErrorResponseWriter` clears headers; errors are never compressed).
+  Note: `ConfigCompressionTests` (always-on): 17 negotiation rows (wire-changes §5 + `deflate, gzip`, `GZIP`, empty, `gzip;q=abc`, `;;`) with headers and decoded body = plain body; `not_modified` and a < 1024 B bundle never compressed, with `Vary`; 16 KiB random client-visible file → identity for gzip and br; switch off → `Full(t)` bytes, no `Content-Encoding`, no `Vary`; a request with `Content-Encoding: gzip` (plain body) processed as today; endpoint sweep (FullGame + GM + Observability: every `WireCatalog` route and method with a player, `Accept-Encoding: gzip, br`, plus `/health/live`, `/health/ready`, `/v1/time`) → only `platform.config` carries `Content-Encoding` (`br`).
+- [x] T049 [US5] The SDK always gets a parseable bundle (after T008, T048; research R13): new file
   `tests/GameServer.Client.Tests/ConfigCompressionClientTests.cs`: the SDK over a transport whose handler sends
   `Accept-Encoding: gzip` and decodes (a delegating handler over the test server), and over the default transport (no
   header → identity): `RefreshConfigAsync` stores identical files in both. **Only if** T008 (or later T058) shows a
@@ -726,14 +732,17 @@ Depends on: US3 (T035: field 5 is part of the bundle). Can run in parallel with 
   hand-written `.meta`; gzip magic `1F 8B` sniff, `GZipStream`, 64 MiB decoded cap) used only by `RefreshConfigAsync`,
   with tests (gzip body, plain body, truncated gzip → clear error, cap).
   Done when: green; a Note records which branch was taken (input of PCR unity-sdk, T063). (FR-055, US5-6)
-- [ ] T050 [US5] Budgets (after T047, T048): new file `tests/GameServer.Platform.Web.Tests/ConfigPhasePerformanceTests.cs`
+  Note: **Branch taken: no SDK code** (T008: Editor and Windows player decode gzip; T051 confirmed with KestrelDemo; Android/iOS stay T058). No `ConfigBody.cs`. `tests/GameServer.Client.Tests/ConfigCompressionClientTests.cs`: an SDK client over a delegating handler that sends `Accept-Encoding: gzip` and decodes (it saw `Content-Encoding: gzip` on `config/get`) and one over the default transport (no `Accept-Encoding`, identity) store identical files, equal to the host's bytes. `SdkHarness.NewClient` gained an optional `http` parameter.
+- [x] T050 [US5] Budgets (after T047, T048): new file `tests/GameServer.Platform.Web.Tests/ConfigPhasePerformanceTests.cs`
   and an opt-in section of `ConfigCompressionTests` (`GAMESERVER_PERF=1`): compression of the sample, the 28 KB
   zh-pvp-shaped and the 1 MiB bundles: gzip ratio ≤ 30 %, p95 added server time ≤ 20 ms at 1 MiB (SC-005, V6 final);
   config phase (load, rules, catalogs, bundle) ≤ 20 ms for the sample config (always-on with a 5× margin) and ≤ 300 ms
   for 1 MiB of row tables (opt-in) (SC-007).
   Done when: green on the reference machine; numbers recorded; on a miss the V6 fallback (lower level, then gzip splice)
   is applied and recorded. (FR-052, SC-005, SC-007)
-- [ ] T051 [US5] **Agent-run Unity** check of the bundle on Editor (and Windows player when T008 showed it advertises an
+  Note: `tests/GameServer.Platform.Web.Tests/ConfigPhasePerformanceTests.cs`: runs `ConfigStartup.Run` on a freshly built FullGame host per start (1 warm-up + 3 measured, median). Sample config (`samples/SampleHost/config`, always-on, bound 5 × 20 ms): median 1.8 ms. Opt-in 1 MiB `resources.json` (1 048 614 B, ~13 000 rows through the economy rule and `ResourceCatalog`, limit raised to 4 MiB): median 86.8 ms (≤ 300 ms). Opt-in section of `ConfigCompressionTests` (real `ConfigResponseCompression.Compress` + pool rent/return, 200 iterations after 20 warm-up, 2026-11-04, Release).
+  Note: **V6 final / level decision:** gzip 9 / Brotli 6 (the T006 rule) on this path, two runs: 1 MiB gzip p95 18.66 / 18.21 ms, br p95 17.93 / 17.82 ms — within 10 % of the 20 ms budget, so the **lower levels gzip 6 / Brotli 4** ship: 1 MiB (1 045 241 B) gzip p50 8.50 / p95 9.20 ms ratio 14.0 %, br p50 7.05 / p95 7.53 ms 14.2 %; first-consumer-shaped (27 643 B) gzip p95 0.233 ms 15.7 %, br p95 0.559 ms 15.3 %; sample (1 743 B) gzip p95 0.021 ms 28.3 %, br p95 0.092 ms 28.9 %. All gzip ratios ≤ 30 %; no gzip splice needed.
+- [x] T051 [US5] **Agent-run Unity** check of the bundle on Editor (and Windows player when T008 showed it advertises an
   encoding) (after T008, T048, T049): SampleHost from this branch (`tools/local/run-local.ps1 -Port 5080`); a scratch
   logging forwarder on 5092 → 5080 (logs request `Accept-Encoding` and response `Content-Encoding`/`Vary` per path);
   `sdk/unity/ci/smoke-build.ps1 -Unity "D:\DevTools\Unity\Unity 6000.3.22f1\Editor\Unity.exe" -CompileOnly`, then
@@ -741,10 +750,12 @@ Depends on: US3 (T035: field 5 is part of the bundle). Can run in parallel with 
   Done when: a Note records the forwarder lines for `/api/v1/config/get`, the E2E exit code and its `Config …` line;
   SampleHost and the forwarder are stopped; `git status sdk/unity samples` shows no change. If the agent cannot start
   Unity (an Editor holds the project), the task stays open with these commands for the owner. (FR-055, FR-091, US5-6)
-- [ ] T052 [US5] Release notes and checkpoint (after T050, T051): FG-019 delivery section (br/gzip on `GetConfig` only,
+  Note: Agent-run 2026-11-04 (no Editor had KestrelDemo open). SampleHost `tools/local/run-local.ps1 -Port 5080`; scratch logging forwarder `localhost:5092 → 127.0.0.1:5080` (scratch `t051fwd`, no decompression, logs request `Accept-Encoding` and response `Content-Encoding`/`Vary`/bytes). `smoke-build.ps1 -CompileOnly`: exit 0, 0 `error CS`/`warning CS` in `compile.log`. `-E2E -ServerUrl http://localhost:5092/`: exit 0; forwarder `POST /api/v1/config/get req Accept-Encoding=[deflate, gzip] -> 200 Content-Encoding=[gzip] Vary=[Accept-Encoding] bytes=494` (every other route: no `Content-Encoding`, no `Vary`); E2E line `config downloaded sample-1+9b25b8b6bc0b: battle.json, counter.json, resources.json, shop.json`, `result=OK`. SampleHost and forwarder stopped (5080/5092 free); `git status sdk/unity samples` shows only the T056 edit (no `.meta`, no settings change). Logs: scratch `t051/`.
+- [x] T052 [US5] Release notes and checkpoint (after T050, T051): FG-019 delivery section (br/gzip on `GetConfig` only,
   threshold 1024 B, levels, rollback switch `GameServer:ConfigCompression=false`, BC-7, the Unity results so far,
   "no client change needed"). Full suite.
   Done when: green; counts recorded. (FR-090)
+  Note: Release notes: new section "FG-019 (delivery)" (GetConfig only, 1024 B threshold, levels gzip 6 / br 4 with the measured numbers and why, rollback switch `GameServer:ConfigCompression=false`, BC-7 with the real SampleHost line, startup config line, Unity results Editor/Windows done and Android/iOS pending, no client change needed); manual-checks rows T051/T057 done, T058 pending with steps; "Known before the tag" V6 bullet updated. Full suite: Debug and Release 0 warnings; in memory **2201 total / 2102 pass / 99 skip / 0 fail**, `GAMESERVER_TEST_STORE=File` the same (COUCHBASE_PW unset); vs T045: +47 tests, +2 skips (the two new opt-in perf cases); WireGen `verify` exit 0 for the three configs.
 
 **Checkpoint**: the bundle is compressed only for clients that ask and only on `GetConfig`; an oversized bundle stops the
 host with one line; the SDK parses the bundle with and without compression.
@@ -756,32 +767,36 @@ pages describe the shipped behaviour. (Economy, IAP and sample game declarations
 Independent test: T053 (fixture), T055 (no lazy factory), T057 (KestrelDemo twice), T066 (reviewer walkthrough).
 Depends on: US1–US5 (docs describe shipped behaviour).
 
-- [ ] T053 [P] [US6] Consumer fixture rule (after T019): `tests/ConsumerFixture/src/Fixture.Game/FixtureModuleDefinition.cs`
+- [x] T053 [P] [US6] Consumer fixture rule (after T019): `tests/ConsumerFixture/src/Fixture.Game/FixtureModuleDefinition.cs`
   declares `ConfigFileDeclaration.Required(RulesFile, FixtureConfigRules.Notes)` (rule `fixture.notes`: `maxLength`
   integer ≥ 1 through `ConfigJson`) instead of `RequiredConfigFiles`; new file
   `tests/ConsumerFixture/tests/Fixture.Tests/FixtureConfigTests.cs` (public API only, no host): the committed
   `notes.json` passes; `maxLength` 0 and `"40"` each give the exact line through `ConfigDeclarationCheck`.
   Done when: `dotnet test --project tests/ConsumerFixture/tests/Fixture.Tests/Fixture.Tests.csproj -c Release` green,
   including `FixtureHostSmokeTests`. (FR-070, FR-018)
-- [ ] T054 [P] [US6] Template module (after T011; Planning note 15):
+  Note: `FixtureModuleDefinition` declares `ConfigFileDeclaration.Required(RulesFile, FixtureConfigRules.Notes)` instead of `RequiredConfigFiles`; `FixtureConfigRules` (rule `fixture.notes`, `ConfigJson.RequiredInteger(… "maxLength" … min: 1, fix: "set the longest note a player may save, at least 1")`) lives in the same file. `FixtureConfigTests` (3: the committed `src/Fixture.Host/config` passes; `0` and `"40"` give exactly `[module fixture] config notes.json: 'maxLength' must be an integer of at least 1, found {0|"40"}. Fix: set the longest note a player may save, at least 1.`). Fixture suite green (29 tests incl. `FixtureHostSmokeTests`).
+- [x] T054 [P] [US6] Template module (after T011; Planning note 15):
   `templates/module/Template.Module/TemplateModuleDefinition.cs` declares
   `ConfigFileDeclaration.Optional("template.json", TemplateConfigRules.Points)` with one small rule, and a commented
   `ConfigCatalogs` example. Optional, so the hosts of `WireMapperRegistrationTests` and `WireConformanceTests` that
   register the template without that file keep starting.
   Done when: the template builds; the full suite green. (FR-076 template part)
-- [ ] T055 [US6] No lazy catalog factory left (after T022–T024): new file
+  Note: `TemplateModuleDefinition`: `ConfigFile = "template.json"`, `ConfigFiles = [ConfigFileDeclaration.Optional(ConfigFile, TemplateConfigRules.Points)]` (rule `template.points`: `maxPoints` integer ≥ 1) and a commented `ConfigCatalogs` example. The template builds; `WireMapperRegistrationTests`/`WireConformanceTests` (template without `template.json`) green in the full suite.
+- [x] T055 [US6] No lazy catalog factory left (after T022–T024): new file
   `tests/GameServer.Architecture.Tests/ConfigCatalogArchitectureTests.cs`: for `EconomyModule`, `IapModule`,
   `SampleGameModule` and the template module, `ConfigureServices` into a fresh collection registers no descriptor whose
   service type is a catalog type declared by any framework or sample descriptor; a seeded test module with a lazy
   `TryAddSingleton(sp => X.Load(...))` is caught.
   Done when: green. (FR-024, FR-025, FR-070, US6-1)
-- [ ] T056 [US6] KestrelDemo uses the persistent cache (after T043; research R18): edit only
+  Note: `tests/GameServer.Architecture.Tests/ConfigCatalogArchitectureTests.cs` (2 tests): every concrete module with a parameterless constructor in the `GameServer.*`, `SampleGame*`, `Sample.*`, `Template.*` assemblies (asserted to include Economy, IAP, SampleGame, Template) runs `ConfigureServices` into a fresh collection; no descriptor's service type is a declared catalog type (`BattleCatalog`, `IapCatalog`, `ResourceCatalog`, `ShopCatalog`); a seeded module with `TryAddSingleton(sp => ProbeCatalog.Load(…))` is named (`LazyCatalogModule registers ProbeCatalog`).
+- [x] T056 [US6] KestrelDemo uses the persistent cache (after T043; research R18): edit only
   `samples/SampleGame/KestrelDemo/Assets/SampleGame/SampleGameClient.cs` (opened by exact path): `SampleGameFlow.CreateClient`
   passes `config: UnityConfigCache.Create("local")`; `RunAsync` logs `config from cache {version}` when the login leaves
   `ConfigOutdated` false with a cached version, and `config downloaded {version}` after a refresh.
   Done when: `git diff` of that file shows only these changes; `tests/GameServer.Client.Tests/SdkRouteTests.cs` (literal
   scan of this file) green. The MonoBehaviour compiles only in Unity (T057). (FR-071)
-- [ ] T057 [US6] **Agent-run Unity**: KestrelDemo opened twice (after T051, T056; FR-091 manual check, V10 on the Mono
+  Note: `SampleGameClient.cs` only: `config: UnityConfigCache.Create("local")` in `CreateClient`; `RunAsync` logs `config downloaded {version}: {files}` after a refresh that downloaded and `config from cache {version}: {files}` when the login leaves `ConfigOutdated` false with a cached version (replaces the old `Config {version}: …` line). `git diff` shows only these hunks; `SdkRouteTests` green. Compiled in Unity in T051/T057.
+- [x] T057 [US6] **Agent-run Unity**: KestrelDemo opened twice (after T051, T056; FR-091 manual check, V10 on the Mono
   Editor): `smoke-build.ps1 -Unity "<path>" -CompileOnly` (0 `error CS`/`warning CS` in `compile.log`); SampleHost on
   5080; `-E2E` twice: run 1 logs `config downloaded {v}`, run 2 logs `config from cache {v}` and fetches no bundle; then
   SampleHost restarted with `GameServer__ConfigPath` set to a scratch copy of `samples/SampleHost/config` whose
@@ -792,6 +807,7 @@ Depends on: US1–US5 (docs describe shipped behaviour).
   `git status sdk/unity` (Unity created no package `.meta`); SampleHost stopped, 5080 free. If the agent cannot start
   Unity, the task stays open with these commands for the owner and the release notes mark it pending. (FR-071, FR-091,
   US6 independent test, V10)
+  Note: Agent-run 2026-11-04, Unity 6000.3.22f1 Editor (Mono), through the T051 forwarder. `-CompileOnly` 0 `error CS`/`warning CS`. Run 1 (exit 0): `config downloaded sample-1+9b25b8b6bc0b`, forwarder shows the gzip `config/get`. Run 2 (exit 0): `config from cache sample-1+9b25b8b6bc0b`, **no** `config/get` request. SampleHost restarted with `GameServer__ConfigPath` = scratch copy of `samples/SampleHost/config` with `potion_pack` price 60 → 50 (startup line client version `sample-1+523717009cea`); run 3 (exit 0): `New config sample-1+523717009cea available.`, `config downloaded sample-1+523717009cea`, `Buy → OK` (new price), forwarder gzip `config/get` 487 B — the `File.Replace` path on Mono (V10). Cache folder `%USERPROFILE%\AppData\LocalLow\DefaultCompany\KestrelDemo\gameserver-config\local` holds only `gameserver-config.bin` (1 765 B). `git status sdk/unity` empty; `samples/` only the T056 edit; SampleHost and forwarder stopped, 5080 free.
 - [ ] T058 [US6] **Manual / owner-assisted** device run, ACC-18 (after T057; V8 and V10/V11 on devices, V9 only when
   needed): Android — the agent builds `KestrelDemo/Build/KestrelDemo.apk` with `smoke-build.ps1 -Unity "<path>"` (IL2CPP
   arm64, stripping High) and starts SampleHost with `tools/local/run-local.ps1 -Port 5080 -Lan` plus the T051 forwarder;
@@ -803,10 +819,11 @@ Depends on: US1–US5 (docs describe shipped behaviour).
   on that device (V9), else record `GameServer:ConfigCompression=false` for deployments serving it.
   Done when: a Note per platform, or the release notes list the run as pending with these exact steps (the tag waits
   for it, FR-091). (FR-055, FR-091, US5-6, V8, V9, V10, V11)
+  Note: Not done (owner). The agent built the APK 2026-11-04: `samples/SampleGame/KestrelDemo/Build/KestrelDemo.apk` (`smoke-build.ps1 -Unity …`, IL2CPP arm64, stripping High, `Build Finished, Result: Success`, 54 193 600 B, SHA-256 prefix `A6108AC5BFDD287A`); no tracked file changed. The agent did **not** leave SampleHost or the forwarder running (session rule). Owner steps: (1) `tools/local/run-local.ps1 -Port 5080 -Lan`; (2) optional forwarder: build the scratch program of T051 (or any logging proxy) on port 5092 → 5080 to see `Accept-Encoding`/`Content-Encoding`; (3) KestrelDemo's `serverUrl` is serialized `http://localhost:5080/` — set it on the `SampleGameClient` object to `http://<PC LAN IP>:5080/` (or `:5092/` via the forwarder, bound to all interfaces) and rebuild with `sdk/unity/ci/smoke-build.ps1 -Unity "D:\DevTools\Unity\Unity 6000.3.22f1\Editor\Unity.exe"`; (4) `adb install -r samples/SampleGame/KestrelDemo/Build/KestrelDemo.apk`, start the app (run 1 → `config downloaded {v}`), close and start again (run 2 → `config from cache {v}`, no `config/get`), stop the host, restart it with `GameServer__ConfigPath` = a copy of `samples/SampleHost/config` whose `shop.json` is edited (never the committed folder), start the app (run 3 → `config downloaded {w}`); (5) iOS: same three starts from a macOS build. Record per platform: `Accept-Encoding` sent, compressed or not, parsed, cache lines, no crash. A platform that advertises gzip without decoding → V9 / `GameServer:ConfigCompression=false`. Release notes list it as pending (the tag waits, FR-091).
 
 ### Documentation (FR-075..FR-077; Vietnamese except the consumer guide; pages state "framework v0.7.0, chưa phát hành / unreleased")
 
-- [ ] T059 [US6] Consumer guide `docs/guides/consumer-guide.md` (after T028, T033, T040, T045, T052): new
+- [x] T059 [US6] Consumer guide `docs/guides/consumer-guide.md` (after T028, T033, T040, T045, T052): new
   `## 12. Game config` with one subsection per FR-075 bullet: manifest and overlay; file declarations, rules and the
   line format (with the economy example); catalogs (declare, never register in `ConfigureServices`; the BC-8 fix);
   the test kit call (from `FixtureConfigTests`); `GameConfigStatus` for startup checks (from T032); the two versions and
@@ -817,12 +834,14 @@ Depends on: US1–US5 (docs describe shipped behaviour).
   Done when: every FR-075 bullet has a paragraph (checklist in a Note); no text recommends an `IStartupCheck` taking
   `IGameConfig` or bumping the label when `clientVisible` changes; every code sample is from real code;
   `DocumentedConfigurationKeysTests` green. (FR-034 docs, FR-075, FR-077, US2-5, US6-2)
-- [ ] T060 [P] [US6] `docs/guides/module-authoring.md` and `templates/module/README.md` (after T054): declarations
+  Note: Consumer guide (English): new `## 12. Game config` — 12.1 manifest and overlay (fixture manifest, duplicate line), 12.2 declarations, rules and line format (economy declaration, `FixtureConfigRules`, economy lines), 12.3 catalogs (declare, never register; BC-8 fix), 12.4 kit call (from `FixtureConfigTests`), 12.5 `GameConfigStatus` (members; sample `StatusCheck` from `StartupCheckHostTests`), 12.6 two versions and what changes each (no label bump for visibility), 12.7 compression and the bundle limit (rollback switch, BC-7 line, startup line), 12.8 persistent cache with the KestrelDemo setup. §5 points to the kit call; §10 gains `ClientConfigVersion` and the new `ConfigVersionChanged` meaning; §11 step 5 gains the 015 steps (BC-6 one-line fix, BC-1/BC-2/BC-7 lines, config checks to declarations or `GameConfigStatus`, lazy factories to `ConfigCatalogs`, pinned versions). FR-075 checklist: manifest+overlay 12.1, declarations+rules+line format 12.2, catalogs 12.3, kit call 12.4, status 12.5, two versions 12.6, compression+bundle limit 12.7, persistent cache+Unity setup 12.8. No text recommends a check taking `IGameConfig` or a label bump on `clientVisible` changes; code samples are copied from real files. Version stamp already 0.7.0 (unreleased). `DocumentedConfigurationKeysTests` green.
+- [x] T060 [P] [US6] `docs/guides/module-authoring.md` and `templates/module/README.md` (after T054): declarations
   (`ConfigFiles`, `ConfigCatalogs`, `RequiredConfigFiles` = required without rules), "declare every catalog; an
   undeclared catalog stays lazy" (FR-025), rules through `ConfigJson`, the kit call in the module's tests, keep
   config-derived data in declared catalogs only (FG-020 seam). Version stamp.
   Done when: both pages name the template's example; no page shows a lazy catalog factory. (FR-025, FR-076, FR-077)
-- [ ] T061 [P] [US6] PCR platform `docs/pcr/platform.md` (after T048): new `## 21.` (loader faults incl. the duplicate
+  Note: `docs/guides/module-authoring.md`: new `### Config: file, luật và catalog` under §4 (the template's `ConfigFiles`/`ConfigCatalogs` and `TemplateConfigRules`, `RequiredConfigFiles` = required without rules, "declare every catalog; an undeclared catalog stays lazy", rules through `ConfigJson`, config-derived data in declared catalogs only (FG-020 seam), checks through `GameConfigStatus`) and the kit call in §8 (from `FixtureConfigTests`). `templates/module/README.md`: new step 5 (config declarations naming the template's example), steps renumbered, PCR step mentions config files and rules. Neither page shows a lazy catalog factory.
+- [x] T061 [P] [US6] PCR platform `docs/pcr/platform.md` (after T048): new `## 21.` (loader faults incl. the duplicate
   line, declarations, line format, catalogs and their DI binding incl. host override, config status, both versions and
   their inputs, compression with levels and threshold, the startup size check, the startup config line, the provision
   rule); §1 (compression constants, 1024 B threshold, `ConfigBundleBytes` limits uncompressed bytes); §9 `GetConfig`
@@ -833,16 +852,19 @@ Depends on: US1–US5 (docs describe shipped behaviour).
   Done when: every line template of contracts/startup-report.md appears verbatim once (texts taken from
   `ConfigReportLines` and the rules); `DocumentedConfigurationKeysTests` green with `GameServer:ConfigCompression`
   resolved. (FR-034 docs, FR-076)
-- [ ] T062 [P] [US6] PCR `docs/pcr/economy.md`, `iap.md`, `sample-game.md` (after T022–T024): the file rules of
+  Note: PCR platform: new `## 21.` (start order, every loader line, declarations, required-file line, rule and catalog lines, catalog/DI binding incl. host override in both orders, config status, startup-check lines (provision = warning), both versions with the formula and change matrix, bundle + size line, compression table with levels/threshold and the measured numbers, startup config line, BC-1..BC-10 table); §1 rows (bundle limit uncompressed, 1024 B threshold, gzip 6 / br 4, `GameServer:ConfigCompression`); §9 `GetConfig` paragraph (either version, field 5, startup check, only compressed route); §13 metric `client_config_version_info` and GM health data `clientConfigVersion`; §17 check creation/isolation, `GameConfigStatus`, provision warning, R8 bypass; header version list. Every startup-report line template appears verbatim once in §21 (texts compared with `ConfigReportLines` and the loader). `DocumentedConfigurationKeysTests.Documents()` gains `## 21.` (`ConfigPcrSection`); green with `GameServer:ConfigCompression` resolved.
+- [x] T062 [P] [US6] PCR `docs/pcr/economy.md`, `iap.md`, `sample-game.md` (after T022–T024): the file rules of
   data-model §2.2 with their exact lines, the declared catalogs, BC-1 per module. Version stamp.
   Done when: each rule of `EconomyConfigRules`, `IapConfigRules` and `SampleGameConfigRules` appears once. (FR-076)
-- [ ] T063 [P] [US6] PCR `docs/pcr/unity-sdk.md` (after T045, T049, T051): the persistent cache (container v1, version
+  Note: PCR economy (`## Kiểm resources.json khi khởi động`), iap (`## Kiểm iap.json khi khởi động`), sample-game (`## Kiểm battle.json và shop.json khi khởi động`): declarations and declared catalogs, one row per fault with the exact line (texts from `EconomyConfigRules`, `IapConfigRules`, `ResourceReferences`, `SampleGameConfigRules`), BC-1 per module. Each rule name (`economy.resources`, `iap.products`, `sample.battle`, `sample.shop`) appears once in its PCR. Stamps already 0.7.0 (chưa phát hành).
+- [x] T063 [P] [US6] PCR `docs/pcr/unity-sdk.md` (after T045, T049, T051): the persistent cache (container v1, version
   rule: unknown = empty, new format = new version, not encrypted, one folder per environment, threading and budget),
   `ClientConfigVersion`, `ConfigOutdated` and `ConfigVersionChanged` semantics (BC-4), the compression result per
   platform (T008, T051, T058; pending rows marked), new package files with their `.meta`, package `0.7.0`. Version
   stamp.
   Done when: the section matches `PersistentConfigCache` and the T049 Note. (FR-064, FR-076)
-- [ ] T064 [P] [US6] HTML pages (after T059, T061): `docs/html/01-gioi-thieu.html` (descriptor list: `ConfigFiles`,
+  Note: PCR unity-sdk: package table (new Core files, `UnityConfigCache`), Config behaviour bullet rewritten (`ClientConfigVersion`, `ConfigOutdated`/`ConfigVersionChanged` on the client version, BC-4, re-key on `not_modified`), compression bullet (SDK sets no header, no decoder), new `## Cache config bền` (container v1, load/store rules, unknown = empty, new format = new version, not encrypted, one folder per environment, threading, budget, path safety), "Nén theo nền tảng" table (Editor/Windows done T008/T051; Android/iOS pending T058; T049 branch: no `ConfigBody.cs`), new package files with their GUIDs, package `0.7.0`; acceptance row for the T057 KestrelDemo runs. Matches `PersistentConfigCache` and the T049 Note.
+- [x] T064 [P] [US6] HTML pages (after T059, T061): `docs/html/01-gioi-thieu.html` (descriptor list: `ConfigFiles`,
   `ConfigCatalogs`; startup validation table: loader, rule, catalog, check and size lines), `docs/html/02-them-command.html`
   (every place where config, `RequiredConfigFiles` or startup checks appear), `docs/html/03-deploy.html` (provision mode
   BC-9, readiness `clientConfigVersion`, the new metric, the rollback switch, BC-7; Planning note 14),
@@ -851,6 +873,7 @@ Depends on: US1–US5 (docs describe shipped behaviour).
   template, docs list).
   Done when: a link-check script (every `#id` exists, every relative `href` exists, no duplicate id) reports 0 problems
   on the four pages (Note). (FR-076, FR-077)
+  Note: HTML: `01-gioi-thieu.html` (descriptor list gains `ConfigFiles`, `ConfigCatalogs`; new startup-validation table: loader, rule, catalog, check and size lines; strengths row mentions config rules), `02-them-command.html` (config paragraph after the `ICommandContext` list: declarations, catalogs from DI, `ConfigVersion` = server, checks via `GameConfigStatus`; checklist row 14; common-errors row for a rule line), `03-deploy.html` (provision BC-9 bullet in 5.5, GM health `configVersion`/`clientConfigVersion` in 7.1, metric row in 9, rollback rows for `GameServer__ConfigCompression=false` and BC-7 in 15.2), `index.html` stamp. Meta lines name branch `015-config` and 2026-11-04; footers 2026-11-04; stamps "framework v0.7.0 (chưa phát hành)"; ids and structure kept (no TOC change). Link check (scratch `links.py`: every `#id` exists, every relative `href` exists) 471 links, 0 problems; duplicate-id check 0 on the four pages. Release notes: "Framework repository" section.
 
 **Checkpoint**: KestrelDemo, the fixture and the template use the documented path; guides and PCRs describe the
 shipped behaviour.

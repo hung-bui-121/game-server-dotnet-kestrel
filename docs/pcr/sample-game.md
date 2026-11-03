@@ -46,6 +46,21 @@ nguyên. Audit ghi `before`/`after` (progression không có ledger).
 `STAGE_LOCKED` 40001, `BATTLE_IN_PROGRESS` 40002, `NO_ACTIVE_BATTLE` 40003, `BATTLE_EXPIRED` 40004 (commit),
 `UNKNOWN_SHOP_ITEM` 40005, `BATTLE_RESULT_REJECTED` 40006.
 
+## Kiểm `battle.json` và `shop.json` khi khởi động (slice 015 — FG-018, FR-070)
+
+Module khai hai file bắt buộc, mỗi file một luật (bảng dưới), và hai catalog
+`ConfigCatalogDeclaration.Of(c => BattleCatalog.Load(c.Config), "battle.json")`,
+`ConfigCatalogDeclaration.Of(c => ShopCatalog.Load(c.Config), "shop.json")` (platform build và đăng ký; `SampleGameModule` không
+còn factory lazy, BC-8). Resource được so với các row hợp lệ của `resources.json`.
+
+| Luật | Kiểm (mỗi lỗi một dòng `[module sample.game] config {file}{location}: {problem}. Fix: {fix}.`) |
+| --- | --- |
+| `sample.battle` | `maxStage` số nguyên ≥ 1 (fix `set the highest stage, at least 1`); `battleHours` vắng hoặc 1..168; mảng `stages`; mỗi row: `stage` 1..maxStage và không trùng (`stage {n} is already defined in row {first}`), `xp` số nguyên ≥ 0 (`'xp' must be an integer of at least 0, found "70". Fix: give every stage an integer xp of at least 0.`), `rewards`/`drops` là mảng `{resource, quantity ≥ 1}` (vị trí `at $.stages[{i}].rewards[{j}]`); mỗi stage 1..maxStage có một row (`stage {n} has no row`; quá 10 stage thiếu → một dòng tóm tắt) |
+| `sample.shop` | object `items`; key không rỗng; `price {resource, amount ≥ 1}`; `grant {resource, quantity 1..maxQuantity}`; resource chưa định nghĩa → `resource '{resource}' is not defined in resources.json. Fix: add it to resources.json or correct the line (ECO-07).` |
+
+BC-1 trong chính repo: item `broken` (grant `unknown_item`) đã được bỏ khỏi `tests/Shared/config` (case `UNKNOWN_ITEM` chuyển sang
+test handler không host). `samples/SampleHost/config` và `tests/Shared/config` qua mọi luật. Định dạng dòng chung: PCR platform §21.
+
 ## Route catalog và section (slice 014 — FG-026, FG-027, FG-028)
 
 `SampleGameRoutes` (`samples/SampleGame/SampleGame/SampleGameRoutes.cs`, namespace server `SampleGame`; class client

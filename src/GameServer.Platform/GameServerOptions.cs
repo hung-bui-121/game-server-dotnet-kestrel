@@ -32,6 +32,14 @@ public sealed class GameServerOptions
     /// <summary>Root of the game config files, relative to the content root (CFG-01).</summary>
     public string ConfigPath { get; set; } = "config";
 
+    /// <summary>
+    /// <c>GameServer:ConfigCompression</c> (FG-019, FR-050..FR-052): compress <c>GetConfig</c> responses with Brotli or gzip for
+    /// clients whose <c>Accept-Encoding</c> asks for it (no other route is ever compressed). On by default; <c>false</c> is the
+    /// rollback switch and sends today's bytes and headers (no <c>Content-Encoding</c>, no <c>Vary</c>).
+    /// <see cref="LimitSettings.ConfigBundleBytes"/> limits the uncompressed response either way.
+    /// </summary>
+    public bool ConfigCompression { get; set; } = true;
+
     public StoreKind Store { get; set; } = StoreKind.InMemory;
 
     /// <summary>Public endpoints allowed (SEC-09). Arrays are replaced, not merged, by config binding.</summary>

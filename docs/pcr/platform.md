@@ -6,7 +6,8 @@ thay đổi mục **vận hành** chỉ cần ghi changelog. Nguồn yêu cầu:
 Phiên bản: 0.7.0 (slice 001 + sửa sau review + slice 002 identity + slice 004 GM + slice 005 observability, 2026-10-26;
 slice 010 lease job và xoá tài khoản, 2026-10-30 — mục 16; slice 011 môi trường theo flavor, file store, setting Couchbase,
 `--provision`, 2026-10-30 — mục 17; slice 012 analytics login và payment, 2026-10-31 — mục 18; slice 013 consumer
-readiness, 2026-11-03 — mục 19; slice 014 wire contract, 2026-11-03 — mục 20 và `RouteName` ở mục 13). Đúng với framework
+readiness, 2026-11-03 — mục 19; slice 014 wire contract, 2026-11-03 — mục 20 và `RouteName` ở mục 13; slice 015 game config,
+2026-11-04 — mục 21, nén `GetConfig` ở mục 1 và 9, metric/readiness ở mục 13, `IStartupCheck` ở mục 17). Đúng với framework
 v0.7.0 (chưa phát hành / unreleased).
 
 ## 1. Limits và timeout theo nhóm endpoint (vận hành — API-06, PERF-04)
@@ -19,6 +20,8 @@ v0.7.0 (chưa phát hành / unreleased).
 | Per-player ordering (CMD-06) | concurrency 1, queue 2 | — | `GameServer:Commands:PerPlayerQueueLimit` |
 | Protobuf decode | recursion ≤ 32, size = body | — | — |
 | Kestrel `MaxRequestBodySize` | 1 MiB toàn cục, hạ per-endpoint theo profile | | |
+| Bundle `GetConfig` (slice 015) | 1 MiB **chưa nén** (response lớn nhất có thể) | — | `GameServer:Limits:ConfigBundleBytes`; kiểm khi khởi động (mục 21), 413 khi request vẫn giữ |
+| Nén `GetConfig` (slice 015) | ngưỡng 1024 B; gzip level 6, Brotli quality 4 | — | `GameServer:ConfigCompression` (mặc định `true`) |
 
 Budget tổng = giá trị × số instance.
 
@@ -170,7 +173,10 @@ startup chặn ngoài Development/Test.
 | `GET /gm/v1/ui` | trang GM tĩnh (module gm) |
 
 `GetConfig` (`POST /api/v1/config/get`) là endpoint **Player** (SEC-09, CFG-03): trả các file `clientVisible` (bytes sau
-overlay), `not_modified` khi client gửi đúng version; bundle > `GameServer:Limits:ConfigBundleBytes` (1 MiB) → 413.
+overlay), `not_modified` khi `config_version` của request bằng **một trong hai** version hiện tại (client hoặc server, so
+ordinal; SDK trước 0.7.0 giữ version server); response có thêm field additive `client_config_version` (5, slice 015). Bundle
+chưa nén > `GameServer:Limits:ConfigBundleBytes` (1 MiB) → startup fail (mục 21); 413 khi request vẫn giữ. Đây là route duy
+nhất được nén (mục 21).
 
 Health endpoints (`/health/live`, `/health/ready`) do module `platform.observability` khai (slice 005); đường dẫn cố
 định, không có version (chỉ hai route này được miễn quy tắc `/v{n}/`). Xem mục 13.
@@ -379,7 +385,9 @@ nâng `Observability:Logging:FileSizeLimitBytes`/`RetainedFileCountLimit` hoặc
 **Metrics/traces:** OpenTelemetry; sources/meters `GameServer.*` + ASP.NET Core (hosting, Kestrel, rate limiting) + HttpClient
 + runtime. OTLP khi `Observability:Otlp:Endpoint` có giá trị (`Protocol` `grpc` | `http/protobuf`; với HTTP, đường dẫn
 `/v1/traces`, `/v1/metrics` được nối vào endpoint gốc); Prometheus qua collector. Cấu hình sai (level, URI, protocol) → startup fail.
-Metric bổ sung slice 005: `command_results_total{operation, code, replayed}`, `http_errors_total{code}`, `log_*`. Không metric nào
+Metric bổ sung slice 005: `command_results_total{operation, code, replayed}`, `http_errors_total{code}`, `log_*`. Slice 015:
+gauge `config_version_info{version}` giữ tên, label và giá trị version **server**; gauge mới `client_config_version_info{version}`
+= version client (mục 21). Không metric nào
 có tag player/request (OBS-02); `gs.request_id`, `gs.player_id` là attribute của span. Span `command {operation}` là con của span
 HTTP. Couchbase SDK tracing và `txn_cleanup_lost_total`: chờ cluster thật (V2).
 
@@ -389,7 +397,7 @@ HTTP. Couchbase SDK tracing và `txn_cleanup_lost_total`: chờ cluster thật (
 | --- | --- | --- | --- |
 | `GET /health/live` | Public | không có | 200 `Healthy` |
 | `GET /health/ready` | Public | `store` (≤ 2 s), `config`, `log`, `shutdown` | 200 `Healthy`/`Degraded`, 503 `Unhealthy`; chỉ một từ, không chi tiết; kết quả dùng chung `Observability:ReadyCacheMilliseconds` (1000) để flood không thành flood vào store |
-| `GET /gm/v1/health` | GM `ops.read` | như ready | JSON từng check: status, description, duration, data |
+| `GET /gm/v1/health` | GM `ops.read` | như ready | JSON từng check: status, description, duration, data; data của check `config` có `configVersion` (server) và `clientConfigVersion` (slice 015) |
 
 **Shutdown (OPS-03):** khi dừng, ready = 503 ngay; server vẫn nhận request thêm `GameServer:Hosting:DrainDelaySeconds` (5) để
 load balancer kịp rút instance, rồi mới ngừng nhận; request đang chạy có tới `ShutdownTimeoutSeconds` (25, tính cả drain); commit
@@ -696,6 +704,17 @@ public sealed class StartupCheckResult { List<string> Errors; List<string> Warni
 cấu hình chỉ định. Một check vẫn ném (T055): `GameServerStartupException` → các violation của nó vào báo cáo; exception khác →
 một lỗi `[<TênKiểuCheck>] the startup check failed: <KiểuException>: <message>`; các check còn lại vẫn chạy, báo cáo vẫn đủ. Có
 sẵn: `DeploymentIdentityCheck`, `CouchbaseSettingsCheck`, `FileStoreCheck`.
+
+Slice 015 (FG-023, BC-9, BC-10): mỗi check được framework **tạo** từ đăng ký của nó (instance, kiểu qua `ActivatorUtilities`,
+hoặc factory) trong một `try` riêng, mỗi lần start một lần, rồi chạy `Check` trong một `try` khác; check không còn là singleton
+resolve từ container và không bị dispose. Constructor/factory ném → một dòng "could not be created" mang tên check (kiểu
+implementation; factory → kiểu khai báo factory, bỏ qua lớp closure do compiler sinh), các check khác vẫn chạy. Check cần config
+đọc qua `GameConfigStatus` (`State` `NotLoaded`/`Loaded`/`Failed`, `Config`, `DeclarationsPassed`, `TryGetConfig`; không bao giờ
+ném, publish một lần trước khi các check chạy). Check nhận `IGameConfig` hoặc một catalog khai báo vẫn an toàn: khi config hoặc
+catalog không có, nó nhận một dòng "did not run" thay vì lặp lại nguyên nhân. Provisioning **không** load game config
+(`GameConfigStatus` ở `NotLoaded`): check cần config hay catalog được bỏ qua với **warning** trên stderr, exit code không đổi.
+Host/test đưa instance `IGameConfig` (`TestHost` `config:`) đi vòng qua loader, nên check như vậy vẫn chạy trong provisioning ở
+đó. Văn bản dòng: mục 21.
 
 Binding: `IConfiguration.GetSettings<T>(section)` (`GameServer.Platform.Web.Hosting.ConfigurationBinding`, dùng cho
 `GameServer` trong `AddGameServer` và cho `Couchbase` trong host mẫu) đổi lỗi binder (giá trị sai kiểu) thành
@@ -1267,3 +1286,193 @@ major khác.
 BC-3 (mapper không kiểu `[Obsolete]`): "Section contract" ở trên. BC-6 (`sdk/GameServer.Client` không còn sinh code cho
 KestrelDemo): PCR unity-sdk. Bước chuyển đầy đủ: release notes `v0.7.0` (bản nháp
 `specs/014-wire-contract/release-notes-draft.md`).
+
+## 21. Game config: kiểm nội dung khi khởi động, catalog, config status, hai version, nén và bundle (slice 015 — FG-018, FG-019, FG-023, FG-024, CFG-01..03, API-03, API-06, ARC-06, ARC-08)
+
+Module khai file config nó đọc, luật nội dung và catalog có kiểu trong `ModuleDescriptor`; framework kiểm mọi thứ ở **khối đầu
+tiên** của `UseGameServer` và báo một dòng mỗi lỗi, trước mọi traffic. Đúng với framework v0.7.0 (chưa phát hành / unreleased).
+
+### Thứ tự một lần start ở chế độ serve (semantic)
+
+1. Loader (`[config] …`). Config không load được → **không** chạy luật, catalog, bundle (all or nothing).
+2. Registry (có dòng file bắt buộc), luật của module, rồi catalog — theo thứ tự đăng ký module, thứ tự khai báo, thứ tự luật báo.
+3. Dòng kích thước bundle, khi player API được map.
+4. Wire catalog, services, deployment, gate, request log (không đổi).
+5. Startup check (tạo, did not run, dòng riêng của check).
+6. Option của module và endpoint (không đổi, slice 014).
+
+Provision và export không chạy pha này. Một dòng của luật/catalog là error; warning của luật có cùng văn bản, được log một lần
+(category `GameServer.Startup`), không fail.
+
+### Loader (semantic — văn bản dòng)
+
+Loader báo **mọi** lỗi trong một `GameServerStartupException` (BC-3; trước: dừng ở lỗi đầu). Mỗi `.json` và manifest được parse một
+lần, tên property lặp ở bất kỳ độ sâu nào bị từ chối (BC-2; so ordinal, tên escape được unescape, `"a"`/`"A"` hợp lệ). Lỗi parse của
+một manifest chỉ bỏ danh sách file của manifest đó.
+
+```text
+[config] '{path}' not found. Fix: create config/base/manifest.json with label, files and clientVisible (CFG-01).
+[config] '{path}' is not valid JSON: {parser message}. Fix: correct the manifest (CFG-01).
+[config] manifest 'label' is empty. Fix: set a label in config/base/manifest.json (CFG-01).
+[config] file name '{name}' is not allowed. Fix: use a plain relative file name.
+[config] file '{path}' listed in the manifest does not exist. Fix: add the file or remove it from the manifest.
+[config] '{path}' is not valid JSON: {parser message}. Fix: correct the file (CFG-01).
+[config] clientVisible file '{name}' is not listed in 'files'. Fix: add it to manifest 'files'.
+[config] '{path}' has property '{name}' twice at {jsonPath} (line {line}, byte {byte}). Fix: keep one property; the last one used to win silently (CFG-01).
+```
+
+`{line}` là dòng (từ 1) của tên lặp, `{byte}` là byte (từ 1) của dấu ngoặc mở tên đó trong dòng.
+
+### Khai báo (semantic với code module — `GameServer.Config`, Core)
+
+| Thành viên `ModuleDescriptor` | Ý nghĩa |
+| --- | --- |
+| `RequiredConfigFiles` (có sẵn) | file bắt buộc, không luật |
+| `ConfigFiles` | `ConfigFileDeclaration.Required(name, rules…)` / `Optional(name, rules…)` |
+| `ConfigCatalogs` | `ConfigCatalogDeclaration.Of<T>(c => T.Load(c.Config), files…)` |
+
+Tập file bắt buộc của một module = `RequiredConfigFiles` ∪ `ConfigFiles` bắt buộc ∪ file của catalog mà module không khai
+`Optional`. Thiếu một file trong tập đó → dòng registry có sẵn, một lần mỗi (module, file); không luật nào của file đó chạy và
+không catalog nào đọc nó được build (không dòng thứ hai):
+
+```text
+[module {module}] required config file '{file}' is missing. Fix: add it to config/base/manifest.json 'files' and to config/base (CFG-01).
+```
+
+Luật (`ConfigRule(name, check)`) đọc `ConfigContext` (`Json(file)`: một `JsonDocument` mỗi file, parse một lần; `Config`) và báo qua
+`ConfigProblems` (`Error`/`Warning` tại `ConfigLocation.WholeFile`, `Row(n)`, `Key(k)`, `Path(jsonPath)`, `InFile(file)`). Luật
+viết bằng `ConfigJson` (`TryGetObject`, `TryGetArray`, `RequiredString`, `RequiredInteger`, `OptionalInteger`, `RequireObject`,
+`PathOf`) để mọi module dùng cùng câu chữ: `'{property}' is missing`, `'{property}' is null`, `'{property}' must be {a type}, found
+{kind}`, `'{property}' must be an integer of at least {min}, found {value}`. "Số nguyên JSON" = `TryGetInt64` (`1.0`, `1e3`, `"5"`
+là lỗi). Một luật của game có thể nằm trên file của framework (`resources.json`); mỗi dòng nêu module khai báo. Test kit:
+`ConfigDeclarationCheck.Check(config, modules)` cho đúng các dòng của host (`Errors`, `Warnings`, `Passed`, `ThrowIfFailed()`,
+`Catalog<T>()`, `AddCatalogsTo(services)`).
+
+### Dòng luật và catalog (semantic — văn bản dòng)
+
+```text
+[module {module}] config {file}[ (config/env/{env})]{location}: {problem}. Fix: {fix}
+[module {module}] config {file}: rule '{rule}' threw {ExceptionType}: {message}. Fix: report problems through ConfigProblems instead of throwing (FG-018).
+[module {module}] catalog {Type}[ ({file}{location})]: {problem}. Fix: {fix}
+[module {module}] catalog {Type}: the build threw {ExceptionType}: {message}. Fix: report problems through ConfigProblems instead of throwing (FG-018).
+[module {module}] catalog {Type}: the build returned no catalog and reported no problem. Fix: return the catalog or report why (FG-018).
+[catalog {Type}] is declared by {moduleA} and {moduleB}. Fix: declare it in one module; the other takes it from DI (FG-018).
+[module {module}] catalog {Type}: the instance registered by the host could not be created: {ExceptionType}: {message}. Fix: correct the registration or remove it to use the declared build (FG-018).
+```
+
+`{location}` là `""`, `" row {n}"`, `" key '{key}'"` hoặc `" at {jsonPath}"`. `{problem}` và `{fix}` do luật đưa; formatter bỏ một
+dấu `.` cuối của mỗi phần nên mỗi dòng kết thúc đúng một lần. Luật của framework (văn bản từng dòng): PCR economy và PCR iap; luật
+mẫu: PCR sample-game.
+
+### Catalog và DI (semantic)
+
+| Binding của kiểu T (quyết định sau `Build()`, descriptor non-keyed cuối cùng của T) | Pha config làm gì | DI trả gì |
+| --- | --- | --- |
+| *Declared*: descriptor do platform đăng ký trong `AddModule` (`TryAdd`) | build một lần khi file có mặt và không có lỗi luật | instance đã build; build hỏng → exception có marker; pha chưa chạy → `InvalidOperationException` hướng dẫn `UseGameServer` hoặc `ConfigDeclarationCheck` |
+| *Provided*: host/test đăng ký T (trước **hoặc** sau `AddModule`) | resolve T một lần trong `try` (dòng cat-host khi hỏng) | đăng ký của host |
+| Module thứ hai khai cùng T | dòng cat-dup; bỏ qua | của module đầu |
+
+Catalog không build được (file thiếu hoặc có lỗi luật) không thêm dòng thứ hai; service phụ thuộc nó (outbox consumer, startup
+check) không lặp nguyên nhân. Module **không** đăng ký catalog khai báo trong `ConfigureServices` (test kiến trúc
+`ConfigCatalogArchitectureTests`); catalog không khai báo vẫn lazy (lỗi của nó lộ ở request đầu tiên).
+
+### Config status (semantic với startup check — `GameServer.Platform.GameConfigStatus`)
+
+`State`: `NotLoaded` (chưa publish; provisioning) → `Loaded` (`Config` = instance mà `IGameConfig` resolve ra, `DeclarationsPassed`
+= không có dòng file bắt buộc, luật hay catalog ở lần start này; warning không tính) hoặc `Failed`. Publish một lần bởi pha
+config, trước các check; không thành viên nào ném.
+
+### Startup check (semantic — văn bản dòng, mục 17)
+
+```text
+[{check}] the startup check could not be created: {ExceptionType}: {message}. Fix: register its dependencies; a check that reads config takes GameConfigStatus (FG-023).
+[{check}] the startup check did not run: the game config did not load (see the [config] lines). Fix: take GameConfigStatus instead of IGameConfig and skip when it is not Loaded (FG-023).
+[{check}] the startup check did not run: catalog {Type} was not built (see the lines above). Fix: take GameConfigStatus and read the catalog only when DeclarationsPassed (FG-023).
+[{check}] the startup check did not run: provision mode does not load the game config. Fix: take GameConfigStatus and skip when it is NotLoaded (FG-023).
+[{check}] the startup check failed: {ExceptionType}: {message}
+```
+
+Dòng thứ tư là **warning** (chỉ ở provisioning, BC-9); dòng cuối là văn bản có sẵn. Ở provisioning mọi trường hợp "config hay
+catalog không có" đều là warning, không bao giờ là error. Check ném `GameServerStartupException` không marker → các violation của nó.
+
+### Hai version (semantic — FG-024, FG-019, API-03)
+
+```text
+server = label + "+" + hex12(SHA-256("gameserver.config.server/1\n" + "label\n" + label + "\n"
+           + for name in sort_ordinal(files):         "file\n" + name + "\n" + len(bytes) + "\n" + bytes
+           + "visible\n" + for name in sort_ordinal(clientVisible): name + "\n"))
+client = label + "+" + hex12(SHA-256("gameserver.config.client/1\n" + "label\n" + label + "\n"
+           + for name in sort_ordinal(clientVisible): "file\n" + name + "\n" + len(bytes) + "\n" + bytes))
+```
+
+| Thay đổi | Version server | Version client |
+| --- | --- | --- |
+| Bytes của file chỉ server | đổi | **giữ** |
+| Bytes của file client-visible | đổi | đổi |
+| Thêm/bớt file trong `clientVisible` (base hoặc overlay env) | đổi | đổi |
+| Label | đổi | đổi |
+| Thứ tự hoặc trùng lặp trong danh sách manifest | giữ | giữ |
+| Mọi file client-visible | ≠ version client | ≠ version server |
+
+Version server: receipt, `ReceiptView.config_version`, `ICommandContext.ConfigVersion`, response command của GM, `config_version`
+của năm message player (nghĩa không đổi), metric `config_version_info`, readiness `configVersion`. Version client: field additive
+`client_config_version` (`ErrorEnvelope` 10, `CommandResponse` 9, `SnapshotResponse` 4, `GetConfigResponse` 5, `LoginResponse` 7),
+metric `client_config_version_info`, readiness `clientConfigVersion`, khoá cache của SDK (PCR unity-sdk). `IGameConfig.ClientConfigVersion`,
+`GameConfigVersions.Compute(label, files, clientVisible)`, `new GameConfig(label, files, clientVisible)`; constructor 4 tham số và
+`FileGameConfigLoader.ComputeVersion` là `[Obsolete]` (BC-6).
+
+### Bundle `GetConfig` và kiểm kích thước (semantic — FR-052, FR-053)
+
+Bundle được serialize **một lần** khi khởi động (file client-visible sắp ordinal + version server); mỗi request chỉ serialize phần
+đuôi (giờ server, version client), byte giống hệt serialize cả message. Khi config load được và
+`GameServer:Hosting:MapPlayerApi=true`, response lớn nhất (đuôi với giờ âm, varint 10 byte) được so với
+`GameServer:Limits:ConfigBundleBytes` (giới hạn bytes **chưa nén**); bằng giới hạn thì start được, lớn hơn → (BC-7):
+
+```text
+[config] the client-visible bundle needs a GetConfig response of up to {size} bytes ({files} files), over GameServer:Limits:ConfigBundleBytes = {limit}. Fix: raise the limit or remove files from 'clientVisible' (CFG-03, API-06).
+```
+
+### Nén (semantic với client và vận hành — FR-050, FR-051)
+
+| Điều kiện | Kết quả |
+| --- | --- |
+| `GameServer:ConfigCompression=false` (rollback) | bytes và header như trước 015: không `Content-Encoding`, không `Vary` |
+| `not_modified`, hoặc body < 1024 B | không nén + `Vary: Accept-Encoding` |
+| không có `Accept-Encoding`, `identity`, mọi ứng viên `q=0`, không parse được, chỉ `deflate` | không nén + `Vary` |
+| `br` chấp nhận (q > 0, trực tiếp hoặc qua `*`) và q(br) ≥ q(gzip) | Brotli quality **4**, `Content-Encoding: br` |
+| còn lại, `gzip` chấp nhận | gzip level **6**, `Content-Encoding: gzip` |
+| kết quả nén không nhỏ hơn | không nén + `Vary` |
+
+Chỉ handler `GetConfig` nén (theo request, buffer từ pool); không có middleware nén của ASP.NET nên không route nào khác (login,
+session, GM, health, error) có `Content-Encoding` (BREACH). `Content-Length` = bytes trên dây; body đã giải nén giống hệt body chưa
+nén. Body request không bao giờ được giải nén. Đo (2026-11-04, Windows 11, .NET 10.0.14, đường code thật, 200 lần sau 20 warm-up):
+bundle 1 MiB gzip 6 p95 ≈ 9 ms tỉ lệ 14,0 %, Brotli 4 p95 ≈ 7,5 ms 14,2 %; mẫu 1,7 KB gzip 28,3 %; bundle 28 KB dạng first consumer
+gzip 15,7 %. gzip 9 / Brotli 6 (luật T006) cho p95 ≈ 18,2–18,7 ms, trong 10 % của ngân sách 20 ms (SC-005), nên dùng mức thấp hơn.
+Unity Editor và Windows player gửi `Accept-Encoding: deflate, gzip` và tự giải gzip; Android/iOS: PCR unity-sdk.
+
+### Dòng thông tin khi khởi động (vận hành)
+
+Sau dòng `Starting …` (slice 013), một lần, category `GameServer.Startup`, Information:
+
+```text
+Config {Label}: version {ConfigVersion}, client version {ClientConfigVersion}, {FileCount} files ({ClientVisibleCount} client-visible, bundle {BundleBytes} B), {RuleCount} rules, {CatalogCount} catalogs.
+```
+
+`{BundleBytes}` = response lớn nhất (số so với giới hạn); khi player API không map: `… client-visible, bundle not served), …`.
+
+### Breaking (slice 015 — so với `v0.6.0`)
+
+| # | Thay đổi | Lộ ra thế nào | Cách chuyển |
+| --- | --- | --- | --- |
+| BC-1 | Nội dung config được kiểm khi khởi động (luật `resources.json`, `iap.json`, luật mẫu), catalog build trước traffic | exit 1, một dòng mỗi lỗi nêu module, file, row/key/path và fix | sửa file theo dòng báo |
+| BC-2 | Property JSON lặp tên trong file config hoặc manifest là lỗi loader | exit 1, dòng "has property … twice" | giữ một property |
+| BC-3 | `FileGameConfigLoader.Load` báo mọi lỗi trong một exception | nhiều violation hơn, văn bản cũ giữ nguyên | đọc mọi violation |
+| BC-4 | SDK khoá cache, `ConfigOutdated`, `ConfigVersionChanged` theo version client khi server gửi | ít `ConfigVersionChanged` hơn (không có khi sửa file chỉ server); một lần tải lại sau deploy | so cache với `ClientConfigVersion` |
+| BC-5 | Version server hash thêm tập `clientVisible`: giá trị đổi một lần khi nâng cấp | giá trị mới trong metric và receipt | cập nhật giá trị ghim |
+| BC-6 | `IGameConfig.ClientConfigVersion`; constructor 4 tham số và `ComputeVersion` `[Obsolete]` | CS0535, CS0618 (= lỗi build) | thêm member; `new GameConfig(label, files, clientVisible)` hoặc `TestGameConfig` |
+| BC-7 | Bundle client-visible lớn hơn `GameServer:Limits:ConfigBundleBytes` làm startup fail (trước: 413 cho mọi client) | exit 1, dòng kích thước bundle | nâng giới hạn hoặc chuyển file thành chỉ server |
+| BC-8 | Catalog khai báo do platform đăng ký, không còn trong `ConfigureServices` của module | `InvalidOperationException` khi dựng services chỉ từ `ConfigureServices` | đăng ký instance, hoặc `ConfigDeclarationCheck.Check(config, modules).ThrowIfFailed().AddCatalogsTo(services)` |
+| BC-9 | Provisioning không load game config; check cần nó được bỏ qua với warning | dòng `warning:` trên stderr, exit code không đổi | nhận `GameConfigStatus`, bỏ qua khi `NotLoaded` |
+| BC-10 | Startup check được tạo từ đăng ký ở mỗi lần start, trong isolation riêng; không phải singleton, không dispose | không có với check stateless | giữ check stateless, không disposable |
+
+Bước chuyển đầy đủ: release notes `v0.7.0` (bản nháp `specs/015-config/release-notes-draft.md`).

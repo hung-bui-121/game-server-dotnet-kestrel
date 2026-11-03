@@ -248,6 +248,58 @@ var client = new GameServerClient(options, new UnityWebRequestTransport(), confi
 Client markers removable: `ServerConfigInjector.cs:39` and `OnlineSession.cs:333` (and the remark at `:329`).
 `FetchConfigAsync` (`OnlineSession.cs:335-347`) already applies the cached files when `RefreshConfigAsync` returns false.
 
+## FG-019 (delivery) — compressed `GetConfig`, the bundle checked at startup
+
+- `GetConfig` is the only compressed route. Brotli (quality 4) or gzip (level 6) per request, only when the request's
+  `Accept-Encoding` accepts it (q-values honoured, `q=0` excludes, `*` covers a candidate not listed, a tie goes to `br`),
+  the response carries files and is at least **1024 bytes**, and the result is smaller. `not_modified` and small bodies are
+  never compressed. `Vary: Accept-Encoding` on every `GetConfig` response while compression is on; `Content-Length` = bytes on
+  the wire; the decoded body is byte-identical to the uncompressed one. No ASP.NET response-compression middleware: login,
+  session, GM, health and error responses never carry `Content-Encoding` (BREACH). Request bodies are never decompressed.
+- Rollback switch `GameServer:ConfigCompression=false` (default `true`): today's bytes and headers, no `Vary`.
+- The bundle is serialized once at startup (files sorted by name + the server version); each full response adds only the
+  per-request tail (server time, client version), byte-identical to serializing the whole message.
+- `GameServer:Limits:ConfigBundleBytes` keeps limiting the **uncompressed** response. When the player API is mapped, startup
+  computes the largest response the config can produce and stops when it is over the limit (BC-7; equal to the limit starts):
+  `[config] the client-visible bundle needs a GetConfig response of up to {size} bytes ({files} files), over GameServer:Limits:ConfigBundleBytes = {limit}. Fix: raise the limit or remove files from 'clientVisible' (CFG-03, API-06).`
+  The request-time 413 stays.
+- Startup log: one Information line after `Starting …`:
+  `Config {Label}: version {ConfigVersion}, client version {ClientConfigVersion}, {FileCount} files ({ClientVisibleCount} client-visible, bundle {BundleBytes} B), {RuleCount} rules, {CatalogCount} catalogs.`
+  (`bundle not served` when the player API is not mapped). The SampleHost local flavor logs
+  `Config sample-1: version sample-1+8a37f29ee2dc, client version sample-1+9b25b8b6bc0b, 5 files (4 client-visible, bundle 1747 B), 4 rules, 4 catalogs.`
+  for its committed config.
+- **Levels (V6, measured on the real path, T050):** the T006 rule picked gzip 9 / Brotli 6, whose p95 at 1 MiB is
+  18.2–18.7 ms (gzip) and 17.8–17.9 ms (Brotli), within 10 % of the 20 ms budget (SC-005). The lower levels ship: gzip 6 p95
+  9.2 ms, ratio 14.0 %; Brotli 4 p95 7.5 ms, 14.2 %. Gzip ratios at level 6: sample bundle (1 743 B) 28.3 %, first-consumer-shaped
+  bundle (27 643 B) 15.7 %, 1 MiB 14.0 % (all ≤ 30 %). Config phase (SC-007): sample config median 1.8 ms (budget 20 ms), 1 MiB
+  `resources.json` 86.8 ms (budget 300 ms).
+- **Unity (V8):** the Editor and the Windows player send `Accept-Encoding: deflate, gzip` and decode gzip before
+  `downloadHandler.data` (T008); KestrelDemo E2E through a logging forwarder got `Content-Encoding: gzip` (494 B for the
+  sample bundle) and parsed it (T051). Brotli is neither sent nor decoded by UnityWebRequest, so Unity never gets it. Android and
+  iOS: pending (T058). **No client change is needed**; the SDK has no decoder of its own. A platform that advertised gzip without
+  decoding would need `GameServer:ConfigCompression=false` for the deployments serving it.
+- `HttpClient` without `AutomaticDecompression` sends no `Accept-Encoding` and gets the plain body.
+
+| Id | Line seen by the operator | Fix |
+| --- | --- | --- |
+| BC-7 | `[config] the client-visible bundle needs a GetConfig response of up to 1747 bytes (4 files), over GameServer:Limits:ConfigBundleBytes = 1746. Fix: raise the limit or remove files from 'clientVisible' (CFG-03, API-06).` (SampleHost, local flavor, `GameServer__Limits__ConfigBundleBytes=1746`, run 2026-11-04) | Raise the limit or make files server-only |
+
+## Framework repository (samples, fixture, template, docs)
+
+- KestrelDemo (`samples/SampleGame/KestrelDemo/Assets/SampleGame/SampleGameClient.cs`) uses the persistent cache
+  (`config: UnityConfigCache.Create("local")`) and logs `config from cache {version}` / `config downloaded {version}`.
+- Consumer fixture: `notes.json` is declared with the rule `fixture.notes` (`maxLength` integer ≥ 1) instead of
+  `RequiredConfigFiles`; `FixtureConfigTests` shows the kit call (`ConfigDeclarationCheck.Check`).
+- Module template: `ConfigFileDeclaration.Optional("template.json", TemplateConfigRules.Points)` (rule `template.points`) and a
+  commented `ConfigCatalogs` example.
+- New architecture test `ConfigCatalogArchitectureTests`: no framework, sample or template module registers a declared catalog
+  in `ConfigureServices`.
+- Docs: consumer guide §12 "Game config" (and §5, §10, §11); `docs/guides/module-authoring.md` (config declarations, kit call);
+  `templates/module/README.md`; PCR platform §21 (new) and §1, §9, §13, §17; PCR economy, iap, sample-game (file rules and their
+  lines, declared catalogs, BC-1); PCR unity-sdk (persistent cache, `ClientConfigVersion`, compression per platform, new package
+  files); HTML pages `01-gioi-thieu`, `02-them-command`, `03-deploy`, `index` (stamped "framework v0.7.0 (chưa phát hành)",
+  branch `015-config`, 2026-11-04).
+
 ## Owner confirmations
 
 | # | Decision | Status |
@@ -261,17 +313,17 @@ Client markers removable: `ServerConfigInjector.cs:39` and `OnlineSession.cs:333
 | Task | Check | Status |
 | --- | --- | --- |
 | T008 | V8 UnityWebRequest `Accept-Encoding` and decoding on Editor (Windows) and Windows player | done 2026-11-04 (agent-run, Unity 6000.3.22f1): both send `Accept-Encoding: deflate, gzip` by default and decode gzip; `br` is neither sent nor decoded; no SDK code needed |
-| T051 | KestrelDemo E2E with compression on (Editor) | pending |
-| T057 | KestrelDemo persistent cache in the Editor (V10 Mono) | pending |
-| T058 | Android device run and iOS build/device (V8, V9, V10, V11) — owner | pending |
+| T051 | KestrelDemo E2E with compression on (Editor) | done 2026-11-04 (agent-run, Unity 6000.3.22f1): `-CompileOnly` 0 `error CS`/`warning CS`; `-E2E` through a logging forwarder on 5092: request `Accept-Encoding: deflate, gzip`, `/api/v1/config/get` answered `Content-Encoding: gzip`, `Vary: Accept-Encoding`, 494 B; bundle parsed (`config downloaded sample-1+9b25b8b6bc0b`), exit 0 |
+| T057 | KestrelDemo persistent cache in the Editor (V10 Mono) | done 2026-11-04 (agent-run): run 1 `config downloaded sample-1+9b25b8b6bc0b`, run 2 `config from cache sample-1+9b25b8b6bc0b` with no `GetConfig` request, run 3 after a client-visible `shop.json` edit `config downloaded sample-1+523717009cea` (the `File.Replace` path on Mono); exit 0 each; the cache folder holds only `gameserver-config.bin` |
+| T058 | Android device run and iOS build/device (V8, V9, V10, V11) — owner | **pending (owner)**. APK built by the agent 2026-11-04 (`samples/SampleGame/KestrelDemo/Build/KestrelDemo.apk`, IL2CPP arm64, stripping High, 54 193 600 B). Steps: (1) `tools/local/run-local.ps1 -Port 5080 -Lan`; (2) optional logging forwarder (scratch, see tasks.md T058 Note) to see `Accept-Encoding`/`Content-Encoding`; (3) set `serverUrl` of the `SampleGameClient` object to `http://<PC LAN IP>:5080/` (rebuild the APK) or use a build with that URL; install with `adb install -r Build/KestrelDemo.apk`; start the app three times: first start → `config downloaded {v}`, second start → `config from cache {v}`, then restart the host with `GameServer__ConfigPath` pointing at a copy of `samples/SampleHost/config` with `shop.json` edited and start the app → `config downloaded {w}`; record `Accept-Encoding`, compressed or not, parse OK, no crash (SHA-256 and `File.Replace` under IL2CPP). iOS: same three starts from a macOS build. A platform that advertises gzip without decoding → `GameServer:ConfigCompression=false` for it. The tag waits for this run (FR-091) |
 | T066 | Consumer-guide walkthrough by a fresh reviewer agent | pending |
 | T067 | First-consumer temp clone (zh-pvp-server) — owner may defer to the game session | pending |
 
 ## Known before the tag
 
 - (final list by T065)
-- V6 (T006): the documented level rule picks gzip 9 / Brotli 6 with p95 ≈ 18.5 ms at 1 MiB (budget 20 ms); T048/T050
-  decide the constants on the real path (fallback: lower level).
+- V6 (T006, T050): gzip 9 / Brotli 6 measured 17.8–18.7 ms p95 at 1 MiB on the real path, within 10 % of the 20 ms budget;
+  **gzip 6 / Brotli 4 ship** (p95 9.2 / 7.5 ms, gzip ratio ≤ 28.3 %). Android/iOS decoding is still T058.
 - V11 (T009, T045): SC-006 (1 MiB load and save ≤ 50 ms) is met on the C: drive (save p95 11–15 ms) but not on D: (≈ 70 ms
   save p95, `Flush(true)`); `Flush(true)` is kept (durability over speed). Device numbers stay with T058.
 - Fixed on the way (T035): a command whose request timeout fired after the commit wrote its `CommandResponse` body with the

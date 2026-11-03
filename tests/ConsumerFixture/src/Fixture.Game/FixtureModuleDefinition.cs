@@ -1,6 +1,7 @@
 using GameServer.Actors;
 using GameServer.Aggregates;
 using GameServer.Commands;
+using GameServer.Config;
 using GameServer.Errors;
 using GameServer.Modules;
 using GameServer.Routing;
@@ -115,10 +116,26 @@ public static class FixtureModuleDefinition
     {
         Name = ModuleName,
         DependsOn = ["identity"],
-        RequiredConfigFiles = [RulesFile],
+        ConfigFiles = [ConfigFileDeclaration.Required(RulesFile, FixtureConfigRules.Notes)],
         Aggregates = [Aggregate, Card],
         Commands = [Command.Define<SaveNote, SaveNoteResult>(SaveNoteHandler.Descriptor).HandledBy<SaveNoteHandler>()],
         ErrorCodes = FixtureErrors.All,
         Routes = [FixtureRoutes.Save, FixtureRoutes.Card],
     };
+}
+
+/// <summary>Content rules of <c>notes.json</c>, checked at every start and by the kit call in the game's tests (FG-018).</summary>
+public static class FixtureConfigRules
+{
+    /// <summary>Rule <c>fixture.notes</c>: <c>maxLength</c> is an integer of at least 1.</summary>
+    public static ConfigRule Notes { get; } = new("fixture.notes", CheckNotes);
+
+    private static void CheckNotes(ConfigContext context) =>
+        ConfigJson.RequiredInteger(
+            context.Json(FixtureModuleDefinition.RulesFile),
+            "maxLength",
+            ConfigLocation.WholeFile,
+            context.Problems,
+            min: 1,
+            fix: "set the longest note a player may save, at least 1");
 }

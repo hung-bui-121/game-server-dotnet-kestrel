@@ -325,6 +325,8 @@ harm. The kit has no test framework dependency; the samples use xUnit v3 and Sho
 projects only: a host with `GameServer.TestKit` loaded fails startup outside Development/Test (`[deployment] the consumer
 test kit (GameServer.TestKit) is loaded in …`), except on the kit's own in-process test server.
 
+Config rules are tested without a host through the kit call `ConfigDeclarationCheck.Check(config, modules)` (section 12.4).
+
 ### 5.1 Handler unit test — `CommandContextDouble`
 
 `CommandContextDouble.Create(operation, modules…)` is an `ICommandContext` without host, store or DI. It wraps the
@@ -669,6 +671,12 @@ The package version equals the framework version (`0.7.0`). It ships the framewo
 `.proto` messages from its own repository with the framework's generator, **WireGen** (sections 10.3–10.6). Nothing in the
 framework is edited or copied.
 
+Config versions (0.7.0, BC-4): `client.ClientConfigVersion` is the version of the client-visible files (the server's
+`client_config_version`, or `config_version` from a server before 0.7.0); `client.ServerConfigVersion` stays the server
+version, for correlating receipts only. `ConfigOutdated`, `ConfigVersionChanged(version)` and the config cache key follow the
+client version, so a server-only config edit no longer raises `ConfigVersionChanged` or triggers a download. Compare a cache
+with `ClientConfigVersion`. Keep the bundle across app starts with the persistent cache (section 12.8).
+
 ### 10.1 Declare every route
 
 A new command needs more than its route. First add the command itself, in this order (`docs/html/02-them-command.html`
@@ -937,10 +945,239 @@ client.Sections.SectionChanged += id =>
 4. Update every place that names the tag (game props, README, UPM URL `#vX.Y.Z` in the Unity project).
 5. Act on the breaking changes the release notes list. For 0.7.0: declare every route and map it from the declaration
    (an undeclared endpoint fails startup, BC-1) and switch every section mapper to the typed
-   `AddAggregateWireMapper<TState, TWire>` (the one-type overload is CS0618, BC-3) — section 10.
+   `AddAggregateWireMapper<TState, TWire>` (the one-type overload is CS0618, BC-3) — section 10. Game config (slice 015,
+   section 12): replace `new GameConfig(label, FileGameConfigLoader.ComputeVersion(label, files), files, clientVisible)` with
+   `new GameConfig(label, files, clientVisible)` (CS0618, BC-6); start each flavor once and fix every `[module …] config …`,
+   `[config] … twice at …` or bundle-size line (BC-1, BC-2, BC-7); move config checks out of `IStartupCheck`s that take
+   `IGameConfig` into file declarations and rules, or make the check take `GameConfigStatus` (section 12.5); turn lazy catalog
+   factories in `ConfigureServices` into `ConfigCatalogs` declarations (section 12.3); rewrite tests that pin a config version
+   (section 12.6).
 6. Regenerate the client files (`generate`, section 10.4), commit them and the `.meta` files Unity creates in the client
    repository, and check that `verify --no-build` passes (the framework's protoc, messages or generator may have changed).
 7. Build Debug and Release (0 warnings) and run the full game test suite; run the host once with `run-local`.
 8. Remove the workarounds the release notes list as removable (code, `FRAMEWORK-GAP` markers, friction-log entries).
 9. Commit the gitlink, the copied files, the regenerated client files, the docs and the removed workarounds together
    (`chore: bump framework to vX.Y.Z`).
+
+## 12. Game config
+
+Config is a folder of files the host loads once at startup (`GameServer:ConfigPath`, default `config` under the content root).
+From 0.7.0 the framework checks the **content** of every file a module declares, builds every declared catalog before traffic
+and reports each fault as one startup line naming module, file, location and fix (FG-018). PCR platform §21 has every line
+template.
+
+### 12.1 Manifest and overlay
+
+`config/base/manifest.json` lists the files, the label and which files clients receive. From
+`tests/ConsumerFixture/src/Fixture.Host/config/base/manifest.json`:
+
+```json
+{
+  "label": "fixture-1",
+  "files": [
+    "notes.json"
+  ],
+  "clientVisible": []
+}
+```
+
+`config/env/<DeploymentEnvironment>/manifest.json` (optional) overlays it: a non-empty label replaces the base label, a file
+of the same name in `config/env/<env>/` replaces the base bytes, and its `clientVisible` adds to the base set. A rule line for an
+overlaid file names it: `resources.json (config/env/Staging)`. The loader reports **every** fault in one start (BC-3), and a
+property name that appears twice in one JSON object is a fault (BC-2): `[config] '{path}' has property '{name}' twice at
+{jsonPath} (line {line}, byte {byte}). Fix: keep one property; the last one used to win silently (CFG-01).`
+
+### 12.2 File declarations, rules and the line format
+
+A module declares each file it reads in its `ModuleDescriptor`, with the rules that check its content. The economy module
+(`src/GameServer.Modules.Economy/EconomyModuleDefinition.cs`):
+
+```csharp
+ConfigFiles = [ConfigFileDeclaration.Required(ResourceCatalog.ConfigFile, EconomyConfigRules.Resources)],
+ConfigCatalogs = [ConfigCatalogDeclaration.Of(c => ResourceCatalog.Load(c.Config), ResourceCatalog.ConfigFile)],
+```
+
+A rule is a name and a check over `ConfigContext`; it reports through `ConfigProblems` and never throws. Write it with
+`ConfigJson` so every module uses the same wording. The fixture's rule
+(`tests/ConsumerFixture/src/Fixture.Game/FixtureModuleDefinition.cs`):
+
+```csharp
+public static class FixtureConfigRules
+{
+    /// <summary>Rule <c>fixture.notes</c>: <c>maxLength</c> is an integer of at least 1.</summary>
+    public static ConfigRule Notes { get; } = new("fixture.notes", CheckNotes);
+
+    private static void CheckNotes(ConfigContext context) =>
+        ConfigJson.RequiredInteger(
+            context.Json(FixtureModuleDefinition.RulesFile),
+            "maxLength",
+            ConfigLocation.WholeFile,
+            context.Problems,
+            min: 1,
+            fix: "set the longest note a player may save, at least 1");
+}
+```
+
+declared with `ConfigFiles = [ConfigFileDeclaration.Required(RulesFile, FixtureConfigRules.Notes)]`. Each fault is one line
+`[module {module}] config {file}{location}: {problem}. Fix: {fix}.`, where the location is empty, ` row {n}`, ` key '{key}'` or
+` at {jsonPath}`. The framework's economy rule, for example:
+
+```text
+[module economy] config resources.json row 3: 'maxQuantity' must be an integer of at least 1, found "999". Fix: set the largest quantity a player may hold (ECO-07).
+[module economy] config resources.json row 4: id 'gold' is already defined in row 1. Fix: give every resource a unique id (ECO-07).
+```
+
+- `ConfigFileDeclaration.Required(name, rules…)` / `Optional(name, rules…)`; `RequiredConfigFiles` still means "required,
+  no rules". A missing required file gives the existing `[module {module}] required config file '{file}' is missing. …` line, and
+  no rule of that file runs.
+- A game may put its own rule on a framework file (a "CASH and GOLD must be currencies" rule on `resources.json`): both the
+  economy lines and the game lines appear, each naming its module.
+- A "JSON integer" is `TryGetInt64`: `1.0`, `1e3` and `"5"` are faults. Unknown properties are ignored.
+- A warning (`context.Problems.Warning(…)`) has the same text and is logged once at startup; it does not stop the host.
+- The framework ships rules for `resources.json` (`economy.resources`) and `iap.json` (`iap.products`, grants checked
+  against the well-formed rows of `resources.json`); PCR economy and PCR iap list every line. A deployment whose config was
+  accepted only because nothing read the bad row before now stops at startup (BC-1).
+
+### 12.3 Catalogs
+
+Declare every typed view of a config file as a catalog (`ConfigCatalogs` above). The platform builds it once before traffic,
+only when its files are present and free of rule errors, and registers the instance in DI; handlers take it as a constructor
+parameter. **Never register a declared catalog in `ConfigureServices`** (a registration there is caught by the
+framework's own architecture test for its modules) — an undeclared catalog stays lazy and its faults surface on the first request
+instead of at startup. A host or test that registers an instance of the catalog type, before or after `AddModule`, wins.
+
+Code that builds a service collection from a module's `ConfigureServices` alone (without `AddGameServer`) no longer finds
+`ResourceCatalog`, `IapCatalog`, `BattleCatalog` or `ShopCatalog` (BC-8). Register the instance, or use the kit (12.4):
+`ConfigDeclarationCheck.Check(config, modules).ThrowIfFailed().AddCatalogsTo(services)`.
+
+### 12.4 The test kit call
+
+`ConfigDeclarationCheck.Check(config, modules…)` runs the same declarations as the host, without a host, and gives exactly
+the host's lines. From `tests/ConsumerFixture/tests/Fixture.Tests/FixtureConfigTests.cs`:
+
+```csharp
+[Fact]
+public void The_committed_config_passes_the_rules()
+{
+    var config = TestGameConfig.FromDirectory(CommittedConfig());
+
+    var report = ConfigDeclarationCheck.Check(config, new IdentityModule(), new FixtureModule()).ThrowIfFailed();
+
+    report.Passed.ShouldBeTrue();
+    report.Warnings.ShouldBeEmpty();
+}
+
+[Theory]
+[InlineData("{\"maxLength\": 0}", "0")]
+[InlineData("{\"maxLength\": \"40\"}", "\"40\"")]
+public void A_bad_max_length_gives_the_startup_line(string notes, string found)
+{
+    var config = TestGameConfig.FromJson(new Dictionary<string, string> { [FixtureModuleDefinition.RulesFile] = notes }, "fixture-test");
+
+    var report = ConfigDeclarationCheck.Check(config, new IdentityModule(), new FixtureModule());
+
+    report.Passed.ShouldBeFalse();
+    report.Errors.ShouldBe(
+    [
+        $"[module fixture] config notes.json: 'maxLength' must be an integer of at least 1, found {found}. " +
+        "Fix: set the longest note a player may save, at least 1.",
+    ]);
+}
+```
+
+The report also has `Warnings`, `Catalog<T>()` (throws listing the lines when the catalog was not built), `TryGetCatalog<T>()`
+and `AddCatalogsTo(services)`.
+
+### 12.5 Startup checks read config through `GameConfigStatus`
+
+Every `IStartupCheck` is created from its registration in its own isolation, once per start, and never disposed (BC-10); a
+constructor that throws adds one line naming the check and the other checks still run. A check that reads config takes
+`GameConfigStatus` (namespace `GameServer.Platform`), never `IGameConfig`:
+
+- `State`: `NotLoaded` (provision mode, which never loads config, BC-9), `Loaded` or `Failed`;
+- `Config`: the instance handlers get (`TryGetConfig(out config)`);
+- `DeclarationsPassed`: no required-file, rule or catalog line in this start (warnings do not count).
+
+It is published once, before the checks run, and none of its members throws. A check from the framework's tests
+(`tests/GameServer.Platform.Web.Tests/StartupCheckHostTests.cs`) that only reports the state:
+
+```csharp
+private sealed class StatusCheck(GameConfigStatus status) : IStartupCheck
+{
+    public void Check(StartupCheckResult result) => result.Errors.Add($"status: {status.State}");
+}
+```
+
+A real check returns when `!status.TryGetConfig(out var config) || !status.DeclarationsPassed` (the report already has the
+cause) and reads `config` or a declared catalog otherwise. A check that still takes `IGameConfig` or a catalog is safe: when the
+config or the catalog is unavailable it gets one "did not run" line (a warning in provision mode) instead of repeating the cause.
+
+### 12.6 Two versions
+
+| Version | Hashes | Carried as |
+| --- | --- | --- |
+| server (`IGameConfig.ConfigVersion`) | label, every effective file, the `clientVisible` set | `config_version` (meaning unchanged), receipts, `ICommandContext.ConfigVersion`, metric `config_version_info`, readiness `configVersion` |
+| client (`IGameConfig.ClientConfigVersion`) | label, the client-visible files only | `client_config_version` on login, snapshot, command, error envelope and `GetConfig` responses; metric `client_config_version_info`; readiness `clientConfigVersion` |
+
+| Change | Server version | Client version |
+| --- | --- | --- |
+| a server-only file's bytes | changes | **unchanged** |
+| a client-visible file's bytes | changes | changes |
+| a file added to or removed from `clientVisible` (base or overlay) | changes | changes |
+| the label | changes | changes |
+| order or duplicates in the manifest lists | unchanged | unchanged |
+
+Do not bump the label because a file became client-visible: both versions change by themselves. The server version's value
+changes once at the upgrade to 0.7.0 (BC-5). `GetConfig` answers `not_modified` for either current version. Custom
+`IGameConfig` implementations add `ClientConfigVersion`; build test configs with `TestGameConfig` or
+`new GameConfig(label, files, clientVisible)` (the 4-argument constructor is obsolete, BC-6).
+
+### 12.7 Compression and the bundle limit
+
+`GetConfig` is compressed per request with Brotli (quality 4) or gzip (level 6) when the request's `Accept-Encoding` asks for
+it, the response carries files and is at least 1024 bytes; no other route is ever compressed. `not_modified` and small bodies
+are sent as they are. Unity's UnityWebRequest sends `Accept-Encoding: deflate, gzip` and decodes gzip itself (Editor and
+Windows player checked); `HttpClient` without `AutomaticDecompression` sends no header and gets the plain body. No client change
+is needed. `GameServer:ConfigCompression=false` is the rollback switch (today's bytes and headers, no `Vary`).
+
+`GameServer:Limits:ConfigBundleBytes` (1 MiB) limits the **uncompressed** response. The host computes the largest response its
+config can produce at startup; over the limit it stops with `[config] the client-visible bundle needs a GetConfig response of
+up to {size} bytes ({files} files), over GameServer:Limits:ConfigBundleBytes = {limit}. Fix: raise the limit or remove files from
+'clientVisible' (CFG-03, API-06).` (BC-7; before, every client got 413). The startup log has one line with both versions:
+`Config {Label}: version {ConfigVersion}, client version {ClientConfigVersion}, {FileCount} files ({ClientVisibleCount}
+client-visible, bundle {BundleBytes} B), {RuleCount} rules, {CatalogCount} catalogs.`
+
+### 12.8 The persistent cache in Unity
+
+`PersistentConfigCache` keeps the last client config on disk, so a second app start has `client.Config` before login and,
+while the client version is unchanged (also across server-only edits), downloads nothing. One folder per server environment:
+`UnityConfigCache.Create(environmentName)` roots it at `Application.persistentDataPath/gameserver-config/{environmentName}`.
+From `samples/SampleGame/KestrelDemo/Assets/SampleGame/SampleGameClient.cs`:
+
+```csharp
+var client = new GameServerClient(
+    new GameServerClientOptions(serverUrl, Application.version, platform, Application.buildGUID),
+    new UnityWebRequestTransport(),
+    config: UnityConfigCache.Create("local"));
+```
+
+and after login:
+
+```csharp
+// The persistent cache (FG-019) holds the last client config: a start whose version is unchanged downloads nothing.
+if (client.ConfigOutdated)
+{
+    if (await client.RefreshConfigAsync())
+    {
+        log($"config downloaded {client.Config.Version}: {string.Join(", ", client.Config.Files.Keys)}");
+    }
+}
+else if (client.Config.Version != null)
+{
+    log($"config from cache {client.Config.Version}: {string.Join(", ", client.Config.Files.Keys)}");
+}
+```
+
+A damaged or unknown-format file reads as an empty cache (`LoadProblem` says why); a failed save keeps the new files in memory
+(`WriteProblem`); it never throws for file problems. It is not thread-safe (use it from the main thread, like the client) and
+not encrypted. Format and rules: PCR unity-sdk.

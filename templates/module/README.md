@@ -20,10 +20,15 @@ luôn khớp API hiện hành.
 4. Wire mapper kèm kiểu message: `AddAggregateWireMapper<TemplateState, Wire.TemplateState>(…)`; member server giữ lại có
    chủ ý khai bằng `o => o.Hidden("…")`. Thêm test `WireConformance.CheckModules([new YourModule()]).ThrowIfFailed()`
    (`docs/guides/module-authoring.md` mục 8).
-5. Đăng ký ở host: `gameServer.AddModule<YourModule>()`.
-6. Sinh code Unity cho route, section và `.proto` của module bằng `tools/GameServer.WireGen` (`docs/guides/module-authoring.md`
+5. Config: khai mọi file module đọc trong `ConfigFiles` với luật của nó (template: `ConfigFileDeclaration.Optional("template.json",
+   TemplateConfigRules.Points)`, luật `template.points` viết bằng `ConfigJson`) và mọi catalog trong `ConfigCatalogs` (ví dụ
+   comment trong `TemplateModuleDefinition`); **không** đăng ký catalog trong `ConfigureServices` (catalog không khai báo vẫn lazy).
+   Dùng `Required(...)` cho file bắt buộc. Test luật bằng `ConfigDeclarationCheck.Check(config, modules)`
+   (`docs/guides/module-authoring.md` mục 4 và 8).
+6. Đăng ký ở host: `gameServer.AddModule<YourModule>()`.
+7. Sinh code Unity cho route, section và `.proto` của module bằng `tools/GameServer.WireGen` (`docs/guides/module-authoring.md`
    mục 9; repo game: `docs/guides/consumer-guide.md` mục 10).
-7. Viết PCR `docs/pcr/<your-module>.md` (aggregate, command → Touches/Reads, error codes, capability thay được, route và
-   section).
+8. Viết PCR `docs/pcr/<your-module>.md` (aggregate, command → Touches/Reads, error codes, capability thay được, route và
+   section, file config và luật).
 
 Chi tiết: `docs/guides/module-authoring.md`; repo game: `docs/guides/consumer-guide.md`.

@@ -108,10 +108,11 @@ public sealed class SdkHarness : IAsyncDisposable
         return new SdkHarness(host, gate);
     }
 
+    /// <param name="http">The client's HTTP stack (a test server client by default), e.g. one that asks for and decodes gzip.</param>
     public (GameServerClient Client, ScriptedTransport Transport, RecordingDelay Delay) NewClient(
-        ISessionStore? session = null, IClientClock? clock = null, IConfigCache? config = null)
+        ISessionStore? session = null, IClientClock? clock = null, IConfigCache? config = null, HttpClient? http = null)
     {
-        var http = Host.Client();
+        http ??= Host.Client();
         var transport = new ScriptedTransport(new HttpClientTransport(http));
         var delay = new RecordingDelay();
         var client = new GameServerClient(

@@ -6,6 +6,7 @@ using GameServer.Platform.Persistence;
 using GameServer.Platform.Registry;
 using GameServer.Platform.Web.Aggregates;
 using GameServer.Platform.Web.Catalog;
+using GameServer.Platform.Web.Config;
 using GameServer.Platform.Web.Endpoints;
 using GameServer.Platform.Web.Middleware;
 using GameServer.Platform.Web.Requests;
@@ -116,13 +117,14 @@ public static class GameServerApplicationExtensions
     }
 
     /// <summary>
-    /// FR-054: one line naming what starts, logged by the pre-serving endpoint check once the whole validation succeeded (provision
-    /// and export modes never get there).
+    /// FR-054: one line naming what starts, then the config line (FR-044, data-model §5.6), logged by the pre-serving endpoint check
+    /// once the whole validation succeeded (provision and export modes never get there).
     /// </summary>
     internal static void LogStartup(IServiceProvider services)
     {
         var runtime = services.GetRequiredService<GameServerRuntimeInfo>();
-        services.GetRequiredService<ILoggerFactory>().CreateLogger(StartupLogCategory).LogInformation(
+        var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger(StartupLogCategory);
+        logger.LogInformation(
             "Starting {GameId} {GameVersion} on framework {FrameworkVersion}: environment {EnvironmentId} ({DeploymentEnvironment}), instance {InstanceId}.",
             runtime.GameId,
             runtime.GameVersion,
@@ -130,6 +132,39 @@ public static class GameServerApplicationExtensions
             runtime.EnvironmentId,
             runtime.DeploymentEnvironment,
             runtime.InstanceId);
+        LogConfig(logger, services.GetRequiredService<ConfigPhaseSummary>().Current);
+    }
+
+    /// <summary>The bundle size is the largest <c>GetConfig</c> response, the value checked against the limit (FR-053).</summary>
+    private static void LogConfig(ILogger logger, ConfigPhaseSummary.Values summary)
+    {
+        var config = summary.Config;
+        if (summary.Bundle is { } bundle)
+        {
+            logger.LogInformation(
+                "Config {Label}: version {ConfigVersion}, client version {ClientConfigVersion}, {FileCount} files ({ClientVisibleCount} client-visible, " +
+                "bundle {BundleBytes} B), {RuleCount} rules, {CatalogCount} catalogs.",
+                config.Label,
+                config.ConfigVersion,
+                config.ClientConfigVersion,
+                config.FileNames.Count,
+                config.ClientVisibleFiles.Count,
+                bundle.MaxResponseBytes,
+                summary.RuleCount,
+                summary.CatalogCount);
+            return;
+        }
+
+        logger.LogInformation(
+            "Config {Label}: version {ConfigVersion}, client version {ClientConfigVersion}, {FileCount} files ({ClientVisibleCount} client-visible, " +
+            "bundle not served), {RuleCount} rules, {CatalogCount} catalogs.",
+            config.Label,
+            config.ConfigVersion,
+            config.ClientConfigVersion,
+            config.FileNames.Count,
+            config.ClientVisibleFiles.Count,
+            summary.RuleCount,
+            summary.CatalogCount);
     }
 
     private static void MapModule(WebApplication app, GameServerOptions options, GameServer.Modules.IGameModule module)

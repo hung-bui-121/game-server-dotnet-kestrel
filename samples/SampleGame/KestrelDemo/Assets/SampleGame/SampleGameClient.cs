@@ -107,7 +107,8 @@ namespace SampleGame.Client
         {
             var client = new GameServerClient(
                 new GameServerClientOptions(serverUrl, Application.version, platform, Application.buildGUID),
-                new UnityWebRequestTransport());
+                new UnityWebRequestTransport(),
+                config: UnityConfigCache.Create("local"));
             client.SessionReplaced += error => log($"Logged in on another device ({error.Code}). Not logging in again.");
             client.AccountBlocked += error => log($"Account blocked: {error.Code}");
             client.Maintenance += _ => log("Server maintenance.");
@@ -133,9 +134,17 @@ namespace SampleGame.Client
             var login = await client.LoginGuestAsync(localId, secret);
             log($"Player {login.PlayerId}, server time {client.ServerNow:O}");
 
-            if (client.ConfigOutdated && await client.RefreshConfigAsync())
+            // The persistent cache (FG-019) holds the last client config: a start whose version is unchanged downloads nothing.
+            if (client.ConfigOutdated)
             {
-                log($"Config {client.Config.Version}: {string.Join(", ", client.Config.Files.Keys)}");
+                if (await client.RefreshConfigAsync())
+                {
+                    log($"config downloaded {client.Config.Version}: {string.Join(", ", client.Config.Files.Keys)}");
+                }
+            }
+            else if (client.Config.Version != null)
+            {
+                log($"config from cache {client.Config.Version}: {string.Join(", ", client.Config.Files.Keys)}");
             }
 
             var start = await client.SendCommandAsync(SampleGameRoutes.BattleStart, new StartBattleRequest { Stage = 1 }, StartBattleResult.Parser);

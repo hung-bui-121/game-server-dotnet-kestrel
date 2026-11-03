@@ -33,13 +33,41 @@ public static class ProtobufBinding
         return message;
     }
 
-    public static async Task WriteAsync(HttpContext context, IMessage message, int statusCode = StatusCodes.Status200OK)
+    public static Task WriteAsync(HttpContext context, IMessage message, int statusCode = StatusCodes.Status200OK)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        return WriteBytesAsync(context, statusCode, message.ToByteArray(), ReadOnlyMemory<byte>.Empty, contentEncoding: null, contentLength: null);
+    }
+
+    /// <summary>
+    /// Writes an already serialized (and possibly compressed) Protobuf body in up to two parts, so the <c>GetConfig</c> prefix and
+    /// tail are sent without joining them (research R11).
+    /// </summary>
+    /// <param name="contentEncoding">The <c>Content-Encoding</c> of the body; null for identity.</param>
+    /// <param name="contentLength">Bytes on the wire; null leaves the header unset.</param>
+    internal static async Task WriteBytesAsync(
+        HttpContext context,
+        int statusCode,
+        ReadOnlyMemory<byte> first,
+        ReadOnlyMemory<byte> second,
+        string? contentEncoding,
+        long? contentLength)
     {
         // A request whose timeout fired (or whose client left) gets the timeout response only: a body written here with the
         // cancelled token may still be buffered, and the timeout writer would append its envelope to it (two messages, one body).
         context.RequestAborted.ThrowIfCancellationRequested();
         context.Response.StatusCode = statusCode;
         context.Response.ContentType = ErrorResponseWriter.ProtobufContentType;
-        await context.Response.Body.WriteAsync(message.ToByteArray(), context.RequestAborted);
+        if (contentEncoding is not null)
+        {
+            context.Response.Headers.ContentEncoding = contentEncoding;
+        }
+
+        context.Response.ContentLength = contentLength;
+        await context.Response.Body.WriteAsync(first, context.RequestAborted);
+        if (!second.IsEmpty)
+        {
+            await context.Response.Body.WriteAsync(second, context.RequestAborted);
+        }
     }
 }

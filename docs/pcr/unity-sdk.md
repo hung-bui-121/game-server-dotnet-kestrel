@@ -3,14 +3,15 @@
 Gói UPM `com.gameserver.client` (slice 006, version 0.7.0 — lockstep với contract `.proto` của server và với version framework
 `GameServerFrameworkVersion`, slice 013; `VersionTests` kiểm hai giá trị bằng nhau). Nguồn: SDK-01..04,
 API-09/10, IDN-10, GATE-02, TIME-01, CFG-03; slice 014 (FG-021, FG-026, FG-028): code sinh từ catalog của server, typed
-accessor của section. Đúng với framework v0.7.0 (chưa phát hành / unreleased).
+accessor của section; slice 015 (FG-019, FG-024): version config client, cache config bền, nén `GetConfig`. Đúng với framework v0.7.0 (chưa phát hành / unreleased).
 
 ## Gói (semantic với client)
 
 | Thành phần | Nội dung |
 | --- | --- |
 | `Runtime/Core` | `GameServerClient`, `SectionStore`, `SectionKey`/`SectionKey<T>`/`SectionTable`/`SectionRead`, `GameServerError`, transport/clock/delay/session/config interfaces, `HttpClientTransport` |
-| `Runtime/Unity` | `UnityWebRequestTransport` (chỉ biên dịch trong Unity, `#if UNITY_5_3_OR_NEWER`) |
+| `Runtime/Unity` | `UnityWebRequestTransport`, `UnityConfigCache` (chỉ biên dịch trong Unity, `#if UNITY_5_3_OR_NEWER`) |
+| `Runtime/Core` (slice 015) | `PersistentConfigCache` (public), `ConfigCacheFormat`, `CacheFileOps`, `AssemblyInfo` (internal; `InternalsVisibleTo("GameServer.Client.Tests")`) — mục "Cache config bền" |
 | `Runtime/Generated` | code **commit**, sinh bởi WireGen (`sdk/GameServer.Client/wiregen.json`, mục "Code sinh" dưới): protoc C# của `core.proto`, `identity.proto`, `economy.proto`, `iap.proto` và `FrameworkRoutes.cs`, `FrameworkSections.cs`. Build `sdk/GameServer.Client` không ghi vào gói (slice 014, BC-6) |
 | `Runtime/Plugins/Google.Protobuf.dll` | 3.36.2 netstandard2.0 = version server pin (API-09); auto-referenced |
 | `Runtime/Plugins/System.Runtime.CompilerServices.Unsafe.dll` | 4.5.2 netstandard2.0 — phụ thuộc của Google.Protobuf mà profile Unity không có trên Android (V7: thiếu thì IL2CPP build fail "Unable to resolve reference") |
@@ -61,7 +62,61 @@ Yêu cầu: Unity 2021.3+ (C# 9, .NET Standard 2.1). Code SDK giữ C# 9, không
   update không `full` chỉ áp khi `baseRev = rev` và `newRev = baseRev + 1`, nếu không SDK gọi snapshot cho đúng section đó.
 - **Thời gian**: `ServerNow` = mốc giờ server tại trung điểm round trip + thời gian trôi trên **đồng hồ monotonic** của máy (đổi giờ
   máy không ảnh hưởng). Giữ mẫu có round trip nhỏ nhất; mẫu tệ hơn > 1,5× (+50 ms) bị bỏ.
-- **Config**: `ServerConfigVersion` cập nhật từ mọi response; `RefreshConfigAsync` gọi `GetConfig` với version đang có, `not_modified` → không tải.
+- **Config** (slice 015, BC-4): `ServerConfigVersion` = `config_version` không rỗng cuối cùng (version server, chỉ để đối chiếu receipt);
+  `ClientConfigVersion` (mới) = `client_config_version` khi server gửi, nếu không thì `config_version` (server trước 015). Login,
+  snapshot, command và error envelope cập nhật cả hai. `ConfigOutdated` và `ConfigVersionChanged(version)` theo version **client**
+  (sự kiện một lần mỗi version mới): sửa file chỉ server không còn làm client tải lại. `RefreshConfigAsync` gửi `Config.Version`;
+  `not_modified` → không tải (cache giữ theo version khác được đánh khoá lại một lần bằng chính file của nó); có file → lưu dưới
+  version client của response. Server trả `not_modified` cho cả version server mà SDK trước 0.7.0 giữ.
+- **Nén** (slice 015): SDK không đặt `Accept-Encoding` và không có bộ giải nén; server chỉ nén khi request xin. `HttpClientTransport`
+  với `HttpClient` không có `AutomaticDecompression` không gửi header → identity. Kết quả theo nền tảng ở bảng "Nén theo nền tảng".
+
+## Cache config bền (semantic với client — slice 015, FG-019, SDK-02)
+
+`PersistentConfigCache : IConfigCache` (`Runtime/Core`, C# 9, netstandard2.1, không phụ thuộc UnityEngine), opt-in:
+
+```csharp
+var client = new GameServerClient(options, new UnityWebRequestTransport(), config: UnityConfigCache.Create(environmentName));
+```
+
+`UnityConfigCache.Create(environmentName)` = `new PersistentConfigCache(Path.Combine(Application.persistentDataPath,
+"gameserver-config", environmentName))`; tên môi trường phải là tên thư mục đơn (không rỗng, không `.`/`..`, không dấu phân cách
+hay ký tự cấm) — **một thư mục cho mỗi môi trường server** (local, dev, beta, live không dùng chung cache). Thành viên:
+`FileName` (`gameserver-config.bin`), `Folder`, `Version`, `Files`, `LoadProblem`, `WriteProblem`, `Store(version, files)`.
+
+- **Container v1** (một file mỗi thư mục, little-endian): magic `GSCC`, format version `1` (u16), reserved (u16), độ dài payload
+  (u32), payload (version UTF-8 1..256 byte, số file, mỗi file: tên UTF-8 1..1024 byte + nội dung), SHA-256 của payload. Format
+  khác = version format khác; version không biết → cache rỗng. Không mã hoá (config client-visible vốn được gửi cho mọi client).
+- **Load** (constructor): đọc `gameserver-config.bin`, nếu thiếu hoặc hỏng thì thử `gameserver-config.bin.tmp` hợp lệ; mọi file
+  hỏng (rỗng, cắt, thừa byte, sai magic, format lạ, hash sai, UTF-8 sai, tên trùng, không đọc được) → cache rỗng và
+  `LoadProblem` nêu lý do; **không bao giờ ném** vì I/O hay format. Độ dài được so với số byte còn lại (không cấp phát theo độ dài
+  giả).
+- **Store**: bộ nhớ trước (SDK thấy version mới ngay), rồi ghi temp + `Flush(true)` + `File.Replace` (main có) / `File.Move` (main
+  chưa có); chết process ở bất kỳ bước nào → lần start sau load bản cũ hoặc bản mới, không bao giờ trộn. Ghi lỗi → giữ trong bộ
+  nhớ, `WriteProblem` có lý do, không ném. Store trùng version và nội dung với file đang có → bỏ qua. Giữ một version.
+- Tên file config từ server chỉ là dữ liệu trong container, không bao giờ thành đường dẫn. Thư mục chỉ chứa `gameserver-config.bin`
+  (và `.tmp` khi đang ghi).
+- **Luồng**: không thread-safe; dùng từ main thread (như `GameServerClient`). Ngân sách (SC-006): load và save 1 MiB ≤ 50 ms
+  ngoài Unity — đo trên ổ C: (`%TEMP%`, nơi `persistentDataPath` nằm trên Windows): save p95 11–15 ms, load p95 5–9 ms.
+- Với cache: lần mở app thứ hai có config trước login; khi version client không đổi (kể cả khi sửa file chỉ server), không tải gì.
+
+**Nén theo nền tảng** (V8, slice 015):
+
+| Nền tảng | `Accept-Encoding` mặc định | Nhận được | Kiểm |
+| --- | --- | --- | --- |
+| Editor (Windows), Unity 6000.3.22f1 | `deflate, gzip` | gzip, giải nén trước `downloadHandler.data` | T008 (probe), T051 (KestrelDemo E2E: bundle gzip 494 B, parse đúng) — **đạt** |
+| Windows player (Mono) | `deflate, gzip` | gzip, giải nén | T008 — **đạt** |
+| Android IL2CPP | — | — | T058 — **chờ** (thiết bị, owner) |
+| iOS IL2CPP | — | — | T058 — **chờ** (macOS, owner) |
+
+`br` không được Unity gửi cũng không giải được (`Unrecognized content-encoding`), nên server không bao giờ gửi `br` cho Unity. Nhánh
+R13 (SDK tự giải gzip) **không** cần cho Editor/Windows: không có `ConfigBody.cs` trong gói. Nền tảng nào gửi `Accept-Encoding`
+mà không giải → đặt `GameServer:ConfigCompression=false` cho deployment phục vụ nền tảng đó.
+
+**File mới của gói** (slice 015, `.meta` viết tay, GUID mới, gói vẫn `0.7.0`): `Runtime/Core/AssemblyInfo.cs`
+`3e6695fab49449a29555de642e16ecf5`, `CacheFileOps.cs` `bf7415ae02eb4819bcbd4c71c53c1c09`, `ConfigCacheFormat.cs`
+`6c6977f541934d66b0d8df4f353e1eb8`, `PersistentConfigCache.cs` `b40d338fb610404aaa389a71317a5e30`, `Runtime/Unity/UnityConfigCache.cs`
+`861c6bc8a2c54ea788e6dd388633d9d8`.
 
 ## Code sinh từ wire contract (semantic với client — slice 014, FG-021, FG-026, FG-028)
 
@@ -153,6 +208,7 @@ và config của consumer fixture trong mọi build framework, nên gói và cli
 | CI-02 IL2CPP smoke build Android arm64, stripping High — Unity 2022.3.62f2 (project tạm) | **đạt** 26/10/2026 (APK 9,3 MB, 0 lỗi) sau khi thêm `System.Runtime.CompilerServices.Unsafe.dll` |
 | CI-02 IL2CPP smoke build Android arm64, stripping High — Unity 6000.3.22f1 (KestrelDemo) | **đạt** 26/10/2026 (APK development 39 MB, 0 lỗi). E2E trong Unity 6 batch mode qua UnityWebRequest với SampleHost thật (`smoke-build.ps1 -E2E`): login, GetConfig, StartBattle/EndBattle OK, Buy trả mã nghiệp vụ, wallet rev 1 — **đạt** |
 | KestrelDemo sinh bằng WireGen (slice 014) — Unity 6000.3.22f1 | **đạt** 03/11/2026: `smoke-build.ps1 -CompileOnly` exit 0; `-E2E` với SampleHost thật exit 0 (login, config, StartBattle/EndBattle OK, Buy trả mã nghiệp vụ, wallet rev 1); không `.meta` nào được tạo hay đổi dưới `sdk/unity` |
+| KestrelDemo với cache bền và nén (slice 015) — Unity 6000.3.22f1 Editor | **đạt** 04/11/2026: `-CompileOnly` 0 lỗi/cảnh báo; `-E2E` ba lần exit 0: lần 1 `config downloaded sample-1+9b25b8b6bc0b` (gzip), lần 2 `config from cache sample-1+9b25b8b6bc0b` (không gọi `GetConfig`), lần 3 sau khi sửa `shop.json` `config downloaded sample-1+523717009cea` (đường `File.Replace`); thư mục cache chỉ có `gameserver-config.bin` |
 | Thiết bị thật Android + iOS (ACC-18) | **chưa** — thủ công: chạy SampleHost, mở KestrelDemo, đặt `serverUrl` trên object `SampleGameClient`, cài APK (`Build/KestrelDemo.apk`) lên máy cùng mạng, kiểm login/battle/shop/retry/config |
 | iOS IL2CPP build | **chưa** — Unity 6 trên máy chưa cài module iOS; cần macOS + Xcode |
 

@@ -79,6 +79,27 @@ id (`playerId`, `actorId` khi là player…) bằng anonymous id; số bản ghi
 `receiptId`, thời gian giữ nguyên — tổng theo resource không đổi (SC-003). Ledger không bao giờ bị xoá (ngoại lệ ghi đè CMD-08,
 PCR platform mục 16). `economy.adjust` trên player đang chờ xoá/đang purge → 404 (`IGmTargetValidator`).
 
+## Kiểm `resources.json` khi khởi động (slice 015 — FG-018, ECO-07)
+
+Module khai `ConfigFileDeclaration.Required("resources.json", EconomyConfigRules.Resources)` và catalog
+`ConfigCatalogDeclaration.Of(c => ResourceCatalog.Load(c.Config), "resources.json")`: platform build `ResourceCatalog` một lần
+trước traffic và đăng ký nó (module không còn factory lazy trong `ConfigureServices`, BC-8). Luật `economy.resources` (một dòng
+mỗi lỗi, row đếm từ 1; property lạ bị bỏ qua; `kind` so không phân biệt hoa thường):
+
+| Lỗi | Dòng |
+| --- | --- |
+| không có mảng `resources` | `[module economy] config resources.json: 'resources' must be an array, found {kind}. Fix: put the resource rows in a "resources" array (ECO-07).` |
+| row không phải object | `[module economy] config resources.json row {n}: the row must be an object, found {kind}. Fix: write each resource as an object (ECO-07).` |
+| `id` thiếu / null / sai kiểu / rỗng | `[module economy] config resources.json row {n}: 'id' is missing. Fix: give every resource a non-empty id (ECO-07).` (cùng fix cho `is null`, `must be a string, found {kind}`, `must not be empty`) |
+| `id` trùng (dòng ở row **sau**) | `[module economy] config resources.json row {n}: id '{id}' is already defined in row {first}. Fix: give every resource a unique id (ECO-07).` |
+| `kind` lạ | `[module economy] config resources.json row {n}: 'kind' is '{value}'. Fix: use "currency" or "item" (ECO-07).` (kind kiểu số: `'kind' must be a string, found number`) |
+| `maxQuantity` < 1 hoặc không phải số nguyên | `[module economy] config resources.json row {n}: 'maxQuantity' must be an integer of at least 1, found {value}. Fix: set the largest quantity a player may hold (ECO-07).` |
+| `displayName` thiếu / sai kiểu | `[module economy] config resources.json row {n}: 'displayName' is missing. Fix: give every resource a display name (ECO-07).` |
+
+BC-1: một `resources.json` trước đây chỉ hỏng khi có request đọc nó giờ làm startup fail với các dòng trên. Game có thể thêm luật
+của mình trên cùng file (ví dụ CASH/GOLD phải là currency); mỗi dòng nêu module khai báo. `ResourceReferences.Read(context)` đọc
+lỏng các row hợp lệ cho luật của module khác (IAP, sample game). Định dạng dòng chung: PCR platform §21.
+
 ## Route catalog và section (slice 014 — FG-026, FG-027, FG-028)
 
 Route khai trong business project: `EconomyRoutes` (`src/GameServer.Modules.Economy/EconomyRoutes.cs`, module `economy`)

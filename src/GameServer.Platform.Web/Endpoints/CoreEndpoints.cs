@@ -4,6 +4,7 @@ using GameServer.Platform.Aggregates;
 using GameServer.Platform.Commands;
 using GameServer.Platform.Web.Aggregates;
 using GameServer.Platform.Web.Auth;
+using GameServer.Platform.Web.Config;
 using GameServer.Platform.Web.Protobuf;
 using GameServer.Platform.Web.Requests;
 using GameServer.Platform.Web.Routing;
@@ -17,7 +18,10 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace GameServer.Platform.Web.Endpoints;
 
-/// <summary>Framework endpoints: server time (TIME-01), snapshot (PLY-02, API-10), receipt lookup (CMD-09).</summary>
+/// <summary>
+/// Framework endpoints: server time (TIME-01), snapshot (PLY-02, API-10), config bundle (CFG-02, CFG-03; the only compressed
+/// response, FG-019), receipt lookup (CMD-09).
+/// </summary>
 internal static class CoreEndpoints
 {
     public const string SnapshotRoute = PlatformRoutes.SnapshotTemplate;
@@ -60,30 +64,27 @@ internal static class CoreEndpoints
                 var services = http.RequestServices;
                 var options = services.GetRequiredService<GameServerOptions>();
                 var request = ProtobufBinding.Parse<GetConfigRequest>(await ProtobufBinding.ReadBodyAsync(http, options.Limits.PlayerBodyBytes));
-                var config = services.GetRequiredService<IGameConfig>();
-                var response = new GetConfigResponse
-                {
-                    ConfigVersion = config.ConfigVersion,
-                    ServerTimeUtcMs = services.GetRequiredService<IClock>().UtcNow.ToUnixTimeMilliseconds(),
-                    ClientConfigVersion = config.ClientConfigVersion,
+                var bundle = services.GetRequiredService<ConfigPhaseSummary>().Bundle;
+                var now = services.GetRequiredService<IClock>().UtcNow.ToUnixTimeMilliseconds();
 
-                    // Either version names exactly the current client-visible files; SDKs before 0.7.0 hold the server version (R1).
-                    NotModified = string.Equals(request.ConfigVersion, config.ClientConfigVersion, StringComparison.Ordinal)
-                        || string.Equals(request.ConfigVersion, config.ConfigVersion, StringComparison.Ordinal),
-                };
-                http.RequestOutcome().NotModified = response.NotModified;
-                if (!response.NotModified)
+                // Either version names exactly the current client-visible files; SDKs before 0.7.0 hold the server version (R1).
+                var notModified = bundle.IsCurrent(request.ConfigVersion);
+                http.RequestOutcome().NotModified = notModified;
+                if (notModified)
                 {
-                    response.Files.AddRange(config.ClientVisibleFiles
-                        .OrderBy(name => name, StringComparer.Ordinal)
-                        .Select(name => new ConfigFile { Name = name, Content = ByteString.CopyFrom(config.GetFileBytes(name).Span) }));
-                    if (response.CalculateSize() > options.Limits.ConfigBundleBytes)
-                    {
-                        throw new GameServerException(CoreErrorCodes.PayloadTooLarge, $"Config bundle exceeds {options.Limits.ConfigBundleBytes} bytes.");
-                    }
+                    await ConfigResponseCompression.WriteNotModifiedAsync(http, options.ConfigCompression, bundle.NotModified(now));
+                    return;
                 }
 
-                await ProtobufBinding.WriteAsync(http, response);
+                // The bundle is serialized once (R11): only the server time and the client version are written per request.
+                var tail = bundle.Tail(now);
+                if (bundle.Prefix.Length + tail.Length > options.Limits.ConfigBundleBytes)
+                {
+                    // The startup size check (FR-053) keeps a started host below the limit; the request-time check stays (CFG-03).
+                    throw new GameServerException(CoreErrorCodes.PayloadTooLarge, $"Config bundle exceeds {options.Limits.ConfigBundleBytes} bytes.");
+                }
+
+                await ConfigResponseCompression.WriteFullAsync(http, options.ConfigCompression, bundle, tail);
             })
             .AsPlayerEndpoint();
 

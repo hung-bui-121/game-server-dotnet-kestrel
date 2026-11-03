@@ -129,7 +129,8 @@ public sealed class TestKitHostTests
         await using var host = await TestHost.StartAsync(settings: s => s["Observability:InstanceId"] = "host-1");
         var runtime = host.Services.GetRequiredService<GameServerRuntimeInfo>();
 
-        var line = host.LogEntries.Single(e => e.Category == GameServerApplicationExtensions.StartupLogCategory && e.Level == LogLevel.Information);
+        var line = host.LogEntries.Single(e => e.Category == GameServerApplicationExtensions.StartupLogCategory && e.Level == LogLevel.Information
+            && e.Message.StartsWith("Starting ", StringComparison.Ordinal));
 
         line.Properties["{OriginalFormat}"].ShouldBe(
             "Starting {GameId} {GameVersion} on framework {FrameworkVersion}: environment {EnvironmentId} ({DeploymentEnvironment}), instance {InstanceId}.");

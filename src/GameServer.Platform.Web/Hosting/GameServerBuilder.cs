@@ -221,6 +221,9 @@ public static class GameServerBuilderExtensions
         var catalogBindings = new DeclaredCatalogBindings(services);
         services.AddSingleton(catalogBindings);
         services.AddSingleton<ConfigCatalogStore>();
+
+        // The GetConfig bundle and the startup config line's counts, published by the config phase (R11, data-model §5.6).
+        services.AddSingleton<GameServer.Platform.Web.Config.ConfigPhaseSummary>();
         services.AddSingleton<AggregateWireMapperRegistry>();
 
         // FG-026: the route and section catalog, built on first use from registrations only (export mode, the endpoint check).

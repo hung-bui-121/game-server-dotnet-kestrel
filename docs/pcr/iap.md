@@ -86,6 +86,26 @@ token > 226 byte làm purchase lỗi `INTERNAL` trên Couchbase sau khi người
 record refund/void sau này mang `orderId` sẽ **không khớp** `transactionID` đó. Slice đó phải ghép theo hash của purchase
 token (hoặc theo `receiptId`/ledger), không theo `orderId`.
 
+## Kiểm `iap.json` khi khởi động (slice 015 — FG-018, IAP-01)
+
+Module khai `ConfigFileDeclaration.Required("iap.json", IapConfigRules.Products)` và catalog
+`ConfigCatalogDeclaration.Of(c => IapCatalog.Load(c.Config), "iap.json")` (platform build và đăng ký, BC-8). Luật `iap.products`;
+resource của grant được so với các row **hợp lệ** của `resources.json` (row hỏng không sinh dòng tham chiếu; thiếu file thì không
+kiểm tham chiếu). Key sản phẩm lặp trong cùng object là lỗi loader (BC-2), luật không thấy hai key.
+
+| Lỗi | Dòng |
+| --- | --- |
+| không có object `products` | `[module iap] config iap.json: 'products' must be an object, found {kind}. Fix: map "{store}:{productId}" keys to products (IAP-01).` |
+| key sai dạng (store ∉ {`google`, `apple`}, product id 0 hoặc > 128 ký tự) | `[module iap] config iap.json key '{key}': the key must be "google:{productId}" or "apple:{productId}" with a product id of 1 to 128 characters. Fix: correct the key (IAP-01).` |
+| sản phẩm không phải object | `[module iap] config iap.json key '{key}': the product must be an object, found {kind}. Fix: write each product as an object with "grants" (IAP-01).` |
+| `grants` thiếu / rỗng | `[module iap] config iap.json key '{key}': 'grants' must be a non-empty array. Fix: list what the product grants (IAP-01).` |
+| grant không phải object | `[module iap] config iap.json at $.products['{key}'].grants[{i}]: the grant must be an object, found {kind}. Fix: correct the grant (IAP-01).` |
+| resource chưa định nghĩa | `[module iap] config iap.json at $.products['{key}'].grants[{i}]: resource '{resource}' is not defined in resources.json. Fix: add it to resources.json or correct the grant (ECO-07, IAP-01).` |
+| `quantity` ngoài 1..`maxQuantity` | `[module iap] config iap.json at $.products['{key}'].grants[{i}]: 'quantity' must be an integer from 1 to {maxQuantity} (maxQuantity of '{resource}'), found {value}. Fix: correct the grant (IAP-01).` |
+
+`{"products": {}}` hợp lệ. BC-1: một `iap.json` có grant trỏ tới resource không tồn tại trước đây chỉ lộ khi mua; giờ startup fail.
+Định dạng dòng chung: PCR platform §21.
+
 ## Route catalog và section (slice 014 — FG-026, FG-027, FG-028)
 
 `IapRoutes` (`src/GameServer.Modules.Iap/IapRoutes.cs`) nằm trong business project cùng descriptor (`IapModel.cs`,

@@ -1,5 +1,6 @@
 using GameServer.Aggregates;
 using GameServer.Commands;
+using GameServer.Config;
 using GameServer.Errors;
 using GameServer.Modules;
 using GameServer.Routing;
@@ -67,6 +68,9 @@ public static class TemplateModuleDefinition
     public const string ModuleName = "template.module";
     public const string AggregateId = "template";
 
+    /// <summary>Config file of the module (CFG-01): optional here, so a host without it still starts.</summary>
+    public const string ConfigFile = "template.json";
+
     public static PlayerAggregateDescriptor<TemplateState> Aggregate { get; } =
         new(AggregateId, schemaVersion: 1, clientVisible: true, createDefault: () => new TemplateState());
 
@@ -78,5 +82,29 @@ public static class TemplateModuleDefinition
         Commands = [Command.Define<EarnCommand, EarnResult>(EarnHandler.Descriptor).HandledBy<EarnHandler>()],
         ErrorCodes = TemplateErrors.All,
         Routes = [TemplateRoutes.Earn],
+
+        // Every config file the module reads, with its content rules (checked at every start, FG-018). Use Required(...) for a
+        // file the module cannot work without.
+        ConfigFiles = [ConfigFileDeclaration.Optional(ConfigFile, TemplateConfigRules.Points)],
+
+        // A typed catalog built once from the files before traffic; handlers take it from DI. Declare it here, never register
+        // it in ConfigureServices (an undeclared catalog stays lazy and its faults surface on the first request):
+        // ConfigCatalogs = [ConfigCatalogDeclaration.Of(c => TemplateCatalog.Load(c.Config), ConfigFile)],
     };
+}
+
+/// <summary>Content rules of <c>template.json</c> (FG-018): one line per fault, written with <see cref="ConfigJson"/>.</summary>
+public static class TemplateConfigRules
+{
+    /// <summary>Rule <c>template.points</c>: <c>maxPoints</c> is an integer of at least 1.</summary>
+    public static ConfigRule Points { get; } = new("template.points", CheckPoints);
+
+    private static void CheckPoints(ConfigContext context) =>
+        ConfigJson.RequiredInteger(
+            context.Json(TemplateModuleDefinition.ConfigFile),
+            "maxPoints",
+            ConfigLocation.WholeFile,
+            context.Problems,
+            min: 1,
+            fix: "set the most points a player may hold, at least 1");
 }

@@ -3,6 +3,7 @@ using GameServer.Modules.Economy;
 using GameServer.Platform;
 using GameServer.Protocol.Core.V1;
 using GameServer.Tests.Shared;
+using Microsoft.Extensions.DependencyInjection;
 using Shouldly;
 
 namespace SampleGame.Tests;
@@ -34,8 +35,11 @@ public sealed class ConfigAndCheatTests
     [Fact]
     public async Task GetConfig_requires_a_player_and_enforces_the_bundle_limit()
     {
-        await using var host = await GameHttp.StartGameAsync(settings: s => s["GameServer:Limits:ConfigBundleBytes"] = "200");
+        await using var host = await GameHttp.StartGameAsync();
         var (player, _) = await host.NewPlayerAsync();
+
+        // A bundle over the limit stops the start (slice 015 BC-7); the request-time 413 stays for a limit lowered after the start.
+        host.Services.GetRequiredService<GameServerOptions>().Limits.ConfigBundleBytes = 200;
 
         (await host.Client().PostProtobufAsync(ConfigRoute, new GetConfigRequest())).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         var tooLarge = await player.Client.PostProtobufAsync(ConfigRoute, new GetConfigRequest());
