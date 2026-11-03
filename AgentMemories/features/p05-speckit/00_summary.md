@@ -24,7 +24,7 @@ P0 is merged into `main` and pushed (fda9f00). The real-environment test tools f
 | 012 analytics-audit (batch task 3, ANA-01 part 1) | `012-analytics-audit` | DONE: 68/68 tasks. Login/Payment JSONL audit log. Review CONDITIONAL (0 Blocker, 4 Major, 8 Minor; all fixed except Minor 8 = owner policy) |
 | (batch 2026-10-30) HTML docs | `docs-html-guides` | DONE: task 5 → `docs/html/{index,01-gioi-thieu,02-them-command,03-deploy}.html` (self-contained, drafts in `AgentMemories/features/task-30102026/docs-draft-5{a,b,c}-*.md`; HTML is now hand-maintained, drafts are historical). Accuracy review: reviewer followed 02 to add `counter.reset`, build + tests green. Also startup-validation fixes D1–D4 + m5/m6 (see notes). 5c checklist finished in ops-readiness. Packaging (task 4) skipped, separate later |
 | 013 consumer-readiness (improvement round, FG group A) | `013-consumer-readiness` | DONE: 81/81 tasks + B1. FG-010 (Dev lockdown), FG-001/006 (TestKit), FG-025 (request log), FG-002/003/004 (run-local, build seal), FG-007/011/012 (version, error band, consumer guide). Review CONDITIONAL (0 Blocker, 0 Major, 13 Minor, all fixed `b8a8623`) |
-| 014 wire-contract (FG group B) | — | FG-026 direction B (route catalog), FG-028, FG-021, FG-027 |
+| 014 wire-contract (FG group B) | `014-wire-contract` | DONE: 87/87 tasks. FG-026 direction B (route catalog + pre-serving endpoint check), FG-028 (export mode + WireGen), FG-021 (typed wire mappers), FG-027 (TestKit WireConformance). Review r1 NO (B1 + 2 Major + 9 minor, fixed `7024791`), r2 CONDITIONAL (5 minor, fixed `b1ff174`) |
 | 015 config (FG group C) | — | FG-018, FG-023, FG-024, FG-019 |
 | 016 login-command (FG group D) | — | FG-013, FG-015, FG-029, FG-016, FG-022 |
 | giftcode | — | GFT-01..06, GM-04 API, reaper (ACC-08, 22, 23) — number after the improvement round |
@@ -192,7 +192,36 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
   ListAgents). Ask the owner before pushing branch/tag.
 - Orchestrator defaults awaiting owner override: request log on by default local/dev/Test, off beta/uat/live (FR-086);
   no switch to allow cheats on Staging; version only via GM `ops.read`; `DeploymentEnvironment=Test` refused unless
-  EnvironmentId `test` (BC-8, review m9).
+  EnvironmentId `test` (BC-8, review m9). 014: `ReplaceWireMapper` must keep the framework message (M1 option
+  "restrict", alternative = replaced section becomes origin `game`).
+
+## Technical notes from 014
+
+- Routes: `RouteDeclaration` (Core) listed in `ModuleDescriptor.Routes` / `PlatformRoutes` / `GameServerBuilder.DeclareRoutes`;
+  map via `MapDeclared`/`MapPlayerCommand(route)`…; `WireCatalog` keeps a reference-equality set — an endpoint mapped
+  from an unlisted declaration fails startup (B1). Route conditions checked on mapped endpoints too.
+- Endpoint check: `EndpointSetValidationService` (IHostedLifecycleService, registered first) in `StartingAsync`, before
+  Kestrel binds (V1 held). R8/V16 option b: ASP.NET rebuilds endpoints on every `DataSources.Endpoints` read (~2 ms
+  each), so `UseGameServer` enumerates endpoints only when it already has errors; on a good config the check runs once
+  before serving and the "Starting …" line moves there (BC-2). Validation ≈1 ms for 217 endpoints.
+- Export: `--export-wire-contract <path>` → internal arg `--GameServerCommandLine:ExportWireContract=`; never listens,
+  needs no store/secrets, atomic write via `<name>.<guid>.wire-contract.tmp`.
+- `tools/GameServer.WireGen` generate/verify (exit 0/1/2; 2 only for verify; `[internal]` → 1), protoc from Grpc.Tools
+  2.84.0 (`macosx_universal`), `--dotnet` lookup order, configs: `sdk/GameServer.Client/wiregen.json`,
+  `samples/SampleGame/wiregen.json`, `tests/ConsumerFixture/tools/wiregen.json` (`CommittedOutputTests` verifies all three).
+  Health probes not generated. V8 namespace rule copies protoc (letter after digit capitalised).
+- Mappers: `AddAggregateWireMapper<TState,TWire>` + `Hidden`/`MayStayDefault`; untyped `[Obsolete]`; duplicate fails
+  startup (BC-4); TState must match aggregate StateType (or base); `ReplaceWireMapper` must keep the message.
+- TestKit `WireConformance` (Check/CheckModules/CheckAll — only CheckAll sees overrides); samples 2 elements, distinct
+  enum values, first+last index perturbed; uses aggregate StateType.
+- SDK 0.7.0: `SectionKey<T>`/`SectionTable`/`SectionRead`, generated `Runtime/Generated/FrameworkRoutes.cs` +
+  `FrameworkSections.cs`; KestrelDemo uses generated `SampleGameRoutes`/`SampleGameSections` (.meta by Unity, T072 E2E OK
+  with Unity 6000.3.22f1 at `D:\DevTools\Unity\Unity 6000.3.22f1\Editor\Unity.exe`).
+- T082: zh-pvp CRLF regen in a temp clone reproduces `ZhpvpGame.cs` byte-identical after BC-3 + BC-1; adds
+  `GameRoutes.cs`/`GameSections.cs`.
+- Tests at `7024791`: 1858 total; in-memory/File 1762 pass / 96 skip; Couchbase 1840 pass / 18 skip (~5 min). After
+  `b1ff174`: 1866 total; in-memory/File 1770 / 96 skip; Couchbase 1848 pass / 18 skip (5 min 13 s).
+- Open: Linux/macOS WireGen determinism (N9) manual; `SampleDocument.cs` ~250 lines.
 
 ## Technical notes from 013
 

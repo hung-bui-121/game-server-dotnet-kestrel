@@ -1452,20 +1452,20 @@ suite; guides and PCRs describe the shipped behaviour.
   declaration metadata): reproduced with `Routes` removed — host started and served the route, the export (and so
   `GameRoutes`) silently lost `account.init`; expected the "is not declared" line. Temp clone and `D:/zt082` deleted;
   `E:\ProjGits\*` untouched.
-- [ ] T083 Final verification (after T080–T082): Debug and Release build of `GameServer.slnx`; full suite in memory and
+- [x] T083 Final verification (after T080–T082): Debug and Release build of `GameServer.slnx`; full suite in memory and
   with `GAMESERVER_TEST_STORE=File`; opt-in `GAMESERVER_PERF=1` run of `EndpointCheckPerformanceTests`; `git diff --stat
   main -- proto src/*/Protos samples/SampleGame/SampleGame.Adapters/Protos modules/Sample.Counter/Sample.Counter.Adapters/Protos`
   empty (FR-055); `docs/api/gm-openapi.json` unchanged or as recorded in T025; `git status` lists only intended files.
   Done when: 0 warnings, 0 failures; counts vs T001 and per-story checkpoints recorded. (FR-055, FR-091, SC-007)
-- [ ] T084 Couchbase full suite (after T083; run through PowerShell in the background, variables from the resume file,
+- [x] T084 Couchbase full suite (after T083; run through PowerShell in the background, variables from the resume file,
   password never printed).
   Done when: 0 failures; total/passed/skipped and duration recorded. (FR-091)
-- [ ] T085 Tech-lead review (after T083): `tech-lead-reviewer` gets the spec, the plan, this file and the list of
+- [x] T085 Tech-lead review (after T083): `tech-lead-reviewer` gets the spec, the plan, this file and the list of
   changed files (`git diff --stat main`); focus: endpoint check completeness (no bypass, late endpoints, conditions,
   service-only), export side effects, WireGen determinism and write safety (no delete, no `.meta`, no folder outside the
   output), SDK public API additive only, conformance false positives, docs accuracy.
   Done when: findings recorded (Blocker/Major/Minor with file:line). (FR-091)
-- [ ] T086 Review fixes (after T085): fix every finding the orchestrator accepts, each with a test that fails without the
+- [x] T086 Review fixes (after T085): fix every finding the orchestrator accepts, each with a test that fails without the
   fix where practical; update docs/release notes/PCR touched by a fix; re-run the affected classes, then T083 and T084.
   Append `## Review (T085/T086, …)` to this file in the 013 format (finding, fix, test, docs; deviations; test delta).
   Done when: suites green; review section complete. (FR-091)
@@ -1572,7 +1572,7 @@ suite; guides and PCRs describe the shipped behaviour.
     `GAMESERVER_TEST_STORE=File` (no `COUCHBASE_PW`): **1866 total, 1770 passed, 96 skipped, 0 failed** each (round 1:
     1858 / 1762 / 96; +8 = 2 `EndpointCatalogCheckTests`, 5 `WireConformanceTests`, 1 `WireContractExportTests`; the renamed
     Public-condition test is not new). T083 and T084 were not rerun here.
-- [ ] T087 Resume update `AgentMemories/features/p05-speckit/00_summary.md` (after T086): 014 row DONE with task count
+- [x] T087 Resume update `AgentMemories/features/p05-speckit/00_summary.md` (after T086): 014 row DONE with task count
   and review result; "Technical notes from 014" (catalog + check incl. the hook chosen in T002, export mode, WireGen
   commands and exit codes, `wiregen.json` locations, typed mapper + `ReplaceWireMapper`, `WireConformance`, SDK typed
   accessor, `.meta` rules, test counts); open items (T072/T082 if pending, Linux/macOS determinism N9, any V fallback).
