@@ -39,7 +39,7 @@ public sealed class CommandRunnerTests : IDisposable
         CounterRev().ShouldBe(1);
         var receipt = _h.Store.Peek(ReceiptDocument.KeyFor(execution.ReceiptId!)).ShouldNotBeNull();
         receipt["operation"]!.GetValue<string>().ShouldBe("counter.increment");
-        receipt["configVersion"]!.GetValue<string>().ShouldBe("test+000000000000");
+        receipt["configVersion"]!.GetValue<string>().ShouldBe(_h.Config.ConfigVersion);
         receipt["aggregates"]!.AsArray().Count.ShouldBe(1);
         receipt["gameId"]!.GetValue<string>().ShouldBe("test");
     }

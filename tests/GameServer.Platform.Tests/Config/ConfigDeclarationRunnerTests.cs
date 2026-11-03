@@ -258,6 +258,8 @@ public sealed class ConfigDeclarationRunnerTests
 
         public string ConfigVersion => "test+000000000000";
 
+        public string ClientConfigVersion => "test+111111111111";
+
         public string Label => "test";
 
         public IReadOnlyCollection<string> FileNames => files.Keys;

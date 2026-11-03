@@ -7,7 +7,7 @@ namespace GameServer.Platform.Web.Tests;
 
 /// <summary>
 /// Slice 013 T020 (FR-021, research R10): <see cref="TestGameConfig"/> builds the config a host would load — same
-/// <see cref="IGameConfig.ConfigVersion"/>, client-visible set and overlay.
+/// <see cref="IGameConfig.ConfigVersion"/>, <see cref="IGameConfig.ClientConfigVersion"/>, client-visible set and overlay.
 /// </summary>
 public sealed class TestGameConfigTests : IDisposable
 {
@@ -28,6 +28,7 @@ public sealed class TestGameConfigTests : IDisposable
         var built = TestGameConfig.FromJson(new Dictionary<string, string> { ["shop.json"] = Shop, ["rules.json"] = Rules }, "v1", ["shop.json"]);
 
         built.ConfigVersion.ShouldBe(loaded.ConfigVersion);
+        built.ClientConfigVersion.ShouldBe(loaded.ClientConfigVersion);
         built.Label.ShouldBe("v1");
         built.FileNames.ShouldBe(loaded.FileNames, ignoreOrder: true);
         built.ClientVisibleFiles.ShouldBe(["shop.json"]);
@@ -51,6 +52,7 @@ public sealed class TestGameConfigTests : IDisposable
         TestGameConfig.Empty.Label.ShouldBe("test");
         TestGameConfig.Empty.FileNames.ShouldBeEmpty();
         TestGameConfig.Empty.ConfigVersion.ShouldBe(TestGameConfig.FromJson(new Dictionary<string, string>()).ConfigVersion);
+        TestGameConfig.Empty.ClientConfigVersion.ShouldNotBe(TestGameConfig.Empty.ConfigVersion);
     }
 
     [Fact]
@@ -62,6 +64,7 @@ public sealed class TestGameConfigTests : IDisposable
         var built = TestGameConfig.FromDirectory(Path.Combine(AppContext.BaseDirectory, "config"));
 
         built.ConfigVersion.ShouldBe(loaded.ConfigVersion);
+        built.ClientConfigVersion.ShouldBe(loaded.ClientConfigVersion);
         built.ClientVisibleFiles.ShouldBe(loaded.ClientVisibleFiles, ignoreOrder: true);
     }
 
@@ -76,6 +79,7 @@ public sealed class TestGameConfigTests : IDisposable
         var built = TestGameConfig.FromDirectory(_root, "Development");
 
         built.ConfigVersion.ShouldBe(loaded.ConfigVersion);
+        built.ClientConfigVersion.ShouldBe(loaded.ClientConfigVersion);
         built.Label.ShouldBe("v1-dev");
         built.GetFile<Dictionary<string, int>>("rules.json")["maxLevel"].ShouldBe(99);
         built.ClientVisibleFiles.ShouldBe(["shop.json", "rules.json"], ignoreOrder: true);

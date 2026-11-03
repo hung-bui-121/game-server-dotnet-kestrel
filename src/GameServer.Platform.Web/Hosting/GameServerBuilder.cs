@@ -176,6 +176,8 @@ public static class GameServerBuilderExtensions
         services.AddSingleton(options);
         services.AddSingleton(deployment);
         services.AddSingleton(runtime);
+        // FG-023 (research R9): checks are created one by one from these registrations, each inside its own isolation.
+        services.AddSingleton(new StartupCheckRegistrations(services));
         services.AddSingleton<IStartupCheck, DeploymentIdentityCheck>();
         services.AddSingleton<IStartupCheck, TestKitReferenceCheck>();
         services.AddSingleton(registry);
@@ -213,6 +215,9 @@ public static class GameServerBuilderExtensions
             return new GameConfigLoad(root, options.DeploymentEnvironment);
         });
         services.AddSingleton<IGameConfig>(sp => sp.GetRequiredService<GameConfigLoad>().GetOrThrow());
+
+        // One instance published once by the config phase (R8): a factory registration would cache an early NotLoaded.
+        services.AddSingleton(new GameConfigStatus());
         var catalogBindings = new DeclaredCatalogBindings(services);
         services.AddSingleton(catalogBindings);
         services.AddSingleton<ConfigCatalogStore>();

@@ -27,3 +27,9 @@ be2b2d63ef77c584082dd3b90d9534bf sdk/unity/com.gameserver.client/Runtime/Plugins
 94b0b1c99aec66547a8615e393d86a8f sdk/unity/com.gameserver.client/Runtime/Unity/UnityWebRequestTransport.cs.meta
 4b259acc8804455468e2e31ac594bba2 sdk/unity/com.gameserver.client/Runtime/link.xml.meta
 98bc876ee0d2ea3408c40072ac40fa6d sdk/unity/com.gameserver.client/package.json.meta
+# Slice 015 (T041-T043): new package files with hand-written .meta files.
+3e6695fab49449a29555de642e16ecf5 sdk/unity/com.gameserver.client/Runtime/Core/AssemblyInfo.cs.meta
+bf7415ae02eb4819bcbd4c71c53c1c09 sdk/unity/com.gameserver.client/Runtime/Core/CacheFileOps.cs.meta
+6c6977f541934d66b0d8df4f353e1eb8 sdk/unity/com.gameserver.client/Runtime/Core/ConfigCacheFormat.cs.meta
+b40d338fb610404aaa389a71317a5e30 sdk/unity/com.gameserver.client/Runtime/Core/PersistentConfigCache.cs.meta
+861c6bc8a2c54ea788e6dd388633d9d8 sdk/unity/com.gameserver.client/Runtime/Unity/UnityConfigCache.cs.meta

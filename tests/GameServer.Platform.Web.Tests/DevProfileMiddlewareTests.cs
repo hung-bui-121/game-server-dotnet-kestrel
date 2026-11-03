@@ -209,7 +209,7 @@ public sealed class DevProfileMiddlewareTests
         schemes.GmSchemes.Add(GmScheme);
         var logger = new RecordingLogger();
         using var metrics = new PlatformMetrics();
-        var writer = new ErrorResponseWriter(new FakeClock(), new GameConfig("test", "test+0", new Dictionary<string, byte[]>(), new HashSet<string>()), metrics);
+        var writer = new ErrorResponseWriter(new FakeClock(), new GameConfig("test", new Dictionary<string, byte[]>(), []), metrics);
         var nextCalled = false;
         var middleware = new ProfileEnforcementMiddleware(
             _ =>

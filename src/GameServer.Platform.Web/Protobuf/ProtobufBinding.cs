@@ -35,6 +35,9 @@ public static class ProtobufBinding
 
     public static async Task WriteAsync(HttpContext context, IMessage message, int statusCode = StatusCodes.Status200OK)
     {
+        // A request whose timeout fired (or whose client left) gets the timeout response only: a body written here with the
+        // cancelled token may still be buffered, and the timeout writer would append its envelope to it (two messages, one body).
+        context.RequestAborted.ThrowIfCancellationRequested();
         context.Response.StatusCode = statusCode;
         context.Response.ContentType = ErrorResponseWriter.ProtobufContentType;
         await context.Response.Body.WriteAsync(message.ToByteArray(), context.RequestAborted);

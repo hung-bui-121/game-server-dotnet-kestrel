@@ -137,7 +137,11 @@ namespace GameServer.Client
 
         public event Action<GameServerError>? UpdateRequired;
 
-        /// <summary>A response carried a config version the cache does not have; call <see cref="RefreshConfigAsync"/>.</summary>
+        /// <summary>
+        /// A response announced a client config version (<see cref="ClientConfigVersion"/>) the cache does not have: the
+        /// client-visible config changed; call <see cref="RefreshConfigAsync"/>. Raised once per new version. A server-only config
+        /// change does not raise it (servers from 0.7.0; older servers announce their server version instead).
+        /// </summary>
         public event Action<string>? ConfigVersionChanged;
 
         /// <summary>A game event handler threw; the SDK caught it so request processing was not affected.</summary>
@@ -157,10 +161,17 @@ namespace GameServer.Client
         /// <summary>Server clock minus device wall clock, as of now.</summary>
         public TimeSpan ServerTimeOffset => ServerNow - _clock.UtcNow;
 
-        /// <summary>Last config version announced by the server.</summary>
+        /// <summary>Last server config version announced by the server (<c>config_version</c>); it matches the receipts.</summary>
         public string? ServerConfigVersion { get; private set; }
 
-        public bool ConfigOutdated => ServerConfigVersion != null && ServerConfigVersion != _config.Version;
+        /// <summary>
+        /// Last client config version announced by the server (<c>client_config_version</c>), or its <c>config_version</c> when
+        /// the server sends no client version (servers before 0.7.0). The config cache is keyed by this value.
+        /// </summary>
+        public string? ClientConfigVersion { get; private set; }
+
+        /// <summary>The server announced a client config version the cache does not hold (<see cref="ClientConfigVersion"/> ≠ <c>Config.Version</c>).</summary>
+        public bool ConfigOutdated => ClientConfigVersion != null && ClientConfigVersion != _config.Version;
 
         /// <summary>
         /// Guest login (IDN-01): stores the token and the returned sections. Not retried after a lost or ambiguous attempt
@@ -251,7 +262,7 @@ namespace GameServer.Client
                 Sections.Set(section);
             }
 
-            TrackConfig(response.ConfigVersion);
+            TrackConfig(response.ConfigVersion, response.ClientConfigVersion);
             return response;
         }
 
@@ -284,7 +295,7 @@ namespace GameServer.Client
                 Sections.Set(section);
             }
 
-            TrackConfig(response.ConfigVersion);
+            TrackConfig(response.ConfigVersion, response.ClientConfigVersion);
             return response;
         }
 
@@ -310,7 +321,7 @@ namespace GameServer.Client
 
             // From here on the command is known to the server: report problems, never throw (a caller retrying with a new
             // request id would apply it twice).
-            TrackConfig(response.ConfigVersion);
+            TrackConfig(response.ConfigVersion, response.ClientConfigVersion);
             var stale = response.Updates.Where(u => !Sections.Apply(u)).Select(u => u.Id).ToList();
             var sectionsStale = false;
             if (stale.Count > 0)
@@ -342,19 +353,32 @@ namespace GameServer.Client
             return new CommandResult<TResult>(response, result, sectionsStale, unreadable);
         }
 
-        /// <summary>Downloads the client-visible config files when the server has a newer version (CFG-03). True when updated.</summary>
+        /// <summary>
+        /// Downloads the client-visible config files when the cache does not hold the server's current ones (CFG-03): sends
+        /// <c>Config.Version</c> and stores the files under the response's client config version (its server version for servers
+        /// before 0.7.0). True when files were downloaded.
+        /// </summary>
         public async Task<bool> RefreshConfigAsync(CancellationToken cancellationToken = default)
         {
             var request = new GetConfigRequest { ConfigVersion = _config.Version ?? string.Empty };
             var response = await SendAsync("POST", ConfigRoute, request.ToByteArray(), RequireToken(), RetryMode.Idempotent, GetConfigResponse.Parser, r => r.ServerTimeUtcMs, cancellationToken);
+            var version = EffectiveVersion(response.ConfigVersion, response.ClientConfigVersion);
             ServerConfigVersion = response.ConfigVersion;
+            ClientConfigVersion = version;
+            _announcedConfigVersion = version;
             if (response.NotModified)
             {
+                // The server matched either of its versions, so the cached files are its current ones. A cache held under the
+                // server version is keyed again by the client version once (no download), or it would stay outdated for good.
+                if (!string.IsNullOrEmpty(version) && version != _config.Version)
+                {
+                    _config.Store(version, _config.Files);
+                }
+
                 return false;
             }
 
-            _config.Store(response.ConfigVersion, response.Files.ToDictionary(f => f.Name, f => f.Content.ToByteArray(), StringComparer.Ordinal));
-            _announcedConfigVersion = response.ConfigVersion;
+            _config.Store(version, response.Files.ToDictionary(f => f.Name, f => f.Content.ToByteArray(), StringComparer.Ordinal));
             return true;
         }
 
@@ -446,7 +470,7 @@ namespace GameServer.Client
                 if (envelope != null)
                 {
                     UpdateTime(envelope.ServerTimeUtcMs, sentAt, receivedAt);
-                    TrackConfig(envelope.ConfigVersion);
+                    TrackConfig(envelope.ConfigVersion, envelope.ClientConfigVersion);
                 }
 
                 if (Notify(error, route))
@@ -590,18 +614,28 @@ namespace GameServer.Client
             _hasTime = true;
         }
 
-        private void TrackConfig(string? version)
+        /// <summary>The version the config cache is keyed by (research R14): the client version when sent, else the server version.</summary>
+        private static string EffectiveVersion(string? server, string? client) =>
+            string.IsNullOrEmpty(client) ? server ?? string.Empty : client!;
+
+        private void TrackConfig(string? server, string? client)
         {
-            if (string.IsNullOrEmpty(version))
+            if (!string.IsNullOrEmpty(server))
+            {
+                ServerConfigVersion = server;
+            }
+
+            var version = EffectiveVersion(server, client);
+            if (version.Length == 0)
             {
                 return;
             }
 
-            ServerConfigVersion = version;
+            ClientConfigVersion = version;
             if (version != _config.Version && version != _announcedConfigVersion)
             {
                 _announcedConfigVersion = version;
-                Raise(ConfigVersionChanged, version!);
+                Raise(ConfigVersionChanged, version);
             }
         }
     }

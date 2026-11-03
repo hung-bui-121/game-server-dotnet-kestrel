@@ -1,3 +1,4 @@
+using GameServer.Config;
 using GameServer.Errors;
 using GameServer.Platform.Commands;
 using GameServer.Platform.Web.Aggregates;
@@ -197,7 +198,11 @@ public static class CommandEndpointFactory
                     await AfterExecuteHook.RunAsync(afterExecute, execution, http, operation);
                 }
 
-                var response = BuildResponse(execution, services.GetRequiredService<AggregateWireMapperRegistry>(), services.GetRequiredService<IClock>());
+                var response = BuildResponse(
+                    execution,
+                    services.GetRequiredService<IGameConfig>().ClientConfigVersion,
+                    services.GetRequiredService<AggregateWireMapperRegistry>(),
+                    services.GetRequiredService<IClock>());
                 await ProtobufBinding.WriteAsync(http, response);
             })
             .WithMetadata(new CommandOperationMetadata(operation));
@@ -211,7 +216,8 @@ public static class CommandEndpointFactory
         outcome.Operation = operation;
     }
 
-    internal static CommandResponse BuildResponse(CommandExecution execution, AggregateWireMapperRegistry mappers, IClock clock)
+    /// <summary>The wire response; <paramref name="clientConfigVersion"/> is the instance's, next to the server version of the execution.</summary>
+    internal static CommandResponse BuildResponse(CommandExecution execution, string clientConfigVersion, AggregateWireMapperRegistry mappers, IClock clock)
     {
         var response = new CommandResponse
         {
@@ -220,6 +226,7 @@ public static class CommandEndpointFactory
             ReceiptId = execution.ReceiptId ?? string.Empty,
             Result = ByteString.CopyFrom(execution.Result),
             ConfigVersion = execution.ConfigVersion,
+            ClientConfigVersion = clientConfigVersion,
             ServerTimeUtcMs = clock.UtcNow.ToUnixTimeMilliseconds(),
             Replayed = execution.Replayed,
         };

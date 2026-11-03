@@ -76,14 +76,15 @@ public static class FileGameConfigLoader
             throw new GameServerStartupException(violations);
         }
 
-        return new GameConfig(label, ComputeVersion(label, files), files, clientVisible.ToHashSet(StringComparer.Ordinal))
+        return new GameConfig(label, files, clientVisible)
         {
             OverlaidFiles = overlaid,
             OverlayEnvironment = overlaid.Count > 0 ? deploymentEnvironment : null,
         };
     }
 
-    /// <summary><c>"{label}+{hex(sha256(concat(sorted(name + '\n' + bytes))))[0..12]}"</c>.</summary>
+    /// <summary><c>"{label}+{hex(sha256(concat(sorted(name + '\n' + bytes))))[0..12]}"</c>: the v0.6.0 version, no longer the host's.</summary>
+    [Obsolete("Does not hash clientVisible (FG-024) and computes no client version. Use GameConfigVersions.Compute(label, files, clientVisible).")]
     public static string ComputeVersion(string label, IReadOnlyDictionary<string, byte[]> files)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
@@ -203,15 +204,39 @@ public sealed class GameConfig : IGameConfig
     private readonly IReadOnlyDictionary<string, byte[]> _files;
     private readonly IReadOnlySet<string> _clientVisible;
 
+    /// <summary>
+    /// <paramref name="files"/> are the effective files (after the overlay) and <paramref name="clientVisible"/> names some of them.
+    /// Computes both versions exactly like the host loader (FR-042, <see cref="GameConfigVersions"/>).
+    /// </summary>
+    public GameConfig(string label, IReadOnlyDictionary<string, byte[]> files, IEnumerable<string> clientVisible)
+    {
+        ArgumentNullException.ThrowIfNull(label);
+        ArgumentNullException.ThrowIfNull(files);
+        ArgumentNullException.ThrowIfNull(clientVisible);
+        var visible = clientVisible.ToHashSet(StringComparer.Ordinal);
+        var versions = GameConfigVersions.Compute(label, files, visible);
+        Label = label;
+        ConfigVersion = versions.Server;
+        ClientConfigVersion = versions.Client;
+        _files = files;
+        _clientVisible = visible;
+    }
+
+    [Obsolete("The given configVersion may not hash clientVisible (FG-024). Use new GameConfig(label, files, clientVisible), which computes both versions like the host.")]
     public GameConfig(string label, string configVersion, IReadOnlyDictionary<string, byte[]> files, IReadOnlySet<string> clientVisible)
     {
         Label = label;
         ConfigVersion = configVersion;
+        ClientConfigVersion = GameConfigVersions.Compute(label, files, clientVisible).Client;
         _files = files;
         _clientVisible = clientVisible;
     }
 
+    /// <summary>Server config version (CFG-01): label, every effective file and the client-visible set.</summary>
     public string ConfigVersion { get; }
+
+    /// <summary>Client config version (FG-024): label and the client-visible files only.</summary>
+    public string ClientConfigVersion { get; }
 
     public string Label { get; }
 

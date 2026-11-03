@@ -294,11 +294,13 @@ public sealed partial class IdentityModule
     private static Wire.LoginResponse LoginResponse(IServiceProvider services, LoginResult result)
     {
         var mappers = services.GetRequiredService<AggregateWireMapperRegistry>();
+        var config = services.GetRequiredService<IGameConfig>();
         var response = new Wire.LoginResponse
         {
             SessionToken = result.Token,
             PlayerId = result.PlayerId,
-            ConfigVersion = services.GetRequiredService<IGameConfig>().ConfigVersion,
+            ConfigVersion = config.ConfigVersion,
+            ClientConfigVersion = config.ClientConfigVersion,
             ServerTimeUtcMs = services.GetRequiredService<IClock>().UtcNow.ToUnixTimeMilliseconds(),
             SessionExpiresAtUtcMs = result.ExpiresAt.ToUnixTimeMilliseconds(),
         };

@@ -1,4 +1,5 @@
 using System.Globalization;
+using GameServer.Platform.Config;
 using GameServer.Platform.Persistence;
 using GameServer.Platform.Registry;
 using GameServer.Platform.Web.Catalog;
@@ -22,6 +23,11 @@ internal static class ProvisioningRunner
     public static async Task<int> RunAsync(WebApplication app, TextWriter output, TextWriter error, CancellationToken cancellationToken)
     {
         var services = app.Services;
+
+        // First (BC-9, research R8): provision mode never loads game config, so nothing below can read it from disk; checks that
+        // need it or a declared catalog get a warning, and GameConfigStatus stays NotLoaded.
+        services.GetRequiredService<GameConfigLoad>().Mode = GameConfigLoadMode.NotLoaded;
+        services.GetRequiredService<ConfigCatalogStore>().NotLoaded();
         var options = services.GetRequiredService<GameServerOptions>();
         var errors = services.GetRequiredService<ModuleRegistry>().Validate(options, config: null).ToList();
 
@@ -30,7 +36,7 @@ internal static class ProvisioningRunner
 
         // The provisioning credential is a secret as well: refused from JSON files outside Development/Test (OPS-08).
         DeploymentChecks.ValidateSecretSources(app.Configuration, options, errors);
-        var checks = GameServerApplicationExtensions.CheckAll(services);
+        var checks = GameServerApplicationExtensions.CheckAll(services, StartupCheckMode.Provision);
         errors.AddRange(checks.Errors);
         foreach (var warning in checks.Warnings)
         {

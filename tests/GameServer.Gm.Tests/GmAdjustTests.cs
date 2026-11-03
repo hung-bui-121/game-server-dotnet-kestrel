@@ -40,6 +40,19 @@ public sealed class GmAdjustTests : IAsyncLifetime
         _host.Store.All(EconomyOperations.LedgerCollection).Select(d => d.Content)
             .Where(d => d["payload"]!["sourceType"]!.GetValue<string>() == sourceType).ToArray();
 
+    /// <summary>FR-043 (slice 015 T036): GM command responses keep the server version and gain no client version.</summary>
+    [Fact]
+    public async Task A_gm_command_response_carries_the_server_config_version_only()
+    {
+        var gm = await _host.GmClientAsync("econ");
+        var config = _host.Services.GetRequiredService<GameServer.Config.IGameConfig>();
+
+        var response = await gm.PostCommandAsync(AdjustRoute, new { resource = "gold", delta = 1, reason = "version check" }).ShouldBeAsync(200);
+
+        response["configVersion"]!.GetValue<string>().ShouldBe(config.ConfigVersion);
+        response.AsObject().ContainsKey("clientConfigVersion").ShouldBeFalse();
+    }
+
     [Fact]
     public async Task Adjust_changes_the_wallet_with_receipt_ledger_and_a_complete_audit()
     {

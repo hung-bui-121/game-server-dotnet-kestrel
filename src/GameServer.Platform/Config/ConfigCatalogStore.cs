@@ -11,6 +11,12 @@ internal sealed class ConfigCatalogStore
     /// <summary>The phase ran but the config did not load: every declared catalog is unavailable for that reason.</summary>
     public void ConfigFailed() => Publish(new State(null));
 
+    /// <summary>
+    /// Provision mode: the config is never loaded (D4, BC-9), so every declared catalog is unavailable, marked
+    /// <see cref="Unavailable.Provision"/> (a startup check taking one gets the provision warning, not an error).
+    /// </summary>
+    public void NotLoaded() => Publish(new State(null, Provision: true));
+
     public void Publish(ConfigDeclarationResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
@@ -24,6 +30,13 @@ internal sealed class ConfigCatalogStore
             $"{type.Name} is a declared config catalog: the platform builds it in UseGameServer. Fix: start the host with " +
             "UseGameServer/RunGameServerAsync/TestHost, or in a test without a host build it with ConfigDeclarationCheck.Check(config, modules) " +
             "and call report.AddCatalogsTo(services) (FG-018).");
+        if (state.Provision)
+        {
+            throw Unavailable.Mark(
+                new GameServerStartupException($"[catalog {type.Name}] was not built: provision mode does not load the game config."),
+                Unavailable.Provision);
+        }
+
         if (state.Result is null)
         {
             throw Unavailable.Mark(
@@ -51,5 +64,5 @@ internal sealed class ConfigCatalogStore
         }
     }
 
-    private sealed record State(ConfigDeclarationResult? Result);
+    private sealed record State(ConfigDeclarationResult? Result, bool Provision = false);
 }

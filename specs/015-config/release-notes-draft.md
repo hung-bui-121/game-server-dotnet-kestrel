@@ -129,6 +129,125 @@ declared catalog built with `GameCatalog.TryLoad`; `GameModuleDefinition.cs:23` 
 becomes file declarations with rules (the table checks), and the CASH/GOLD check becomes a game rule on `resources.json`.
 `ConfigTable.cs`, `ConfigTableChecks.cs`, `ClientEnums.cs`, `CatalogRows.cs` stay (game schema code).
 
+## FG-023 — a startup check never loses the combined report and reads config safely
+
+- Every `IStartupCheck` is created from its registration inside its own isolation, in serve and provision mode, then run
+  inside another (BC-10). A constructor or factory that throws adds one line naming the check (its implementation type;
+  for a factory registration the type that declares the factory, compiler closures skipped) and every other check still
+  runs. Checks are created once per start, not resolved as container singletons, and never disposed.
+- A check that needs the config or a declared catalog that is unavailable gets one "did not run" line; the cause is already
+  in the report and is not repeated.
+- New `GameConfigStatus` (`GameServer.Platform`): `State` (`NotLoaded` / `Loaded` / `Failed`), `Config` (the instance
+  handlers get), `DeclarationsPassed` (no required-file, rule or catalog line in this start), `TryGetConfig`. It never
+  throws and is published once by the config phase, before the checks run. This is the supported way for a check to read
+  config.
+- Provision mode never loads game config (BC-9): `IGameConfig` and declared catalogs cannot be resolved there, the status
+  stays `NotLoaded`, and a check that needs them is skipped with a warning on stderr; provisioning goes on.
+
+```csharp
+internal sealed class GameRulesCheck(GameConfigStatus status) : IStartupCheck
+{
+    public void Check(StartupCheckResult result)
+    {
+        if (!status.TryGetConfig(out var config) || !status.DeclarationsPassed)
+        {
+            return; // NotLoaded (provision) or Failed: the report already has the cause.
+        }
+
+        // read config or declared catalogs here
+    }
+}
+```
+
+Real lines (slice 015 tests, asserted literally; SC-003 = a missing `battle.json`, `GameServer:Gate:CacheSeconds=99` and
+four checks):
+
+```text
+[config] file '…/config/base/battle.json' listed in the manifest does not exist. Fix: add the file or remove it from the manifest.
+[gate] GameServer:Gate:CacheSeconds must be 0..10 (PERF-08: a maintenance toggle applies within 10 s).
+[NeedsConfigCheck] the startup check did not run: the game config did not load (see the [config] lines). Fix: take GameConfigStatus instead of IGameConfig and skip when it is not Loaded (FG-023).
+[ThrowingCheck] the startup check could not be created: InvalidOperationException: boom. Fix: register its dependencies; a check that reads config takes GameConfigStatus (FG-023).
+status: Failed
+plain ran
+[CatalogCheck] the startup check did not run: catalog ChecksCatalog was not built (see the lines above). Fix: take GameConfigStatus and read the catalog only when DeclarationsPassed (FG-023).
+warning: [NeedsConfigCheck] the startup check did not run: provision mode does not load the game config. Fix: take GameConfigStatus and skip when it is NotLoaded (FG-023).
+```
+
+| Id | Line seen by the operator | Fix |
+| --- | --- | --- |
+| BC-9 | `warning: [{check}] the startup check did not run: provision mode does not load the game config. Fix: take GameConfigStatus and skip when it is NotLoaded (FG-023).` (stderr of `--provision`; exit code unaffected) | Take `GameConfigStatus` and skip when it is `NotLoaded` |
+| BC-10 | None for a stateless check. A check type also resolved elsewhere gets a different instance there; a disposable check is not disposed | Keep checks stateless and not disposable |
+
+Consumer impact (FG-023 row): `GameConfigStartupTests.A_config_that_does_not_load_keeps_the_report_complete_and_the_game_check_adds_nothing`
+keeps passing with its 2 lines (the zh-pvp `GameConfigCheck` resolves `IGameConfig` inside `Check` and catches; the same
+shape is tested here, `StartupCheckHostTests.A_check_that_resolves_the_config_itself_and_catches_adds_nothing`). Its FG-023
+comment can go once `GameConfigCheck` moves into declarations (checklist step 3). A host or test that passes an
+`IGameConfig` instance (`TestHost` `config:`) bypasses the loader, so such a check still runs in provision mode there.
+
+## FG-024 and FG-019 (version) — the server version hashes the client-visible set; a client config version
+
+- The server config version (`config_version`, receipts, `ICommandContext.ConfigVersion`, metric `config_version_info`,
+  readiness `configVersion`) now hashes the label, every effective file **and the `clientVisible` set** (FG-024). Its
+  meaning is unchanged; its value changes once at the upgrade (BC-5).
+- New client config version `{label}+{hash12}` over the label and the client-visible files only (FR-041). The two hash
+  inputs are domain-separated, so the two values never coincide, even when every file is client-visible. A server-only
+  edit changes the server version only; a client-visible edit, a change of the `clientVisible` set (base or env overlay)
+  or a label change changes both; list order and duplicates change neither.
+- `IGameConfig.ClientConfigVersion` (BC-6), `GameConfigVersions.Compute(label, files, clientVisible)`, `new
+  GameConfig(label, files, clientVisible)`; the 4-argument `GameConfig` constructor and `FileGameConfigLoader.ComputeVersion`
+  are `[Obsolete]`. `TestGameConfig` computes both versions exactly like the host.
+- Five additive proto fields `client_config_version` (`ErrorEnvelope` 10, `CommandResponse` 9, `SnapshotResponse` 4,
+  `GetConfigResponse` 5, identity `LoginResponse` 7) on every player response, middleware errors included. GM responses
+  and `ReceiptView` are unchanged. New gauge `client_config_version_info{version}` and readiness data
+  `clientConfigVersion`.
+- `GetConfig` answers `not_modified` when the request holds **either** current version (ordinal), so SDKs before 0.7.0 keep
+  their `not_modified`. Any other value (an older version, the v0.6.0-format value, garbage, empty) gets the full bundle.
+- SDK (BC-4): `GameServerClient.ClientConfigVersion` (the client version, or `config_version` when the server sends none);
+  `ConfigOutdated`, `ConfigVersionChanged` and the cache key follow it; `ServerConfigVersion` keeps the server version.
+  `RefreshConfigAsync` stores the files under the response's client version.
+
+| Id | Value / line | Fix |
+| --- | --- | --- |
+| BC-4 | No `ConfigVersionChanged` on server-only edits; the event argument and `Config.Version` hold the client version (`test-1+4c5423c2dad9`), `ServerConfigVersion` the server version (`test-1+9b2cd1009ff1`) | Compare the cache with `ClientConfigVersion`; read `ServerConfigVersion` only to correlate with receipts |
+| BC-5 | SampleHost config: `sample-1+0a58d1cc006c` (v0.6.0 formula) → server `sample-1+8a37f29ee2dc`, client `sample-1+9b25b8b6bc0b`. tests/Shared config: server `test-1+9b2cd1009ff1`, client `test-1+4c5423c2dad9` | Update pinned values (dashboards, alerts, tests) |
+| BC-6 | `error CS0535: 'X' does not implement interface member 'GameServer.Config.IGameConfig.ClientConfigVersion'`; `error CS0618: 'GameConfig.GameConfig(string, string, IReadOnlyDictionary<string, byte[]>, IReadOnlySet<string>)' is obsolete: '…'` (under `TreatWarningsAsErrors`) | Implement the member; `new GameConfig(label, files, clientVisible)` or `TestGameConfig` |
+
+zh-pvp rows: `tests/ZhPvp.Tests/Support/TestGameConfig.cs` needs the one-line fix `return new GameConfig(label, files,
+clientVisible);` (CS0618 otherwise). In `ConfigDeliveryTests.cs`, `Making_a_file_client_visible_keeps_the_version` (marker
+line 136) fails by design: both versions change now (delete or invert it). `A_server_only_file_change_changes_the_version_the_client_sees`
+(marker line 119) does **not** fail by itself, because it asserts the server version, which still changes: rewrite it to
+assert that `client_config_version` is unchanged and `config_version` changed. `Every_response_type_carries_the_version_of_the_committed_config`
+stays valid (optionally assert `client_config_version` too). The label rule of `docs/pcr/game.md` (lines 94–96, 114) can go.
+
+Checked against the tests: an SDK of this slice against a server without the field (stub stripping it from login,
+snapshot and `GetConfig`) falls back to `config_version` and behaves as before; this server answers `not_modified` for the
+server version an older SDK holds (`ConfigVersionCarriageTests`, `ClientConfigVersionTests`). The rolling-deploy note and
+the compatibility table above hold.
+
+## FG-019 (persistent cache) — client config survives app restarts
+
+- New `PersistentConfigCache : IConfigCache` (SDK, `Runtime/Core`, no UnityEngine dependency, opt-in): one container file
+  `gameserver-config.bin` per folder (format v1: magic, format version, payload length, payload, SHA-256), atomic saves
+  (temp file, `Flush(true)`, `File.Replace`/`File.Move`), a damaged or unknown-format file reads as empty with
+  `LoadProblem`, a failed save keeps the new version in memory with `WriteProblem`; it never throws for file problems.
+  Config file names stay data inside the container (never paths). Not thread-safe (main thread), not encrypted.
+- Unity: `UnityConfigCache.Create(environmentName)` = `Application.persistentDataPath/gameserver-config/{environmentName}`,
+  one folder per server environment.
+- With it, a second app start has the config before login; while the client config version is unchanged (also across
+  server-only edits) nothing is downloaded.
+- Budget (SC-006, `GAMESERVER_PERF=1`): 1 MiB save p95 11–15 ms, load p95 5–9 ms on the C: drive (`%TEMP%`, where
+  `persistentDataPath` lives on Windows). On the repository's D: drive a save took ~70 ms p95 (T009), dominated by
+  `Flush(true)`; the flush is kept on purpose (a crash must leave the old or the new version, never a short file).
+
+Consumer setup (first consumer, `Assets/MadProject/Scripts/Online/OnlineSession.cs:83`):
+
+```csharp
+var client = new GameServerClient(options, new UnityWebRequestTransport(), config: UnityConfigCache.Create(environmentName));
+```
+
+Client markers removable: `ServerConfigInjector.cs:39` and `OnlineSession.cs:333` (and the remark at `:329`).
+`FetchConfigAsync` (`OnlineSession.cs:335-347`) already applies the cached files when `RefreshConfigAsync` returns false.
+
 ## Owner confirmations
 
 | # | Decision | Status |
@@ -153,5 +272,10 @@ becomes file declarations with rules (the table checks), and the CASH/GOLD check
 - (final list by T065)
 - V6 (T006): the documented level rule picks gzip 9 / Brotli 6 with p95 ≈ 18.5 ms at 1 MiB (budget 20 ms); T048/T050
   decide the constants on the real path (fallback: lower level).
-- V11 (T009): a 1 MiB cache save is ≈ 11 ms p95 on the C: profile drive but ≈ 70 ms p95 on D: (`Flush(true)`); T045 states
-  the reference drive of SC-006.
+- V11 (T009, T045): SC-006 (1 MiB load and save ≤ 50 ms) is met on the C: drive (save p95 11–15 ms) but not on D: (≈ 70 ms
+  save p95, `Flush(true)`); `Flush(true)` is kept (durability over speed). Device numbers stay with T058.
+- Fixed on the way (T035): a command whose request timeout fired after the commit wrote its `CommandResponse` body with the
+  cancelled token before the 503 timeout envelope (two messages in one body under TestServer); `ProtobufBinding.WriteAsync`
+  now writes nothing once the request token is cancelled.
+- Provision mode treats every config-related unavailability (config or declared catalog) as the BC-9 warning, never an
+  error (T029, T031).

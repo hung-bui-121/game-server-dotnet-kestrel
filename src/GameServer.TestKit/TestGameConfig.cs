@@ -5,15 +5,16 @@ using GameServer.Platform.Config;
 namespace GameServer.TestKit;
 
 /// <summary>
-/// Real <see cref="GameConfig"/> instances for tests (FR-021): the version is computed exactly like the host loader, so a
-/// handler or a config check sees the <see cref="IGameConfig.ConfigVersion"/> a host loading the same bytes would report.
+/// Real <see cref="GameConfig"/> instances for tests (FR-021): both versions are computed exactly like the host loader, so a
+/// handler or a config check sees the <see cref="IGameConfig.ConfigVersion"/> and <see cref="IGameConfig.ClientConfigVersion"/> a
+/// host loading the same bytes would report.
 /// </summary>
 public static class TestGameConfig
 {
     /// <summary>Label "test", no files.</summary>
     public static IGameConfig Empty { get; } = FromJson(new Dictionary<string, string>(StringComparer.Ordinal));
 
-    /// <summary>Files given as JSON text (UTF-8); ConfigVersion computed exactly like the host loader.</summary>
+    /// <summary>Files given as JSON text (UTF-8); both versions computed exactly like the host loader.</summary>
     public static IGameConfig FromJson(
         IReadOnlyDictionary<string, string> files,
         string label = "test",
@@ -36,7 +37,7 @@ public static class TestGameConfig
             }
         }
 
-        return new GameConfig(label, FileGameConfigLoader.ComputeVersion(label, bytes), bytes, visible);
+        return new GameConfig(label, bytes, visible);
     }
 
     /// <summary>The host loader itself: <c>{configRoot}/base</c> overlaid by <c>{configRoot}/env/{deploymentEnvironment}</c>.</summary>

@@ -126,7 +126,7 @@ public sealed class ConfigDeclarationsTests
 
     private static ConfigContext Context(out ConfigProblems problems)
     {
-        var config = new GameConfig("t", "t+0", new Dictionary<string, byte[]> { ["a.json"] = """{"x":1}"""u8.ToArray() }, new HashSet<string>());
+        var config = new GameConfig("t", new Dictionary<string, byte[]> { ["a.json"] = """{"x":1}"""u8.ToArray() }, []);
         problems = new ConfigProblems();
         return new ConfigContext(config, "a.json", problems, file => JsonDocument.Parse(config.GetFileBytes(file)).RootElement);
     }

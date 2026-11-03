@@ -169,7 +169,7 @@ public static class GameServerApplicationExtensions
     /// <summary>Checks contributed by the host and the store packages (R4): errors join the report, warnings are logged once.</summary>
     private static void RunStartupChecks(IServiceProvider services, List<string> errors, IEnumerable<string> hostWarnings)
     {
-        var result = CheckAll(services);
+        var result = CheckAll(services, StartupCheckMode.Serve);
         result.Warnings.AddRange(hostWarnings);
 
         errors.AddRange(result.Errors);
@@ -184,29 +184,83 @@ public static class GameServerApplicationExtensions
     }
 
     /// <summary>
-    /// Runs every <see cref="IStartupCheck"/> (serve and provision mode). A check must not throw; one that does still yields one
-    /// report (FR-009): its <see cref="GameServerStartupException"/> violations, or one error naming the check type and the cause.
+    /// Creates and runs every <see cref="IStartupCheck"/> (serve and provision mode, FG-023, research R9): each one is created from
+    /// its registration inside its own isolation, then run inside another. A check must not throw; one that does still yields one
+    /// report (FR-009). A check that needs the config or a catalog that is unavailable gets one "did not run" line (a warning in
+    /// provision mode, BC-9) instead of repeating the cause, which the report already has.
     /// </summary>
-    internal static StartupCheckResult CheckAll(IServiceProvider services)
+    internal static StartupCheckResult CheckAll(IServiceProvider services, StartupCheckMode mode)
     {
         var result = new StartupCheckResult();
-        foreach (var check in services.GetServices<IStartupCheck>())
+        var descriptors = services.GetRequiredService<StartupCheckRegistrations>().Descriptors();
+        for (var index = 0; index < descriptors.Count; index++)
         {
+            IStartupCheck check;
+            try
+            {
+                check = StartupCheckRegistrations.Create(descriptors[index], services);
+            }
+            catch (Exception ex)
+            {
+                var name = StartupCheckRegistrations.NameOf(descriptors[index], index);
+                if (!ReportUnavailable(ex, name, mode, result))
+                {
+                    result.Errors.Add(ConfigReportLines.CheckNotCreated(name, ex));
+                }
+
+                continue;
+            }
+
             try
             {
                 check.Check(result);
             }
-            catch (GameServerStartupException ex)
-            {
-                result.Errors.AddRange(ex.Violations);
-            }
             catch (Exception ex)
             {
-                result.Errors.Add($"[{check.GetType().Name}] the startup check failed: {ex.GetType().Name}: {ex.Message}");
+                // A marked exception gives "did not run": the config or catalog it needs is unavailable for a reason already reported.
+                if (ReportUnavailable(ex, check.GetType().Name, mode, result))
+                {
+                    continue;
+                }
+
+                if (ex is GameServerStartupException startup)
+                {
+                    result.Errors.AddRange(startup.Violations);
+                }
+                else
+                {
+                    result.Errors.Add(ConfigReportLines.CheckFailed(check.GetType().Name, ex));
+                }
             }
         }
 
         return result;
+    }
+
+    /// <summary>Adds the "did not run" line of a marked exception (data-model §3.4); false when it carries no marker.</summary>
+    private static bool ReportUnavailable(Exception exception, string check, StartupCheckMode mode, StartupCheckResult result)
+    {
+        var marker = Unavailable.Find(exception);
+        if (marker is null)
+        {
+            return false;
+        }
+
+        if (mode == StartupCheckMode.Provision || marker == Unavailable.Provision)
+        {
+            // Provision mode does not load config (D4): a check that needs it is skipped with a warning, never an error.
+            result.Warnings.Add(ConfigReportLines.CheckNotRunProvision(check));
+        }
+        else if (Unavailable.CatalogTypeName(marker) is { } catalog)
+        {
+            result.Errors.Add(ConfigReportLines.CheckNotRunCatalog(check, catalog));
+        }
+        else
+        {
+            result.Errors.Add(ConfigReportLines.CheckNotRunConfig(check));
+        }
+
+        return true;
     }
 
     /// <summary>

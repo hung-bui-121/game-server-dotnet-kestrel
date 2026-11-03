@@ -35,7 +35,7 @@ public sealed class ConfigHealthCheck(IGameConfig config) : IHealthCheck
     public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default) =>
         Task.FromResult(HealthCheckResult.Healthy(
             "Config loaded.",
-            new Dictionary<string, object> { ["configVersion"] = config.ConfigVersion }));
+            new Dictionary<string, object> { ["configVersion"] = config.ConfigVersion, ["clientConfigVersion"] = config.ClientConfigVersion }));
 }
 
 /// <summary>LOG-06 / ACC-17: Degraded after a sink error or when the log disk is nearly full; logging never fails readiness.</summary>

@@ -69,7 +69,10 @@ namespace GameServer.Client
         }
     }
 
-    /// <summary>Client-visible config files of one <c>configVersion</c> (CFG-03).</summary>
+    /// <summary>
+    /// Client-visible config files of one version (CFG-03): the client config version when the server sends one, else its
+    /// <c>configVersion</c> (see <see cref="GameServerClient.ClientConfigVersion"/>).
+    /// </summary>
     public interface IConfigCache
     {
         string? Version { get; }

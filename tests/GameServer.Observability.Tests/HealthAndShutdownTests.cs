@@ -35,6 +35,21 @@ public sealed class HealthAndShutdownTests
         body.ShouldBeOneOf("Healthy", "Degraded");
     }
 
+    /// <summary>FR-044 (slice 015 T037): the config check data names both versions.</summary>
+    [Fact]
+    public async Task The_config_check_data_names_the_server_and_the_client_config_version()
+    {
+        await using var observed = await ObservedHost.StartAsync();
+        var admin = await AdminAsync(observed.Host);
+        var config = observed.Host.Services.GetRequiredService<GameServer.Config.IGameConfig>();
+
+        var detail = JsonNode.Parse((await GetAsync(admin, GmModule.HealthRoute)).Body)!;
+
+        var data = detail["entries"]!.AsArray().Single(e => e!["name"]!.GetValue<string>() == "config")!["data"]!;
+        data["configVersion"]!.GetValue<string>().ShouldBe(config.ConfigVersion);
+        data["clientConfigVersion"]!.GetValue<string>().ShouldBe(config.ClientConfigVersion);
+    }
+
     [Fact]
     public async Task Store_outage_makes_ready_503_without_details_and_gm_sees_the_failing_check()
     {

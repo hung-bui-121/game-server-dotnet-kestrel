@@ -37,10 +37,12 @@ internal static class CoreEndpoints
                 var actor = services.GetRequiredService<ActorContextAccessor>().GetActor(http);
                 var aggregates = await services.GetRequiredService<PlayerSnapshotReader>().ReadAsync(actor.PlayerId!, request.Sections, http.RequestAborted);
                 var mappers = services.GetRequiredService<AggregateWireMapperRegistry>();
+                var config = services.GetRequiredService<IGameConfig>();
 
                 var response = new SnapshotResponse
                 {
-                    ConfigVersion = services.GetRequiredService<IGameConfig>().ConfigVersion,
+                    ConfigVersion = config.ConfigVersion,
+                    ClientConfigVersion = config.ClientConfigVersion,
                     ServerTimeUtcMs = services.GetRequiredService<IClock>().UtcNow.ToUnixTimeMilliseconds(),
                 };
                 response.Sections.AddRange(aggregates.Select(a => new Section
@@ -63,7 +65,11 @@ internal static class CoreEndpoints
                 {
                     ConfigVersion = config.ConfigVersion,
                     ServerTimeUtcMs = services.GetRequiredService<IClock>().UtcNow.ToUnixTimeMilliseconds(),
-                    NotModified = string.Equals(request.ConfigVersion, config.ConfigVersion, StringComparison.Ordinal),
+                    ClientConfigVersion = config.ClientConfigVersion,
+
+                    // Either version names exactly the current client-visible files; SDKs before 0.7.0 hold the server version (R1).
+                    NotModified = string.Equals(request.ConfigVersion, config.ClientConfigVersion, StringComparison.Ordinal)
+                        || string.Equals(request.ConfigVersion, config.ConfigVersion, StringComparison.Ordinal),
                 };
                 http.RequestOutcome().NotModified = response.NotModified;
                 if (!response.NotModified)

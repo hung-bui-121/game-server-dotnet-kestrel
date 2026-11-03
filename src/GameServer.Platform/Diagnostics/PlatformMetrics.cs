@@ -37,6 +37,7 @@ public sealed class PlatformMetrics : IDisposable
     private readonly Counter<long> _accountPurgeDocuments;
     private readonly Counter<long> _requestLogFailures;
     private string _configVersion = string.Empty;
+    private string _clientConfigVersion = string.Empty;
     private OverdueSample? _purgeOverdue;
 
     public PlatformMetrics()
@@ -73,6 +74,11 @@ public sealed class PlatformMetrics : IDisposable
         _meter.CreateObservableGauge(
             "config_version_info",
             () => new Measurement<int>(1, new KeyValuePair<string, object?>("version", _configVersion)));
+
+        // FG-024 (research R16): the version a client caches; config_version_info keeps the server version.
+        _meter.CreateObservableGauge(
+            "client_config_version_info",
+            () => new Measurement<int>(1, new KeyValuePair<string, object?>("version", _clientConfigVersion)));
     }
 
     public void AggregateWritten(string aggregateId, int sizeBytes, bool overWarning)
@@ -112,6 +118,8 @@ public sealed class PlatformMetrics : IDisposable
     public void OutboxPendingAge(TimeSpan age) => _outboxPendingAge.Record(age.TotalSeconds);
 
     public void SetConfigVersion(string version) => _configVersion = version;
+
+    public void SetClientConfigVersion(string version) => _clientConfigVersion = version;
 
     /// <summary>One command outcome (OBS-01 errors/rejections by code). Never tagged with player or request ids (OBS-02).</summary>
     public void CommandCompleted(string operation, string code, bool replayed) =>

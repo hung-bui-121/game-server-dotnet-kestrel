@@ -25,57 +25,60 @@ namespace GameServer.Protocol.Core.V1 {
       byte[] descriptorData = global::System.Convert.FromBase64String(
           string.Concat(
             "Ch1nYW1lc2VydmVyL2NvcmUvdjEvY29yZS5wcm90bxISZ2FtZXNlcnZlci5j",
-            "b3JlLnYxIqcCCg1FcnJvckVudmVsb3BlEgwKBGNvZGUYASABKAkSEwoLY29k",
+            "b3JlLnYxIsYCCg1FcnJvckVudmVsb3BlEgwKBGNvZGUYASABKAkSEwoLY29k",
             "ZV9udW1iZXIYAiABKAUSDwoHbWVzc2FnZRgDIAEoCRISCgpyZXF1ZXN0X2lk",
             "GAQgASgJEhEKCXJldHJ5YWJsZRgFIAEoCBIWCg5yZXRyeV9hZnRlcl9tcxgG",
             "IAEoBRIaChJzZXJ2ZXJfdGltZV91dGNfbXMYByABKAMSFgoOY29uZmlnX3Zl",
             "cnNpb24YCCABKAkSPwoHZGV0YWlscxgJIAMoCzIuLmdhbWVzZXJ2ZXIuY29y",
-            "ZS52MS5FcnJvckVudmVsb3BlLkRldGFpbHNFbnRyeRouCgxEZXRhaWxzRW50",
-            "cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASIzCgdTZWN0aW9u",
-            "EgoKAmlkGAEgASgJEgsKA3JldhgCIAEoAxIPCgdwYXlsb2FkGAMgASgMIl0K",
-            "DVNlY3Rpb25VcGRhdGUSCgoCaWQYASABKAkSEAoIYmFzZV9yZXYYAiABKAMS",
-            "DwoHbmV3X3JldhgDIAEoAxIPCgdwYXlsb2FkGAQgASgMEgwKBGZ1bGwYBSAB",
-            "KAgi0gEKD0NvbW1hbmRSZXNwb25zZRIMCgRjb2RlGAEgASgJEhMKC2NvZGVf",
-            "bnVtYmVyGAIgASgFEhIKCnJlY2VpcHRfaWQYAyABKAkSMgoHdXBkYXRlcxgE",
-            "IAMoCzIhLmdhbWVzZXJ2ZXIuY29yZS52MS5TZWN0aW9uVXBkYXRlEg4KBnJl",
-            "c3VsdBgFIAEoDBIWCg5jb25maWdfdmVyc2lvbhgGIAEoCRIaChJzZXJ2ZXJf",
-            "dGltZV91dGNfbXMYByABKAMSEAoIcmVwbGF5ZWQYCCABKAgiIwoPU25hcHNo",
-            "b3RSZXF1ZXN0EhAKCHNlY3Rpb25zGAEgAygJInUKEFNuYXBzaG90UmVzcG9u",
-            "c2USLQoIc2VjdGlvbnMYASADKAsyGy5nYW1lc2VydmVyLmNvcmUudjEuU2Vj",
-            "dGlvbhIWCg5jb25maWdfdmVyc2lvbhgCIAEoCRIaChJzZXJ2ZXJfdGltZV91",
-            "dGNfbXMYAyABKAMiqQIKC1JlY2VpcHRWaWV3EhIKCnJlY2VpcHRfaWQYASAB",
-            "KAkSEQoJb3BlcmF0aW9uGAIgASgJEhIKCnJlcXVlc3RfaWQYAyABKAkSEwoL",
-            "cmVzdWx0X2NvZGUYBCABKAkSDgoGcmVzdWx0GAUgASgMEjQKCmFnZ3JlZ2F0",
-            "ZXMYBiADKAsyIC5nYW1lc2VydmVyLmNvcmUudjEuQWdncmVnYXRlUmV2EhYK",
-            "DmNvbmZpZ192ZXJzaW9uGAcgASgJEhsKE2NvbW1pdHRlZF9hdF91dGNfbXMY",
-            "CCABKAMSMwoGb3V0Ym94GAkgAygLMiMuZ2FtZXNlcnZlci5jb3JlLnYxLk91",
-            "dGJveEVudHJ5VmlldxIaChJzZXJ2ZXJfdGltZV91dGNfbXMYCiABKAMiNQoM",
-            "QWdncmVnYXRlUmV2EhQKDGFnZ3JlZ2F0ZV9pZBgBIAEoCRIPCgduZXdfcmV2",
-            "GAIgASgDIkcKD091dGJveEVudHJ5VmlldxIQCghlbnRyeV9pZBgBIAEoCRIM",
-            "CgRraW5kGAIgASgJEhQKDHBheWxvYWRfanNvbhgDIAEoCSIqCgxUaW1lUmVz",
-            "cG9uc2USGgoSc2VydmVyX3RpbWVfdXRjX21zGAEgASgDIioKEEdldENvbmZp",
-            "Z1JlcXVlc3QSFgoOY29uZmlnX3ZlcnNpb24YASABKAkiKwoKQ29uZmlnRmls",
-            "ZRIMCgRuYW1lGAEgASgJEg8KB2NvbnRlbnQYAiABKAwijAEKEUdldENvbmZp",
-            "Z1Jlc3BvbnNlEhYKDmNvbmZpZ192ZXJzaW9uGAEgASgJEhQKDG5vdF9tb2Rp",
-            "ZmllZBgCIAEoCBItCgVmaWxlcxgDIAMoCzIeLmdhbWVzZXJ2ZXIuY29yZS52",
-            "MS5Db25maWdGaWxlEhoKEnNlcnZlcl90aW1lX3V0Y19tcxgEIAEoA0IeqgIb",
-            "R2FtZVNlcnZlci5Qcm90b2NvbC5Db3JlLlYxYgZwcm90bzM="));
+            "ZS52MS5FcnJvckVudmVsb3BlLkRldGFpbHNFbnRyeRIdChVjbGllbnRfY29u",
+            "ZmlnX3ZlcnNpb24YCiABKAkaLgoMRGV0YWlsc0VudHJ5EgsKA2tleRgBIAEo",
+            "CRINCgV2YWx1ZRgCIAEoCToCOAEiMwoHU2VjdGlvbhIKCgJpZBgBIAEoCRIL",
+            "CgNyZXYYAiABKAMSDwoHcGF5bG9hZBgDIAEoDCJdCg1TZWN0aW9uVXBkYXRl",
+            "EgoKAmlkGAEgASgJEhAKCGJhc2VfcmV2GAIgASgDEg8KB25ld19yZXYYAyAB",
+            "KAMSDwoHcGF5bG9hZBgEIAEoDBIMCgRmdWxsGAUgASgIIvEBCg9Db21tYW5k",
+            "UmVzcG9uc2USDAoEY29kZRgBIAEoCRITCgtjb2RlX251bWJlchgCIAEoBRIS",
+            "CgpyZWNlaXB0X2lkGAMgASgJEjIKB3VwZGF0ZXMYBCADKAsyIS5nYW1lc2Vy",
+            "dmVyLmNvcmUudjEuU2VjdGlvblVwZGF0ZRIOCgZyZXN1bHQYBSABKAwSFgoO",
+            "Y29uZmlnX3ZlcnNpb24YBiABKAkSGgoSc2VydmVyX3RpbWVfdXRjX21zGAcg",
+            "ASgDEhAKCHJlcGxheWVkGAggASgIEh0KFWNsaWVudF9jb25maWdfdmVyc2lv",
+            "bhgJIAEoCSIjCg9TbmFwc2hvdFJlcXVlc3QSEAoIc2VjdGlvbnMYASADKAki",
+            "lAEKEFNuYXBzaG90UmVzcG9uc2USLQoIc2VjdGlvbnMYASADKAsyGy5nYW1l",
+            "c2VydmVyLmNvcmUudjEuU2VjdGlvbhIWCg5jb25maWdfdmVyc2lvbhgCIAEo",
+            "CRIaChJzZXJ2ZXJfdGltZV91dGNfbXMYAyABKAMSHQoVY2xpZW50X2NvbmZp",
+            "Z192ZXJzaW9uGAQgASgJIqkCCgtSZWNlaXB0VmlldxISCgpyZWNlaXB0X2lk",
+            "GAEgASgJEhEKCW9wZXJhdGlvbhgCIAEoCRISCgpyZXF1ZXN0X2lkGAMgASgJ",
+            "EhMKC3Jlc3VsdF9jb2RlGAQgASgJEg4KBnJlc3VsdBgFIAEoDBI0CgphZ2dy",
+            "ZWdhdGVzGAYgAygLMiAuZ2FtZXNlcnZlci5jb3JlLnYxLkFnZ3JlZ2F0ZVJl",
+            "dhIWCg5jb25maWdfdmVyc2lvbhgHIAEoCRIbChNjb21taXR0ZWRfYXRfdXRj",
+            "X21zGAggASgDEjMKBm91dGJveBgJIAMoCzIjLmdhbWVzZXJ2ZXIuY29yZS52",
+            "MS5PdXRib3hFbnRyeVZpZXcSGgoSc2VydmVyX3RpbWVfdXRjX21zGAogASgD",
+            "IjUKDEFnZ3JlZ2F0ZVJldhIUCgxhZ2dyZWdhdGVfaWQYASABKAkSDwoHbmV3",
+            "X3JldhgCIAEoAyJHCg9PdXRib3hFbnRyeVZpZXcSEAoIZW50cnlfaWQYASAB",
+            "KAkSDAoEa2luZBgCIAEoCRIUCgxwYXlsb2FkX2pzb24YAyABKAkiKgoMVGlt",
+            "ZVJlc3BvbnNlEhoKEnNlcnZlcl90aW1lX3V0Y19tcxgBIAEoAyIqChBHZXRD",
+            "b25maWdSZXF1ZXN0EhYKDmNvbmZpZ192ZXJzaW9uGAEgASgJIisKCkNvbmZp",
+            "Z0ZpbGUSDAoEbmFtZRgBIAEoCRIPCgdjb250ZW50GAIgASgMIqsBChFHZXRD",
+            "b25maWdSZXNwb25zZRIWCg5jb25maWdfdmVyc2lvbhgBIAEoCRIUCgxub3Rf",
+            "bW9kaWZpZWQYAiABKAgSLQoFZmlsZXMYAyADKAsyHi5nYW1lc2VydmVyLmNv",
+            "cmUudjEuQ29uZmlnRmlsZRIaChJzZXJ2ZXJfdGltZV91dGNfbXMYBCABKAMS",
+            "HQoVY2xpZW50X2NvbmZpZ192ZXJzaW9uGAUgASgJQh6qAhtHYW1lU2VydmVy",
+            "LlByb3RvY29sLkNvcmUuVjFiBnByb3RvMw=="));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
           new pbr::FileDescriptor[] { },
           new pbr::GeneratedClrTypeInfo(null, null, new pbr::GeneratedClrTypeInfo[] {
-            new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.ErrorEnvelope), global::GameServer.Protocol.Core.V1.ErrorEnvelope.Parser, new[]{ "Code", "CodeNumber", "Message", "RequestId", "Retryable", "RetryAfterMs", "ServerTimeUtcMs", "ConfigVersion", "Details" }, null, null, null, new pbr::GeneratedClrTypeInfo[] { null, }),
+            new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.ErrorEnvelope), global::GameServer.Protocol.Core.V1.ErrorEnvelope.Parser, new[]{ "Code", "CodeNumber", "Message", "RequestId", "Retryable", "RetryAfterMs", "ServerTimeUtcMs", "ConfigVersion", "Details", "ClientConfigVersion" }, null, null, null, new pbr::GeneratedClrTypeInfo[] { null, }),
             new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.Section), global::GameServer.Protocol.Core.V1.Section.Parser, new[]{ "Id", "Rev", "Payload" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.SectionUpdate), global::GameServer.Protocol.Core.V1.SectionUpdate.Parser, new[]{ "Id", "BaseRev", "NewRev", "Payload", "Full" }, null, null, null, null),
-            new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.CommandResponse), global::GameServer.Protocol.Core.V1.CommandResponse.Parser, new[]{ "Code", "CodeNumber", "ReceiptId", "Updates", "Result", "ConfigVersion", "ServerTimeUtcMs", "Replayed" }, null, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.CommandResponse), global::GameServer.Protocol.Core.V1.CommandResponse.Parser, new[]{ "Code", "CodeNumber", "ReceiptId", "Updates", "Result", "ConfigVersion", "ServerTimeUtcMs", "Replayed", "ClientConfigVersion" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.SnapshotRequest), global::GameServer.Protocol.Core.V1.SnapshotRequest.Parser, new[]{ "Sections" }, null, null, null, null),
-            new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.SnapshotResponse), global::GameServer.Protocol.Core.V1.SnapshotResponse.Parser, new[]{ "Sections", "ConfigVersion", "ServerTimeUtcMs" }, null, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.SnapshotResponse), global::GameServer.Protocol.Core.V1.SnapshotResponse.Parser, new[]{ "Sections", "ConfigVersion", "ServerTimeUtcMs", "ClientConfigVersion" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.ReceiptView), global::GameServer.Protocol.Core.V1.ReceiptView.Parser, new[]{ "ReceiptId", "Operation", "RequestId", "ResultCode", "Result", "Aggregates", "ConfigVersion", "CommittedAtUtcMs", "Outbox", "ServerTimeUtcMs" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.AggregateRev), global::GameServer.Protocol.Core.V1.AggregateRev.Parser, new[]{ "AggregateId", "NewRev" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.OutboxEntryView), global::GameServer.Protocol.Core.V1.OutboxEntryView.Parser, new[]{ "EntryId", "Kind", "PayloadJson" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.TimeResponse), global::GameServer.Protocol.Core.V1.TimeResponse.Parser, new[]{ "ServerTimeUtcMs" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.GetConfigRequest), global::GameServer.Protocol.Core.V1.GetConfigRequest.Parser, new[]{ "ConfigVersion" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.ConfigFile), global::GameServer.Protocol.Core.V1.ConfigFile.Parser, new[]{ "Name", "Content" }, null, null, null, null),
-            new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.GetConfigResponse), global::GameServer.Protocol.Core.V1.GetConfigResponse.Parser, new[]{ "ConfigVersion", "NotModified", "Files", "ServerTimeUtcMs" }, null, null, null, null)
+            new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.GetConfigResponse), global::GameServer.Protocol.Core.V1.GetConfigResponse.Parser, new[]{ "ConfigVersion", "NotModified", "Files", "ServerTimeUtcMs", "ClientConfigVersion" }, null, null, null, null)
           }));
     }
     #endregion
@@ -129,6 +132,7 @@ namespace GameServer.Protocol.Core.V1 {
       serverTimeUtcMs_ = other.serverTimeUtcMs_;
       configVersion_ = other.configVersion_;
       details_ = other.details_.Clone();
+      clientConfigVersion_ = other.clientConfigVersion_;
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -263,6 +267,21 @@ namespace GameServer.Protocol.Core.V1 {
       get { return details_; }
     }
 
+    /// <summary>Field number for the "client_config_version" field.</summary>
+    public const int ClientConfigVersionFieldNumber = 10;
+    private string clientConfigVersion_ = "";
+    /// <summary>
+    /// client config version (015); config_version (8) stays the server version
+    /// </summary>
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public string ClientConfigVersion {
+      get { return clientConfigVersion_; }
+      set {
+        clientConfigVersion_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
+    }
+
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
@@ -287,6 +306,7 @@ namespace GameServer.Protocol.Core.V1 {
       if (ServerTimeUtcMs != other.ServerTimeUtcMs) return false;
       if (ConfigVersion != other.ConfigVersion) return false;
       if (!Details.Equals(other.Details)) return false;
+      if (ClientConfigVersion != other.ClientConfigVersion) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -303,6 +323,7 @@ namespace GameServer.Protocol.Core.V1 {
       if (ServerTimeUtcMs != 0L) hash ^= ServerTimeUtcMs.GetHashCode();
       if (ConfigVersion.Length != 0) hash ^= ConfigVersion.GetHashCode();
       hash ^= Details.GetHashCode();
+      if (ClientConfigVersion.Length != 0) hash ^= ClientConfigVersion.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -354,6 +375,10 @@ namespace GameServer.Protocol.Core.V1 {
         output.WriteString(ConfigVersion);
       }
       details_.WriteTo(output, _map_details_codec);
+      if (ClientConfigVersion.Length != 0) {
+        output.WriteRawTag(82);
+        output.WriteString(ClientConfigVersion);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -397,6 +422,10 @@ namespace GameServer.Protocol.Core.V1 {
         output.WriteString(ConfigVersion);
       }
       details_.WriteTo(ref output, _map_details_codec);
+      if (ClientConfigVersion.Length != 0) {
+        output.WriteRawTag(82);
+        output.WriteString(ClientConfigVersion);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -432,6 +461,9 @@ namespace GameServer.Protocol.Core.V1 {
         size += 1 + pb::CodedOutputStream.ComputeStringSize(ConfigVersion);
       }
       size += details_.CalculateSize(_map_details_codec);
+      if (ClientConfigVersion.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeStringSize(ClientConfigVersion);
+      }
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
       }
@@ -469,6 +501,9 @@ namespace GameServer.Protocol.Core.V1 {
         ConfigVersion = other.ConfigVersion;
       }
       details_.MergeFrom(other.details_);
+      if (other.ClientConfigVersion.Length != 0) {
+        ClientConfigVersion = other.ClientConfigVersion;
+      }
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
 
@@ -524,6 +559,10 @@ namespace GameServer.Protocol.Core.V1 {
             details_.AddEntriesFrom(input, _map_details_codec);
             break;
           }
+          case 82: {
+            ClientConfigVersion = input.ReadString();
+            break;
+          }
         }
       }
     #endif
@@ -577,6 +616,10 @@ namespace GameServer.Protocol.Core.V1 {
           }
           case 74: {
             details_.AddEntriesFrom(ref input, _map_details_codec);
+            break;
+          }
+          case 82: {
+            ClientConfigVersion = input.ReadString();
             break;
           }
         }
@@ -1262,6 +1305,7 @@ namespace GameServer.Protocol.Core.V1 {
       configVersion_ = other.configVersion_;
       serverTimeUtcMs_ = other.serverTimeUtcMs_;
       replayed_ = other.replayed_;
+      clientConfigVersion_ = other.clientConfigVersion_;
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -1381,6 +1425,21 @@ namespace GameServer.Protocol.Core.V1 {
       }
     }
 
+    /// <summary>Field number for the "client_config_version" field.</summary>
+    public const int ClientConfigVersionFieldNumber = 9;
+    private string clientConfigVersion_ = "";
+    /// <summary>
+    /// client config version (015); config_version (6) stays the server version
+    /// </summary>
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public string ClientConfigVersion {
+      get { return clientConfigVersion_; }
+      set {
+        clientConfigVersion_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
+    }
+
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
@@ -1404,6 +1463,7 @@ namespace GameServer.Protocol.Core.V1 {
       if (ConfigVersion != other.ConfigVersion) return false;
       if (ServerTimeUtcMs != other.ServerTimeUtcMs) return false;
       if (Replayed != other.Replayed) return false;
+      if (ClientConfigVersion != other.ClientConfigVersion) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -1419,6 +1479,7 @@ namespace GameServer.Protocol.Core.V1 {
       if (ConfigVersion.Length != 0) hash ^= ConfigVersion.GetHashCode();
       if (ServerTimeUtcMs != 0L) hash ^= ServerTimeUtcMs.GetHashCode();
       if (Replayed != false) hash ^= Replayed.GetHashCode();
+      if (ClientConfigVersion.Length != 0) hash ^= ClientConfigVersion.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -1466,6 +1527,10 @@ namespace GameServer.Protocol.Core.V1 {
         output.WriteRawTag(64);
         output.WriteBool(Replayed);
       }
+      if (ClientConfigVersion.Length != 0) {
+        output.WriteRawTag(74);
+        output.WriteString(ClientConfigVersion);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -1505,6 +1570,10 @@ namespace GameServer.Protocol.Core.V1 {
         output.WriteRawTag(64);
         output.WriteBool(Replayed);
       }
+      if (ClientConfigVersion.Length != 0) {
+        output.WriteRawTag(74);
+        output.WriteString(ClientConfigVersion);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -1536,6 +1605,9 @@ namespace GameServer.Protocol.Core.V1 {
       }
       if (Replayed != false) {
         size += 1 + 1;
+      }
+      if (ClientConfigVersion.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeStringSize(ClientConfigVersion);
       }
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
@@ -1570,6 +1642,9 @@ namespace GameServer.Protocol.Core.V1 {
       }
       if (other.Replayed != false) {
         Replayed = other.Replayed;
+      }
+      if (other.ClientConfigVersion.Length != 0) {
+        ClientConfigVersion = other.ClientConfigVersion;
       }
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
@@ -1622,6 +1697,10 @@ namespace GameServer.Protocol.Core.V1 {
             Replayed = input.ReadBool();
             break;
           }
+          case 74: {
+            ClientConfigVersion = input.ReadString();
+            break;
+          }
         }
       }
     #endif
@@ -1671,6 +1750,10 @@ namespace GameServer.Protocol.Core.V1 {
           }
           case 64: {
             Replayed = input.ReadBool();
+            break;
+          }
+          case 74: {
+            ClientConfigVersion = input.ReadString();
             break;
           }
         }
@@ -1908,6 +1991,7 @@ namespace GameServer.Protocol.Core.V1 {
       sections_ = other.sections_.Clone();
       configVersion_ = other.configVersion_;
       serverTimeUtcMs_ = other.serverTimeUtcMs_;
+      clientConfigVersion_ = other.clientConfigVersion_;
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -1952,6 +2036,21 @@ namespace GameServer.Protocol.Core.V1 {
       }
     }
 
+    /// <summary>Field number for the "client_config_version" field.</summary>
+    public const int ClientConfigVersionFieldNumber = 4;
+    private string clientConfigVersion_ = "";
+    /// <summary>
+    /// client config version (015); config_version (2) stays the server version
+    /// </summary>
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public string ClientConfigVersion {
+      get { return clientConfigVersion_; }
+      set {
+        clientConfigVersion_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
+    }
+
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
@@ -1970,6 +2069,7 @@ namespace GameServer.Protocol.Core.V1 {
       if(!sections_.Equals(other.sections_)) return false;
       if (ConfigVersion != other.ConfigVersion) return false;
       if (ServerTimeUtcMs != other.ServerTimeUtcMs) return false;
+      if (ClientConfigVersion != other.ClientConfigVersion) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -1980,6 +2080,7 @@ namespace GameServer.Protocol.Core.V1 {
       hash ^= sections_.GetHashCode();
       if (ConfigVersion.Length != 0) hash ^= ConfigVersion.GetHashCode();
       if (ServerTimeUtcMs != 0L) hash ^= ServerTimeUtcMs.GetHashCode();
+      if (ClientConfigVersion.Length != 0) hash ^= ClientConfigVersion.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -2007,6 +2108,10 @@ namespace GameServer.Protocol.Core.V1 {
         output.WriteRawTag(24);
         output.WriteInt64(ServerTimeUtcMs);
       }
+      if (ClientConfigVersion.Length != 0) {
+        output.WriteRawTag(34);
+        output.WriteString(ClientConfigVersion);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -2026,6 +2131,10 @@ namespace GameServer.Protocol.Core.V1 {
         output.WriteRawTag(24);
         output.WriteInt64(ServerTimeUtcMs);
       }
+      if (ClientConfigVersion.Length != 0) {
+        output.WriteRawTag(34);
+        output.WriteString(ClientConfigVersion);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -2042,6 +2151,9 @@ namespace GameServer.Protocol.Core.V1 {
       }
       if (ServerTimeUtcMs != 0L) {
         size += 1 + pb::CodedOutputStream.ComputeInt64Size(ServerTimeUtcMs);
+      }
+      if (ClientConfigVersion.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeStringSize(ClientConfigVersion);
       }
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
@@ -2061,6 +2173,9 @@ namespace GameServer.Protocol.Core.V1 {
       }
       if (other.ServerTimeUtcMs != 0L) {
         ServerTimeUtcMs = other.ServerTimeUtcMs;
+      }
+      if (other.ClientConfigVersion.Length != 0) {
+        ClientConfigVersion = other.ClientConfigVersion;
       }
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
@@ -2093,6 +2208,10 @@ namespace GameServer.Protocol.Core.V1 {
             ServerTimeUtcMs = input.ReadInt64();
             break;
           }
+          case 34: {
+            ClientConfigVersion = input.ReadString();
+            break;
+          }
         }
       }
     #endif
@@ -2122,6 +2241,10 @@ namespace GameServer.Protocol.Core.V1 {
           }
           case 24: {
             ServerTimeUtcMs = input.ReadInt64();
+            break;
+          }
+          case 34: {
+            ClientConfigVersion = input.ReadString();
             break;
           }
         }
@@ -3397,7 +3520,7 @@ namespace GameServer.Protocol.Core.V1 {
     public const int ConfigVersionFieldNumber = 1;
     private string configVersion_ = "";
     /// <summary>
-    /// version the client already has; empty = none
+    /// version the client already has (client or server version); empty = none
     /// </summary>
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
@@ -3826,6 +3949,7 @@ namespace GameServer.Protocol.Core.V1 {
       notModified_ = other.notModified_;
       files_ = other.files_.Clone();
       serverTimeUtcMs_ = other.serverTimeUtcMs_;
+      clientConfigVersion_ = other.clientConfigVersion_;
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -3838,6 +3962,9 @@ namespace GameServer.Protocol.Core.V1 {
     /// <summary>Field number for the "config_version" field.</summary>
     public const int ConfigVersionFieldNumber = 1;
     private string configVersion_ = "";
+    /// <summary>
+    /// server config version (unchanged meaning)
+    /// </summary>
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public string ConfigVersion {
@@ -3851,7 +3978,7 @@ namespace GameServer.Protocol.Core.V1 {
     public const int NotModifiedFieldNumber = 2;
     private bool notModified_;
     /// <summary>
-    /// true when the client already has config_version
+    /// true when the request's config_version is the current client or server version
     /// </summary>
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
@@ -3888,6 +4015,21 @@ namespace GameServer.Protocol.Core.V1 {
       }
     }
 
+    /// <summary>Field number for the "client_config_version" field.</summary>
+    public const int ClientConfigVersionFieldNumber = 5;
+    private string clientConfigVersion_ = "";
+    /// <summary>
+    /// the version the files belong to; the SDK caches them under it (015)
+    /// </summary>
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public string ClientConfigVersion {
+      get { return clientConfigVersion_; }
+      set {
+        clientConfigVersion_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
+    }
+
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
@@ -3907,6 +4049,7 @@ namespace GameServer.Protocol.Core.V1 {
       if (NotModified != other.NotModified) return false;
       if(!files_.Equals(other.files_)) return false;
       if (ServerTimeUtcMs != other.ServerTimeUtcMs) return false;
+      if (ClientConfigVersion != other.ClientConfigVersion) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -3918,6 +4061,7 @@ namespace GameServer.Protocol.Core.V1 {
       if (NotModified != false) hash ^= NotModified.GetHashCode();
       hash ^= files_.GetHashCode();
       if (ServerTimeUtcMs != 0L) hash ^= ServerTimeUtcMs.GetHashCode();
+      if (ClientConfigVersion.Length != 0) hash ^= ClientConfigVersion.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -3949,6 +4093,10 @@ namespace GameServer.Protocol.Core.V1 {
         output.WriteRawTag(32);
         output.WriteInt64(ServerTimeUtcMs);
       }
+      if (ClientConfigVersion.Length != 0) {
+        output.WriteRawTag(42);
+        output.WriteString(ClientConfigVersion);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -3972,6 +4120,10 @@ namespace GameServer.Protocol.Core.V1 {
         output.WriteRawTag(32);
         output.WriteInt64(ServerTimeUtcMs);
       }
+      if (ClientConfigVersion.Length != 0) {
+        output.WriteRawTag(42);
+        output.WriteString(ClientConfigVersion);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -3991,6 +4143,9 @@ namespace GameServer.Protocol.Core.V1 {
       size += files_.CalculateSize(_repeated_files_codec);
       if (ServerTimeUtcMs != 0L) {
         size += 1 + pb::CodedOutputStream.ComputeInt64Size(ServerTimeUtcMs);
+      }
+      if (ClientConfigVersion.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeStringSize(ClientConfigVersion);
       }
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
@@ -4013,6 +4168,9 @@ namespace GameServer.Protocol.Core.V1 {
       files_.Add(other.files_);
       if (other.ServerTimeUtcMs != 0L) {
         ServerTimeUtcMs = other.ServerTimeUtcMs;
+      }
+      if (other.ClientConfigVersion.Length != 0) {
+        ClientConfigVersion = other.ClientConfigVersion;
       }
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
@@ -4049,6 +4207,10 @@ namespace GameServer.Protocol.Core.V1 {
             ServerTimeUtcMs = input.ReadInt64();
             break;
           }
+          case 42: {
+            ClientConfigVersion = input.ReadString();
+            break;
+          }
         }
       }
     #endif
@@ -4082,6 +4244,10 @@ namespace GameServer.Protocol.Core.V1 {
           }
           case 32: {
             ServerTimeUtcMs = input.ReadInt64();
+            break;
+          }
+          case 42: {
+            ClientConfigVersion = input.ReadString();
             break;
           }
         }

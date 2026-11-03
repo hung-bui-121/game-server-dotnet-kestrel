@@ -203,6 +203,8 @@ public sealed class ConfigCatalogHostTests
 
         public string ConfigVersion => inner.ConfigVersion;
 
+        public string ClientConfigVersion => inner.ClientConfigVersion;
+
         public string Label => inner.Label;
 
         public IReadOnlyCollection<string> FileNames => inner.FileNames;

@@ -44,12 +44,17 @@ public sealed class TelemetryTests
         foreach (var expected in new[]
                  {
                      "txn_attempts_total", "txn_duration_seconds", "receipt_size_bytes", "aggregate_size_bytes",
-                     "command_results_total", "http_errors_total", "config_version_info", "login_total",
+                     "command_results_total", "http_errors_total", "config_version_info", "client_config_version_info", "login_total",
                      "http.server.request.duration", "log_sink_errors_total", "log_dropped_total",
                  })
         {
             names.ShouldContain(expected);
         }
+
+        // FR-044 (slice 015 T037): config_version_info keeps the server version; the client version has its own gauge.
+        var config = observed.Host.Services.GetRequiredService<GameServer.Config.IGameConfig>();
+        Tag(observed.Metrics.Last(m => m.Name == "config_version_info").MetricPoints.Single(), "version").ShouldBe(config.ConfigVersion);
+        Tag(observed.Metrics.Last(m => m.Name == "client_config_version_info").MetricPoints.Single(), "version").ShouldBe(config.ClientConfigVersion);
 
         var results = observed.Metrics.Last(m => m.Name == "command_results_total");
         results.MetricPoints.ShouldContain(p => Tag(p, "operation") == "cheat.grant" && Tag(p, "code") == "OK");

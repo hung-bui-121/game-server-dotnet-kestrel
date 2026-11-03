@@ -462,7 +462,7 @@ provision mode never loads config.
 Independent test: T032 (the four-check scenario of SC-003), T031 (provision `NotLoaded`).
 Depends on: US1 (T021: the phase publishes the status; same file `GameServerApplicationExtensions.cs`).
 
-- [ ] T029 [US2] Checks created one by one (after T004, T012, T021; research R9, contracts/startup-report.md §7): new
+- [x] T029 [US2] Checks created one by one (after T004, T012, T021; research R9, contracts/startup-report.md §7): new
   internal `src/GameServer.Platform.Web/Hosting/StartupCheckRegistrations.cs` (captures the `IServiceCollection` in
   `AddGameServer`); `CheckAll(IServiceProvider, StartupCheckMode)` in `GameServerApplicationExtensions.cs` (internal enum
   `Serve` | `Provision`) enumerates the non-keyed `IStartupCheck` descriptors in registration order and creates each in
@@ -477,7 +477,9 @@ Depends on: US1 (T021: the phase publishes the status; same file `GameServerAppl
   each marker kind gives exactly one line of the right kind; each check is created once per `CheckAll`.
   `GameServerCommandLineTests.A_throwing_startup_check_joins_the_report_in_serve_and_provision_mode` green unchanged.
   Done when: green. (FR-030, FR-031, SC-003 "every creation-failure kind gives exactly one line", US2-2, BC-10)
-- [ ] T030 [US2] Config status (after T021, T029): new public `src/GameServer.Platform/GameConfigStatus.cs`
+  Note: `StartupCheckRegistrations` (captured in `AddGameServer`, non-keyed `IStartupCheck` descriptors in registration order; creation instance / `ActivatorUtilities.CreateInstance` / factory, a `TargetInvocationException` is unwrapped; name = instance or implementation type, factory = first declaring type that is neither `[CompilerGenerated]` nor `<…`-named, fallback `factory #{index} (IStartupCheck)`). `CheckAll(services, StartupCheckMode)`: creation and `Check` each in their own `try`; a marked exception gives the not-run / not-run-c line through `ConfigReportLines`, an unmarked `GameServerStartupException` from `Check` its violations, else the created / failed line. Checks are not disposed.
+  Note: **Decision beyond the table:** in `Provision` mode every marked exception is the provision **warning** (not only the `provision` marker), so provision never fails because of config (D4). `StartupCheckIsolationTests`: 15 tests (type, missing dependency, static and capturing lambda, method group, static extension lambda, instance, unmarked violations, each marker at creation and in `Check`, provision mode, created once per run, keyed checks ignored). `A_throwing_startup_check_joins_the_report_in_serve_and_provision_mode` green unchanged.
+- [x] T030 [US2] Config status (after T021, T029): new public `src/GameServer.Platform/GameConfigStatus.cs`
   (`GameConfigStatus`, `GameConfigState`, `TryGetConfig`; internal `Publish` of an immutable snapshot through a volatile
   reference; contracts/public-api.md §2) registered as one instance in `AddGameServer`; `ConfigStartup` step 5 publishes
   `Loaded(config, declarationsPassed)` (no required-file, rule or catalog error line in this start; warnings do not
@@ -485,7 +487,8 @@ Depends on: US1 (T021: the phase publishes the status; same file `GameServerAppl
   Tests in a new file `tests/GameServer.Platform.Tests/GameConfigStatusTests.cs`: `NotLoaded` before publication, no
   member throws in any state, `TryGetConfig` per state, a second `Publish` is refused (`InvalidOperationException`).
   Done when: green; the host-level assertions are in T032. (FR-032, US2-3)
-- [ ] T031 [US2] Provision mode never loads config (after T029, T030; research R8, BC-9):
+  Note: public `GameConfigStatus` / `GameConfigState` in `src/GameServer.Platform/GameConfigStatus.cs` (internal constructor, internal `PublishLoaded(config, declarationsPassed)` / `PublishFailed()`, one volatile immutable snapshot, second publication → `InvalidOperationException`), registered as one instance in `AddGameServer`. `ConfigStartup` step 5: `Failed` when `IGameConfig` threw, else `Loaded` with `DeclarationsPassed` = no required-file line and no rule/catalog line; to know the required-file lines the phase now calls `registry.Validate(options, config: null)` then `registry.ValidateConfig(config)` (same order and texts as before). `GameConfigStatusTests`: 5 tests.
+- [x] T031 [US2] Provision mode never loads config (after T029, T030; research R8, BC-9):
   `src/GameServer.Platform.Web/Hosting/ProvisioningRunner.cs` sets `GameConfigLoad.Mode = NotLoaded` before anything
   else and calls `CheckAll(services, Provision)`; provision warnings stay `warning: …` lines on stderr.
   Tests in `tests/GameServer.Platform.Web.Tests/GameServerCommandLineTests.cs` (provision part, `RunProvisionAsync`
@@ -494,7 +497,8 @@ Depends on: US1 (T021: the phase publishes the status; same file `GameServerAppl
   gives no loader line in provision; with a `config:` instance (TestHost override) the check runs (R8 bypass, recorded
   for PCR §17).
   Done when: green. (FR-014, FR-032, US2-3, BC-9)
-- [ ] T032 [US2] FG-023 host scenarios (after T014, T029–T031): new file
+  Note: `ProvisioningRunner` first sets `GameConfigLoad.Mode = NotLoaded` and **also** `ConfigCatalogStore.NotLoaded()` (gap filled: without it a check taking a declared catalog got the R7 `InvalidOperationException`, a creation error that failed provisioning; now `Get` throws marked `provision`). Then `CheckAll(services, Provision)`. 3 tests in `GameServerCommandLineTests` (check taking `IGameConfig` → exactly the warning line on stderr, exit 0, provisioner called; status check sees `NotLoaded` with a missing config folder and stderr empty; `config:` instance of the test host bypasses the loader and the check runs = R8 bypass for PCR §17) + 1 in `StartupCheckHostTests` (check taking a declared catalog → provision warning, exit 0).
+- [x] T032 [US2] FG-023 host scenarios (after T014, T029–T031): new file
   `tests/GameServer.Platform.Web.Tests/StartupCheckHostTests.cs` on `SampleTestHost` with `SeededConfig`:
   - SC-003: `Without("battle.json")` + `GameServer:Gate:CacheSeconds=99` + `NeedsConfigCheck(IGameConfig)`,
     `ThrowingCheck` (constructor throws `InvalidOperationException("boom")`), `StatusCheck(GameConfigStatus)` (adds
@@ -507,12 +511,14 @@ Depends on: US1 (T021: the phase publishes the status; same file `GameServerAppl
     missing file → exactly the loader line and `[gate]` (the zh-pvp `GameConfigStartupTests` 2-line shape);
   - order probe: a check observes that the catalogs are built and the status is published when it runs.
   Done when: green; lines asserted literally. (FR-030..FR-033, SC-003, US2-1, US2-2, US2-3, US2-4)
-- [ ] T033 [US2] Docs in code, release notes, checkpoint (after T032): `src/GameServer.Platform/StartupChecks.cs` XML doc
+  Note: `StartupCheckHostTests` (8 tests, lines literal): SC-003 six lines in the §7 order; valid config → `Loaded`, same `IGameConfig` instance, `DeclarationsPassed` true; seeded rule error → `Loaded` + false; a warning keeps it true; check taking a failed declared catalog → rule line + not-run-c; zh-pvp shape (resolve + catch inside `Check`) → loader line + `[gate]` only; order probe sees the catalog instance and `Loaded`; provision + catalog → warning.
+- [x] T033 [US2] Docs in code, release notes, checkpoint (after T032): `src/GameServer.Platform/StartupChecks.cs` XML doc
   of `IStartupCheck` per contracts/public-api.md §2 (created and run in its own isolation, must not throw, not
   disposable, reads config through `GameConfigStatus`; a check taking `IGameConfig` is safe but reported as not run
   when config fails); XML docs of `GameConfigStatus`. Release notes: FG-023 section, BC-9 and BC-10 rows, the zh-pvp
   FG-023 row (`GameConfigStartupTests…keeps_the_report_complete…` keeps passing with 2 lines). Full suite.
   Done when: green; counts recorded. (FR-034 code part, FR-090, US2-5 code part)
+  Note: XML doc of `IStartupCheck` (created and run in its own isolation, once per start, never disposed, must not throw, reads config through `GameConfigStatus`; a check taking `IGameConfig` or a catalog is safe but reported as not run, and skipped with a warning in provision) and of `GameConfigStatus`/`GameConfigState`. Release notes: FG-023 section, BC-9/BC-10 rows with the real lines, zh-pvp FG-023 row. Checkpoint (run after T029–T034 while the proto was being edited): 2106 total, the only failure = WireGen `verify` reading the proto under edit (green after T038).
 
 **Checkpoint**: the four-check scenario gives exactly its lines; provision mode is config-free with warnings; the status
 is published once and never throws.
@@ -524,7 +530,7 @@ accepts either version; the SDK keys its cache on the client version.
 Independent test: T034 (version matrix), T036 (carriage), T039 (SDK).
 Depends on: Phase 2 and T016 (same file `FileGameConfigLoader.cs`). Independent of US2.
 
-- [ ] T034 [US3] Two versions (after T016; research R2, data-model §1.3–§1.4, contracts/public-api.md §2): new public
+- [x] T034 [US3] Two versions (after T016; research R2, data-model §1.3–§1.4, contracts/public-api.md §2): new public
   `src/GameServer.Platform/Config/GameConfigVersions.cs` (`GameConfigVersionPair`, `Compute`, domain tags, length
   prefixes, label hashed); in `src/GameServer.Platform/Config/FileGameConfigLoader.cs` the new `GameConfig(label,
   files, clientVisible)` constructor computing both, `ClientConfigVersion`, `[Obsolete]` on the 4-argument constructor
@@ -546,7 +552,9 @@ Depends on: Phase 2 and T016 (same file `FileGameConfigLoader.cs`). Independent 
   Done when: green; a search of `src`, `tests`, `templates` for `ComputeVersion(` and the 4-argument `new GameConfig(`
   finds only the pragma'd obsolete-path tests. (FR-040, FR-041, FR-042, FR-045, FR-047, SC-004, US3-1..US3-4, US3-7,
   BC-5, BC-6)
-- [ ] T035 [US3] Proto fields and server sites (after T034; contracts/wire-changes.md §1–§3):
+  Note: public `GameConfigVersions.Compute` + `GameConfigVersionPair` (`src/GameServer.Platform/Config/GameConfigVersions.cs`, data-model §1.3 byte for byte; a client-visible name that is not a file → `ArgumentException`); `GameConfig(label, files, clientVisible)` computes both; the 4-argument constructor is `[Obsolete]` (keeps the given server version, computes the client version) and so is `ComputeVersion`; `IGameConfig.ClientConfigVersion` (regular member). Loader and `TestGameConfig` use the new constructor. Migrated: `RunnerHarness.cs:49`, `ModuleRegistryTests.cs:19` (static `EmptyConfig`, target-typed `new(...)`, not in the task list) and `:178`, `ConfigDeclarationsTests.cs:129`, `DevProfileMiddlewareTests.cs:212`; `CommandRunnerTests.cs:42` asserts `_h.Config.ConfigVersion`; wrappers `ConfigDeclarationRunnerTests.CountingConfig` and `ConfigCatalogHostTests.CountingConfig` gained the member.
+  Note: `GameConfigVersionsTests` (12 tests: §1.4 matrix with `GameConfig` and the loader on temp folders incl. visibility added through the env overlay and the same bytes overlaid, list order/duplicates, separation, length-prefix ambiguity, known-answer vector from the §1.3 formula, refused visible name, loader = constructor, obsolete path under a local `#pragma warning disable CS0618`). `TestGameConfigTests` also assert the client version (= loader, = host). Search: `ComputeVersion(` and the 4-argument constructor appear only in the loader definition and the pragma'd test. New values (BC-5): SampleHost `sample-1+0a58d1cc006c` → server `sample-1+8a37f29ee2dc`, client `sample-1+9b25b8b6bc0b`; tests/Shared server `test-1+9b2cd1009ff1`, client `test-1+4c5423c2dad9`.
+- [x] T035 [US3] Proto fields and server sites (after T034; contracts/wire-changes.md §1–§3):
   `proto/gameserver/core/v1/core.proto` (`ErrorEnvelope` 10, `CommandResponse` 9, `SnapshotResponse` 4,
   `GetConfigResponse` 5, comments of wire-changes §1) and `src/GameServer.Modules.Identity.Adapters/Protos/identity.proto`
   (`LoginResponse` 7). Server sites: `src/GameServer.Platform.Web/Endpoints/CoreEndpoints.cs` (snapshot `:43`; config
@@ -556,7 +564,9 @@ Depends on: Phase 2 and T016 (same file `FileGameConfigLoader.cs`). Independent 
   version next to `execution.ConfigVersion`); `src/GameServer.Platform.Web/Errors/ErrorResponseWriter.cs:55` (every
   player error, middleware ones included). GM responses, receipts and `ICommandContext` unchanged.
   Done when: Release build 0 warnings; the existing suite green (fields are additive). (FR-043, FR-044, FR-054)
-- [ ] T036 [US3] Carriage tests (after T035): new file `tests/SampleGame.Tests/ConfigVersionCarriageTests.cs` (sample
+  Note: five fields with the wire-changes §1 comments (`GetConfigRequest`/`GetConfigResponse` comments updated). Sites: login (`IdentityModule.LoginResponse`, every login path), snapshot and `GetConfig` (`not_modified` = request equals the client **or** the server version, ordinal), `CommandEndpointFactory.BuildResponse(execution, clientConfigVersion, …)` (OK / rejection / replay; the public `CommandExecution` record is unchanged), `ErrorResponseWriter` (every player error). GM, receipts, `ICommandContext` unchanged.
+  Note: **Root-cause fix outside the task list:** `CommandPipelineTests.Timeout_after_commit_returns_503…` failed after the field change. The 503 body was a `CommandResponse` followed by the `ErrorEnvelope`: the handler wrote its body with the already-cancelled `RequestAborted` token, TestServer buffered it, then the timeout policy appended the envelope. The new field 9 `client_config_version` collides with `ErrorEnvelope.details` (9), so the parse failed where it used to pass by luck. `ProtobufBinding.WriteAsync` now calls `context.RequestAborted.ThrowIfCancellationRequested()` first, so a timed-out request gets the timeout envelope only. The existing test fails without the fix.
+- [x] T036 [US3] Carriage tests (after T035): new file `tests/SampleGame.Tests/ConfigVersionCarriageTests.cs` (sample
   game composition): guest login, snapshot, command OK, business rejection (`INSUFFICIENT_FUNDS`), replay, a player
   error envelope from a handler and one from middleware (no session), `GetConfig` full and `not_modified` → every
   `config_version` = server version and every `client_config_version` = client version; the receipt document and
@@ -565,7 +575,8 @@ Depends on: Phase 2 and T016 (same file `FileGameConfigLoader.cs`). Independent 
   garbage → full bundle. Update only the literal or byte expectations of `tests/GameServer.Platform.Web.Tests/SnapshotTests.cs`,
   `IdentityLoginTests.cs` and `tests/SampleGame.Tests/ConfigAndCheatTests.cs` that the new field changes.
   Done when: green. (FR-043, FR-044, FR-047, SC-004, US3-5, US3-6)
-- [ ] T037 [P] [US3] Metric and readiness (after T035; research R16): `src/GameServer.Platform/Diagnostics/PlatformMetrics.cs`
+  Note: `ConfigVersionCarriageTests` (8 tests): login, snapshot, command OK / replay / `INSUFFICIENT_FUNDS`, error envelope from an endpoint (`receipts/unknown`, 404) and from middleware (no session, 401), `GetConfig` full / by client / by server → both fields right; receipt document and `ReceiptView.config_version` = server; T001 (e) value, `garbage`, `TEST-1+0000` → full bundle (empty is the `full` case). **Deviation (location):** the GM command response check (`configVersion` = server, no `clientConfigVersion`) is `GmAdjustTests.A_gm_command_response_carries_the_server_config_version_only` in `GameServer.Gm.Tests`, where the GM host fixture lives. `SnapshotTests`, `IdentityLoginTests` and `ConfigAndCheatTests` needed no change (no literal or byte expectation touched the new fields).
+- [x] T037 [P] [US3] Metric and readiness (after T035; research R16): `src/GameServer.Platform/Diagnostics/PlatformMetrics.cs`
   `SetClientConfigVersion` and gauge `client_config_version_info{version}` (set by `ConfigStartup` next to
   `SetConfigVersion`); `src/GameServer.Platform.Observability/HealthChecks.cs` readiness data `clientConfigVersion` next
   to `configVersion`.
@@ -573,13 +584,15 @@ Depends on: Phase 2 and T016 (same file `FileGameConfigLoader.cs`). Independent 
   checks its value; readiness data in `tests/GameServer.Observability.Tests/HealthAndShutdownTests.cs` has both keys;
   `config_version_info` keeps its name, label and server value.
   Done when: green. (FR-044, US3-5)
-- [ ] T038 [US3] SDK generated code (after T035; 014 seam): `"$HOME/.dotnet10/dotnet.exe" run --project
+  Note: `PlatformMetrics.SetClientConfigVersion` + gauge `client_config_version_info{version}`, set by `ConfigStartup` next to `SetConfigVersion`; `ConfigHealthCheck` data `clientConfigVersion`. `TelemetryTests` metric list has the gauge and checks both gauge values (server / client); `HealthAndShutdownTests.The_config_check_data_names_the_server_and_the_client_config_version` (GM health detail data).
+- [x] T038 [US3] SDK generated code (after T035; 014 seam): `"$HOME/.dotnet10/dotnet.exe" run --project
   tools/GameServer.WireGen -c Release -- generate --config sdk/GameServer.Client/wiregen.json`, then `verify` with the
   same config, and `verify` for `samples/SampleGame/wiregen.json` and `tests/ConsumerFixture/tools/wiregen.json`.
   Done when: only `sdk/unity/com.gameserver.client/Runtime/Generated/gameserver/core/v1/Core.cs` and
   `Runtime/Generated/Identity.cs` differ from T001 (a) (one property per new field); every `.meta` unchanged; the three
   `verify` runs exit 0; `tests/GameServer.WireGen.Tests/CommittedOutputTests.cs` green. (FR-043 SDK part, FR-065)
-- [ ] T039 [US3] SDK tracks the client version (after T038; research R14, contracts/public-api.md §6):
+  Note: `generate` wrote only `Runtime/Generated/Identity.cs` and `Runtime/Generated/gameserver/core/v1/Core.cs` (2 written, 4 unchanged); `sha256sum -c` against T001 (a): exactly those two differ, every `.meta` unchanged; `verify` exit 0 for `sdk/GameServer.Client/wiregen.json`, `samples/SampleGame/wiregen.json` and `tests/ConsumerFixture/tools/wiregen.json`; `CommittedOutputTests` green in the full suite.
+- [x] T039 [US3] SDK tracks the client version (after T038; research R14, contracts/public-api.md §6):
   `sdk/unity/com.gameserver.client/Runtime/Core/GameServerClient.cs`: `TrackConfig(server, client)` at login, snapshot,
   command and error envelope (effective = client when not empty, else server); `ServerConfigVersion` unchanged; new
   `ClientConfigVersion`; `ConfigOutdated` and `ConfigVersionChanged` follow the effective version (today's dedupe);
@@ -592,12 +605,15 @@ Depends on: Phase 2 and T016 (same file `FileGameConfigLoader.cs`). Independent 
   `not_modified`. `tests/GameServer.Client.Tests/SdkPublicApiTests.cs` green (additive only); `sdk/GameServer.Client`
   builds as C# 9 / netstandard2.1 with 0 warnings.
   Done when: green. (FR-046, FR-065, SC-004, SC-008, US3-1, US3-2, BC-4)
-- [ ] T040 [US3] Release notes and checkpoint (after T036–T039): FG-024 and FG-019 (version) sections; BC-4, BC-5 (with
+  Note: `TrackConfig(server, client)` at login, snapshot, command and error envelope (effective = client when not empty); `ServerConfigVersion` (last non-empty `config_version`), new `ClientConfigVersion`, `ConfigOutdated` and `ConfigVersionChanged` on the effective version (dedupe kept); `RefreshConfigAsync` stores under the effective version of the response. **Addition:** on `not_modified` with a cache held under another version (e.g. the server version, which the server also accepts) the cache is re-keyed once with its own files (`Store(version, Config.Files)`, no download); without it `ConfigOutdated` would stay true for good. XML docs of the members and `IConfigCache`. `SdkHarness.StartAsync(settings)` and `NewClient(config:)` added.
+  Note: `ClientConfigVersionTests` (4 tests: both versions, store under the client version, second refresh `not_modified`, one event; old-server stub (field stripped from login/snapshot/config) → falls back to the server version; cache from host A + host B with only `iap.json` (server-only) edited → no event, not outdated, refresh false; re-key without download). `SdkPublicApiTests` green (additive); the SDK builds as C# 9 / netstandard2.1 with 0 warnings.
+- [x] T040 [US3] Release notes and checkpoint (after T036–T039): FG-024 and FG-019 (version) sections; BC-4, BC-5 (with
   the T001 (e) value and the new one) and BC-6 rows; zh-pvp rows: FG-024 pinned test fails by design (delete or invert),
   FG-019 pinned test does **not** fail by itself (rewrite: client version unchanged, server version changed),
   `tests/ZhPvp.Tests/Support/TestGameConfig.cs` one-line fix `return new GameConfig(label, files, clientVisible);`;
   rolling-deploy note and compatibility table checked against T036/T039. Full suite.
   Done when: green; counts recorded. (FR-090, SC-009)
+  Note: release notes: FG-024 and FG-019 (version) sections, BC-4 / BC-5 (before/after values of both configs) / BC-6 rows, zh-pvp rows (FG-024 pinned test fails by design; FG-019 pinned test does not fail by itself; `TestGameConfig.cs` one-line fix), rolling-deploy note and compatibility table checked against `ConfigVersionCarriageTests` and `ClientConfigVersionTests` (old-server stub; `GetConfig` accepts the server version). Counts: see T045.
 
 **Checkpoint**: both versions identical between host and kit; every player response carries both; old and new SDKs keep
 working against this server.
@@ -609,7 +625,7 @@ a Unity helper roots it under `Application.persistentDataPath`.
 Independent test: T042 (format, faults, corruption), T044 (second client downloads nothing).
 Depends on: US3 (T039: `ClientConfigVersion` is the cache key). Can run in parallel with US5.
 
-- [ ] T041 [US4] SDK seam and `.meta` files (after T039; research R15): new files
+- [x] T041 [US4] SDK seam and `.meta` files (after T039; research R15): new files
   `sdk/unity/com.gameserver.client/Runtime/Core/AssemblyInfo.cs` (`[assembly: InternalsVisibleTo("GameServer.Client.Tests")]`)
   and `Runtime/Core/CacheFileOps.cs` (internal seam: open temp, write, flush, replace, move, read, exists, delete;
   default = real file system), each with a **hand-written** `.meta` (fresh GUID, the importer block of the existing
@@ -618,7 +634,9 @@ Depends on: US3 (T039: `ClientConfigVersion` is the cache key). Can run in paral
   Tests: `tests/GameServer.Architecture.Tests/UnityPackageMetaTests.cs` green (add the new GUIDs where the test records
   them; T001 (b) GUIDs unchanged); the test project reaches the internals through its `extern alias sdk` reference.
   Done when: green; SDK builds as C# 9 / netstandard2.1 with 0 warnings. (FR-065, FR-067 seam, SC-008)
-- [ ] T042 [US4] `PersistentConfigCache` (after T009, T041; contracts/sdk-cache.md §2–§6, data-model §6): new file
+  Note: `Runtime/Core/AssemblyInfo.cs` (`InternalsVisibleTo("GameServer.Client.Tests")`) and `Runtime/Core/CacheFileOps.cs` (internal; virtual create-folder / exists / read / open-temp / write / flush(true) / replace / move / delete; `Real` default) with hand-written `.meta` (importer block of `GameServerClient.cs.meta`, fresh `uuid4` GUIDs). `TestData/unity-package-guids.txt` gains the 5 new GUIDs (015 section); the T001 (b) GUIDs are unchanged; `UnityPackageMetaTests` green.
+  Note: **Deviation (planning note 10):** a fifth new file `Runtime/Core/ConfigCacheFormat.cs` (+ `.meta`) holds the container format v1 (serialize / strict parse), so `PersistentConfigCache` keeps only load/store (one class, one job; together they were ~330 lines). GUIDs: AssemblyInfo `3e6695fab49449a29555de642e16ecf5`, CacheFileOps `bf7415ae02eb4819bcbd4c71c53c1c09`, ConfigCacheFormat `6c6977f541934d66b0d8df4f353e1eb8`, PersistentConfigCache `b40d338fb610404aaa389a71317a5e30`, UnityConfigCache `861c6bc8a2c54ea788e6dd388633d9d8`.
+- [x] T042 [US4] `PersistentConfigCache` (after T009, T041; contracts/sdk-cache.md §2–§6, data-model §6): new file
   `Runtime/Core/PersistentConfigCache.cs` (+ `.meta`): `FileName`, constructor loading per §3 (main file, temp recovery,
   every validation of §2, `LoadProblem`, never throws for I/O or format problems), `Store` per §4 (memory first, temp
   write + `Flush(true)`, replace or move per the T009 decision, `WriteProblem` set or cleared, identical store skipped,
@@ -633,12 +651,15 @@ Depends on: US3 (T039: `ClientConfigVersion` is the cache key). Can run in paral
   path-like names (`../x.json`, `/etc/passwd`, `C:\x`, `a/b.json`) round-trip as data and the folder holds only the two
   known names.
   Done when: green. (FR-060..FR-064, FR-066, FR-067, SC-006, US4-2..US4-6)
-- [ ] T043 [P] [US4] Unity helper (after T042): new file `Runtime/Unity/UnityConfigCache.cs` (+ `.meta`) under
+  Note: `PersistentConfigCache` per sdk-cache §2–§6: load the main file, else a valid temp file (main absent or unusable); `LoadProblem` = reason of the main file (kinds `truncated`, `trailing bytes`, `not a config cache file`, `unknown format version {n}`, `integrity check failed`, `invalid UTF-8`, `duplicate file name`, `invalid content`, `unreadable: {type}`). Store: memory first (own snapshot of the dictionary), temp written in 3 parts + `Flush(true)`, `File.Replace` when main exists else `File.Move` (T009), `WriteProblem` set/cleared, temp deleted best effort; an identical store is skipped only when the main file holds the version (a version recovered from the temp file is written again = promoted). A version or name the format cannot hold (empty, > 256 / > 1024 bytes, lone surrogate) stays in memory with a `WriteProblem`. Lengths are checked against the bytes left (a 2 GiB length allocates nothing). Only `IOException`, `UnauthorizedAccessException`, `NotSupportedException` and `SecurityException` are caught.
+  Note: `PersistentConfigCacheTests` (31 incl. the opt-in perf case): round trip, empty bundle, restart, one version kept, identical store skipped; fault at open-temp / each of the 3 writes / flush / replace (old on disk, new in memory, temp gone) and at the first move (then the next store succeeds); temp cut at every byte with and without a main file; main cut at every byte; one flipped bit at every byte (reserved bytes 6–7 ignored, as specified); wrong magic, format 2, trailing byte, hash, zero length; duplicate names, invalid UTF-8, empty name; huge length; locked file (`unreadable: IOException`); read-only main file; folder with an ACL deny (Unix: mode 0555; helper `tests/GameServer.Client.Tests/ReadOnlyFolder.cs`); path-like names round-trip and the folder holds only `gameserver-config.bin`; the layout equals a hand-built v1 container.
+- [x] T043 [P] [US4] Unity helper (after T042): new file `Runtime/Unity/UnityConfigCache.cs` (+ `.meta`) under
   `#if UNITY_5_3_OR_NEWER`: `Create(environmentName)` → `new PersistentConfigCache(Path.Combine(Application.persistentDataPath,
   "gameserver-config", environmentName))`, refusing a name that is not plain.
   Done when: `sdk/GameServer.Client` builds outside Unity with 0 warnings and no UnityEngine reference in its assembly
   metadata (Note); the Unity compile is checked in T057. (FR-060, US4-7)
-- [ ] T044 [US4] End to end against the sample host (after T039, T042): new file
+  Note: `Runtime/Unity/UnityConfigCache.cs` (+ `.meta`) under `#if UNITY_5_3_OR_NEWER`: `Create(environmentName)` refuses empty, `.`, `..`, path separators and invalid file-name characters. Outside Unity, `GameServer.Client.dll` (Release, netstandard2.1) references only `netstandard` and `Google.Protobuf` and contains no `UnityConfigCache` type (scratch metadata reader). The Unity compile stays in T057.
+- [x] T044 [US4] End to end against the sample host (after T039, T042): new file
   `tests/GameServer.Client.Tests/ConfigCacheEndToEndTests.cs` (counting transport): client A with a
   `PersistentConfigCache` on a temp folder logs in and refreshes (one download); client B on the same folder has
   `Config.Version` and `Files` before any call, logs in → `ConfigOutdated` false, no `ConfigVersionChanged`,
@@ -646,12 +667,15 @@ Depends on: US3 (T039: `ClientConfigVersion` is the cache key). Can run in paral
   shared config, `SeededConfig`) → still 0 downloads; a client-visible edit → one download and the folder holds only the
   new version; an unwritable folder → refresh returns true, the client uses the new files, `WriteProblem` set.
   Done when: green. (FR-061, FR-062, FR-067, SC-006, US4-1, US4-2, US4-5)
-- [ ] T045 [US4] Budgets, API, release notes, checkpoint (after T043, T044): opt-in (`GAMESERVER_PERF=1`) case in
+  Note: `ConfigCacheEndToEndTests` (3 tests, counting the files carried by `GetConfig` responses through `ScriptedTransport`): A downloads once; B on the same folder has version and files before any call, login → not outdated, no event, refresh false, 0 files; a host with only `iap.json` edited → 0 files; a host with `shop.json` edited → one download and the folder holds only `gameserver-config.bin` with the new version; denied folder → refresh true, the client uses the files, `WriteProblem` set, nothing on disk.
+- [x] T045 [US4] Budgets, API, release notes, checkpoint (after T043, T044): opt-in (`GAMESERVER_PERF=1`) case in
   `PersistentConfigCacheTests`: 1 MiB load and save, p95 of each ≤ 50 ms (V11). `SdkPublicApiTests` green and the new
   public members listed in a Note (`ClientConfigVersion`, `PersistentConfigCache` members). Release notes: FG-019
   persistent-cache part, the consumer setup line for `OnlineSession.cs:83`, the two client markers to drop
   (`ServerConfigInjector.cs:39`, `OnlineSession.cs:333`, remark `:329`). Full suite.
   Done when: green; perf numbers recorded. (FR-066, SC-006, SC-008, FR-090)
+  Note: opt-in `PersistentConfigCacheTests.One_mib_loads_and_saves_within_the_budget` (16 × 64 KiB random files, 50 iterations after 5 warm-up) on **drive C:** (`%TEMP%`, where `persistentDataPath` lives on Windows): save p95 11.2 / 15.0 ms, load p95 4.9 / 8.5 ms (two runs), so SC-006 holds on C:. Not re-measured on D:; T009 measured ~70 ms save p95 there, dominated by `Flush(true)`, which is **kept** (durability wins); stated in the release notes.
+  Note: new public SDK members (additive; `SdkPublicApiTests` green; the baseline file is unchanged on purpose, SC-008 compares with `main` before the slice): `GameServerClient.ClientConfigVersion`; `PersistentConfigCache` (`FileName`, `.ctor(string)`, `Folder`, `Version`, `Files`, `LoadProblem`, `WriteProblem`, `Store`); generated `ClientConfigVersion` + `ClientConfigVersionFieldNumber` on `ErrorEnvelope`, `CommandResponse`, `SnapshotResponse`, `GetConfigResponse`, `LoginResponse`; `UnityConfigCache.Create` (Unity only). Release notes: FG-019 persistent-cache part, the consumer setup line for `OnlineSession.cs:83`, the client markers. Checkpoint: Debug and Release 0 warnings; full suite in memory **2154 total / 2057 pass / 97 skip / 0 fail**, `GAMESERVER_TEST_STORE=File` the same (COUCHBASE_PW unset); vs T028: +91 tests, +1 skip (the new opt-in cache perf case).
 
 **Checkpoint**: a second client on the same folder downloads nothing while the client version is unchanged; every
 injected fault and corrupt file gives "old, new or empty" with no exception.

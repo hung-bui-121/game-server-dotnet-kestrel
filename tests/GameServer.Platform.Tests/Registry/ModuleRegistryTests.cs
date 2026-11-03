@@ -16,7 +16,7 @@ public sealed class ModuleRegistryTests
 {
     private static readonly GameServerOptions ValidOptions = new() { GameId = "test", EnvironmentId = "dev" };
 
-    private static readonly GameConfig EmptyConfig = new("t", "t+0", new Dictionary<string, byte[]>(), new HashSet<string>());
+    private static readonly GameConfig EmptyConfig = new("t", new Dictionary<string, byte[]>(), []);
 
     private static ModuleRegistry Registry(params IGameModule[] modules)
     {
@@ -175,7 +175,7 @@ public sealed class ModuleRegistryTests
     public void Required_config_file_must_exist()
     {
         var needsConfig = Module("needs", d => new ModuleDescriptor { Name = d.Name, RequiredConfigFiles = ["shop.json"] });
-        var config = new GameConfig("t", "t+0", new Dictionary<string, byte[]>(), new HashSet<string>());
+        var config = new GameConfig("t", new Dictionary<string, byte[]>(), []);
 
         Registry(TestModules.Identity(), needsConfig).Validate(ValidOptions, config)
             .ShouldContain(e => e.Contains("required config file 'shop.json'") && e.Contains("CFG-01"));

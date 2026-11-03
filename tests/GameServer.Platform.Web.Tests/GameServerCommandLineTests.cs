@@ -1,3 +1,4 @@
+using GameServer.Config;
 using GameServer.Modules.Economy;
 using GameServer.Modules.Gm;
 using GameServer.Modules.Iap;
@@ -5,6 +6,7 @@ using GameServer.Modules.Identity;
 using GameServer.Platform.Observability.Analytics;
 using GameServer.Platform.Persistence;
 using GameServer.Platform.Web.Hosting;
+using GameServer.TestKit;
 using GameServer.Tests.Shared;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
@@ -325,6 +327,61 @@ public sealed class GameServerCommandLineTests
         provisioner.Calls.ShouldBe(0);
     }
 
+    /// <summary>BC-9 (slice 015 T031): provision mode never loads config; a check that needs it is skipped with a warning.</summary>
+    [Fact]
+    public async Task In_provision_mode_a_check_taking_the_config_is_a_warning_and_provisioning_runs()
+    {
+        var provisioner = new FakeProvisioner();
+        var (code, _, error) = await RunProvisionAsync(SampleTestHost.BuildApp(services: s =>
+        {
+            s.AddSingleton<IStartupCheck, NeedsConfigCheck>();
+            s.AddSingleton<IStoreProvisioner>(provisioner);
+        }));
+
+        code.ShouldBe(HostExitCodes.Ok, error);
+        error.ShouldBe(
+            $"warning: [{nameof(NeedsConfigCheck)}] the startup check did not run: provision mode does not load the game config. " +
+            "Fix: take GameConfigStatus and skip when it is NotLoaded (FG-023)." + Environment.NewLine);
+        provisioner.Calls.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task In_provision_mode_the_status_is_not_loaded_and_a_missing_config_folder_gives_no_line()
+    {
+        var provisioner = new FakeProvisioner();
+        var seen = new List<GameConfigState>();
+        var (code, _, error) = await RunProvisionAsync(SampleTestHost.BuildApp(
+            settings: s => s["GameServer:ConfigPath"] = Path.Combine(Path.GetTempPath(), "gs-absent-" + Guid.NewGuid().ToString("N")),
+            services: s =>
+            {
+                s.AddSingleton<IStartupCheck>(sp => new StatusRecordingCheck(sp.GetRequiredService<GameConfigStatus>(), seen));
+                s.AddSingleton<IStoreProvisioner>(provisioner);
+            }));
+
+        code.ShouldBe(HostExitCodes.Ok, error);
+        error.ShouldBeEmpty();
+        seen.ShouldBe([GameConfigState.NotLoaded]);
+        provisioner.Calls.ShouldBe(1);
+    }
+
+    /// <summary>Research R8 bypass (PCR §17): a config instance given to the test host is not the loader, so the check runs.</summary>
+    [Fact]
+    public async Task In_provision_mode_a_config_instance_of_the_test_host_bypasses_the_loader()
+    {
+        var provisioner = new FakeProvisioner();
+        var (code, _, error) = await RunProvisionAsync(SampleTestHost.BuildApp(
+            config: TestGameConfig.Empty,
+            services: s =>
+            {
+                s.AddSingleton<IStartupCheck, NeedsConfigCheck>();
+                s.AddSingleton<IStoreProvisioner>(provisioner);
+            }));
+
+        code.ShouldBe(HostExitCodes.Ok, error);
+        error.ShouldBeEmpty();
+        provisioner.Calls.ShouldBe(1);
+    }
+
     [Fact]
     public void A_value_the_binder_cannot_convert_is_a_startup_error_naming_the_key()
     {
@@ -431,6 +488,16 @@ public sealed class GameServerCommandLineTests
     private sealed class RefusingCheck(string violation) : IStartupCheck
     {
         public void Check(StartupCheckResult result) => throw new GameServerStartupException(violation);
+    }
+
+    private sealed class NeedsConfigCheck(IGameConfig config) : IStartupCheck
+    {
+        public void Check(StartupCheckResult result) => _ = config.ConfigVersion;
+    }
+
+    private sealed class StatusRecordingCheck(GameConfigStatus status, List<GameConfigState> seen) : IStartupCheck
+    {
+        public void Check(StartupCheckResult result) => seen.Add(status.State);
     }
 
     private sealed class FakeProvisioner(params ProvisioningItem[] items) : IStoreProvisioner

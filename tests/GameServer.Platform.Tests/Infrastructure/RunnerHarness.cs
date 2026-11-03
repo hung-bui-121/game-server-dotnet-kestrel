@@ -46,7 +46,7 @@ public sealed class RunnerHarness : IDisposable
         Store = new InMemoryDocumentStore(Clock);
         Store.UseCollections(Registry.RequiredCollections());
         TransactionalStore = externalStore ?? Store;
-        Config = new GameConfig("test", "test+000000000000", new Dictionary<string, byte[]>(), new HashSet<string>());
+        Config = new GameConfig("test", new Dictionary<string, byte[]>(), []);
         Metrics = new PlatformMetrics();
         Serializer = new AggregateDocumentSerializer(Options, Metrics);
         Relay = new OutboxRelay([], Registry, TransactionalStore, Clock, Options, Metrics, NullLogger<OutboxRelay>.Instance);

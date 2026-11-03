@@ -100,14 +100,16 @@ public sealed class SdkHarness : IAsyncDisposable
 
     public SwitchableGate Gate { get; }
 
-    public static async Task<SdkHarness> StartAsync()
+    /// <param name="settings">Host settings, e.g. a <c>SeededConfig</c> path (the shared test config by default).</param>
+    public static async Task<SdkHarness> StartAsync(Action<Dictionary<string, string?>>? settings = null)
     {
         var gate = new SwitchableGate();
-        var host = await SampleTestHost.StartAsync(GameHttp.FullGame, services: s => s.AddSingleton<IGateEvaluator>(gate));
+        var host = await SampleTestHost.StartAsync(GameHttp.FullGame, settings, services: s => s.AddSingleton<IGateEvaluator>(gate));
         return new SdkHarness(host, gate);
     }
 
-    public (GameServerClient Client, ScriptedTransport Transport, RecordingDelay Delay) NewClient(ISessionStore? session = null, IClientClock? clock = null)
+    public (GameServerClient Client, ScriptedTransport Transport, RecordingDelay Delay) NewClient(
+        ISessionStore? session = null, IClientClock? clock = null, IConfigCache? config = null)
     {
         var http = Host.Client();
         var transport = new ScriptedTransport(new HttpClientTransport(http));
@@ -118,6 +120,7 @@ public sealed class SdkHarness : IAsyncDisposable
             clock: clock,
             delay: delay,
             session: session,
+            config: config,
             random: new Random(7));
         return (client, transport, delay);
     }

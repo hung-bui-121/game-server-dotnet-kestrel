@@ -53,6 +53,7 @@ public sealed class ErrorResponseWriter(IClock clock, IGameConfig config, Platfo
                 RetryAfterMs = retryAfter,
                 ServerTimeUtcMs = clock.UtcNow.ToUnixTimeMilliseconds(),
                 ConfigVersion = config.ConfigVersion,
+                ClientConfigVersion = config.ClientConfigVersion,
             };
             foreach (var (key, value) in details ?? new Dictionary<string, string>())
             {
