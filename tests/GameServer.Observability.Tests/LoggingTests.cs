@@ -4,6 +4,7 @@ using GameServer.Modules.Economy;
 using GameServer.Modules.Gm;
 using GameServer.Platform.Observability;
 using GameServer.Tests.Shared;
+using Google.Protobuf;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Shouldly;
@@ -79,9 +80,80 @@ public sealed class LoggingTests
 
         var logs = ObservedHost.ReadAllLogs(directory);
         logs.Length.ShouldBeGreaterThan(0);
+
+        // The scan covers the request events of these flows too (slice 013 T045, FR-082).
+        logs.Split('\n').Count(l => l.Contains("\"SourceContext\":\"GameServer.Requests\"", StringComparison.Ordinal)).ShouldBeGreaterThanOrEqualTo(6);
         foreach (var forbidden in new[] { sessionToken, secret, gmCookie!, ObservedHost.StaffPassword, ObservedHost.Pepper })
         {
             logs.ShouldNotContain(forbidden);
+        }
+    }
+
+    [Fact]
+    public async Task The_request_event_is_in_the_file_with_its_template_fields_event_id_and_enrichment()
+    {
+        using var logFolder = new TempLogDirectory();
+        var requestId = Guid.NewGuid().ToString("D");
+        await using (var observed = await ObservedHost.StartAsync(logFolder.Path))
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/counter/increment")
+            {
+                Content = new ByteArrayContent(new Sample.Counter.Protocol.V1.IncrementRequest { By = 1 }.ToByteArray()),
+            };
+            request.Content.Headers.ContentType = new("application/x-protobuf");
+            request.Headers.Add("X-Request-Id", requestId);
+            request.Headers.Add("X-Test-Player", "p_file");
+            (await observed.Host.Client().SendAsync(request)).EnsureSuccessStatusCode();
+        }
+
+        var entry = ObservedHost.ReadAllLogs(logFolder.Path).Split('\n')
+            .Where(l => l.Contains("\"SourceContext\":\"GameServer.Requests\"", StringComparison.Ordinal))
+            .Select(l => JsonNode.Parse(l)!.AsObject())
+            .Where(e => e["RequestId"]?.GetValue<string>() == requestId)
+            .ShouldHaveSingleItem();
+
+        entry["@mt"]!.GetValue<string>().ShouldBe("{HttpMethod} {Route} -> {Status} {ResultCode} in {DurationMs} ms");
+        entry["EventId"]!["Id"]!.GetValue<int>().ShouldBe(1);
+        entry["EventId"]!["Name"]!.GetValue<string>().ShouldBe("Request");
+        entry["HttpMethod"]!.GetValue<string>().ShouldBe("POST");
+        entry["Route"]!.GetValue<string>().ShouldBe("/api/v1/counter/increment");
+        entry["Profile"]!.GetValue<string>().ShouldBe("Player");
+        entry["Operation"]!.GetValue<string>().ShouldBe("counter.increment");
+        entry["ActorType"]!.GetValue<string>().ShouldBe("player");
+        entry["ActorId"]!.GetValue<string>().ShouldBe("p_file");
+        entry["TraceId"]!.GetValue<string>().ShouldBe(entry["@tr"]!.GetValue<string>());
+        entry["Status"]!.GetValue<int>().ShouldBe(200);
+        entry["ResultCode"]!.GetValue<string>().ShouldBe("OK");
+        entry["Replayed"]!.GetValue<bool>().ShouldBeFalse();
+        entry["NotModified"]!.GetValue<bool>().ShouldBeFalse();
+        entry["Aborted"]!.GetValue<bool>().ShouldBeFalse();
+        entry["DurationMs"]!.GetValue<double>().ShouldBeGreaterThanOrEqualTo(0);
+        entry["InstanceId"]!.GetValue<string>().ShouldBe("it-1");
+        entry["GameId"]!.GetValue<string>().ShouldBe("test");
+        entry["EnvironmentId"]!.GetValue<string>().ShouldBe("test");
+        entry.ContainsKey("@l").ShouldBeFalse();   // Information: the compact format omits the level
+    }
+
+    [Fact]
+    public async Task A_null_field_is_written_as_null_and_the_level_follows_the_status()
+    {
+        using var logFolder = new TempLogDirectory();
+        await using (var observed = await ObservedHost.StartAsync(logFolder.Path))
+        {
+            (await observed.Host.Client().GetAsync("/api/v1/nope")).StatusCode.ShouldBe(System.Net.HttpStatusCode.NotFound);
+        }
+
+        var entry = ObservedHost.ReadAllLogs(logFolder.Path).Split('\n')
+            .Where(l => l.Contains("\"SourceContext\":\"GameServer.Requests\"", StringComparison.Ordinal))
+            .Select(l => JsonNode.Parse(l)!.AsObject())
+            .ShouldHaveSingleItem();
+
+        entry["@l"]!.GetValue<string>().ShouldBe("Warning");
+        entry["ResultCode"]!.GetValue<string>().ShouldBe("NOT_FOUND");
+        foreach (var name in new[] { "Profile", "Operation", "ActorType", "ActorId" })
+        {
+            entry.ContainsKey(name).ShouldBeTrue(name);
+            entry[name].ShouldBeNull(name);
         }
     }
 

@@ -64,6 +64,25 @@ public sealed class LoggingSettings
 
     /// <summary>Readiness is Degraded for this long after a sink error.</summary>
     public int SinkErrorWindowSeconds { get; set; } = 300;
+
+    /// <summary>Optional human-readable console output in addition to the files (FR-087, FR-088).</summary>
+    public ConsoleLoggingSettings Console { get; set; } = new();
+}
+
+/// <summary>
+/// Section <c>Observability:Logging:Console</c> (FR-087): one line per event at or above <see cref="MinimumLevel"/>, through its own
+/// bounded queue that drops (counted in <c>log_dropped_total</c>) instead of blocking requests when stdout stalls. Off by default;
+/// the sample host's Local and Dev flavor files turn it on; outside Development/Test it is allowed and logged at startup.
+/// </summary>
+public sealed class ConsoleLoggingSettings
+{
+    public bool Enabled { get; set; }
+
+    /// <summary>Serilog level name, same rule as <see cref="LoggingSettings.MinimumLevel"/>.</summary>
+    public string MinimumLevel { get; set; } = "Information";
+
+    /// <summary>Queue length of the console sink; a full queue drops the event.</summary>
+    public int BufferSize { get; set; } = 1000;
 }
 
 public sealed class OtlpSettings

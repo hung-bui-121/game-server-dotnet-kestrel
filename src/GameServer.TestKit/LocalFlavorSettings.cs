@@ -15,9 +15,10 @@ public static class LocalFlavorSettings
     private const string AnalyticsDirectory = "GameServer:Analytics:Directory";
     private const string InstanceId = "Observability:InstanceId";
     private const string LogDirectory = "Observability:Logging:Directory";
+    private const string ConsoleEnabled = "Observability:Logging:Console:Enabled";
 
     public static IReadOnlyList<string> Keys { get; } =
-        [FileStoreFolder, OutboxSweeper, JobsEnabled, DrainDelay, AnalyticsDirectory, InstanceId, LogDirectory];
+        [FileStoreFolder, OutboxSweeper, JobsEnabled, DrainDelay, AnalyticsDirectory, InstanceId, LogDirectory, ConsoleEnabled];
 
     public static IReadOnlyDictionary<string, string?> For(string root, string instanceId, bool outboxSweeper = false)
     {
@@ -32,6 +33,9 @@ public static class LocalFlavorSettings
             [AnalyticsDirectory] = AnalyticsFolderOf(root),
             [InstanceId] = instanceId,
             [LogDirectory] = LogFolderOf(root),
+
+            // A host flavor file may turn the console sink on (sample Local/Dev); tests read the log files instead (FR-087).
+            [ConsoleEnabled] = "false",
         };
     }
 

@@ -47,7 +47,8 @@ public sealed class ObservedHost : IAsyncDisposable
         string? logDirectory = null,
         Action<Dictionary<string, string?>>? settings = null,
         Action<WebApplication>? beforeUseGameServer = null,
-        Action<GameServerBuilder>? extra = null)
+        Action<GameServerBuilder>? extra = null,
+        Action<IServiceCollection>? services = null)
     {
         var owned = logDirectory is null ? new TempLogDirectory() : null;
         logDirectory ??= owned!.Path;
@@ -56,7 +57,7 @@ public sealed class ObservedHost : IAsyncDisposable
         TestHost host;
         try
         {
-            host = await StartHostAsync(logDirectory, settings, beforeUseGameServer, activities, metrics, extra);
+            host = await StartHostAsync(logDirectory, settings, beforeUseGameServer, activities, metrics, extra, services);
         }
         catch
         {
@@ -73,7 +74,8 @@ public sealed class ObservedHost : IAsyncDisposable
         Action<WebApplication>? beforeUseGameServer,
         List<Activity> activities,
         List<MetricSnapshot> metrics,
-        Action<GameServerBuilder>? extra) =>
+        Action<GameServerBuilder>? extra,
+        Action<IServiceCollection>? services) =>
         SampleTestHost.StartAsync(
             b =>
             {
@@ -115,6 +117,7 @@ public sealed class ObservedHost : IAsyncDisposable
             {
                 s.ConfigureOpenTelemetryTracerProvider(t => t.AddInMemoryExporter(activities));
                 s.ConfigureOpenTelemetryMeterProvider(m => m.AddInMemoryExporter(metrics));
+                services?.Invoke(s);
             });
 
     /// <summary>Every line of every log file (call after disposing the host so the queue is flushed).</summary>

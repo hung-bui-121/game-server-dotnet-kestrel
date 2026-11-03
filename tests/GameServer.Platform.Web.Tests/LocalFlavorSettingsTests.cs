@@ -24,7 +24,7 @@ public sealed class LocalFlavorSettingsTests
     [Fact]
     public void Every_key_binds_to_an_option_property()
     {
-        LocalFlavorSettings.Keys.Count.ShouldBeGreaterThanOrEqualTo(7);
+        LocalFlavorSettings.Keys.Count.ShouldBeGreaterThanOrEqualTo(8);
         LocalFlavorSettings.Keys.ShouldBeUnique();
 
         var unresolved = LocalFlavorSettings.Keys.Where(key => !Resolves(key)).ToList();
@@ -55,6 +55,7 @@ public sealed class LocalFlavorSettingsTests
         settings["GameServer:Outbox:SweeperEnabled"].ShouldBe("false");
         settings["GameServer:Jobs:Enabled"].ShouldBe("false");
         settings["GameServer:Hosting:DrainDelaySeconds"].ShouldBe("0");
+        settings["Observability:Logging:Console:Enabled"].ShouldBe("false");
     }
 
     [Fact]

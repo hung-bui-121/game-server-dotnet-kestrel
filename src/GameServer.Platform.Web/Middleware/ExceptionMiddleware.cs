@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 namespace GameServer.Platform.Web.Middleware;
 
 /// <summary>
-/// Outermost middleware: maps exceptions to catalog codes (API-04, API-05) and turns unmatched
+/// Outermost error middleware (inside the request event's middleware): maps exceptions to catalog codes (API-04, API-05) and turns unmatched
 /// routes into catalog 404s. Unknown exceptions become 500 <c>INTERNAL</c> without details.
 /// </summary>
 public sealed class ExceptionMiddleware(RequestDelegate next, ErrorResponseWriter writer, ILogger<ExceptionMiddleware> logger)

@@ -244,6 +244,60 @@ public sealed class StartupValidationTests
     }
 
     [Fact]
+    public async Task An_invalid_request_log_exclusion_fails_startup_with_its_report_line()
+    {
+        var ex = await StartupFails(settings: s =>
+        {
+            s["GameServer:RequestLog:ExcludedPaths:0"] = "/v1/time";
+            s["GameServer:RequestLog:ExcludedPaths:1"] = "v1/no-slash";
+        });
+
+        ex.Violations.ShouldContain("[request-log] GameServer:RequestLog:ExcludedPaths:1 'v1/no-slash' must start with '/'.");
+        ex.Violations.ShouldNotContain(v => v.Contains("ExcludedPaths:0", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("Staging", "true", true)]
+    [InlineData("Staging", null, false)]
+    [InlineData("Development", "true", false)]
+    public async Task Request_logging_enabled_outside_development_logs_one_volume_warning(string environment, string? enabled, bool expected)
+    {
+        var entries = new ConcurrentQueue<(string Category, LogLevel Level, string Message)>();
+        var start = async () =>
+        {
+            await using var host = await SampleTestHost.StartAsync(
+                settings: s =>
+                {
+                    s["GameServer:DeploymentEnvironment"] = environment;
+                    s["GameServer:RequestLog:Enabled"] = enabled;
+                },
+                services: s => s.AddSingleton<ILoggerProvider>(new CategoryLoggerProvider(entries)));
+        };
+        if (environment == "Staging")
+        {
+            // A Staging test host fails on test authentication and the in-memory store; the warning is logged with that report.
+            await Should.ThrowAsync<GameServerStartupException>(start);
+        }
+        else
+        {
+            await start();
+        }
+
+        var warnings = entries.Where(e => e.Message.StartsWith("[request-log]", StringComparison.Ordinal)).ToList();
+        if (!expected)
+        {
+            warnings.ShouldBeEmpty();
+            return;
+        }
+
+        var warning = warnings.ShouldHaveSingleItem();
+        warning.Category.ShouldBe("GameServer.Startup");
+        warning.Level.ShouldBe(LogLevel.Warning);
+        warning.Message.ShouldContain("GameServer:RequestLog:Enabled=true in deployment environment 'Staging'");
+        warning.Message.ShouldContain("~300-400 B each, about 13-17 GB per instance per day at 500 requests/s");
+    }
+
+    [Fact]
     public async Task Module_options_validated_on_start_are_reported_by_UseGameServer()
     {
         // A GameServerStartupException (not an OptionsValidationException from StartAsync) proves UseGameServer reported it.

@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 
 namespace GameServer.Platform.Observability;
 
@@ -31,6 +32,7 @@ public sealed class ObservabilityModule : IGameModule, IHostEndpointsModule
     public void ConfigureServices(IServiceCollection services, ModuleContext context)
     {
         services.AddSingleton<HealthReportCache>();
+        services.AddSingleton<IStartupCheck, ConsoleSinkCheck>();
         services.AddHealthChecks()
             .AddCheck<StoreHealthCheck>("store", tags: [ReadyTag])
             .AddCheck<ConfigHealthCheck>("config", tags: [ReadyTag])
@@ -51,6 +53,21 @@ public sealed class ObservabilityModule : IGameModule, IHostEndpointsModule
                 await WriteStatusOnly(http, report);
             })
             .AsPublicEndpoint(protobuf: false);
+    }
+
+    /// <summary>FR-087: the console sink is allowed outside Development/Test and announced once at startup.</summary>
+    private sealed class ConsoleSinkCheck(IOptions<ObservabilityOptions> observability, GameServerOptions options) : IStartupCheck
+    {
+        public void Check(StartupCheckResult result)
+        {
+            if (observability.Value.Logging.Console.Enabled && !options.AllowsDevelopmentTools)
+            {
+                result.Warnings.Add(
+                    $"[observability] Observability:Logging:Console:Enabled=true in deployment environment '{options.DeploymentEnvironment}': " +
+                    "every operational event at or above Observability:Logging:Console:MinimumLevel is also written to stdout " +
+                    "(bounded queue, drops counted in log_dropped_total); the log files are unchanged (FR-087, FR-088).");
+            }
+        }
     }
 
     /// <summary>Public profile: status only, never dependency names or errors (OBS-03, ACC-51).</summary>

@@ -69,6 +69,9 @@ public sealed class GameServerOptions
     /// <summary>Account purge limits (PRIV-01).</summary>
     public PurgeSettings Purge { get; set; } = new();
 
+    /// <summary>Per-request event (FR-080..FR-086), section <c>GameServer:RequestLog</c>.</summary>
+    public RequestLogSettings RequestLog { get; set; } = new();
+
     public bool IsProduction => string.Equals(DeploymentEnvironment, "Production", StringComparison.OrdinalIgnoreCase);
 
     public bool IsDevelopment => string.Equals(DeploymentEnvironment, "Development", StringComparison.OrdinalIgnoreCase);
@@ -191,6 +194,61 @@ public sealed class LimitSettings
 
     /// <summary>Maximum GetConfig bundle size (CFG-03, API-06).</summary>
     public int ConfigBundleBytes { get; set; } = 1024 * 1024;
+}
+
+/// <summary>
+/// Section <c>GameServer:RequestLog</c> (FR-080..FR-086): one event per HTTP request, category <c>GameServer.Requests</c>.
+/// The level per deployment comes from <c>Observability:Logging:LevelOverrides:GameServer.Requests</c>.
+/// </summary>
+public sealed class RequestLogSettings
+{
+    public const int MaxExcludedPaths = 50;
+    public const int MaxExcludedPathLength = 200;
+
+    /// <summary>
+    /// Null = on in Development/Test (local, dev, test hosts), off in Staging/Production (beta, uat, live). An explicit
+    /// <c>true</c> outside Development/Test is allowed and logged once at startup with the volume estimate.
+    /// </summary>
+    public bool? Enabled { get; set; }
+
+    /// <summary>
+    /// Paths never logged in addition to <c>/health/live</c> and <c>/health/ready</c> (segment prefix, case-insensitive).
+    /// Arrays are replaced, not merged, by config binding.
+    /// </summary>
+    public string[] ExcludedPaths { get; set; } = [];
+
+    public bool IsEnabled(GameServerOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return Enabled ?? options.AllowsDevelopmentTools;
+    }
+
+    /// <summary>Startup-report lines for invalid values; empty when valid.</summary>
+    public IEnumerable<string> Validate()
+    {
+        var paths = ExcludedPaths;
+        if (paths.Length > MaxExcludedPaths)
+        {
+            yield return $"[request-log] GameServer:RequestLog:ExcludedPaths has {paths.Length} entries; at most {MaxExcludedPaths} are allowed.";
+        }
+
+        for (var i = 0; i < paths.Length; i++)
+        {
+            var path = paths[i];
+            if (string.IsNullOrEmpty(path) || path[0] != '/')
+            {
+                yield return $"[request-log] GameServer:RequestLog:ExcludedPaths:{i} '{path}' must start with '/'.";
+            }
+            else if (path.Length > MaxExcludedPathLength)
+            {
+                yield return $"[request-log] GameServer:RequestLog:ExcludedPaths:{i} has {path.Length} characters; at most {MaxExcludedPathLength} are allowed.";
+            }
+            else if (path.Contains('?', StringComparison.Ordinal))
+            {
+                yield return $"[request-log] GameServer:RequestLog:ExcludedPaths:{i} '{path}' must be a path without a query string ('?').";
+            }
+        }
+    }
 }
 
 /// <summary>Section <c>GameServer:Gate</c> (GATE-01, GATE-02, PERF-08).</summary>

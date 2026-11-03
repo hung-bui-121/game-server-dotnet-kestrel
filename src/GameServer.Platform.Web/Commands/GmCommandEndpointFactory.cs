@@ -134,6 +134,7 @@ public static class GmCommandEndpointFactory
                     request,
                     result => JsonSerializer.SerializeToUtf8Bytes((TResult)result, GameServerJson.Options));
                 var execution = await services.GetRequiredService<ICommandRunner>().ExecuteAsync(invocation, http.RequestAborted);
+                CommandEndpointFactory.SetOutcome(http, execution, operation);
                 if (afterExecute is not null && execution.ReceiptId is not null)
                 {
                     await AfterExecuteHook.RunAsync(afterExecute, execution, http, operation);

@@ -38,6 +38,25 @@ tag message when the slice closes.
   Configure actor (`AsPlayer`, `AsGm`, `WithActor`), `At`, `WithConfig`, `WithRequestId`/`WithReceiptId`, `Seed`,
   `SeedClaim`; read `Writes`/`Written<T>`, `Outbox` (audit and analytics entries included), `Claims`;
   `CheckCommit(outcome)` returns the runner's commit-rule messages (uncatalogued or non-200 commit code, GM audit count).
+- **FG-025** — per-request visibility: the framework wrote no event per request and its Serilog pipeline reached no
+  console, so a game had to buffer and parse response bodies to log what clients received. Now:
+  1. one structured event per HTTP request (category `GameServer.Requests`, event id `1`/`Request`, template
+     `{HttpMethod} {Route} -> {Status} {ResultCode} in {DurationMs} ms`) with `HttpMethod`, `Route` (template; unmatched
+     paths cleaned and cut at 120), `Profile`, `Operation`, `ActorType`, `ActorId` (principal only, cleaned, ≤ 64),
+     `RequestId`, `TraceId`, `Status` (null when aborted), `ResultCode` (`OK`, business code at HTTP 200, error code,
+     `ABORTED`, `INTERNAL`, `HTTP_{status}`), `Replayed`, `NotModified`, `Aborted`, `DurationMs`; Information < 400,
+     Warning 4xx/aborts, Error 5xx; never for `/health/live`, `/health/ready` or `GameServer:RequestLog:ExcludedPaths`;
+     no body, query string, header, cookie, token, password or IP; on by default in Development/Test only;
+  2. public `IRequestOutcomeFeature` (`HttpContext.RequestOutcome()`, namespace `GameServer.Platform.Web.Requests`), set by
+     every framework writer and final after the pipeline, so a game middleware placed before `UseGameServer` reads the
+     same code/status/operation/replayed/not-modified as the event without touching the body; consumer endpoints may set
+     their own code; `RequestResultCodes.Aborted`/`ForStatus`, `RequestLog.Category`/`EventId`;
+  3. optional console sink `Observability:Logging:Console` (`Enabled` false, `MinimumLevel` Information, `BufferSize`
+     1 000): one human-readable line per event, its own bounded dropping queue (`log_dropped_total`), in addition to the
+     unchanged file sink; the sample host's `Local` and `Dev` flavor files turn it on;
+  4. new counter `request_log_failures_total` (meter `GameServer.Platform`) for events that could not be built or written.
+  Measured in process (Windows 11, Release, 2026-11-03): p95 of a command round trip 0.786 ms off vs 0.681 ms with event +
+  console (noise); stalled console + saturated file queue: 2 000/2 000 requests OK in 0.23 s, drops counted.
 
 ## Breaking changes and migration
 
@@ -116,12 +135,44 @@ Migration (game test projects):
 A game that called `TestHost.StartAsync()` from the linked file and relied on the Counter module or the sample config
 passes its own `modules:` and `config:`/`GameServer:ConfigPath` now.
 
+### BC-7 — one request event per request in Development/Test, optional console output
+
+Was: no per-request event, no console output from operational logs. Now: Development/Test hosts (flavors `local`, `dev`,
+test hosts) write one `GameServer.Requests` event per request (~300–400 B per event in the file, ≈ 13–17 GB per instance
+per day at 500 requests/s); Staging/Production write none unless `GameServer:RequestLog:Enabled=true` (then one startup
+Warning with the volume estimate). With the default file limits (100 MiB × 30 files) 500 requests/s keep only ~4–5 hours
+of operational logs. Test hosts capture one extra log entry per request (formatted message without actor id).
+
+Migration:
+
+1. Nothing in Staging/Production unless enabled. Before `GameServer:RequestLog:Enabled=true` there: budget the volume,
+   raise `Observability:Logging:FileSizeLimitBytes`/`RetainedFileCountLimit` or ship the files; optionally
+   `Observability:Logging:LevelOverrides:GameServer.Requests=Warning` (failures only).
+2. Delete the game's `RequestLog/*` middleware, body capture, sink, startup filter, settings check, its registration and
+   `ZhPvp:RequestLog:Enabled`, and its tests.
+3. Set `Observability:Logging:Console:Enabled: true` in the game's local (and dev) flavor file.
+4. Rebuild any game-specific per-request behaviour on `HttpContext.RequestOutcome()` in a middleware before
+   `UseGameServer` (never parse response bodies).
+5. Tests that count every log entry of a test host: filter category `GameServer.Requests` out, or set
+   `GameServer:RequestLog:Enabled=false` for that host.
+
+### New configuration keys (slice 013)
+
+| Key | Default | Notes |
+| --- | --- | --- |
+| `GameServer:RequestLog:Enabled` | unset = on in Development/Test, off in Staging/Production | explicit `true` outside Development/Test → startup Warning |
+| `GameServer:RequestLog:ExcludedPaths` | `[]` | ≤ 50 entries, each starts with `/`, ≤ 200 chars, no `?`; segment prefix, case-insensitive |
+| `Observability:Logging:Console:Enabled` | `false` | sample `Local`/`Dev` set `true`; outside Development/Test → startup Warning; `LocalFlavorSettings` forces `false` (8th key) |
+| `Observability:Logging:Console:MinimumLevel` | `Information` | Serilog level name |
+| `Observability:Logging:Console:BufferSize` | `1000` | ≥ 1 |
+
 ## Consumer workarounds now removable
 
 | FG | Workaround today (zh-pvp-server) | Removable after `v0.7.0` | Stays |
 | --- | --- | --- | --- |
 | FG-010 | `src/ZhPvp.Host/ZhPvpModules.cs` marker on the `AllowsDevelopmentTools` condition; `tests/ZhPvp.Tests/Host/CompositionTests.cs` marker (test as the only protection) | Both markers (framework refuses Dev in beta/uat itself) | The condition and the 5-flavor composition test may stay as game hygiene; CLAUDE.md rule 7 |
 | FG-001 | `tests/ZhPvp.Tests/ZhPvp.Tests.csproj` links `tests/Shared/{ProtobufHttp,IdentityHttp,TestStores}.cs`; `tests/ZhPvp.Tests/Support/LocalFlavorHost.cs` copies the factory settings of the framework smoke test | The three `Compile` links (→ kit `ProjectReference`); `LocalFlavorHost` (→ `LocalFlavorFactory<Program>`, `Documents(...)` reads `factory.DataFolder`) | Game-specific capture hooks (the console request-log sink) until US3 ships the framework console sink |
+| FG-025 | `src/ZhPvp.Host/RequestLog/*.cs` (middleware, body capture, envelope parsing, sink, startup filter, settings check; markers in `RequestLogMiddleware.cs`, `RequestOutcome.cs`, `RequestLogSink.cs`), registration in `ZhPvpModules.cs`, `ZhPvp:RequestLog:Enabled` in `appsettings.Local.json`, `tests/ZhPvp.Tests/Host/RequestLogTests.cs` | The whole folder, its registration, setting and tests (framework request event; `Observability:Logging:Console:Enabled: true` in the local flavor file) | Any game-specific per-request behaviour, rebuilt on `HttpContext.RequestOutcome()` |
 | FG-006 | `tests/ZhPvp.Tests/Support/FakeCommandContext.cs` (dictionary aggregates, throwing `Config`/claims/ids) | The whole file (→ `CommandContextDouble`; handler tests add `CheckCommit(outcome).ShouldBeEmpty()`) | — |
 
 ## Docs not re-checked

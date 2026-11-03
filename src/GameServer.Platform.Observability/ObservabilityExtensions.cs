@@ -47,7 +47,7 @@ public static class ObservabilityExtensions
         }
 
         services.AddSerilog(
-            (_, logger) =>
+            (provider, logger) =>
             {
                 logger.MinimumLevel.Is(Enum.Parse<LogEventLevel>(settings.MinimumLevel, ignoreCase: true));
                 foreach (var (source, level) in settings.LevelOverrides)
@@ -79,12 +79,41 @@ public static class ObservabilityExtensions
                         blockWhenFull: false,
                         monitor: LogSinkMonitor.Instance);
                 }
+
+                if (settings.Console.Enabled)
+                {
+                    AddConsole(logger, settings.Console, provider.GetService<ConsoleOutputOverride>());
+                }
             },
             // Each host owns its logger (disposed = flushed with the container, OPS-03); the static Log.Logger is
             // never replaced, so one host stopping cannot close another host's logger. Other logging providers (the
             // default console provider waits when its queue is full) are not written to: logging never blocks (LOG-06).
             preserveStaticLogger: true,
             writeToProviders: false);
+    }
+
+    /// <summary>
+    /// FR-087: in addition to the file sink, through its own bounded queue that drops instead of blocking (research V6: a stalled
+    /// stdout blocks only the queue's worker). <paramref name="output"/> replaces stdout in tests.
+    /// </summary>
+    private static void AddConsole(LoggerConfiguration logger, ConsoleLoggingSettings console, ConsoleOutputOverride? output)
+    {
+        var level = Enum.Parse<LogEventLevel>(console.MinimumLevel, ignoreCase: true);
+        logger.WriteTo.Async(
+            sink =>
+            {
+                if (output is null)
+                {
+                    sink.Console(new ConsoleLineFormatter(colours: !Console.IsOutputRedirected), level);
+                }
+                else
+                {
+                    sink.Sink(output.CreateSink(), level);
+                }
+            },
+            bufferSize: console.BufferSize,
+            blockWhenFull: false,
+            monitor: LogSinkMonitor.Instance);
     }
 
     private static void AddTelemetry(IServiceCollection services, GameServerOptions gameServer, ObservabilityOptions options, string instanceId)
@@ -155,6 +184,16 @@ public static class ObservabilityExtensions
         if (logging.FileSizeLimitBytes < 1024 || logging.RetainedFileCountLimit < 1 || logging.BufferSize < 1 || logging.RetainedFileTimeLimitDays < 1)
         {
             errors.Add("[observability] Observability:Logging limits must be positive (FileSizeLimitBytes >= 1024).");
+        }
+
+        if (!IsLevel(logging.Console.MinimumLevel))
+        {
+            errors.Add($"[observability] Observability:Logging:Console:MinimumLevel '{logging.Console.MinimumLevel}' is not a level ({string.Join(", ", Enum.GetNames<LogEventLevel>())}).");
+        }
+
+        if (logging.Console.BufferSize < 1)
+        {
+            errors.Add($"[observability] Observability:Logging:Console:BufferSize ({logging.Console.BufferSize}) must be >= 1.");
         }
 
         if (options.Otlp.Endpoint is { Length: > 0 } endpoint && !Uri.TryCreate(endpoint, UriKind.Absolute, out _))

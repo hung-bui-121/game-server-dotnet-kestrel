@@ -2,7 +2,7 @@
 
 Một bản build chạy ở mọi môi trường; môi trường được chọn bằng **flavor** = tên môi trường của host. Hướng dẫn này gồm:
 chọn flavor, biến môi trường bắt buộc, chạy local một lệnh, file store, cấu hình Couchbase, TLS, quyền RBAC và lệnh
-provisioning, file analytics (mục 7). Hợp đồng vận hành (switch, exit code, tiền tố output): `docs/pcr/platform.md` mục 17
+provisioning, file analytics (mục 7), request log và console (mục 8). Hợp đồng vận hành (switch, exit code, tiền tố output): `docs/pcr/platform.md` mục 17
 (analytics: mục 18). Nhiều instance, tải và
 drill sự cố trên Couchbase thật: `docs/guides/local-real-env-testing.md`.
 
@@ -156,6 +156,7 @@ Ghi chú:
   ghi một cảnh báo khi Development nghe trên địa chỉ không phải loopback. Chỉ dùng trên mạng tin cậy, dừng ngay khi test xong.
 - Hai script cùng thư mục dữ liệu: script thứ hai thoát 6 với thông báo `[filestore] the data folder '…' is used by another host`
   (host thứ hai từ chối trong ≤ 5 s sau khi khởi động).
+- Flavor `Local` và `Dev` in một dòng mỗi request (và mỗi log vận hành từ Information) lên console, ngoài file log (mục 8).
 - `run-local.sh` cần bit thực thi (`git add --chmod=+x`); không có thì chạy `bash tools/local/run-local.sh`.
 
 ### 3.2 IDE và `dotnet run` (launch profile)
@@ -465,3 +466,50 @@ Biến môi trường: `GameServer__Analytics__<Key>`. Không key nào là secre
 
 Flavor `Local` ghi vào `samples/SampleHost/analytics/` (git bỏ qua). Instance id = tên máy, nên hai host local dùng chung thư
 mục cần `--Observability:InstanceId=...` khác nhau. Test chạy host mẫu (`WebApplicationFactory<Program>`) đặt thư mục tạm riêng.
+
+## 8. Request log và console (slice 013)
+
+Framework ghi **một event mỗi HTTP request** (category `GameServer.Requests`, trừ `/health/live`, `/health/ready`): method, route
+template, profile, operation, actor, request id, trace id, status, result code (code client nhận được), replayed, not-modified,
+aborted, thời gian. Không bao giờ có body, query string, giá trị header, cookie, token, password hay IP. Hợp đồng đầy đủ (thuộc
+tính, level, outcome feature cho middleware của game): `docs/pcr/platform.md` mục 13.
+
+### 8.1 Cấu hình theo flavor
+
+| Flavor | Request event (`GameServer:RequestLog:Enabled`) | Console (`Observability:Logging:Console:Enabled`) |
+| --- | --- | --- |
+| `Local`, `Dev` (Development) | bật — key không đặt, theo deployment environment | `true` trong file flavor của host mẫu |
+| test host (Development/Test) | bật (test logger bắt event) | tắt (`LocalFlavorFactory` ép `false`) |
+| `Beta`, `Uat` (Staging) | **tắt** — key không đặt; đặt `true` để bật (một Warning khi start, kèm ước lượng dung lượng) | không đặt (tắt) |
+| `Live` (Production) | **tắt** — cùng switch | không đặt (tắt) |
+
+Key khác:
+
+- `GameServer:RequestLog:ExcludedPaths` — mảng path không ghi, ngoài hai health probe (prefix theo segment, không phân biệt hoa
+  thường; tối đa 50 mục, mỗi mục bắt đầu bằng `/`, ≤ 200 ký tự, không `?`). Biến môi trường: `GameServer__RequestLog__ExcludedPaths__0`.
+- `Observability:Logging:LevelOverrides:GameServer.Requests` — level theo deployment: `Warning` = chỉ 4xx/5xx/abort (request
+  thành công và business reject ở HTTP 200 là Information), `Fatal` = coi như tắt.
+- `Observability:Logging:Console:MinimumLevel` (`Information`) và `Observability:Logging:Console:BufferSize` (1 000): console có
+  queue riêng, đầy thì bỏ event (đếm `log_dropped_total`), không bao giờ chặn request — kể cả khi cửa sổ console bị dừng
+  (QuickEdit) hoặc stdout bị redirect mà không ai đọc. File log không đổi khi bật console.
+
+Giá trị sai (path không bắt đầu bằng `/`, level sai, buffer < 1) → startup report, exit 1.
+
+### 8.2 Dung lượng trước khi bật ở Staging/Production
+
+~300–400 B mỗi event trong file (≈ 13–17 GB/instance/ngày ở 500 request/s, ≈ 1,3–1,7 GB ở 50 request/s, chưa nén). Giới hạn file
+mặc định (`Observability:Logging:FileSizeLimitBytes` 100 MiB × `Observability:Logging:RetainedFileCountLimit` 30 ≈ 3 GiB/instance)
+chỉ giữ ~4–5 giờ log vận hành ở 500 request/s. Trước khi đặt `GameServer:RequestLog:Enabled=true`: nâng hai giới hạn đó (và
+dung lượng volume log), hoặc ship file log ra ngoài; cân nhắc `LevelOverrides:GameServer.Requests=Warning` để chỉ giữ lỗi.
+
+### 8.3 Đọc console local
+
+```text
+08:15:02.123 INF POST /api/v1/counter/increment (counter.increment) player=p_7f3a9c1e2b4d req=1a2b3c4d -> 200 OK 12.4 ms
+08:15:03.010 INF POST /api/v1/iap/purchase (iap.purchase) player=p_7f3a9c1e2b4d req=9f8e7d6c -> 200 ALREADY_GRANTED replayed 3.1 ms
+08:15:04.500 WRN GET /api/v1/nope req=0c1d2e3f -> 404 NOT_FOUND 0.4 ms
+```
+
+`req=` là 8 ký tự đầu của `X-Request-Id` (tìm cùng request trong file log bằng `RequestId`). Game muốn hành vi riêng theo request
+(metric, cảnh báo) dựng trên `HttpContext.RequestOutcome()` trong middleware đặt trước `UseGameServer` (PCR mục 13), không parse
+body response.

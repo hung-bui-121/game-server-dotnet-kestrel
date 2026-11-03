@@ -561,7 +561,7 @@ extra log entry per request. Its formatted message is `{HttpMethod} {Route} -> {
 (no actor id), so the existing "not in logs" checks (`SsoTests.cs:77`, `AccountPurgeTests.cs:188`,
 `DeletionExtensionTests.cs:90`, `IdentityLoginTests.cs:126-129`) should stay green — T040 confirms it on the full suite.
 
-- [ ] T036 [US3] Settings in `src/GameServer.Platform/GameServerOptions.cs` (after T007, same file; research R11,
+- [X] T036 [US3] Settings in `src/GameServer.Platform/GameServerOptions.cs` (after T007, same file; research R11,
   data-model §3.1, public-api §2): `RequestLog` (`RequestLogSettings`: `Enabled` `bool?`, `ExcludedPaths` `string[]`,
   `IsEnabled(options)` = `Enabled ?? AllowsDevelopmentTools`, `Validate()` → `[request-log] …` lines: ≤ 50 entries, each
   starts with `/`, ≤ 200 chars, no `?`). Validation joins the aggregated startup report in
@@ -571,7 +571,12 @@ extra log entry per request. Its formatted message is `{HttpMethod} {Route} -> {
   a startup case in `tests/GameServer.Platform.Web.Tests/StartupValidationTests.cs` (invalid entry → exit-1 report line;
   `Enabled=true` in Staging → the warning text, via the report of a Staging `TestHost` start).
   Done when: green. (FR-086)
-- [ ] T037 [US3] Outcome feature in new files `src/GameServer.Platform.Web/Requests/IRequestOutcomeFeature.cs` (public:
+  Note: `RequestLogSettings` (+ `MaxExcludedPaths`/`MaxExcludedPathLength` constants) in `GameServerOptions.cs`;
+  `Validate()` joins the report in `UseGameServer`; the warning
+  (`GameServerApplicationExtensions.RequestLogVolumeWarning`) is added to the startup-check warnings, so it is logged
+  once under `GameServer.Startup` even when the start then fails (Staging test host). Tests: `RequestLogSettingsTests`
+  (13 cases), `StartupValidationTests` +4.
+- [X] T037 [US3] Outcome feature in new files `src/GameServer.Platform.Web/Requests/IRequestOutcomeFeature.cs` (public:
   `IRequestOutcomeFeature`, `RequestOutcomeExtensions.RequestOutcome(this HttpContext)` never null, `RequestResultCodes`
   (`Aborted`, `ForStatus`), `RequestLog` (`Category = "GameServer.Requests"`, `EventId(1, "Request")`)) and
   `Requests/RequestOutcome.cs` (internal sealed; `Finalize(status, aborted, exception)`): aborted =
@@ -582,7 +587,9 @@ extra log entry per request. Its formatted message is `{HttpMethod} {Route} -> {
   Tests in a new file `tests/GameServer.Platform.Web.Tests/RequestOutcomeTests.cs` (unit, IVT exists): every
   finalization rule, consumer-set code kept, `RequestOutcome()` on a bare `DefaultHttpContext` creates one.
   Done when: green. (FR-083, FR-084, SD5)
-- [ ] T038 [US3] Middleware and event (after T036, T037, T005 V5): new `src/GameServer.Platform.Web/Requests/RequestLogMiddleware.cs`
+  Note: the finalization method is named `Complete(context, failure)` (not `Finalize`, to avoid confusion with
+  finalizers); codes come from `CoreErrorCodes.Ok`/`Internal`. `RequestOutcomeTests` 17 cases.
+- [X] T038 [US3] Middleware and event (after T036, T037, T005 V5): new `src/GameServer.Platform.Web/Requests/RequestLogMiddleware.cs`
   (internal; install feature → `Stopwatch.GetTimestamp()` → `await next` in try/catch/finally → finalize → `if (enabled
   && !excluded && logger.IsEnabled(level))` write inside its own try/catch, failures swallowed and counted) and
   `Requests/RequestLogEntry.cs` (internal readonly struct, `IReadOnlyList<KeyValuePair<string, object?>>`, the 14
@@ -593,7 +600,12 @@ extra log entry per request. Its formatted message is `{HttpMethod} {Route} -> {
   case-insensitive). Register it **first** in `UseGameServer` (`GameServerApplicationExtensions.cs:64-80`, before
   forwarded headers and `ExceptionMiddleware`). Never touches request/response bodies.
   Done when: builds with 0 warnings; T040–T042 cover it. (FR-080, FR-081, FR-082, FR-085, SD2, SD3, SD4)
-- [ ] T039 [US3] Writers fill the outcome (after T037; research R11): `src/GameServer.Platform.Web/Errors/ErrorResponseWriter.cs`
+  Note: event failures are counted in a new counter `request_log_failures_total` (`PlatformMetrics`, meter
+  `GameServer.Platform`): Platform.Web cannot reach the Observability sink-error counter; failures inside Serilog are
+  already counted in `log_sink_errors_total` via SelfLog. `IsEnabled(options)` is evaluated per request (the
+  flip-after-startup test relies on it). The routing 405 endpoint is not a `RouteEndpoint`, so 405 logs the cleaned path
+  and `Profile` null. Status null renders as `-` in the formatted message.
+- [X] T039 [US3] Writers fill the outcome (after T037; research R11): `src/GameServer.Platform.Web/Errors/ErrorResponseWriter.cs`
   (`ResultCode = code.Name` — covers exception middleware, 404, 405, profile/CSRF/permission/Dev refusals, gate, rate
   limiter, timeouts); `Commands/CommandEndpointFactory.cs` `MapCommand` (`:98-131`) and
   `Commands/GmCommandEndpointFactory.cs` (`:136-142`) (`ResultCode = execution.Code.Name`, `Replayed`, `Operation`)
@@ -601,7 +613,9 @@ extra log entry per request. Its formatted message is `{HttpMethod} {Route} -> {
   `CommandOperationMetadata` at finalization when a command route failed before the runner. One assignment each, no
   body access.
   Done when: builds; existing error-contract and command tests green. (FR-083, FR-084)
-- [ ] T040 [US3] Scripted session in a new file `tests/GameServer.Platform.Web.Tests/RequestLogTests.cs` (after T038,
+  Note: command endpoints set code/replayed/operation right after the runner returned, **before** the `afterExecute`
+  hook (T041 reads them there), via the shared `CommandEndpointFactory.SetOutcome` (GM factory too).
+- [X] T040 [US3] Scripted session in a new file `tests/GameServer.Platform.Web.Tests/RequestLogTests.cs` (after T038,
   T039, T024): on a kit `TestHost` with Identity + Counter + GM (+ a test module for the injected 500), read
   `LogEntries` of category `GameServer.Requests`: guest login, snapshot, config get + not-modified, command OK, business
   rejection at 200, replayed command, 400 validation, 401, 404, 405, 413 payload too large, invalid Protobuf, gate
@@ -617,7 +631,13 @@ extra log entry per request. Its formatted message is `{HttpMethod} {Route} -> {
   Done when: green; 100% of the 17 request kinds as expected; full suite green (no existing log assertion broken, or
   every fix listed in a Note). (FR-080, FR-081, FR-083, FR-086, US3-1, US3-2, US3-3, SC-007, edge cases "abort", "unmatched
   paths", "health probes")
-- [ ] T041 [US3] Consumer middleware in a new file `tests/GameServer.Platform.Web.Tests/RequestOutcomeFeatureTests.cs`
+  Note: 17 logged kinds + 3 probe calls; each event found by the request id echoed in `X-Request-Id` (the event is
+  written after the response returned, so the tests poll); metric agreement via a `MeterListener` on
+  `command_results_total` keyed by `Activity.Current` trace id (the listener runs inside the request), so parallel hosts
+  cannot interfere. Shared host `RequestLogHost.cs` (Identity + Counter + GM + `ObservabilityModule` probes, switchable
+  gate, fail/wait probes). Full suite green before and after (no existing log assertion needed a change): 1391 total,
+  1304 passed, 87 skipped.
+- [X] T041 [US3] Consumer middleware in a new file `tests/GameServer.Platform.Web.Tests/RequestOutcomeFeatureTests.cs`
   (after T040): a middleware registered **before** `UseGameServer` (`beforeUseGameServer` hook) records
   `context.RequestOutcome()` after `await next()` for the T040 session → same code/status/operation/replayed/not-modified
   as the event for 100% of requests, `Completed` true, `ResultCode` never null; a consumer endpoint mapped after
@@ -625,14 +645,18 @@ extra log entry per request. Its formatted message is `{HttpMethod} {Route} -> {
   → `HTTP_418`; inside an `afterExecute` hook of `MapPlayerCommand` the values set so far are readable; no response body
   is read (the test middleware never touches `Response.Body`).
   Done when: green. (FR-084, US3-4, SC-007 last clause, edge case "consumer endpoint")
-- [ ] T042 [US3] Privacy in a new file `tests/GameServer.Platform.Web.Tests/RequestLogPrivacyTests.cs` (after T040):
+  Note: drives the T040 session (`RequestLogTests.RunSessionAsync`); 17/17 outcomes equal the event.
+- [X] T042 [US3] Privacy in a new file `tests/GameServer.Platform.Web.Tests/RequestLogPrivacyTests.cs` (after T040):
   run login (guest secret), provider login (fake provider token), bearer requests, test-auth requests, GM login
   (password, cookie, CSRF), a fake purchase (purchase token), a config request with a query string; serialize every
   `GameServer.Requests` entry (all properties) and scan for each secret, token, cookie value, CSRF token, password, body
   bytes and query string → 0 hits; a test-auth actor id with control characters and 1 000 characters → cleaned and
   ≤ 64 characters.
   Done when: green; the scan list is printed in the test output. (FR-082, US3-7, SC-007)
-- [ ] T043 [US3] Console sink (after T005 V6, T006 V8; research R12, D12, data-model §3.2): `ConsoleLoggingSettings`
+  Note: 15 values over 12 events (guest secret base64/hex, session tokens, provider token and subject, body marker,
+  purchase token, query string, header value, `X-Forwarded-For` IP — TestServer has no remote address —, GM password,
+  CSRF token, `gs_gm` and `gs_gm_csrf` cookies); names and lengths printed, never values.
+- [X] T043 [US3] Console sink (after T005 V6, T006 V8; research R12, D12, data-model §3.2): `ConsoleLoggingSettings`
   (`Enabled` false, `MinimumLevel` `Information`, `BufferSize` 1 000) on `LoggingSettings.Console` in
   `src/GameServer.Platform.Observability/ObservabilityOptions.cs`; in `ObservabilityExtensions.AddLogging`
   (`src/GameServer.Platform.Observability/ObservabilityExtensions.cs:40-87`) add
@@ -647,7 +671,12 @@ extra log entry per request. Its formatted message is `{HttpMethod} {Route} -> {
   Done when: Release build 0 warnings; no restore warning (NU1605/NU1608). (FR-087, FR-088)
   Note (from T026): also add `Observability:Logging:Console:Enabled` = `false` to `LocalFlavorSettings.Keys`/`For` in
   `src/GameServer.TestKit/LocalFlavorSettings.cs` (data-model §3.4 eighth key; `LocalFlavorSettingsTests` checks it binds).
-- [ ] T044 [US3] Console tests in new files `tests/GameServer.Observability.Tests/ConsoleLineFormatterTests.cs` (each
+  Note — **deviation from V6**: Serilog 4.3 core has no `WriteTo.TextWriter`, so the seam is the internal
+  `ConsoleOutputOverride` (registered in DI, read in the `AddSerilog((provider, logger) => …)` callback) with a minimal
+  `ILogEventSink` around `ConsoleLineFormatter`, inside the same `WriteTo.Async(…, blockWhenFull: false, monitor)`.
+  Startup warning via a private `IStartupCheck` in `ObservabilityModule`. No restore warning. `LocalFlavorSettings` has
+  the 8th key (`Observability:Logging:Console:Enabled=false`), `LocalFlavorSettingsTests` updated.
+- [X] T044 [US3] Console tests in new files `tests/GameServer.Observability.Tests/ConsoleLineFormatterTests.cs` (each
   line shape of data-model §1: operation, player/staff, replayed, not_modified, aborted `-`, other events with
   exception; no colour codes when redirected) and `tests/GameServer.Observability.Tests/ConsoleSinkTests.cs` (after
   T043, T038): host with `AddObservability()` and console on through the internal writer → one line per request; a
@@ -656,12 +685,17 @@ extra log entry per request. Its formatted message is `{HttpMethod} {Route} -> {
   run except timestamps/ids; operational logs reach no other provider.
   Done when: green in 3 consecutive runs. (FR-085, FR-087, FR-088, US3-5, US3-6, SC-008 second half, edge case "stdout
   redirected")
-- [ ] T045 [US3] `tests/GameServer.Observability.Tests/LoggingTests.cs` (after T038): the request event appears in the
+  Note: the bounded queue is proven by the drop count (≥ 2 000 − `BufferSize` − 1 with a blocked writer); process memory
+  is not asserted in the parallel suite (a first run failed on another test's allocations) — T047 measures it alone.
+  Green in 3 consecutive runs of the whole `GameServer.Observability.Tests` project (64/64).
+- [X] T045 [US3] `tests/GameServer.Observability.Tests/LoggingTests.cs` (after T038): the request event appears in the
   compact JSON file with `@mt` = the template, every data-model §1 property, `SourceContext` `GameServer.Requests`,
   `EventId` `{Id:1,Name:Request}` and the enrichment `GameId`/`EnvironmentId`/`InstanceId`; the existing forbidden-value
   scan (`:84`) also covers request events.
   Done when: green. (FR-081, FR-088)
-- [ ] T046 [US3] Sample flavor files and their users (after T043): `samples/SampleHost/appsettings.Local.json` and
+  Note: plus a 404 case (Warning, null fields written as `null`); the credential scan asserts ≥ 6 request events in the
+  scanned files.
+- [X] T046 [US3] Sample flavor files and their users (after T043): `samples/SampleHost/appsettings.Local.json` and
   `appsettings.Dev.json` → `Observability:Logging:Console:Enabled: true`; no `GameServer:RequestLog` key in any flavor
   file (data-model §3.3); `tests/SampleGame.Tests/SampleHostConfigurationFileTests.cs` pins the §3.3 table. Hygiene for
   the other sample-host users: `tests/SampleGame.Tests/SampleHostEntryPointTests.cs` and the host case of
@@ -670,16 +704,28 @@ extra log entry per request. Its formatted message is `{HttpMethod} {Route} -> {
   `Infrastructure/SampleHostProcess.cs`) drain stdout (they do on `fea3d29`: `BeginOutputReadLine`,
   `ReadToEndAsync`), so the console sink cannot stall them.
   Done when: green; a Note confirms the stdout check. (FR-087, US3-5)
-- [ ] T047 [US3] Opt-in performance test in a new file `tests/SampleGame.Tests/RequestLogPerformanceTests.cs`
+  Note — stdout check (on this branch): `FileStoreProcessKillTests` drains with
+  `BeginOutputReadLine`/`BeginErrorReadLine` into a 50-line bounded queue; `SampleHostEntryPointTests` and Couchbase
+  `SampleHostProcess` read with `ReadToEndAsync`; the console sink cannot stall them. Hygiene:
+  `UseSetting(...Console:Enabled, false)` in both `WebApplicationFactory` cases,
+  `Observability__Logging__Console__Enabled=false` in the process case.
+- [X] T047 [US3] Opt-in performance test in a new file `tests/SampleGame.Tests/RequestLogPerformanceTests.cs`
   (`GAMESERVER_PERF=1`, otherwise skip with a message; after T044): in-process p95 of a command round trip with request
   logging + console sink (null writer) on vs off → +≤ 1 ms; both sinks blocked → 100% success, bounded memory, drops
   counted.
   Done when: compiles and skips by default; the opt-in numbers are recorded by T076. (FR-085, SC-008)
-- [ ] T048 [US3] Fixture outcome check in `tests/ConsumerFixture/tests/Fixture.Tests/` (after T033, T041): the fixture
+  Note: needs `InternalsVisibleTo SampleGame.Tests` on Observability (console seam). The file sink cannot be stalled
+  from a test, so its queue is 1 entry (saturated) instead of blocked. Opt-in run 2026-11-03 (Windows 11, Release): p95
+  command round trip off 0.786 ms, on (event + console, null writer) 0.681 ms (delta −0.105 ms, noise); stalled console
+  + saturated file queue: 2 000/2 000 OK in 0.23 s, 2 847 drops, managed memory delta ~19.7 MiB.
+- [X] T048 [US3] Fixture outcome check in `tests/ConsumerFixture/tests/Fixture.Tests/` (after T033, T041): the fixture
   host gets a consumer middleware before `UseGameServer` (as a game would) that counts outcomes by `ResultCode`; the
   smoke test asserts `OK` for `fixture.save` and `NOT_FOUND` for an unknown route through it.
   Done when: green. (FR-084, SC-010 enabler for FG-025)
-- [ ] T049 [US3] Docs and notes (after T040–T046; Vietnamese): `docs/pcr/platform.md` §13 — request event (fields,
+  Note: `tests/ConsumerFixture/src/Fixture.Host/OutcomeCounts.cs` + one `app.Use` in `Program.cs` before
+  `RunGameServerAsync` (which calls `UseGameServer`); the smoke test waits for OK = 3 (ready, time, login), then OK = 4
+  and NOT_FOUND = 1.
+- [X] T049 [US3] Docs and notes (after T040–T046; Vietnamese): `docs/pcr/platform.md` §13 — request event (fields,
   levels, exclusions, accepted loss LOG-06), outcome feature (semantic contract, contracts/request-log-and-console.md
   §2), console setting, flavor defaults and volume; `docs/guides/environments-and-local-run.md` — settings per flavor
   (contracts §4 table), `LevelOverrides:GameServer.Requests`, volume estimate and file-limit advice;
@@ -689,6 +735,10 @@ extra log entry per request. Its formatted message is `{HttpMethod} {Route} -> {
   workarounds now removable".
   Done when: `DocumentedConfigurationKeysTests` green; injecting `GameServer:RequestLog:Bogus` into the guide fails it
   (verified, reverted). (FR-086, FR-089, FR-090, BC-7)
+  Note: PCR §13 (request event, outcome feature, console, flavor table, volume), environments guide §8;
+  `DocumentedConfigurationKeysTests` also scans PCR §13 and has `The_operator_docs_name_every_request_log_key`;
+  injecting `GameServer:RequestLog:Bogus` into the guide failed it (verified, reverted). Release notes: FG-025, BC-7,
+  new keys table, FG-025 workaround row.
 
 **Checkpoint**: one event per request, outcome feature readable by consumer middleware, console line in local/dev;
 full suite green in memory.

@@ -1,5 +1,6 @@
 using System.Net;
 using Fixture.Game;
+using Fixture.Host;
 using GameServer.Protocol.Core.V1;
 using GameServer.TestKit;
 using Google.Protobuf.WellKnownTypes;
@@ -33,10 +34,18 @@ public sealed class FixtureHostSmokeTests
             playerId = login.PlayerId;
             var player = factory.CreateClient();
             player.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", login.SessionToken);
+            var outcomes = factory.Services.GetRequiredService<OutcomeCounts>();
+
+            // Ready, time and login so far; the game's middleware before UseGameServer counts after each response returned.
+            await WaitUntilAsync(() => outcomes["OK"] == 3);
             var response = await player.PostProtobufAsync(FixtureModule.SaveRoute, new StringValue { Value = "hello" }, ProtobufHttp.NewRequestId());
             var command = await response.ReadProtobufAsync<CommandResponse>();
+            (await client.GetAsync("/api/v1/fixture/nope")).StatusCode.ShouldBe(HttpStatusCode.NotFound);
 
             command.Code.ShouldBe("OK");
+
+            // The save and the unknown route reached the game's middleware with the codes the client received (FR-084, T048).
+            await WaitUntilAsync(() => outcomes["OK"] == 4 && outcomes["NOT_FOUND"] == 1);
             command.ConfigVersion.ShouldStartWith("fixture-1+");
             Named(factory.DataFolder, playerId).ShouldNotBeEmpty();
             Named(factory.LogFolder, instanceId).ShouldNotBeEmpty();
@@ -55,6 +64,16 @@ public sealed class FixtureHostSmokeTests
             Directory.Exists(Path.Combine(AppContext.BaseDirectory, name)).ShouldBeFalse();
             Directory.Exists(Path.Combine(contentRoot, name)).ShouldBeFalse();
         }
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        for (var i = 0; i < 500 && !condition(); i++)
+        {
+            await Task.Delay(10);
+        }
+
+        condition().ShouldBeTrue();
     }
 
     /// <summary>Files named with <paramref name="marker"/>, skipping the build output of a project folder.</summary>

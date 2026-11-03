@@ -258,6 +258,96 @@ Bật bằng `gameServer.AddObservability()` (project `GameServer.Platform.Obser
 | Che dữ liệu | giá trị thuộc tính (kể cả lồng trong object destructure `{@x}`) có tên chứa token/password/passwd/pwd/secret/pepper/authorization/bearer/jwt/cookie/privatekey/signingkey/apikey/connectionstring/receiptpayload/signeddata/credential → `***`. **Không** được che: object log bằng `{x}` (không `@`, bị `ToString()`), nội dung exception (`@x`), scope dạng chuỗi — module không được đưa secret vào các chỗ đó |
 | Lỗi sink | `SelfLog` (process-wide; thay handler SelfLog khác) → `log_sink_errors_total` (thông báo "queue đầy" không tính — đã đếm ở drop), lỗi gần nhất trong chi tiết GM; `log_dir_free_bytes` đo **mount chứa thư mục log** (root dài nhất khớp); health `log` Degraded khi lỗi trong `SinkErrorWindowSeconds` (300) hoặc đĩa < `LowDiskBytes` (1 GiB) |
 
+**Request event (semantic với vận hành và code consumer — slice 013, FG-025, FR-080..FR-089):** đổi tên/xoá một thuộc tính,
+category, event id, result code cố định hoặc setting dưới đây là breaking (PCR-01).
+
+- **Một event mỗi HTTP request** host trả lời hoặc client huỷ, trên mọi route (player, GM, public, Dev; command, query, login,
+  snapshot, config; 404/405 và mọi lỗi), ghi khi pipeline framework xong. `RequestLogMiddleware` là middleware **ngoài cùng**
+  của `UseGameServer` (trước forwarded headers và `ExceptionMiddleware`), nên đo cả pipeline và thấy status cuối. **Không** ghi
+  cho `/health/live`, `/health/ready` (luôn loại) và path trong `GameServer:RequestLog:ExcludedPaths` (prefix theo segment,
+  không phân biệt hoa thường); không ghi khi request log tắt cho deployment.
+- Category `GameServer.Requests`, event id `1` / `Request`, template (`@mt` trong file) `{HttpMethod} {Route} -> {Status} {ResultCode} in {DurationMs} ms`
+  (message đã format không chứa actor id).
+
+| Thuộc tính | Kiểu | Giá trị |
+| --- | --- | --- |
+| `HttpMethod` | string | `GET`, `POST`, … |
+| `Route` | string | template của endpoint (`/api/v1/player/receipts/{receiptId}`); không khớp endpoint (404, 405, scanner): path đã làm sạch (ký tự điều khiển → `?`, cắt 120 ký tự + `...`), không bao giờ có query string |
+| `Profile` | string? | `Public`, `Player`, `Gm`, `Dev`; null khi không khớp endpoint |
+| `Operation` | string? | operation của command (`counter.increment`), cả khi command bị từ chối trước runner; null cho route không phải command |
+| `ActorType` | string? | `player`, `gm`; null khi chưa xác thực |
+| `ActorId` | string? | player id hoặc staff id từ principal đã xác thực (không bao giờ từ header/body/query), làm sạch và cắt 64 ký tự (header test-auth thành claim nên cũng bị làm sạch) |
+| `RequestId` | string | correlation id (`X-Request-Id`: UUID của client hoặc do server sinh) |
+| `TraceId` | string? | W3C trace id (32 hex) của activity request; null khi không có activity |
+| `Status` | int? | HTTP status đã gửi; null khi client huỷ |
+| `ResultCode` | string | code client nhận được (API-11): `OK` khi không có code; business code của command (commit có code hoặc reject ở HTTP 200); code của `ErrorEnvelope`/Problem Details; `ABORTED` khi client đi trước khi response bắt đầu (khi đó `Status` null, event không bao giờ khẳng định commit nó không thấy); `INTERNAL` cho lỗi không xử lý; `HTTP_{status}` cho response non-2xx viết ngoài framework mà không có code |
+| `Replayed` | bool | command trả lời từ receipt |
+| `NotModified` | bool | config get trả `not_modified` |
+| `Aborted` | bool | client đi trước khi response bắt đầu |
+| `DurationMs` | double | thời gian cả pipeline framework, làm tròn 0,1 ms |
+
+  Cộng enrichment sẵn có khi dùng `AddObservability()`: `GameId`, `EnvironmentId`, `InstanceId`, `SourceContext`. Với command
+  route đã tới runner, event và `command_results_total{code}` cùng một code (FR-083); request bị từ chối trước runner có event,
+  không có metric.
+- **Level**: Information khi `Status` < 400 (kể cả business code ở HTTP 200 — reject là gameplay bình thường), Warning cho 4xx
+  và abort, Error cho 5xx. Lọc theo deployment bằng `Observability:Logging:LevelOverrides:GameServer.Requests` (`Warning` = chỉ
+  4xx/5xx/abort, `Fatal` = coi như tắt).
+- **Quyền riêng tư (LOG-05)**: không body, query string, giá trị header, cookie, token, password, guest secret, provider token,
+  CSRF token, purchase token hay địa chỉ IP; middleware không đọc body request/response. Player id và staff id là id nội bộ
+  theo chính sách LOG-04/TBD-08 hiện có.
+- **Mất mát chấp nhận được (LOG-06)**: event đi qua pipeline log bounded, có drop như mọi event khác; sink không theo kịp →
+  event bị bỏ và đếm (`log_dropped_total`); log không bao giờ làm chậm hay làm hỏng request. Lỗi khi dựng/ghi event bị nuốt,
+  đếm ở `request_log_failures_total` (meter `GameServer.Platform`; lỗi bên trong Serilog đã vào `log_sink_errors_total`), response
+  không đổi.
+
+**Outcome feature (semantic với code consumer, FR-084):** `IRequestOutcomeFeature` (namespace `GameServer.Platform.Web.Requests`)
+trên `HttpContext.Features`, lấy bằng `context.RequestOutcome()` (không bao giờ null; host không có middleware thì tạo khi dùng lần
+đầu). Thành viên: `ResultCode`, `Operation`, `Replayed`, `NotModified` (get/set), `StatusCode`, `Aborted`, `Completed` (get).
+
+```csharp
+app.Use(async (HttpContext context, RequestDelegate next) =>   // middleware của game, đặt TRƯỚC app.UseGameServer()
+{
+    await next(context);
+    var outcome = context.RequestOutcome();
+    // outcome.Completed == true, outcome.ResultCode != null, StatusCode null chỉ khi Aborted
+});
+app.UseGameServer();
+```
+
+- Được framework đặt cho mọi response nó viết (`ErrorResponseWriter` — mọi lỗi, 404, 405, refusal profile/CSRF/permission/Dev,
+  gate, rate limiter, timeout; endpoint command player/Dev/GM — code, replayed, operation, **trước** hook `afterExecute`; config
+  — not-modified) và chốt sau pipeline framework, cùng giá trị với request event dù event bật hay tắt.
+- Endpoint consumer và hook `afterExecute` đọc được giá trị đặt tới lúc đó (`Completed` false, `StatusCode` null); middleware
+  consumer ngoài pipeline framework đọc giá trị cuối sau `await next`. Bao gồm rejection và route không phải command, điều mà hook
+  `afterExecute` của `MapPlayerCommand` không thấy.
+- Endpoint consumer có thể đặt `ResultCode`, `Operation`, `Replayed`, `NotModified` cho response của chính nó; framework không
+  ghi đè code đó, trừ `ABORTED`/`INTERNAL` khi chốt. Response non-2xx của consumer không có code → `HTTP_{status}`.
+- Đọc feature không bao giờ buffer, copy hay parse body response. Không phải hợp đồng wire: client không thấy nó.
+
+**Console (vận hành, FR-087, FR-088):** `Observability:Logging:Console:Enabled` (mặc định `false`; flavor `Local` và `Dev` của
+host mẫu đặt `true`), `Observability:Logging:Console:MinimumLevel` (`Information`, cùng luật level), `Observability:Logging:Console:BufferSize`
+(1 000, ≥ 1). Một dòng dễ đọc mỗi event ≥ `MinimumLevel`: request event dạng
+`08:15:02.123 INF POST /api/v1/counter/increment (counter.increment) player=p_7f3a… req=1a2b3c4d -> 200 OK 12.4 ms`
+(`staff=` cho GM, `replayed`, `not_modified`, `-` thay status khi abort), event khác `HH:mm:ss.fff LVL message [SourceContext]` và
+exception ở các dòng sau; màu chỉ khi stdout là terminal. Queue riêng bounded, drop (đếm `log_dropped_total`) — không bao giờ là
+console provider mặc định (chờ khi queue đầy); stdout bị dừng/redirect không chặn request. **Thêm vào** file sink, không thay: nội
+dung file không đổi, log vận hành vẫn không đi tới provider khác. Bật ngoài Development/Test được phép, kèm một Warning khi start.
+
+**Request log theo flavor (FR-086, quyết định 2026-11-03, owner có thể đổi):**
+
+| Flavor (deployment environment) | Request event | Console (host mẫu) |
+| --- | --- | --- |
+| local, dev (Development) | bật (mặc định) | bật (file flavor) |
+| test host của framework/consumer (Development/Test) | bật (test logger bắt) | tắt (`LocalFlavorFactory` ép tắt) |
+| beta, uat (Staging) | **tắt** (mặc định); `GameServer:RequestLog:Enabled` = `true` bật (+ Warning khi start) | tắt |
+| live (Production) | **tắt** (mặc định); cùng switch | tắt |
+
+`GameServer:RequestLog:Enabled` (bool?, không đặt = theo deployment environment như bảng), `GameServer:RequestLog:ExcludedPaths`
+(string[], tối đa 50, mỗi mục bắt đầu bằng `/`, ≤ 200 ký tự, không `?`; mảng bị thay chứ không gộp). Giá trị sai → startup
+report `[request-log] …`, exit 1. Dung lượng khi bật: ~300–400 B/event (≈ 13–17 GB/instance/ngày ở 500 request/s, ≈ 1,3–1,7 GB ở
+50 request/s, chưa nén); với giới hạn file mặc định (100 MiB × 30 file ≈ 3 GiB) 500 request/s chỉ giữ ~4–5 giờ log vận hành:
+nâng `Observability:Logging:FileSizeLimitBytes`/`RetainedFileCountLimit` hoặc ship log trước khi bật ở Staging/Production.
+
 **Metrics/traces:** OpenTelemetry; sources/meters `GameServer.*` + ASP.NET Core (hosting, Kestrel, rate limiting) + HttpClient
 + runtime. OTLP khi `Observability:Otlp:Endpoint` có giá trị (`Protocol` `grpc` | `http/protobuf`; với HTTP, đường dẫn
 `/v1/traces`, `/v1/metrics` được nối vào endpoint gốc); Prometheus qua collector. Cấu hình sai (level, URI, protocol) → startup fail.

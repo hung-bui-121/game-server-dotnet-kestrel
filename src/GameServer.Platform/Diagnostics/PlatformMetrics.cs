@@ -35,6 +35,7 @@ public sealed class PlatformMetrics : IDisposable
     private readonly Counter<long> _accountPurges;
     private readonly Counter<long> _accountPurgeStepFailures;
     private readonly Counter<long> _accountPurgeDocuments;
+    private readonly Counter<long> _requestLogFailures;
     private string _configVersion = string.Empty;
     private OverdueSample? _purgeOverdue;
 
@@ -62,6 +63,7 @@ public sealed class PlatformMetrics : IDisposable
         _accountPurges = _meter.CreateCounter<long>("account_purges_total", description: "Per-player purge attempts by result");
         _accountPurgeStepFailures = _meter.CreateCounter<long>("account_purge_step_failures_total", description: "Failed purge steps by step id");
         _accountPurgeDocuments = _meter.CreateCounter<long>("account_purge_documents_total", description: "Documents anonymized or removed by account purges");
+        _requestLogFailures = _meter.CreateCounter<long>("request_log_failures_total", description: "Request events that could not be written (FR-085)");
         _meter.CreateObservableGauge(
             "account_purge_overdue_seconds",
             ObserveAccountPurgeOverdue,
@@ -118,6 +120,9 @@ public sealed class PlatformMetrics : IDisposable
             new KeyValuePair<string, object?>("operation", operation),
             new KeyValuePair<string, object?>("code", code),
             new KeyValuePair<string, object?>("replayed", replayed));
+
+    /// <summary>A request event failed while being built or written; the response was not affected (FR-085, LOG-06).</summary>
+    public void RequestLogFailed() => _requestLogFailures.Add(1);
 
     public void HttpError(string code) => _httpErrors.Add(1, new KeyValuePair<string, object?>("code", code));
 

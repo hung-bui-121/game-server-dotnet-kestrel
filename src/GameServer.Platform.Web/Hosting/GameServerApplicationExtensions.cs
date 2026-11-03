@@ -6,6 +6,7 @@ using GameServer.Platform.Registry;
 using GameServer.Platform.Web.Aggregates;
 using GameServer.Platform.Web.Endpoints;
 using GameServer.Platform.Web.Middleware;
+using GameServer.Platform.Web.Requests;
 using GameServer.Platform.Web.Routing;
 using GameServer.Platform.Web.Security;
 using GameServer.Platform.Web.Validation;
@@ -56,11 +57,14 @@ public static class GameServerApplicationExtensions
             errors.Add("[gate] GameServer:Gate:CacheSeconds must be 0..10 (PERF-08: a maintenance toggle applies within 10 s).");
         }
 
-        RunStartupChecks(services, errors);
+        errors.AddRange(options.RequestLog.Validate());
+        RunStartupChecks(services, errors, RequestLogVolumeWarning(options));
         ValidateModuleOptions(services, errors);
         var forwarded = DeploymentChecks.BuildForwardedHeaders(options, errors);
 
         // Endpoints are mapped even when errors exist so that every violation is reported at once.
+        // Outermost: the request event measures the whole pipeline and sees exceptions escaping it (research R11).
+        app.UseMiddleware<RequestLogMiddleware>();
         if (forwarded is not null)
         {
             // First: the client IP used by rate limits and audit comes from trusted proxies only (OPS-02).
@@ -139,10 +143,27 @@ public static class GameServerApplicationExtensions
         }
     }
 
+    /// <summary>
+    /// FR-086: the request event is off by default outside Development/Test; turning it on there is allowed and announced once
+    /// with the volume estimate (data-model §1).
+    /// </summary>
+    internal static string? RequestLogVolumeWarning(GameServerOptions options) =>
+        options.RequestLog.Enabled == true && !options.AllowsDevelopmentTools
+            ? $"[request-log] GameServer:RequestLog:Enabled=true in deployment environment '{options.DeploymentEnvironment}': one event per " +
+              "request (~300-400 B each, about 13-17 GB per instance per day at 500 requests/s). Raise " +
+              "Observability:Logging:FileSizeLimitBytes/RetainedFileCountLimit or ship the log files before relying on it; " +
+              "Observability:Logging:LevelOverrides:GameServer.Requests=Warning keeps only failures (FR-086)."
+            : null;
+
     /// <summary>Checks contributed by the host and the store packages (R4): errors join the report, warnings are logged once.</summary>
-    private static void RunStartupChecks(IServiceProvider services, List<string> errors)
+    private static void RunStartupChecks(IServiceProvider services, List<string> errors, string? hostWarning)
     {
         var result = CheckAll(services);
+        if (hostWarning is not null)
+        {
+            result.Warnings.Add(hostWarning);
+        }
+
         errors.AddRange(result.Errors);
         if (result.Warnings.Count > 0)
         {

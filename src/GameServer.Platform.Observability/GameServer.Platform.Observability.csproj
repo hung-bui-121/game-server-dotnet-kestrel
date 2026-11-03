@@ -9,6 +9,7 @@
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Serilog.Sinks.File" />
     <PackageReference Include="Serilog.Sinks.Async" />
+    <PackageReference Include="Serilog.Sinks.Console" />
     <PackageReference Include="Serilog.Formatting.Compact" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
     <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
@@ -18,5 +19,7 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="GameServer.Observability.Tests" />
+    <!-- Console writer seam of the opt-in request-log performance test (slice 013 T047). -->
+    <InternalsVisibleTo Include="SampleGame.Tests" />
   </ItemGroup>
 </Project>

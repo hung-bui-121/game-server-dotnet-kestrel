@@ -4,6 +4,7 @@ using GameServer.Platform.Web.Aggregates;
 using GameServer.Platform.Web.Auth;
 using GameServer.Platform.Web.Middleware;
 using GameServer.Platform.Web.Protobuf;
+using GameServer.Platform.Web.Requests;
 using GameServer.Platform.Web.Routing;
 using GameServer.Protocol.Core.V1;
 using GameServer.Time;
@@ -123,6 +124,8 @@ public static class CommandEndpointFactory
                     execution = await runner.ExecuteAsync(invocation, http.RequestAborted);
                 }
 
+                // Before the hook, so it reads the values set so far (FR-084); the same code as command_results_total (FR-083).
+                SetOutcome(http, execution, operation);
                 if (afterExecute is not null && execution.ReceiptId is not null)
                 {
                     await AfterExecuteHook.RunAsync(afterExecute, execution, http, operation);
@@ -132,6 +135,15 @@ public static class CommandEndpointFactory
                 await ProtobufBinding.WriteAsync(http, response);
             })
             .WithMetadata(new CommandOperationMetadata(operation));
+
+    /// <summary>The code, replay flag and operation of a command response on the request outcome (FR-083, FR-084).</summary>
+    internal static void SetOutcome(HttpContext http, CommandExecution execution, string operation)
+    {
+        var outcome = http.RequestOutcome();
+        outcome.ResultCode = execution.Code.Name;
+        outcome.Replayed = execution.Replayed;
+        outcome.Operation = operation;
+    }
 
     internal static CommandResponse BuildResponse(CommandExecution execution, AggregateWireMapperRegistry mappers, IClock clock)
     {

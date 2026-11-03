@@ -10,7 +10,7 @@ namespace SampleGame.Tests;
 
 /// <summary>
 /// Slice 011 SC-008: every configuration key the operator docs name exists. The back-ticked keys of the environments guide,
-/// PCR platform §17 and §18, the analytics guide and the README that start with <c>GameServer:</c>, <c>Couchbase:</c> or
+/// PCR platform §13, §17 and §18, the analytics guide and the README that start with <c>GameServer:</c>, <c>Couchbase:</c> or
 /// <c>FileStore:</c> must each resolve, by reflection, to a bound (publicly settable) property of <see cref="GameServerOptions"/>,
 /// <see cref="CouchbaseOptions"/>, <see cref="FileStoreOptions"/> or (slice 012, its own section bound separately)
 /// <see cref="AnalyticsOptions"/>; a key resolves against the <b>longest</b> matching section. A key of a <c>GameServer</c> subsection written without its <c>GameServer:</c> prefix
@@ -21,6 +21,7 @@ public sealed partial class DocumentedConfigurationKeysTests
     private const string Guide = "docs/guides/environments-and-local-run.md";
     private const string Pcr = "docs/pcr/platform.md";
     private const string PcrSection = "## 17.";
+    private const string ObservabilityPcrSection = "## 13.";
     private const string AnalyticsPcrSection = "## 18.";
     private const string AnalyticsGuide = "docs/guides/analytics.md";
     private const string Readme = "README.md";
@@ -50,7 +51,8 @@ public sealed partial class DocumentedConfigurationKeysTests
 
     private static readonly string Root = RepositoryRoot();
 
-    public static TheoryData<string> Documents() => new(Guide, Pcr + " " + PcrSection, Pcr + " " + AnalyticsPcrSection, AnalyticsGuide, Readme);
+    public static TheoryData<string> Documents() =>
+        new(Guide, Pcr + " " + PcrSection, Pcr + " " + AnalyticsPcrSection, Pcr + " " + ObservabilityPcrSection, AnalyticsGuide, Readme);
 
     [Theory]
     [MemberData(nameof(Documents))]
@@ -112,6 +114,23 @@ public sealed partial class DocumentedConfigurationKeysTests
             .ToList();
 
         missing.ShouldBeEmpty($"{document} does not document: {string.Join(", ", missing)} (data-model §1).");
+    }
+
+    /// <summary>Slice 013 T049 (FR-086, FR-089): the operator docs name every bound request-log setting.</summary>
+    [Theory]
+    [InlineData(Guide)]
+    [InlineData(Pcr + " " + ObservabilityPcrSection)]
+    public void The_operator_docs_name_every_request_log_key(string document)
+    {
+        var documented = DocumentedKeys(document).ToHashSet(StringComparer.Ordinal);
+
+        var missing = Bound(typeof(RequestLogSettings))
+            .Select(p => GameServerOptions.SectionName + ":" + nameof(GameServerOptions.RequestLog) + ":" + p.Name)
+            .Where(key => !documented.Contains(key))
+            .ToList();
+
+        missing.Count.ShouldBe(0, $"{document} does not document: {string.Join(", ", missing)} (data-model §3.1).");
+        Bound(typeof(RequestLogSettings)).Count().ShouldBe(2);
     }
 
     [Fact]

@@ -4,6 +4,7 @@ using GameServer.Config;
 using GameServer.Errors;
 using GameServer.Platform.Diagnostics;
 using GameServer.Platform.Web.Middleware;
+using GameServer.Platform.Web.Requests;
 using GameServer.Platform.Web.Routing;
 using GameServer.Protocol.Core.V1;
 using GameServer.Time;
@@ -28,6 +29,7 @@ public sealed class ErrorResponseWriter(IClock clock, IGameConfig config, Platfo
         }
 
         metrics.HttpError(code.Name);
+        context.RequestOutcome().ResultCode = code.Name;
         var requestId = CorrelationMiddleware.GetCorrelationId(context);
         var retryAfter = code.Retryable ? retryAfterMs ?? 1000 : 0;
 

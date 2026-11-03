@@ -5,6 +5,7 @@ using GameServer.Platform.Commands;
 using GameServer.Platform.Web.Aggregates;
 using GameServer.Platform.Web.Auth;
 using GameServer.Platform.Web.Protobuf;
+using GameServer.Platform.Web.Requests;
 using GameServer.Platform.Web.Routing;
 using GameServer.Protocol.Core.V1;
 using GameServer.Time;
@@ -67,6 +68,7 @@ internal static class CoreEndpoints
                     ServerTimeUtcMs = services.GetRequiredService<IClock>().UtcNow.ToUnixTimeMilliseconds(),
                     NotModified = string.Equals(request.ConfigVersion, config.ConfigVersion, StringComparison.Ordinal),
                 };
+                http.RequestOutcome().NotModified = response.NotModified;
                 if (!response.NotModified)
                 {
                     response.Files.AddRange(config.ClientVisibleFiles

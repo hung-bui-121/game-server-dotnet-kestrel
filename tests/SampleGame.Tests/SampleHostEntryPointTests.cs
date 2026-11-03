@@ -25,7 +25,8 @@ public sealed class SampleHostEntryPointTests
             await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b => b
                 .UseEnvironment(flavor)
                 .UseSetting(key, "abc")
-                .UseSetting("GameServer:Analytics:Enabled", "false"));
+                .UseSetting("GameServer:Analytics:Enabled", "false")
+                .UseSetting("Observability:Logging:Console:Enabled", "false"));
 
             // The entry point returns 1 before running the host; the factory then reports a host that never started.
             Should.Throw<InvalidOperationException>(() => factory.CreateClient());
@@ -52,6 +53,9 @@ public sealed class SampleHostEntryPointTests
         start.ArgumentList.Add(spelled);
         start.Environment["ASPNETCORE_ENVIRONMENT"] = "Local";
         start.Environment.Remove("DOTNET_ENVIRONMENT");
+
+        // The Local flavor file turns the console sink on (slice 013); this test reads stdout for one marker only.
+        start.Environment["Observability__Logging__Console__Enabled"] = "false";
 
         using var process = Process.Start(start) ?? throw new InvalidOperationException("dotnet did not start.");
         var output = process.StandardOutput.ReadToEndAsync();

@@ -85,6 +85,28 @@ public sealed class SampleHostConfigurationFileTests
         new GameServerOptions().SecretKeys.ShouldNotContain(key => key.StartsWith("GameServer:Analytics", StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>Slice 013 T046 (data-model §3.3, FR-087, FR-086): console only in the Development flavors, no request-log key anywhere.</summary>
+    [Theory]
+    [MemberData(nameof(Files))]
+    public void The_console_sink_is_on_only_in_local_and_dev_and_no_file_sets_the_request_log(string file)
+    {
+        var configuration = Load(file);
+        var console = configuration["Observability:Logging:Console:Enabled"];
+
+        if (file is LocalFile or "appsettings.Dev.json")
+        {
+            bool.TryParse(console, out var enabled).ShouldBeTrue($"{file} must set Observability:Logging:Console:Enabled.");
+            enabled.ShouldBeTrue($"{file} must turn the console sink on (FR-087).");
+        }
+        else
+        {
+            console.ShouldBeNull($"{file} must not set Observability:Logging:Console:Enabled (data-model §3.3).");
+        }
+
+        configuration.GetSection("GameServer:RequestLog").Exists().ShouldBeFalse(
+            $"{file} sets GameServer:RequestLog: the request event follows the deployment environment by default (FR-086).");
+    }
+
     [Fact]
     public void The_base_file_has_no_analytics_section() =>
         Load(BaseFile).GetSection("GameServer:Analytics").Exists().ShouldBeFalse($"{BaseFile} must not set analytics (FR-032).");
@@ -185,7 +207,10 @@ public sealed class SampleHostConfigurationFileTests
     {
         var error = await ConsoleErrorCapture.RunAsync(async () =>
         {
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b => b.UseEnvironment("Production").UseSetting("GameServer:Analytics:Enabled", "false"));
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b => b
+                .UseEnvironment("Production")
+                .UseSetting("GameServer:Analytics:Enabled", "false")
+                .UseSetting("Observability:Logging:Console:Enabled", "false"));
 
             // The entry point returns 1 before running the host; the factory then reports a host that never started.
             Should.Throw<InvalidOperationException>(() => factory.CreateClient());
