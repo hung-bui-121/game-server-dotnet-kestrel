@@ -9,7 +9,10 @@
   GameServer.Client.CommandResult`1 :: prop TResult Result {get;}
   GameServer.Client.ErrorCodes :: field static const System.String AccountDeleted = ACCOUNT_DELETED
   GameServer.Client.ErrorCodes :: field static const System.String AccountSuspended = ACCOUNT_SUSPENDED
+  GameServer.Client.ErrorCodes :: field static const System.String AggregateUnreadable = AGGREGATE_UNREADABLE
+  GameServer.Client.ErrorCodes :: field static const System.String AggregateVersionAhead = AGGREGATE_VERSION_AHEAD
   GameServer.Client.ErrorCodes :: field static const System.String BadRequest = BAD_REQUEST
+  GameServer.Client.ErrorCodes :: field static const System.String CommandOutputTooLarge = COMMAND_OUTPUT_TOO_LARGE
   GameServer.Client.ErrorCodes :: field static const System.String CommitUnknownRetry = COMMIT_UNKNOWN_RETRY
   GameServer.Client.ErrorCodes :: field static const System.String ConcurrentUpdate = CONCURRENT_UPDATE
   GameServer.Client.ErrorCodes :: field static const System.String IdentityConflict = IDENTITY_CONFLICT
@@ -92,6 +95,7 @@
   GameServer.Client.GameServerClient :: prop System.Boolean ConfigOutdated {get;}
   GameServer.Client.GameServerClient :: prop System.Boolean HasSession {get;}
   GameServer.Client.GameServerClient :: prop System.DateTimeOffset ServerNow {get;}
+  GameServer.Client.GameServerClient :: prop System.String ClientConfigVersion {get;}
   GameServer.Client.GameServerClient :: prop System.String PlayerId {get;}
   GameServer.Client.GameServerClient :: prop System.String ServerConfigVersion {get;}
   GameServer.Client.GameServerClient :: prop System.TimeSpan ServerTimeOffset {get;}
@@ -140,6 +144,14 @@
   GameServer.Client.InMemorySessionStore :: System.Void Clear<>()
   GameServer.Client.InMemorySessionStore :: prop System.String PlayerId {get;set;}
   GameServer.Client.InMemorySessionStore :: prop System.String Token {get;set;}
+  GameServer.Client.PersistentConfigCache :: .ctor(System.String folder)
+  GameServer.Client.PersistentConfigCache :: System.Void Store<>(System.String version, System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.Byte[]] files)
+  GameServer.Client.PersistentConfigCache :: field static const System.String FileName = gameserver-config.bin
+  GameServer.Client.PersistentConfigCache :: prop System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.Byte[]] Files {get;}
+  GameServer.Client.PersistentConfigCache :: prop System.String Folder {get;}
+  GameServer.Client.PersistentConfigCache :: prop System.String LoadProblem {get;}
+  GameServer.Client.PersistentConfigCache :: prop System.String Version {get;}
+  GameServer.Client.PersistentConfigCache :: prop System.String WriteProblem {get;}
   GameServer.Client.SectionKey :: prop Google.Protobuf.MessageParser Parser {get;}
   GameServer.Client.SectionKey :: prop System.String Id {get;}
   GameServer.Client.SectionKey`1 :: .ctor(System.String id, Google.Protobuf.MessageParser`1[T] parser)
@@ -407,17 +419,23 @@
   GameServer.Modules.Identity.Protocol.V1.LoginResponse :: System.Void MergeFrom<>(GameServer.Modules.Identity.Protocol.V1.LoginResponse other)
   GameServer.Modules.Identity.Protocol.V1.LoginResponse :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
   GameServer.Modules.Identity.Protocol.V1.LoginResponse :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: field static const System.Int32 ClientConfigVersionFieldNumber = 7
   GameServer.Modules.Identity.Protocol.V1.LoginResponse :: field static const System.Int32 ConfigVersionFieldNumber = 4
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: field static const System.Int32 IsNewPlayerFieldNumber = 8
   GameServer.Modules.Identity.Protocol.V1.LoginResponse :: field static const System.Int32 PlayerIdFieldNumber = 2
   GameServer.Modules.Identity.Protocol.V1.LoginResponse :: field static const System.Int32 SectionsFieldNumber = 3
   GameServer.Modules.Identity.Protocol.V1.LoginResponse :: field static const System.Int32 ServerTimeUtcMsFieldNumber = 5
   GameServer.Modules.Identity.Protocol.V1.LoginResponse :: field static const System.Int32 SessionExpiresAtUtcMsFieldNumber = 6
   GameServer.Modules.Identity.Protocol.V1.LoginResponse :: field static const System.Int32 SessionTokenFieldNumber = 1
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: field static const System.Int32 UnavailableSectionsFieldNumber = 9
   GameServer.Modules.Identity.Protocol.V1.LoginResponse :: prop Google.Protobuf.Collections.RepeatedField`1[GameServer.Protocol.Core.V1.Section] Sections {get;}
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: prop Google.Protobuf.Collections.RepeatedField`1[GameServer.Protocol.Core.V1.UnavailableSection] UnavailableSections {get;}
   GameServer.Modules.Identity.Protocol.V1.LoginResponse :: prop Google.Protobuf.MessageParser`1[GameServer.Modules.Identity.Protocol.V1.LoginResponse] Parser {get;}
   GameServer.Modules.Identity.Protocol.V1.LoginResponse :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: prop System.Boolean IsNewPlayer {get;set;}
   GameServer.Modules.Identity.Protocol.V1.LoginResponse :: prop System.Int64 ServerTimeUtcMs {get;set;}
   GameServer.Modules.Identity.Protocol.V1.LoginResponse :: prop System.Int64 SessionExpiresAtUtcMs {get;set;}
+  GameServer.Modules.Identity.Protocol.V1.LoginResponse :: prop System.String ClientConfigVersion {get;set;}
   GameServer.Modules.Identity.Protocol.V1.LoginResponse :: prop System.String ConfigVersion {get;set;}
   GameServer.Modules.Identity.Protocol.V1.LoginResponse :: prop System.String PlayerId {get;set;}
   GameServer.Modules.Identity.Protocol.V1.LoginResponse :: prop System.String SessionToken {get;set;}
@@ -612,21 +630,27 @@
   GameServer.Protocol.Core.V1.CommandResponse :: System.Void MergeFrom<>(GameServer.Protocol.Core.V1.CommandResponse other)
   GameServer.Protocol.Core.V1.CommandResponse :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
   GameServer.Protocol.Core.V1.CommandResponse :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Protocol.Core.V1.CommandResponse :: field static const System.Int32 ClientConfigVersionFieldNumber = 9
   GameServer.Protocol.Core.V1.CommandResponse :: field static const System.Int32 CodeFieldNumber = 1
   GameServer.Protocol.Core.V1.CommandResponse :: field static const System.Int32 CodeNumberFieldNumber = 2
   GameServer.Protocol.Core.V1.CommandResponse :: field static const System.Int32 ConfigVersionFieldNumber = 6
+  GameServer.Protocol.Core.V1.CommandResponse :: field static const System.Int32 DetailsFieldNumber = 11
   GameServer.Protocol.Core.V1.CommandResponse :: field static const System.Int32 ReceiptIdFieldNumber = 3
   GameServer.Protocol.Core.V1.CommandResponse :: field static const System.Int32 ReplayedFieldNumber = 8
   GameServer.Protocol.Core.V1.CommandResponse :: field static const System.Int32 ResultFieldNumber = 5
   GameServer.Protocol.Core.V1.CommandResponse :: field static const System.Int32 ServerTimeUtcMsFieldNumber = 7
+  GameServer.Protocol.Core.V1.CommandResponse :: field static const System.Int32 UnavailableSectionsFieldNumber = 10
   GameServer.Protocol.Core.V1.CommandResponse :: field static const System.Int32 UpdatesFieldNumber = 4
   GameServer.Protocol.Core.V1.CommandResponse :: prop Google.Protobuf.ByteString Result {get;set;}
+  GameServer.Protocol.Core.V1.CommandResponse :: prop Google.Protobuf.Collections.MapField`2[System.String,System.String] Details {get;}
   GameServer.Protocol.Core.V1.CommandResponse :: prop Google.Protobuf.Collections.RepeatedField`1[GameServer.Protocol.Core.V1.SectionUpdate] Updates {get;}
+  GameServer.Protocol.Core.V1.CommandResponse :: prop Google.Protobuf.Collections.RepeatedField`1[GameServer.Protocol.Core.V1.UnavailableSection] UnavailableSections {get;}
   GameServer.Protocol.Core.V1.CommandResponse :: prop Google.Protobuf.MessageParser`1[GameServer.Protocol.Core.V1.CommandResponse] Parser {get;}
   GameServer.Protocol.Core.V1.CommandResponse :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
   GameServer.Protocol.Core.V1.CommandResponse :: prop System.Boolean Replayed {get;set;}
   GameServer.Protocol.Core.V1.CommandResponse :: prop System.Int32 CodeNumber {get;set;}
   GameServer.Protocol.Core.V1.CommandResponse :: prop System.Int64 ServerTimeUtcMs {get;set;}
+  GameServer.Protocol.Core.V1.CommandResponse :: prop System.String ClientConfigVersion {get;set;}
   GameServer.Protocol.Core.V1.CommandResponse :: prop System.String Code {get;set;}
   GameServer.Protocol.Core.V1.CommandResponse :: prop System.String ConfigVersion {get;set;}
   GameServer.Protocol.Core.V1.CommandResponse :: prop System.String ReceiptId {get;set;}
@@ -659,6 +683,7 @@
   GameServer.Protocol.Core.V1.ErrorEnvelope :: System.Void MergeFrom<>(GameServer.Protocol.Core.V1.ErrorEnvelope other)
   GameServer.Protocol.Core.V1.ErrorEnvelope :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
   GameServer.Protocol.Core.V1.ErrorEnvelope :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: field static const System.Int32 ClientConfigVersionFieldNumber = 10
   GameServer.Protocol.Core.V1.ErrorEnvelope :: field static const System.Int32 CodeFieldNumber = 1
   GameServer.Protocol.Core.V1.ErrorEnvelope :: field static const System.Int32 CodeNumberFieldNumber = 2
   GameServer.Protocol.Core.V1.ErrorEnvelope :: field static const System.Int32 ConfigVersionFieldNumber = 8
@@ -675,6 +700,7 @@
   GameServer.Protocol.Core.V1.ErrorEnvelope :: prop System.Int32 CodeNumber {get;set;}
   GameServer.Protocol.Core.V1.ErrorEnvelope :: prop System.Int32 RetryAfterMs {get;set;}
   GameServer.Protocol.Core.V1.ErrorEnvelope :: prop System.Int64 ServerTimeUtcMs {get;set;}
+  GameServer.Protocol.Core.V1.ErrorEnvelope :: prop System.String ClientConfigVersion {get;set;}
   GameServer.Protocol.Core.V1.ErrorEnvelope :: prop System.String Code {get;set;}
   GameServer.Protocol.Core.V1.ErrorEnvelope :: prop System.String ConfigVersion {get;set;}
   GameServer.Protocol.Core.V1.ErrorEnvelope :: prop System.String Message {get;set;}
@@ -705,6 +731,7 @@
   GameServer.Protocol.Core.V1.GetConfigResponse :: System.Void MergeFrom<>(GameServer.Protocol.Core.V1.GetConfigResponse other)
   GameServer.Protocol.Core.V1.GetConfigResponse :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
   GameServer.Protocol.Core.V1.GetConfigResponse :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Protocol.Core.V1.GetConfigResponse :: field static const System.Int32 ClientConfigVersionFieldNumber = 5
   GameServer.Protocol.Core.V1.GetConfigResponse :: field static const System.Int32 ConfigVersionFieldNumber = 1
   GameServer.Protocol.Core.V1.GetConfigResponse :: field static const System.Int32 FilesFieldNumber = 3
   GameServer.Protocol.Core.V1.GetConfigResponse :: field static const System.Int32 NotModifiedFieldNumber = 2
@@ -714,6 +741,7 @@
   GameServer.Protocol.Core.V1.GetConfigResponse :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
   GameServer.Protocol.Core.V1.GetConfigResponse :: prop System.Boolean NotModified {get;set;}
   GameServer.Protocol.Core.V1.GetConfigResponse :: prop System.Int64 ServerTimeUtcMs {get;set;}
+  GameServer.Protocol.Core.V1.GetConfigResponse :: prop System.String ClientConfigVersion {get;set;}
   GameServer.Protocol.Core.V1.GetConfigResponse :: prop System.String ConfigVersion {get;set;}
   GameServer.Protocol.Core.V1.OutboxEntryView :: .ctor()
   GameServer.Protocol.Core.V1.OutboxEntryView :: .ctor(GameServer.Protocol.Core.V1.OutboxEntryView other)
@@ -835,13 +863,17 @@
   GameServer.Protocol.Core.V1.SnapshotResponse :: System.Void MergeFrom<>(GameServer.Protocol.Core.V1.SnapshotResponse other)
   GameServer.Protocol.Core.V1.SnapshotResponse :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
   GameServer.Protocol.Core.V1.SnapshotResponse :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Protocol.Core.V1.SnapshotResponse :: field static const System.Int32 ClientConfigVersionFieldNumber = 4
   GameServer.Protocol.Core.V1.SnapshotResponse :: field static const System.Int32 ConfigVersionFieldNumber = 2
   GameServer.Protocol.Core.V1.SnapshotResponse :: field static const System.Int32 SectionsFieldNumber = 1
   GameServer.Protocol.Core.V1.SnapshotResponse :: field static const System.Int32 ServerTimeUtcMsFieldNumber = 3
+  GameServer.Protocol.Core.V1.SnapshotResponse :: field static const System.Int32 UnavailableSectionsFieldNumber = 5
   GameServer.Protocol.Core.V1.SnapshotResponse :: prop Google.Protobuf.Collections.RepeatedField`1[GameServer.Protocol.Core.V1.Section] Sections {get;}
+  GameServer.Protocol.Core.V1.SnapshotResponse :: prop Google.Protobuf.Collections.RepeatedField`1[GameServer.Protocol.Core.V1.UnavailableSection] UnavailableSections {get;}
   GameServer.Protocol.Core.V1.SnapshotResponse :: prop Google.Protobuf.MessageParser`1[GameServer.Protocol.Core.V1.SnapshotResponse] Parser {get;}
   GameServer.Protocol.Core.V1.SnapshotResponse :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
   GameServer.Protocol.Core.V1.SnapshotResponse :: prop System.Int64 ServerTimeUtcMs {get;set;}
+  GameServer.Protocol.Core.V1.SnapshotResponse :: prop System.String ClientConfigVersion {get;set;}
   GameServer.Protocol.Core.V1.SnapshotResponse :: prop System.String ConfigVersion {get;set;}
   GameServer.Protocol.Core.V1.TimeResponse :: .ctor()
   GameServer.Protocol.Core.V1.TimeResponse :: .ctor(GameServer.Protocol.Core.V1.TimeResponse other)
@@ -858,6 +890,25 @@
   GameServer.Protocol.Core.V1.TimeResponse :: prop Google.Protobuf.MessageParser`1[GameServer.Protocol.Core.V1.TimeResponse] Parser {get;}
   GameServer.Protocol.Core.V1.TimeResponse :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
   GameServer.Protocol.Core.V1.TimeResponse :: prop System.Int64 ServerTimeUtcMs {get;set;}
+  GameServer.Protocol.Core.V1.UnavailableSection :: .ctor()
+  GameServer.Protocol.Core.V1.UnavailableSection :: .ctor(GameServer.Protocol.Core.V1.UnavailableSection other)
+  GameServer.Protocol.Core.V1.UnavailableSection :: GameServer.Protocol.Core.V1.UnavailableSection Clone<>()
+  GameServer.Protocol.Core.V1.UnavailableSection :: System.Boolean Equals<>(GameServer.Protocol.Core.V1.UnavailableSection other)
+  GameServer.Protocol.Core.V1.UnavailableSection :: System.Boolean Equals<>(System.Object other)
+  GameServer.Protocol.Core.V1.UnavailableSection :: System.Int32 CalculateSize<>()
+  GameServer.Protocol.Core.V1.UnavailableSection :: System.Int32 GetHashCode<>()
+  GameServer.Protocol.Core.V1.UnavailableSection :: System.String ToString<>()
+  GameServer.Protocol.Core.V1.UnavailableSection :: System.Void MergeFrom<>(GameServer.Protocol.Core.V1.UnavailableSection other)
+  GameServer.Protocol.Core.V1.UnavailableSection :: System.Void MergeFrom<>(Google.Protobuf.CodedInputStream input)
+  GameServer.Protocol.Core.V1.UnavailableSection :: System.Void WriteTo<>(Google.Protobuf.CodedOutputStream output)
+  GameServer.Protocol.Core.V1.UnavailableSection :: field static const System.Int32 CodeFieldNumber = 2
+  GameServer.Protocol.Core.V1.UnavailableSection :: field static const System.Int32 CodeNumberFieldNumber = 3
+  GameServer.Protocol.Core.V1.UnavailableSection :: field static const System.Int32 IdFieldNumber = 1
+  GameServer.Protocol.Core.V1.UnavailableSection :: prop Google.Protobuf.MessageParser`1[GameServer.Protocol.Core.V1.UnavailableSection] Parser {get;}
+  GameServer.Protocol.Core.V1.UnavailableSection :: prop Google.Protobuf.Reflection.MessageDescriptor Descriptor {get;}
+  GameServer.Protocol.Core.V1.UnavailableSection :: prop System.Int32 CodeNumber {get;set;}
+  GameServer.Protocol.Core.V1.UnavailableSection :: prop System.String Code {get;set;}
+  GameServer.Protocol.Core.V1.UnavailableSection :: prop System.String Id {get;set;}
 type GameServer.Client.CommandResult`1 : System.Object []
 type GameServer.Client.ErrorCodes : System.Object []
 type GameServer.Client.FrameworkRoutes : System.Object []
@@ -874,6 +925,7 @@ type GameServer.Client.IHttpTransport :  []
 type GameServer.Client.ISessionStore :  []
 type GameServer.Client.InMemoryConfigCache : System.Object [GameServer.Client.IConfigCache]
 type GameServer.Client.InMemorySessionStore : System.Object [GameServer.Client.ISessionStore]
+type GameServer.Client.PersistentConfigCache : System.Object [GameServer.Client.IConfigCache]
 type GameServer.Client.SectionKey : System.Object []
 type GameServer.Client.SectionKey`1 : GameServer.Client.SectionKey []
 type GameServer.Client.SectionRead : System.Enum [System.IComparable,System.IConvertible,System.IFormattable,System.ISpanFormattable]
@@ -926,3 +978,4 @@ type GameServer.Protocol.Core.V1.SectionUpdate : System.Object [Google.Protobuf.
 type GameServer.Protocol.Core.V1.SnapshotRequest : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Protocol.Core.V1.SnapshotRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Protocol.Core.V1.SnapshotRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Protocol.Core.V1.SnapshotRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
 type GameServer.Protocol.Core.V1.SnapshotResponse : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Protocol.Core.V1.SnapshotResponse, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Protocol.Core.V1.SnapshotResponse, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Protocol.Core.V1.SnapshotResponse, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
 type GameServer.Protocol.Core.V1.TimeResponse : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Protocol.Core.V1.TimeResponse, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Protocol.Core.V1.TimeResponse, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Protocol.Core.V1.TimeResponse, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
+type GameServer.Protocol.Core.V1.UnavailableSection : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Protocol.Core.V1.UnavailableSection, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Protocol.Core.V1.UnavailableSection, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Protocol.Core.V1.UnavailableSection, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]

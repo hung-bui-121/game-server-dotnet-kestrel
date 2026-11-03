@@ -1,5 +1,6 @@
 using GameServer.Errors;
 using GameServer.Platform.Aggregates;
+using GameServer.Platform.Commands;
 using GameServer.Platform.Limits;
 using GameServer.Platform.Persistence;
 using GameServer.Time;
@@ -12,7 +13,11 @@ public sealed record LoginResult(
     string Token,
     string PlayerId,
     DateTimeOffset ExpiresAt,
-    IReadOnlyList<LoadedAggregate> Sections);
+    IReadOnlyList<LoadedAggregate> Sections)
+{
+    /// <summary>True when this login created the player (FG-013); equals the analytics isNewUser.</summary>
+    public bool IsNewPlayer { get; init; }
+}
 
 /// <summary>
 /// Per-IP login limits shared by guest and provider logins (SEC-13): failed logins per IP are blocked, request bursts per
@@ -54,12 +59,13 @@ public sealed class LoginRateLimits
 
 /// <summary>
 /// Common end of every login (IDN-07, IDN-08, IDN-10): account checks → session epoch +1 (single session + takeover)
-/// and the mapping key recorded in <c>profile.identities</c> → new session → snapshot. A first login creates the profile
-/// anchored on the identity mapping (<c>identities/{mappingKey}</c>, research R9): when the account purge removed the
-/// mapping meanwhile, nothing is created and the login answers ACCOUNT_DELETED.
+/// and the mapping key recorded in <c>profile.identities</c> → new session → snapshot. Every login writes the profile through
+/// <see cref="IAccountWriter"/>: a first login creates the account anchored on the identity mapping
+/// (<c>identities/{mappingKey}</c>, research R9); when the account purge removed the mapping meanwhile, nothing is created
+/// and the login answers ACCOUNT_DELETED. Whether this login created the player comes only from the committed write (FG-013).
 /// </summary>
 public sealed class LoginCompletion(
-    IPlayerAggregateWriter writer,
+    IAccountWriter accounts,
     PlayerSnapshotReader snapshots,
     ProfileCache profiles,
     SessionService sessions,
@@ -74,14 +80,18 @@ public sealed class LoginCompletion(
     /// </summary>
     internal Func<string, Task>? AfterMappingRead { get; set; }
 
-    public async Task<LoginResult> CompleteAsync(string playerId, string mappingKey, CancellationToken cancellationToken)
+    /// <param name="correlationId">
+    /// Correlation id of the login request, stored in the creation receipt of a new account (FG-015); null stores none.
+    /// </param>
+    public async Task<LoginResult> CompleteAsync(string playerId, string mappingKey, CancellationToken cancellationToken, string? correlationId = null)
     {
         if (AfterMappingRead is { } pause)
         {
             await pause(playerId);
         }
 
-        // Null = no profile yet (first login) or purged; the creation anchor below tells them apart.
+        // Null = no profile yet (first login) or purged; the creation anchor below tells them apart. Only the access check
+        // uses this read: whether the login creates the player is decided inside the write (trap T3).
         var profile = await profiles.ReadFreshAsync(playerId, cancellationToken);
         if (profile is not null && AccountChecks.CheckAccess(profile, clock.UtcNow) is { } denial)
         {
@@ -90,7 +100,8 @@ public sealed class LoginCompletion(
         }
 
         // Single session + takeover: the new epoch invalidates every older session (IDN-08, IDN-10).
-        var updated = await WriteEpochAsync(playerId, mappingKey, cancellationToken);
+        var written = await WriteEpochAsync(playerId, mappingKey, correlationId, cancellationToken);
+        var updated = written.Profile;
         profiles.Set(playerId, updated);
 
         var (token, expiresAt) = await sessions.CreateAsync(playerId, updated.SessionEpoch, cancellationToken);
@@ -99,34 +110,38 @@ public sealed class LoginCompletion(
         logger.LogInformation("Login of player {PlayerId} with {Provider} (epoch {Epoch}).", playerId, ProviderIdentities.ProviderOf(mappingKey), updated.SessionEpoch);
 
         // Last step that can fail is done: one login record (FR-015); refused or failed logins threw earlier (FR-016).
-        analytics.LoggedIn(playerId, ProviderIdentities.ProviderOf(mappingKey), createdPlayer: profile is null);
-        return new LoginResult(token, playerId, expiresAt, sections);
+        analytics.LoggedIn(playerId, ProviderIdentities.ProviderOf(mappingKey), createdPlayer: written.Created);
+        return new LoginResult(token, playerId, expiresAt, sections) { IsNewPlayer = written.Created };
     }
 
-    private async Task<ProfileState> WriteEpochAsync(string playerId, string mappingKey, CancellationToken cancellationToken)
+    private async Task<AccountWriteResult<ProfileState>> WriteEpochAsync(
+        string playerId,
+        string mappingKey,
+        string? correlationId,
+        CancellationToken cancellationToken)
     {
         try
         {
-            var (updated, _) = await writer.UpdateAsync<ProfileState>(
-                playerId,
-                IdentityAggregates.Profile,
-                p =>
-                {
-                    // A ban or deletion committed after the read above wins: no token is issued (review m8).
-                    if (AccountChecks.CheckAccess(p, clock.UtcNow) is { } late)
+            return await accounts.WriteLoginAsync(
+                new AccountLoginWrite<ProfileState>(
+                    playerId,
+                    p =>
                     {
-                        throw new GameServerException(late.Code, $"Login refused for {playerId}.") { Details = late.Details };
-                    }
+                        // A ban or deletion committed after the read above wins: no token is issued (review m8).
+                        if (AccountChecks.CheckAccess(p, clock.UtcNow) is { } late)
+                        {
+                            throw new GameServerException(late.Code, $"Login refused for {playerId}.") { Details = late.Details };
+                        }
 
-                    return p with
-                    {
-                        SessionEpoch = p.SessionEpoch + 1,
-                        Identities = p.Identities.Contains(mappingKey, StringComparer.Ordinal) ? p.Identities : [.. p.Identities, mappingKey],
-                    };
-                },
-                new DocumentKey(IdentityCollections.Identities, mappingKey),
+                        return p with
+                        {
+                            SessionEpoch = p.SessionEpoch + 1,
+                            Identities = p.Identities.Contains(mappingKey, StringComparer.Ordinal) ? p.Identities : [.. p.Identities, mappingKey],
+                        };
+                    },
+                    new DocumentKey(IdentityCollections.Identities, mappingKey),
+                    correlationId ?? string.Empty),
                 cancellationToken);
-            return updated;
         }
         catch (AggregateAnchorMissingException)
         {

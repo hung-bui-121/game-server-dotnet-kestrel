@@ -7,6 +7,7 @@ using sdk::GameServer.Client;
 using Shouldly;
 using Economy = sdk::GameServer.Modules.Economy.Protocol.V1;
 using SdkCore = sdk::GameServer.Protocol.Core.V1;
+using SdkIdentity = sdk::GameServer.Modules.Identity.Protocol.V1;
 
 namespace GameServer.Client.Tests;
 
@@ -54,6 +55,56 @@ public sealed class ClientTests : IAsyncLifetime
         snapshot.Headers[GameServerClient.BuildIdHeader].ShouldBe("build-42");
         Guid.TryParse(snapshot.Headers[GameServerClient.RequestIdHeader], out _).ShouldBeTrue();
         transport.RequestsTo(GameServerClient.LoginRoute).Single().Headers.ContainsKey("Authorization").ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Guest_and_provider_logins_carry_the_new_player_flag()
+    {
+        // Slice 016 T020 (FR-004, US1-5): the generated LoginResponse exposes is_new_player; no SDK source change.
+        var (localId, secret) = SdkHarness.NewDevice();
+        var (first, _, _) = _harness.NewClient();
+        var (second, _, _) = _harness.NewClient();
+
+        (await first.LoginGuestAsync(localId, secret)).IsNewPlayer.ShouldBeTrue();
+        (await second.LoginGuestAsync(localId, secret)).IsNewPlayer.ShouldBeFalse();
+
+        var credential = new SdkIdentity.ProviderCredential
+        {
+            PlayGames = new SdkIdentity.PlayGamesCredential { ServerAuthCode = GameServer.Modules.Identity.FakeIdentityAdapter.Prefix + "g" + Guid.NewGuid().ToString("N")[..20] },
+        };
+        var (provider, _, _) = _harness.NewClient();
+        var created = await provider.LoginWithProviderAsync(credential);
+        created.IsNewPlayer.ShouldBeTrue();
+        (await provider.LoginWithProviderAsync(credential)).IsNewPlayer.ShouldBeFalse();
+        provider.Sections.RevOf("profile").ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task A_login_answer_without_the_flag_reads_false_and_its_sections_still_apply()
+    {
+        // A server before slice 016 never writes field 8 (wire-changes §5).
+        var (client, transport, _) = _harness.NewClient();
+        transport.After = (request, _, response) =>
+        {
+            if (request.Url.AbsolutePath.TrimStart('/') != GameServerClient.LoginRoute)
+            {
+                return response;
+            }
+
+            var login = SdkIdentity.LoginResponse.Parser.ParseFrom(response.Body);
+            login.IsNewPlayer.ShouldBeTrue();
+            login.IsNewPlayer = false;
+            return new TransportResponse(response.Status, response.ContentType, login.ToByteArray());
+        };
+        var (localId, secret) = SdkHarness.NewDevice();
+
+        var answer = await client.LoginGuestAsync(localId, secret);
+
+        // proto3 never writes a false bool, so the rewritten answer has no field 8, as an old server's.
+        answer.IsNewPlayer.ShouldBeFalse();
+        client.HasSession.ShouldBeTrue();
+        client.PlayerId.ShouldBe(answer.PlayerId);
+        client.Sections.RevOf("profile").ShouldBe(1);
     }
 
     [Fact]

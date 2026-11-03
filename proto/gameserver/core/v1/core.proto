@@ -35,6 +35,13 @@ message SectionUpdate {
   bool full = 5;              // P0 luôn true
 }
 
+// A client-visible aggregate the response cannot carry (016, FG-029): absent from sections/updates, never sent empty.
+message UnavailableSection {
+  string id = 1;              // aggregateId
+  string code = 2;            // AGGREGATE_VERSION_AHEAD | AGGREGATE_UNREADABLE
+  int32 code_number = 3;
+}
+
 // Response của mọi command thay đổi trạng thái.
 message CommandResponse {
   string code = 1;            // "OK" hoặc mã nghiệp vụ (HTTP 200)
@@ -46,6 +53,8 @@ message CommandResponse {
   int64 server_time_utc_ms = 7;
   bool replayed = 8;          // true nếu trả từ receipt đã commit
   string client_config_version = 9;   // client config version (015); config_version (6) stays the server version
+  repeated UnavailableSection unavailable_sections = 10;  // 016: replay or post-commit mapping could not carry it
+  map<string, string> details = 11;                       // 016: details of a business rejection (HTTP 200), e.g. part/bytes/limit
 }
 
 message SnapshotRequest {
@@ -57,6 +66,7 @@ message SnapshotResponse {
   string config_version = 2;
   int64 server_time_utc_ms = 3;
   string client_config_version = 4;   // client config version (015); config_version (2) stays the server version
+  repeated UnavailableSection unavailable_sections = 5;   // 016: requested sections that could not be read or mapped
 }
 
 message ReceiptView {

@@ -1,3 +1,4 @@
+using GameServer.Accounts;
 using GameServer.Aggregates;
 using GameServer.Commands;
 using GameServer.Config;
@@ -61,6 +62,12 @@ public sealed class ModuleDescriptor
     /// identities and profile are removed. Required when a collection declares <see cref="DeletionTreatment.ModuleStep"/>.
     /// </summary>
     public IReadOnlyList<DeletionStepRegistration> DeletionSteps { get; init; } = [];
+
+    /// <summary>
+    /// Run in registration order inside the transaction that creates an account (first login), never for existing accounts.
+    /// profile + the union of their Touches is at most CommandDescriptor.MaxTouches (checked at startup).
+    /// </summary>
+    public IReadOnlyList<AccountInitializerRegistration> AccountInitializers { get; init; } = [];
 }
 
 /// <summary>What the account purge does with a collection's documents that reference the deleted player (PRIV-01, FR-019).</summary>

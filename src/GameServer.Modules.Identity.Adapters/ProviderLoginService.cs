@@ -35,7 +35,8 @@ public sealed class ProviderLoginService(
         bool switchAccount,
         string? currentToken,
         string clientIp,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? correlationId = null)
     {
         limits.Enter(clientIp);
 
@@ -72,7 +73,7 @@ public sealed class ProviderLoginService(
         }
 
         var playerId = mapped ?? await CreateMappingAsync(key, identity, cancellationToken);
-        return await completion.CompleteAsync(playerId, identity.MappingKey, cancellationToken);
+        return await completion.CompleteAsync(playerId, identity.MappingKey, cancellationToken, correlationId);
     }
 
     private static string? PlayerOf(StoredDocument? mapping) => mapping?.Content["playerId"]?.GetValue<string>();

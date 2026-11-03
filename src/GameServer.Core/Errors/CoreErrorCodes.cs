@@ -34,6 +34,21 @@ public static class CoreErrorCodes
     /// <summary>The route exists but not for this HTTP method (e.g. GET on the POST-only GM logout, SEC-05).</summary>
     public static readonly ErrorCode MethodNotAllowed = new(22, "METHOD_NOT_ALLOWED", 405, false, "The HTTP method is not allowed for this route.");
 
+    /// <summary>
+    /// Business rejection (FG-016): the command's result or receipt is over its limit (<c>ResultCompactMaxBytes</c>,
+    /// <c>ReceiptMaxBytes</c>); nothing commits. Details <c>part</c> (<c>result</c> | <c>receipt</c>), <c>bytes</c>, <c>limit</c>.
+    /// </summary>
+    public static readonly ErrorCode CommandOutputTooLarge = new(23, "COMMAND_OUTPUT_TOO_LARGE", 200, false, "The command result is too large.");
+
+    /// <summary>
+    /// A player aggregate was written with a newer <c>schemaVersion</c> than this server reads (rolling deploy, FG-029); details
+    /// <c>aggregate</c>. Retryable: another instance or the next deploy can read it.
+    /// </summary>
+    public static readonly ErrorCode AggregateVersionAhead = new(24, "AGGREGATE_VERSION_AHEAD", 503, true, "Player data was written by a newer server version. Retry later.");
+
+    /// <summary>A player aggregate cannot be read: its upgrade failed or its document is damaged (FG-029); details <c>aggregate</c>.</summary>
+    public static readonly ErrorCode AggregateUnreadable = new(25, "AGGREGATE_UNREADABLE", 500, false, "Player data could not be read.");
+
     public static ErrorCodeSet All { get; } = new(
         RangeStart,
         RangeEnd,
@@ -59,5 +74,8 @@ public static class CoreErrorCodes
         IdentityConflict,
         SwitchAccount,
         CsrfFailed,
-        MethodNotAllowed);
+        MethodNotAllowed,
+        CommandOutputTooLarge,
+        AggregateVersionAhead,
+        AggregateUnreadable);
 }

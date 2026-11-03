@@ -70,6 +70,41 @@ public sealed class ArchitectureTests
             .ShouldNot().HaveDependencyOn("Couchbase").GetResult().IsSuccessful.ShouldBeFalse();
         Types.InAssembly(Platform).That().HaveName(nameof(CommandRunner))
             .ShouldNot().HaveDependencyOn(typeof(ITransactionContext).FullName!).GetResult().IsSuccessful.ShouldBeFalse();
+
+        // Slice 016 (research R16): the account creation writer is a transactional write path too.
+        Types.InAssembly(Platform).That().HaveName("AccountWriter")
+            .ShouldNot().HaveDependencyOn(typeof(ITransactionContext).FullName!).GetResult().IsSuccessful.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Login_writes_accounts_only_through_the_account_writer()
+    {
+        // Slice 016 T021 (FR-011, constitution I): every login writes the profile through IAccountWriter, which decides
+        // create-or-update per attempt; the one-aggregate writer would bring back the pre-read decision (trap T3).
+        LoginWriteDependencyViolations(typeof(LoginCompletion)).ShouldBeEmpty();
+        ShouldPass(
+            Types.InAssembly(IdentityAdapters).That().HaveName(nameof(LoginCompletion))
+                .ShouldNot().HaveDependencyOn(typeof(GameServer.Platform.Aggregates.IPlayerAggregateWriter).FullName!),
+            "LoginCompletion must not use IPlayerAggregateWriter (the login write is IAccountWriter's)");
+    }
+
+    /// <summary>What keeps <paramref name="login"/> from being the account writer's caller only: its constructor and fields.</summary>
+    internal static IReadOnlyList<string> LoginWriteDependencyViolations(Type login)
+    {
+        var parameters = login.GetConstructors().SelectMany(c => c.GetParameters()).Select(p => p.ParameterType).ToArray();
+        var fields = login.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic).Select(f => f.FieldType).ToArray();
+        var violations = new List<string>();
+        if (!parameters.Contains(typeof(IAccountWriter)))
+        {
+            violations.Add($"{login.Name} does not take {nameof(IAccountWriter)}");
+        }
+
+        if (parameters.Concat(fields).Contains(typeof(GameServer.Platform.Aggregates.IPlayerAggregateWriter)))
+        {
+            violations.Add($"{login.Name} depends on {nameof(GameServer.Platform.Aggregates.IPlayerAggregateWriter)}");
+        }
+
+        return violations;
     }
 
     [Fact]
@@ -124,8 +159,8 @@ public sealed class ArchitectureTests
     [Fact]
     public void Inside_platform_only_the_transactional_write_paths_use_transaction_contexts()
     {
-        // Runner (Commands), aggregate writer (Aggregates), stores (Persistence) and the purge writer (Privacy) only: keeps
-        // jobs and future platform code off the transactional write path (DAT-09, slice 010).
+        // Runner and account creation writer (Commands), aggregate writer (Aggregates), stores (Persistence) and the purge
+        // writer (Privacy) only: keeps jobs and future platform code off the transactional write path (DAT-09, slices 010, 016).
         ShouldPass(
             Types.InAssembly(Platform)
                 .That().DoNotResideInNamespaceMatching(@"^GameServer\.Platform\.(Commands|Aggregates|Persistence|Privacy)(\..*)?$")

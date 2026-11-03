@@ -6,6 +6,7 @@ using GameServer.Platform.Commands;
 using GameServer.Platform.Web.Aggregates;
 using GameServer.Platform.Web.Auth;
 using GameServer.Platform.Web.Commands;
+using GameServer.Platform.Web.Middleware;
 using GameServer.Platform.Web.Protobuf;
 using GameServer.Platform.Web.Routing;
 using GameServer.Time;
@@ -117,7 +118,7 @@ public sealed partial class IdentityModule : IGameModule, IPlayerApiModule, IGmA
                 var options = services.GetRequiredService<GameServerOptions>();
                 var request = ProtobufBinding.Parse<Wire.GuestLoginRequest>(await ProtobufBinding.ReadBodyAsync(http, options.Limits.PlayerBodyBytes));
                 var result = await services.GetRequiredService<GuestLoginService>()
-                    .LoginAsync(request.LocalId, request.Secret.Memory, ClientIp(http), http.RequestAborted);
+                    .LoginAsync(request.LocalId, request.Secret.Memory, ClientIp(http), http.RequestAborted, CorrelationMiddleware.GetCorrelationId(http));
                 await ProtobufBinding.WriteAsync(http, LoginResponse(services, result));
             })
             .AsPublicPlayerEndpoint();
@@ -132,7 +133,8 @@ public sealed partial class IdentityModule : IGameModule, IPlayerApiModule, IGmA
                     request.SwitchAccount,
                     BearerToken(http),
                     ClientIp(http),
-                    http.RequestAborted);
+                    http.RequestAborted,
+                    CorrelationMiddleware.GetCorrelationId(http));
                 await ProtobufBinding.WriteAsync(http, LoginResponse(services, result));
             })
             .AsPublicPlayerEndpoint();
@@ -303,6 +305,7 @@ public sealed partial class IdentityModule
             ClientConfigVersion = config.ClientConfigVersion,
             ServerTimeUtcMs = services.GetRequiredService<IClock>().UtcNow.ToUnixTimeMilliseconds(),
             SessionExpiresAtUtcMs = result.ExpiresAt.ToUnixTimeMilliseconds(),
+            IsNewPlayer = result.IsNewPlayer,
         };
         response.Sections.AddRange(result.Sections.Select(s => new GameServer.Protocol.Core.V1.Section
         {

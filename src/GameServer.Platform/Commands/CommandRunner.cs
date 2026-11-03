@@ -397,33 +397,25 @@ public sealed class CommandRunner(
         List<AggregateWrite> writes,
         CommandContext context,
         DateTimeOffset now) =>
-        new()
-        {
-            ReceiptId = receiptId,
-            GameId = options.GameId,
-            EnvironmentId = options.EnvironmentId,
-            ActorId = invocation.Actor.ActorId,
-            ActorType = invocation.Actor.ActorType switch
-            {
-                ActorType.Player => "player",
-                ActorType.Gm => "gm",
-                _ => "system",
-            },
-            PlayerId = playerId,
-            Operation = operation,
-            RequestId = invocation.RequestId,
-            BodyHash = invocation.BodyHash,
-            ResultCode = resultCode.Name,
-            ResultCompact = Convert.ToBase64String(resultBytes),
-            ConfigVersion = config.ConfigVersion,
-            SchemaVersions = loaded.Values.ToDictionary(l => l.Descriptor.AggregateId, l => l.Descriptor.SchemaVersion, StringComparer.Ordinal),
-            Aggregates = writes.Select(w => new ReceiptAggregate(w.Before.Descriptor.AggregateId, w.NewRev)).ToList(),
-            ClaimKeys = context.Claims.Keys.Select(k => $"{k.Collection}/{k.Key}").ToList(),
-            CommittedAtUtc = AggregateDocumentSerializer.FormatTime(now),
-            Outbox = context.Outbox.ToList(),
-            OutboxPending = context.Outbox.Count > 0,
-            CorrelationId = invocation.Actor.CorrelationId,
-        };
+        ReceiptBuilder.Build(new ReceiptInputs(
+            receiptId,
+            options.GameId,
+            options.EnvironmentId,
+            invocation.Actor.ActorId,
+            invocation.Actor.ActorType,
+            playerId,
+            operation,
+            invocation.RequestId,
+            invocation.BodyHash,
+            resultCode,
+            resultBytes,
+            config.ConfigVersion,
+            loaded.Values.Select(l => l.Descriptor),
+            writes.Select(w => new ReceiptAggregate(w.Before.Descriptor.AggregateId, w.NewRev)),
+            context.Claims.Keys,
+            context.Outbox,
+            invocation.Actor.CorrelationId,
+            now));
 
     private Task<CommandExecution> ReplayAsync(ReceiptDocument receipt, CommandInvocation invocation, CancellationToken cancellationToken) =>
         ReplayAsync(receipt, invocation.BodyHash, invocation.RequestId, cancellationToken);

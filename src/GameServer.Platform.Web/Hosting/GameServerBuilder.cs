@@ -203,6 +203,8 @@ public static class GameServerBuilderExtensions
         services.TryAddSingleton<AccountDeletionRecords>();
         services.AddSingleton<PlayerSnapshotReader>();
         services.AddSingleton<IPlayerAggregateWriter, PlayerAggregateWriter>();
+        // FG-013/FG-015: the login write of the profile, creation included (singleton on the root provider, like the runner).
+        services.AddSingleton<IAccountWriter, AccountWriter>();
         services.AddSingleton<GameServer.Platform.Persistence.IAuditedStore, GameServer.Platform.Persistence.AuditedStore>();
         services.AddSingleton<ReceiptReader>();
         services.AddSingleton<GameServer.Platform.Persistence.ClaimStore>();

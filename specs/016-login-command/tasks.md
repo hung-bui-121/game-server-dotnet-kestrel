@@ -92,7 +92,7 @@ is part of any task (commits: no Claude signature lines, owner rule).
 
 ## Phase 1: Setup
 
-- [ ] T001 Baseline on branch `016-login-command` (base `5904b74`): Debug and Release build of `GameServer.slnx`; full
+- [x] T001 Baseline on branch `016-login-command` (base `5904b74`): Debug and Release build of `GameServer.slnx`; full
   suite in memory (no `COUCHBASE_*`) and with `GAMESERVER_TEST_STORE=File`. Record into the scratch folder (not
   committed):
   (a) SHA-256 of every file under `sdk/unity/com.gameserver.client/Runtime/Generated/` (input of T012: only
@@ -109,7 +109,17 @@ is part of any task (commits: no Claude signature lines, owner rule).
   untracked).
   Done when: 0 warnings in both configurations, 0 failures; the counts, the scratch paths and the (c)/(d) values recorded
   as a Note (reference for every checkpoint and T079). (FR-046, FR-092, SC-009)
-- [ ] T002 [P] Release notes draft `specs/016-login-command/release-notes-draft.md` (FR-090), created now and extended by
+  Note (2026-11-04, `6054a04` = `5904b74` + docs): Debug and Release 0 warnings, 0 errors. In memory 2321 total / 2220
+  passed / 101 skipped / 0 failed; `GAMESERVER_TEST_STORE=File` the same 2321 / 2220 / 101 / 0 (`COUCHBASE_*` unset).
+  Scratch (session folder, not committed): `t001a-generated-sha256.txt` (15 files under `Runtime/Generated/`),
+  `t001b-meta-guids.txt` (35 `.meta` GUIDs of the package), `t001c-sdk-public-api-5904b74.txt`, `t001-test-{mem,file}.log`.
+  (c) the base snapshot (948 lines) is a strict superset of the committed `sdk-public-api.txt` (928 lines): +20 lines, 0
+  removed — `PersistentConfigCache` (type + 8 members), `GameServerClient.ClientConfigVersion` and the five
+  `ClientConfigVersion` proto members of 015. The committed file was replaced with the base snapshot (LF, as before).
+  (d) SampleHost config at the base: label `sample-1`, server `sample-1+8a37f29ee2dc`, client `sample-1+9b25b8b6bc0b`
+  (computed with `FileGameConfigLoader.Load` on `samples/SampleHost/config`). (e) `git status`: only the owner's
+  `tasks/` untracked (plus the re-recorded snapshot).
+- [x] T002 [P] Release notes draft `specs/016-login-command/release-notes-draft.md` (FR-090), created now and extended by
   every story checkpoint (T022, T032, T046, T054, T062, T075) before the final pass (T076). English, like the 013–015
   drafts. Skeleton:
   - summary: fixed FG-013, FG-015, FG-029, FG-016, FG-022; "no route and no persisted document shape changes; five
@@ -130,7 +140,12 @@ is part of any task (commits: no Claude signature lines, owner rule).
   - manual checks table (T003, T064, T068, T069, T077, T078), each "pending";
   - "Known before the tag".
   Done when: the file exists; every FG id and every BC id appears; the checklist lists the six markers. (FR-090, SC-010)
-- [ ] T003 **[VERIFY] V1 — decision gate for the SDK overload (agent-run Unity Editor)**: a **temporary** editor script
+  Note: skeleton written with a section per FG id (filled at the checkpoints), BC-1..BC-11 from the spec table ("how it
+  surfaces" marked pending per checkpoint), the 7-step checklist with every zh-pvp file:line, the rolling-deploy note and
+  compatibility table, the six owner decisions, a "Platform facts checked before coding" table with the V1, V2, V4, V5,
+  V6, V8, V9, V11, V12 results, the manual checks table and "Known before the tag" (single-scheme hosts, T005; 015 T058).
+  BC-5 gains the state-not-an-object finding of T004; BC-7 names the optional `correlationId` of Planning note 8.
+- [x] T003 **[VERIFY] V1 — decision gate for the SDK overload (agent-run Unity Editor)**: a **temporary** editor script
   `samples/SampleGame/KestrelDemo/Assets/Editor/Probe016.cs` (created for this run, deleted with its `.meta` afterwards,
   never committed) declares a stub class with the two overloads of public-api §7.1 (`SendCommandAsync<T>(string, IMessage,
   MessageParser<T>, CancellationToken = default)` and `SendCommandAsync<T>(string, IMessage, MessageParser<T>, string?
@@ -141,7 +156,15 @@ is part of any task (commits: no Claude signature lines, owner rule).
   Done when: a Note records the binding of each shape, any `CS0121`, and the **decision** for T055 (new overload as in
   public-api §7.1, or the V1 fallback name); the probe and its `.meta` are gone and `git status samples/` shows no change.
   If no free Editor is available, the task stays open with these commands and T055 waits. (FR-040, FR-046)
-- [ ] T004 [P] **[VERIFY] V6 — decision gate for the read-failure classification** in a throw-away test project
+  Note (2026-11-04, no Editor open: no `Temp/UnityLockfile`, no `Unity.exe`): `smoke-build.ps1 -CompileOnly` exit 0 in
+  66 s, 0 `error CS`/`warning CS` in `compile.log` (`Assembly-CSharp-Editor.rsp` has `-langversion:9.0`). `Probe016.Run`
+  (exit 0) logged: `(r, q, p)` → existing; `(r, q, p, default)` → existing; `(r, q, p, ct)` → existing; `(r, q, p, "id")`
+  → new (`requestId = id`); `(r, q, p, null)` → new (`requestId = null`); no `CS0121`. **Decision for T055: the new
+  overload exactly as public-api §7.1 (no `SendCommandWithIdAsync` rename).** Probe and `.meta` deleted; `git status
+  samples/ sdk/` clean (no tracked settings file changed); the project stays on Android (`UNITY_ANDROID` defines). PS 5.1
+  note: `smoke-build.ps1` needs `-ProjectPath` passed explicitly when run through `powershell -File` (its `$PSScriptRoot`
+  default is empty there); calling it with `&` from the repository root works.
+- [x] T004 [P] **[VERIFY] V6 — decision gate for the read-failure classification** in a throw-away test project
   referencing `src/GameServer.Platform` (session scratch): call today's `AggregateDocumentSerializer.Load` for a
   `PlayerAggregateDescriptor` with one upgrader, on documents with: state of the wrong shape, wrong primitive types,
   `schemaVersion` as a string, `rev` as an object, `createdAtUtc` as a number, `state` missing, `state` as an array,
@@ -150,14 +173,47 @@ is part of any task (commits: no Claude signature lines, owner rule).
   Done when: a Note records per document the exception type (and whether it is wrapped), and the **decision** for T034:
   an explicit type list (V6 holds) or the catch-all except `OperationCanceledException`/`OutOfMemoryException`
   (fallback). (FR-020, FR-021)
-- [ ] T005 [P] **[VERIFY] V5 — decision gate for the broken-profile bearer path** in a throw-away web project referencing
+  Note (scratch console on the Release `GameServer.Platform`, descriptor schema 3 with upgraders 1→2, 2→3; state
+  `{gold:int, items:string[], kind:enum}`): wrong shape (`gold` object) → `JsonException` (inner
+  `InvalidOperationException`); `items` object → `JsonException`; `gold:"abc"` → `JsonException` (inner `FormatException`);
+  `gold:true`, `items:[1,2]` → `JsonException` (inner `InvalidOperationException`); unknown enum → `JsonException`;
+  `gold:"12"` loads (Web defaults read numbers from strings: not damage); `schemaVersion:"3"` → `InvalidOperationException`;
+  `schemaVersion:3000000000` → `OverflowException`; `schemaVersion:0` → `InvalidOperationException` (no upgrader from 0);
+  `rev:{}` → `FormatException`; `rev:"x"` → `InvalidOperationException`; `createdAtUtc:5` → `InvalidOperationException`;
+  `rev:1e400` → `FormatException`; `rev:-9223372036854775809` → `OverflowException`; `gold:1e400` and
+  `gold:-9223372036854775809` → `JsonException` (inner `FormatException`); upgrader throwing → its own
+  `KeyNotFoundException` unwrapped; upgrader returning null → `InvalidOperationException`; missing upgrader step →
+  `InvalidOperationException` (`First`); `schemaVersion` 4 > 3 → `GameServerException(INTERNAL)`. `NotSupportedException`
+  never seen. **Finding:** `state` missing, `state:null`, `state:[1,2]` and `state:"x"` do **not** throw today: the loader's
+  `content["state"] as JsonObject ?? []` reads them as the default state (a later write would overwrite the damaged
+  document). **Decision for T034: V6 holds for the types** — explicit list (`JsonException`, `NotSupportedException`,
+  `InvalidOperationException`, `FormatException`, `OverflowException`) for the envelope fields and the deserialize block;
+  catch-all except `OperationCanceledException`/`OutOfMemoryException` for the upgrade chain (an upgrader may throw
+  anything, research R5); **plus** an explicit check that a present document's `state` is a JSON object, else `unreadable`
+  (data-model §2.1 "null state"; recorded in BC-5 of the release notes).
+- [x] T005 [P] **[VERIFY] V5 — decision gate for the broken-profile bearer path** in a throw-away web project referencing
   `src/GameServer.Platform.Web` (scratch port 5091): an authentication handler that throws a `GameServerException(503,
   retry-after 1000 ms, Data marker)` from `HandleAuthenticateAsync`, behind the real `ExceptionMiddleware` and
   `ProfileEnforcementMiddleware` order of `UseGameServer`; record the HTTP status, the envelope code, `retry_after_ms`,
   `details` and the log lines.
   Done when: a Note records the result and the **decision** for T040: let the typed exception propagate (V5 holds), or
   catch it in `PlayerBearerAuthenticationHandler` and `Fail` with code and details (fallback). (FR-023)
-- [ ] T006 [P] **[VERIFY] V2 and V4 — decision gate for "rules before staging" and the second read** in a throw-away test
+  Note: run in-process (`TestHost` from the TestKit = the real `UseGameServer` pipeline over TestServer; no port bound, so
+  5091 was not needed). The `PlayerBearer` scheme's handler type was swapped for a handler throwing `GameServerException(24,
+  503, retryable) { RetryAfterMs = 1000, Details = {aggregate=profile} }` with a `Data` marker; `POST
+  /api/v1/player/snapshot` with a bearer token. (a) Identity + test authentication, and (b) Identity + GM (no test
+  authentication, the zh-pvp shape): HTTP 503, `Retry-After: 1`, envelope `AGGREGATE_VERSION_AHEAD`/24, `retryable = true`,
+  `retry_after_ms = 1000`, details `aggregate=profile`; one `ExceptionMiddleware` Error line `Request failed with
+  AGGREGATE_VERSION_AHEAD: …` carrying the same exception instance with its marker, plus the request-log line. (c)
+  Identity only, no test authentication (**exactly one** scheme): ASP.NET makes the single scheme the default and
+  `WebApplication` adds its own `UseAuthentication` in front of the whole pipeline, so the handler runs there: raw HTTP 500
+  `text/plain` from `DeveloperExceptionPageMiddleware`, no envelope, no `ExceptionMiddleware` or request-log line. **V5 holds
+  only when `ProfileEnforcementMiddleware` is the first to authenticate. Decision for T040: the fallback** — the handler
+  catches the marked read failure (`AggregateReadFailure.TryGet`) and returns `Fail(code, details)`; `ErrorResponseWriter`
+  uses 1000 ms for a retryable code without an explicit delay, so the envelope keeps the same retry delay; and nothing is
+  logged a second time. The single-scheme behaviour for other handler exceptions is pre-existing and out of scope (release
+  notes "Known before the tag").
+- [x] T006 [P] **[VERIFY] V2 and V4 — decision gate for "rules before staging" and the second read** in a throw-away test
   project referencing `src/GameServer.Platform`, `src/GameServer.Platform.Couchbase` and `src/GameServer.Platform.Testing`,
   against the in-memory store, the File store and Couchbase (transactions on; skipped with a message without
   `COUCHBASE_CONNSTR`):
@@ -168,7 +224,19 @@ is part of any task (commits: no Claude signature lines, owner rule).
   Done when: a Note records the results per store and the **decisions** for T025/T047 (no unwrap needed, or the unwrap
   fallback in the store adapter) and for T025 (sequential second read, or the single bundle read fallback). (FR-012,
   FR-013, FR-014, FR-031)
-- [ ] T007 [P] **[VERIFY] V8 and V9 outside Unity** in a scratch netstandard2.1 / C# 9 library and a net10.0 console:
+  Note (scratch console over `InMemoryDocumentStore`, `FileDocumentStore` and `CouchbaseDocumentStore` on local Couchbase
+  EE 7.6.12, own scope provisioned and dropped): **V2** — on all three stores, a private exception and a
+  `GameServerException` thrown (a) before any staged write and (b) after one staged insert reach the caller as the **same
+  instance** (`Exception.Data` marker kept, no inner exception), the body ran once, and nothing was committed. **Decision
+  for T025/T047: no unwrap in the store adapter.** **V4** — a body with `GetManyAsync([profile])` then
+  `GetManyAsync([anchor, touch])`, anchor rewrite and two inserts commits in one attempt on all three stores. A concurrent
+  transaction removing the anchor after the body rewrote it: in-memory and File → the remover commits first (optimistic),
+  the login's commit conflicts, the re-run reads no anchor and throws the anchor-missing exception (nothing written);
+  Couchbase → the remover hits the staged write (write-write conflict, 3 attempts), waits for the login to commit, then
+  removes the rewritten anchor (profile committed, anchor gone; the purge then removes the profile as in 010 R9). In both
+  cases no creation commits over a removal it did not see. **Decision for T016/T025: sequential second read** (no bundle
+  read of profile + anchor + touches for returning logins).
+- [x] T007 [P] **[VERIFY] V8 and V9 outside Unity** in a scratch netstandard2.1 / C# 9 library and a net10.0 console:
   per-entry record (write `{id}.pending.tmp`, `Flush(true)`, `File.Move` to `{id}.pending`) and remove (`File.Delete`)
   of a 4 KiB entry, 200 iterations after warm-up, on C: (`%TEMP%`, where `persistentDataPath` lives on Windows) and D:
   (repository drive); `File.Move` when the destination exists (exception type); `Directory.EnumerateFiles(folder,
@@ -177,14 +245,36 @@ is part of any task (commits: no Claude signature lines, owner rule).
   Done when: a Note records p50/p95 per drive and operation, the semantics, the exception types and the fallback chosen
   for T057 (none, or `Flush(false)`); SC-008's reference drive is stated. Unity Mono rides on T068, devices on T069.
   (FR-045, FR-047, SC-008)
-- [ ] T008 [P] **[VERIFY] V11 — decision gate for the GM OpenAPI shapes** in a throw-away test referencing
+  Note (library netstandard2.1 / `LangVersion 9.0` / warnings as errors, 0 warnings; console net10.0 Release; 20 warm-up +
+  200 iterations of a 4 KiB entry): C: (`%TEMP%`) `Flush(true)` record p50 3.08 ms / p95 6.09 ms (max 8.41), remove p50
+  0.48 / p95 1.52 ms; `Flush(false)` record p95 1.69 ms. D: (`D:\MyProjects\AI\framework`, outside the repository)
+  `Flush(true)` record p50 24.64 / **p95 32.24 ms** (max 42.40), remove p95 0.46 ms; `Flush(false)` record p95 0.37 ms.
+  Semantics: `File.Move(tmp, final)` with `final` absent is a rename; onto an existing final `System.IO.IOException`
+  (HResult 0x800700B7); `Directory.EnumerateFiles(folder, "*.pending")` returns neither `*.pending.tmp` nor `x.pendingx`, but
+  returns `y.PENDING` (Windows names are case-insensitive: T057's loader must check the name is a lowercase UUID +
+  `.pending` before parsing); a child killed after `Flush(true)` and before the move leaves a complete 4096-byte temp file
+  and no final file. **Decision for T057: no fallback (`Flush(true)` kept)**; SC-008's reference drive is **C:**, the drive
+  of `persistentDataPath` on Windows (`%USERPROFILE%\AppData\LocalLow`); the D: figure (a repository drive no player has)
+  is recorded only, as 015 did for its cache save.
+- [x] T008 [P] **[VERIFY] V11 — decision gate for the GM OpenAPI shapes** in a throw-away test referencing
   `src/GameServer.Platform.Web`: run the GM OpenAPI generator (`src/GameServer.Platform.Web/OpenApi/GmOpenApi.cs`) on a
   scratch GM endpoint returning a record shaped like `GmPlayerView` with an init property `IReadOnlyList<GmUnreadableAggregate>`
   and like `GmCommandResponse` with init properties `IReadOnlyDictionary<string, string> Details` and
   `IReadOnlyList<GmUnavailableAggregate> Unavailable` (wire-changes §4).
   Done when: a Note records the emitted schema of each member and the **decision** for T043/T049 (generator output as
   is, or a hand-written fragment). (FR-025, FR-030)
-- [ ] T009 [P] **[VERIFY] V12 and the test-expectation inventory** (read-only; never grep `samples/` as a root):
+  Note (scratch app with `GmOpenApi.Add` + `MapOpenApi(GmOpenApi.Route)` and four `/gm/v1/probe/*` endpoints returning
+  `Results.Json`): with `.Produces<T>()` the generator emits `unreadable` as `{"type":"array","items":{"$ref":
+  ".../ProbeUnreadableAggregate"}}` (members `id`, `code`, `reason` strings, `storedSchemaVersion`/`codeSchemaVersion`
+  int32, all required), `details` as `{"type":"object","additionalProperties":{"type":"string"}}`, `unavailable` as an
+  array of `$ref` `{id, code}`; init properties are not in `required`. **Without** `Produces` (how the GM player view
+  `GET /gm/v1/players/{playerId}` and every `MapGmCommand` endpoint are mapped today) the operation has only `200: OK` and
+  no schema: `docs/api/gm-openapi.json` describes neither response now. **Decision for T043/T049: generator output as is**,
+  adding `.Produces<GmPlayerView>()` to the player view route (T043) and `.Produces<GmCommandResponse>()` in
+  `MapGmCommandCore` (T043, so T049 only regenerates); no hand-written fragment. Consequence to record in T043: the first
+  regeneration adds the full schemas of both responses (every GM command operation gains a `200` schema), not only the
+  new members.
+- [x] T009 [P] **[VERIFY] V12 and the test-expectation inventory** (read-only; never grep `samples/` as a root):
   - (V12) the login limits in `src/GameServer.Modules.Identity.Adapters/IdentityOptions.cs` (`LoginPerLocalIdPerMinute`
     = 10, `FailedLoginPerIpPerMinute` = 60, `LoginPerIpWarnPerMinute` = 600) and the settings the SC-002 tests set;
   - tests that pin today's behaviour and must change: `tests/GameServer.Platform.Tests/Aggregates/AggregateBudgetAndUpgradeTests.cs`
@@ -208,6 +298,47 @@ is part of any task (commits: no Claude signature lines, owner rule).
     `docs/pcr/platform.md` §3, §6 and line 1061, `docs/html/02-them-command.html` §6b) → T070, T072, T075.
   Done when: a Note lists every item with the task that changes it; items not listed above are added to that task's Note.
   (FR-012, FR-050, FR-092, SC-002)
+  Note (V12): `IdentityOptions.cs:29` `LoginPerLocalIdPerMinute = 10` (guest login only: `GuestLoginService.cs:46`, a fixed
+  1-minute window; the test `FakeClock` does not advance it), `:32` `FailedLoginPerIpPerMinute = 60` (failures only,
+  `LoginCompletion.cs:30`), `:35` `LoginPerIpWarnPerMinute = 600` (log only, `LoginCompletion.cs:31`). No test sets
+  `LoginPerLocalIdPerMinute` today (only `LoginLimitAndSchemeTests.cs:69` warn = 50, `ProviderIdentityTests.cs:260,281`
+  failures = 2). **V12 holds:** the 25 logins of SC-002 exceed 10, so T027/T029/T031 set `Identity:LoginPerLocalIdPerMinute`
+  (e.g. 100) in their test settings; production defaults stay.
+  Note (pins → task): `AggregateBudgetAndUpgradeTests.cs:97-103` `Newer_stored_schema_than_code_is_an_error` (INTERNAL) →
+  T034. `CommandRunnerTests.cs:283` `Oversized_receipt_is_a_programming_error_and_rolls_back` and `:292`
+  `Oversized_result_compact_is_a_programming_error` (`InvalidOperationException`) → T048.
+  `CommandContextConformanceTests.cs:119` `The_result_size_check_is_the_runners` → T048. Nothing else in `tests/` asserts
+  `INTERNAL`, `JsonException` or `InvalidOperationException` from `Load`/`PlayerSnapshotReader` or a 500 for an oversized
+  command: the other `INTERNAL`/`InvalidOperationException` asserts are unrelated (`CommandRunnerTests.cs:128`
+  `FailBeforeCommit` stays INTERNAL for commands; `:237`, `:246`, `:303-344` handler throw / undeclared write / commit-code
+  rules; `CommitRulesTests.cs:26,94,116`; `ErrorContractTests.cs:95` and `RequestOutcomeTests.cs:106-120` injected
+  exceptions; `UncataloguedCommitCodeTests.cs:44`). All raw seeds of `pa_*` documents in tests carry a `state` object
+  (`GmLookupTests.cs:131`, `AggregateBudgetAndUpgradeTests.cs:99`, `AccountPurgeWriterTests.cs:273`), so T004's new
+  state-not-an-object rule changes no existing test.
+  Note (real SampleHost config → T064): `Sample.Counter.Tests/SampleHostSmokeTests.cs` logs in new players and asserts the
+  `counter` rev (`:59`, `:83`, not seeded), receipts folder non-empty (`:63`, still true), the purchase receipt found by id
+  (`:174-177`), and the analytics file count `:131` (2) and payment lines `:139` (2): a gold grant adds only a ledger
+  outbox entry (`EconomyOperations.cs:109`), no analytics record, so no change is expected — T064 runs it. The others do
+  not log in a player: `Couchbase.IntegrationTests/SampleHostFlavorTests.cs`, `Platform.Web.Tests/{ConfigCompressionTests,
+  WireCatalogTests,LateEndpointValidationTests,LocalFlavorFactoryStartupFailureTests,ConfigPhasePerformanceTests}.cs`,
+  `SampleGame.Tests/{CatalogCompositionTests,SampleHostConfigurationFileTests}.cs` (route/file checks),
+  `Architecture.Tests/FrameworkModuleCoverageTests.cs`, `Client.Tests/SdkRouteTests.cs`. Two items for T063/T064 beyond
+  the list: `SampleGame.Tests/SampleConfigRulesTests.cs:91-101` runs the sample's declarations over
+  `samples/SampleHost/config` (must stay error-free with the new `account.json` rule) and
+  `ConfigCompressionTests.cs:235` builds the SampleHost bundle (unchanged: `account.json` is server-only).
+  Note (fixture → T065): `FixtureCatalogTests.cs:66-75` logs in a new player and asserts an empty card title; no fixture
+  test asserts `notes` after a login or counts receipts (`SaveNoteHandlerTests` seeds its own state host-free).
+  Note (construction sites): `LoginResult` only `LoginCompletion.cs:103`; `CommandExecution` at `CommandRunner.cs:213`
+  (rejection), `:260` (commit), `:471` (replay); `GmCommandResponse` only `GmCommandEndpointFactory.cs:191-192`
+  (`BuildResponse`, target-typed `new(`); `GmPlayerView` `GmPlayerEndpoints.cs:180` (deleted player) and `:186`;
+  `LoginCompletion.CompleteAsync` callers `GuestLoginService.cs:66`, `ProviderLoginService.cs:75`.
+  `IPlayerAggregateWriter` stays in use by tests that edit profiles directly (`AccountStateTests.cs:22`,
+  `LoginAnalyticsTests.cs:72`, `ProviderIdentityTests.cs:231,242`, `AccountDeletionTests.cs:165`, `DeletionGmTests.cs:211`,
+  `ProviderClientTests.cs:91`, `CouchbaseLeaseAndPurgeTests.cs:388`): unaffected (T018 changes only `LoginCompletion`).
+  Note (docs → task): `docs/guides/consumer-guide.md:347` (receipt size "runner: INTERNAL") → T070; `docs/pcr/platform.md:73`
+  (§3 "vượt = lỗi lập trình (500)"), `:94` (§6 "schemaVersion mới hơn code → 500 INTERNAL"), `:1061` (§19 double has no
+  receipt check) → T072; `docs/html/02-them-command.html` §6b and the troubleshooting rows `:1113-1114` ("500, log Result of
+  … / Receipt of …") → T075.
 
 **Checkpoint**: baseline counts known; V1, V2/V4, V5, V6 and V11 decided with their consequences; V8, V9 (.NET) and V12
 confirmed or their fallbacks recorded; the test-expectation inventory assigns every changed test to a task; release
@@ -219,7 +350,7 @@ Nothing in this phase changes what a host does: the new codes, members and proto
 or fills them yet, and the runner commits byte-identical receipts. Each task ends with the full suite green with the T001
 counts plus the new tests.
 
-- [ ] T010 [P] Error codes (after T001; public-api §1.3, errors-and-report-lines §1): `src/GameServer.Core/Errors/CoreErrorCodes.cs`
+- [x] T010 [P] Error codes (after T001; public-api §1.3, errors-and-report-lines §1): `src/GameServer.Core/Errors/CoreErrorCodes.cs`
   gains `CommandOutputTooLarge` (23, `COMMAND_OUTPUT_TOO_LARGE`, 200, not retryable), `AggregateVersionAhead` (24, 503,
   retryable) and `AggregateUnreadable` (25, 500), with the safe messages of §1, all listed in `All`. The SDK
   `sdk/unity/com.gameserver.client/Runtime/Core/GameServerError.cs` `ErrorCodes` gains the three string constants.
@@ -228,7 +359,10 @@ counts plus the new tests.
   `tests/GameServer.Architecture.Tests/ErrorCodeBandTests.cs` green unchanged (core codes outside the game band);
   `SdkPublicApiTests` re-recorded with exactly three added lines.
   Done when: green; nothing raises the codes yet. (FR-020, FR-030, BC-4)
-- [ ] T011 [P] Core initializer API (after T001; public-api §1.1, §1.2, data-model §1.1): new
+  Note: codes 23/24/25 added after `MethodNotAllowed` with XML docs and listed last in `All`; SDK `ErrorCodes` gains the
+  three constants. `CoreErrorCodeCatalogTests` (4 tests) green; `ErrorCodeBandTests` (3) green unchanged. The snapshot was
+  re-recorded once for T010 + T012 together: the three `ErrorCodes` lines plus 30 generated lines (T012 Note), 0 removed.
+- [x] T011 [P] Core initializer API (after T001; public-api §1.1, §1.2, data-model §1.1): new
   `src/GameServer.Core/Accounts/AccountInitializers.cs` (`IAccountInitializer`, `AccountInitializerRegistration.Of<T>(name,
   touches, maxClaimMarkers = 0)` with `Name`, `InitializerType`, `Touches` (copied, order kept), `MaxClaimMarkers`;
   `ArgumentNullException` for null name or touches; every value rule is a startup line, T023, not an exception), and
@@ -238,7 +372,10 @@ counts plus the new tests.
   empty list. `tests/GameServer.Architecture.Tests/ArchitectureTests.cs` ARC-01 rule green unchanged (Core free of
   ASP.NET Core and Protobuf).
   Done when: green; nothing reads the member yet. (FR-010, FR-018)
-- [ ] T012 Proto fields and regeneration (after T001; wire-changes §1, research R17, **[VERIFY] V10**):
+  Note: `AccountInitializerRegistration` has a private constructor (only `Of<T>` creates it); `Touches` is copied with
+  `ToArray()`. `AccountInitializerRegistrationTests` 5 tests green (incl. "values are not checked here": an invalid name,
+  `profile` twice and 9 claims are kept for T023 to report). ARC-01 rule green (Core still only references DI abstractions).
+- [x] T012 Proto fields and regeneration (after T001; wire-changes §1, research R17, **[VERIFY] V10**):
   `proto/gameserver/core/v1/core.proto` (message `UnavailableSection {id = 1, code = 2, code_number = 3}`,
   `SnapshotResponse.unavailable_sections = 5`, `CommandResponse.unavailable_sections = 10`, `CommandResponse.details =
   11` as `map<string, string>`) and `src/GameServer.Modules.Identity.Adapters/Protos/identity.proto`
@@ -252,7 +389,17 @@ counts plus the new tests.
   all three; `git diff main -- proto src/*/Protos` shows only the five new field numbers and the new message;
   `SdkPublicApiTests` re-recorded with only added lines (generated members). A Note records the V10 result (the map
   generates like `ErrorEnvelope.details`). (FR-001, FR-022, FR-024, FR-030, FR-046, SC-009)
-- [ ] T013 [P] `ReceiptBuilder` extraction (after T001; research R14, public-api §2.1 internals): new internal
+  Note: `generate` — SDK config "2 written, 4 unchanged" (`Runtime/Generated/Identity.cs`, `gameserver/core/v1/Core.cs`),
+  sample "0 written, 4 unchanged", fixture "0 written, 3 unchanged"; `verify` exit 0 for all three (6, 4 and 3 files up to
+  date). SHA-256 against T001 (a): only those two files differ; the 35 package `.meta` GUIDs are unchanged. `git diff main
+  -- proto src/*/Protos`: only the new message `UnavailableSection` (1-3) and fields `SnapshotResponse` 5,
+  `CommandResponse` 10/11, `LoginResponse` 8/9. **V10 holds:** `map<string,string> details` generates as
+  `MapField<string,string> Details { get; }` like `ErrorEnvelope.details`, the repeated message as `RepeatedField<…>`;
+  `sdk/GameServer.Client` (C# 9, netstandard2.1) and the server projects build with 0 warnings. `sdk-public-api.txt`
+  re-recorded: +33 lines (3 `ErrorCodes` constants of T010; `UnavailableSection` type + 19 members; `IsNewPlayer`,
+  `UnavailableSections` and their field numbers on `LoginResponse`, `SnapshotResponse`, `CommandResponse`, and
+  `CommandResponse.Details`), 0 removed. `CommittedOutputTests` green in the full suite.
+- [x] T013 [P] `ReceiptBuilder` extraction (after T001; research R14, public-api §2.1 internals): new internal
   `src/GameServer.Platform/Commands/ReceiptBuilder.cs` (`static ReceiptDocument Build(in ReceiptInputs inputs)`) and
   `ReceiptInputs` (readonly record struct: receipt id, game, environment, actor id/type, player, operation, request id,
   body hash, result code, result compact bytes, config version, schema versions, aggregates with new revs, claim keys,
@@ -264,7 +411,15 @@ counts plus the new tests.
   order unchanged. Every existing `CommandRunnerTests`/`CommitRulesTests` green unchanged.
   Done when: green; the runner's receipts are byte-identical to the base (one golden receipt from T001's suite compared
   in the Note). (FR-034, SC-005)
-- [ ] T014 [P] `CommitViolation` and the receipt-size rule (after T010; research R8, errors-and-report-lines §5):
+  Note: `ReceiptInputs` takes the schema aggregates as `IEnumerable<PlayerAggregateDescriptor>` (Touches ∪ Reads in
+  order), the written aggregates as `ReceiptAggregate`s, claim keys as `DocumentKey`s and the outbox entries; the builder
+  formats claim keys `collection/key`, the actor type and the times as before. `ReceiptBuilderTests` (4) green: for
+  `probe.nochange`, `probe.claim`, `probe.outboxflood` the stored JSON equals the builder output byte for byte, `SizeOf`
+  agrees, and the field order is the base's — which includes the computed `committedAt` serialized last (pre-existing,
+  kept). Golden check: the same four runs (`probe.nochange`, `probe.claim`, `probe.outboxflood`, `probe.grow`, fixed
+  request id, inline relay off) dumped from a scratch `git worktree` of the base and from this tree give identical files
+  (SHA-256 `458053A7A59C5E83E1ADF82EBF7A96A0ED70406E059C0C0443C1E44D87EA8C5B`); worktree and dump test removed.
+- [x] T014 [P] `CommitViolation` and the receipt-size rule (after T010; research R8, errors-and-report-lines §5):
   `src/GameServer.Platform/Commands/CommitRules.cs` gains internal `CommitViolation(ErrorCode Code,
   IReadOnlyDictionary<string, string> Details, string Line)` and `CheckReceiptSize(string operation, int receiptBytes,
   CommandSettings settings) → CommitViolation?` (code `COMMAND_OUTPUT_TOO_LARGE`, details `part=receipt`, `bytes`,
@@ -274,7 +429,10 @@ counts plus the new tests.
   violation with the three details and the literal §5 line; the initializer form of the operation label
   (`identity.create_account (initializer sample.starting_gold)`) kept verbatim.
   Done when: green. (FR-031, FR-034)
-- [ ] T015 [P] Shared test support (after T011; used by US1–US4): new files linked into every project that compiles
+  Note: `CommitViolation` lives at the end of `CommitRules.cs` with `PartDetail`/`BytesDetail`/`LimitDetail` constants and
+  the `OutputTooLarge(part, bytes, limit, line)` factory (details formatted with the invariant culture), so T048 builds the
+  result violation the same way; `CommitRules.OutputPartReceipt = "receipt"`. `CommitRulesSizeTests` (4) green.
+- [x] T015 [P] Shared test support (after T011; used by US1–US4): new files linked into every project that compiles
   `tests/Shared/*.cs` (Client, Gm, Observability, Couchbase, Platform.Web tests):
   - `tests/Shared/CapturedLog.cs`: an `ILoggerProvider` recording (category, level, message, exception type) for a host's
     `services` callback, with `Lines(category)` and `Count(level, prefix)` (the plan's "`CapturedLog`" does not exist
@@ -293,6 +451,21 @@ counts plus the new tests.
   sees a startup line.
   Done when: green in every linking project (the module is registered only where a test adds it). (test support for
   FR-011..FR-014, FR-020..FR-026, FR-031)
+  Note (deviation, naming only): the TestKit already has a public record `GameServer.TestKit.CapturedLog` (013) and
+  `TestHost.LogEntries`, globally imported in `tests/Shared/GlobalUsings.cs` — Planning note 6 missed it, and a second
+  type named `CapturedLog` would be ambiguous (CS0104) in every test file that uses both namespaces. So the file is
+  `tests/Shared/CapturedLogSink.cs`: `CapturedLogSink : ILoggerProvider` records into the kit's `CapturedLog` record
+  (category, level, event id, message, properties, exception) for hosts a test composes itself, and `CapturedLogQueries`
+  adds `Lines(category)` and `Count(level, prefix)` to any `IEnumerable<CapturedLog>` (so `host.LogEntries.Count(…)` works
+  too). `tests/Shared/StartingStateModule.cs`: module `test` (range 21000-21099, depends on `economy`), aggregates
+  `starter` (`StarterState`, hidden `Padding`, HardBytes 8 KiB, mapper → `sample.counter.v1.CounterState` that throws for
+  `Padding = "mapper-fail"`) and `broken_probe` (schema 2, upgrader 1→2 throws for `fail: true`), claim collection
+  `starting_state_claims`, initializer `test.starting_state` (touches `wallet`, `starter`; 2 claims);
+  `StartingStateBehaviour` factories `Nothing/Grant(n)/Reject(code)/Throw/WriteUndeclared/AddAudit/OversizeAggregate/
+  FloodOutbox(n)/Claim(n)`, `Become(next)` to switch a running host, `Invocations`; the module `TryAdd`s `Nothing`.
+  `tests/Shared/BrokenDocuments.cs`: `BrokenReason` + `Document(reason, player, damaged)`/`Seed(store, …)` (rev 3, twin
+  value 7). `SharedTestSupportTests` (6) green. Phase 2 checkpoint (after T015): Release 0 warnings; in memory and File
+  2344 total / 2243 passed / 101 skipped / 0 failed each (2321 + 23 new).
 
 **Checkpoint**: Release build 0 warnings; full suite green with the T001 counts plus the new tests; the only generated
 diff is `Core.cs` and `Identity.cs`; receipts byte-identical to the base.
@@ -304,7 +477,7 @@ diff is `Core.cs` and `Identity.cs`; receipts byte-identical to the base.
 
 **Independent test**: the SC-001 login matrix (T019) plus the racing first logins (T018); the SDK reads the flag (T020).
 
-- [ ] T016 [US1] `IAccountWriter` without initializers (after T012, T013, **T006** decision V4; research R1,
+- [x] T016 [US1] `IAccountWriter` without initializers (after T012, T013, **T006** decision V4; research R1,
   public-api §2.1, data-model §1.2): new `src/GameServer.Platform/Commands/AccountWriter.cs` (public `IAccountWriter`,
   `AccountLoginWrite<TProfile>`, `AccountWriteResult<TProfile>`; internal sealed `AccountWriter`) and
   `src/GameServer.Platform/Commands/AccountCreation.cs` (public static `AccountCreation.Operation =
@@ -322,7 +495,19 @@ diff is `Core.cs` and `Identity.cs`; receipts byte-identical to the base.
   normal login (`Created = false`); `Mutate` throwing `GameServerException` propagates and writes nothing.
   Done when: green; `LoginCompletion` still uses `IPlayerAggregateWriter` (T018 switches it). (FR-001, FR-012, US1-1,
   US1-2, US1-3)
-- [ ] T017 [US1] Typed login store failures in the writer (after T016; research R1 "Exceptions → login answer", BC-10):
+  Note: the attempt branches on the profile read first: present → `Mutate` + replace (no anchor read); absent → read the
+  anchor (V4: sequential second read), `Mutate(CreateDefault())`, then stage anchor rewrite + profile insert. A mutation
+  that leaves the state unchanged writes nothing (`Created = false`), as `PlayerAggregateWriter` did. A `TProfile` that is
+  not the registered `profile` state type is an `InvalidOperationException` before any I/O. `CreationReceiptId` is always
+  null until T025. `aggregate_size_bytes` is recorded after the commit from the committed attempt (the old writer recorded
+  it inside the body). `AccountWriterTests` (in-memory store of `RunnerHarness` plus a module declaring `identities`, and a
+  recording `ITransactionalDocumentStore` decorator): first login = `read pa_profile`, `read identities`, `replace
+  identities`, `insert pa_profile`, rev 1; returning = `read pa_profile`, `replace pa_profile`; missing anchor and anchor of
+  another player → `AggregateAnchorMissingException`, nothing staged; a competing profile committed after this attempt
+  staged its insert → the store runs the body twice and the second run is a normal login (`Created = false`, epoch 6 over
+  5); a competing profile committed between the reads → the insert reports "exists", the next round is a normal login;
+  a `GameServerException` from `Mutate` propagates as the same instance for a first and a returning login, nothing written.
+- [x] T017 [US1] Typed login store failures in the writer (after T016; research R1 "Exceptions → login answer", BC-10):
   `AccountWriter` maps `TransactionCommitAmbiguousException` → `GameServerException(COMMIT_UNKNOWN_RETRY, retry-after
   1000 ms)`, `TransactionConflictExpiredException` and exhausted race rounds → `CONCURRENT_UPDATE` (retry-after 200 ms),
   `TransactionFailedException` → `INTERNAL` (as the runner); `AggregateAnchorMissingException` and
@@ -331,7 +516,14 @@ diff is `Core.cs` and `Identity.cs`; receipts byte-identical to the base.
   faults): each maps to its code with 0 documents written, for a returning and for a first login; 4 consecutive insert
   races → `CONCURRENT_UPDATE`.
   Done when: green; the codes and retry delays equal research R1's table. (FR-014, BC-10)
-- [ ] T018 [US1] `LoginCompletion` on the writer (after T017; research R1, public-api §4):
+  Note: mapped in `AccountWriter` around the store call, with the inner store exception kept: ambiguous →
+  `COMMIT_UNKNOWN_RETRY` 1000 ms, expired → `CONCURRENT_UPDATE` 200 ms, failed → `INTERNAL`; round 3 of an insert race or
+  stale read → `CONCURRENT_UPDATE` 200 ms (inner `DocumentExistsException`). No transaction metrics yet (the creation's
+  `txn_*` with operation `identity.create_account` come in T025). Tests: `FailBeforeCommit` and `AmbiguousBeforeCommit` for a
+  first and a returning login (profile document unchanged); an expired transaction (expiration 0 s + `ConflictOnce`) for
+  both; a `ConflictOnce` inside the expiration is retried by the store (body twice, created); 4 faked insert races →
+  `CONCURRENT_UPDATE` after 3 body runs, 0 profiles; 2 faked races → created in round 3. `AccountWriterTests` 18 green.
+- [x] T018 [US1] `LoginCompletion` on the writer (after T017; research R1, public-api §4):
   `src/GameServer.Modules.Identity.Adapters/LoginCompletion.cs` takes `IAccountWriter` instead of
   `IPlayerAggregateWriter`; `WriteEpochAsync` passes the same `mutate` lambda (epoch + 1, identity key, late access
   check) in an `AccountLoginWrite` with the creation anchor `identities/{mappingKey}` and the correlation id;
@@ -345,7 +537,16 @@ diff is `Core.cs` and `Identity.cs`; receipts byte-identical to the base.
   `IdentityLoginTests`, `ProviderIdentityTests`, `LoginLimitAndSchemeTests` green unchanged.
   Done when: green; `grep IPlayerAggregateWriter src/GameServer.Modules.Identity.Adapters` finds nothing. (FR-001,
   FR-002, US1-4, BC-7)
-- [ ] T019 [US1] Flag on the wire and the SC-001 matrix (after T018; wire-changes §2):
+  Note: the pre-read stays for the access check only; `createdPlayer` and `IsNewPlayer` come from `result.Created`. A null
+  `correlationId` stores an empty correlation id. **Deviation (additive):** to "fill from the request's correlation id",
+  `GuestLoginService.LoginAsync` and `ProviderLoginService.LoginAsync` (public members too) also gain a trailing optional
+  `string? correlationId = null`; `IdentityModule`'s login endpoints pass `CorrelationMiddleware.GetCorrelationId(http)`.
+  Listed in BC-7 of the release notes. `LoginAnalyticsTests` gains `Two_racing_first_logins_of_one_credential_report_one_new_user`
+  (both logins held behind `AfterMappingRead` until both arrived: one record with `isNewUser = true`, one response with
+  `IsNewPlayer`). Green unchanged: `AccountDeletionTests` (12, incl. the purge race), `IdentityLoginTests` (11),
+  `ProviderIdentityTests` (10), `LoginLimitAndSchemeTests` (4), `AccountPurgeTests` (32), `AccountStateTests` (4). `grep
+  IPlayerAggregateWriter src/GameServer.Modules.Identity.Adapters` finds nothing.
+- [x] T019 [US1] Flag on the wire and the SC-001 matrix (after T018; wire-changes §2):
   `src/GameServer.Modules.Identity.Adapters/IdentityModule.cs` `LoginResponse(...)` sets `IsNewPlayer =
   result.IsNewPlayer` (sections unchanged until T039).
   Tests in a new `tests/GameServer.Platform.Web.Tests/NewPlayerFlagTests.cs`: new guest (true), returning guest (false),
@@ -354,12 +555,22 @@ diff is `Core.cs` and `Identity.cs`; receipts byte-identical to the base.
   lost first-login response (server committed, response dropped, re-login → false, epoch + 1); in every row the
   captured analytics `isNewUser` equals the flag.
   Done when: green; 100 % of rows match SC-001. (FR-001, FR-002, US1-1..US1-4, SC-001)
-- [ ] T020 [P] [US1] SDK reads the flag (after T019; FR-004): `tests/GameServer.Client.Tests/ClientTests.cs` gains: the
+  Note: `NewPlayerFlagTests` (5 tests, 8 rows): new/returning guest (true, false), new/returning provider identity (true,
+  false), unconfirmed `switch_account` (409 `SWITCH_ACCOUNT`, profile count unchanged) then confirmed into a new account
+  (true, +1 profile), takeover from a second device (false; the first session gets `SESSION_REPLACED`), lost first-login
+  response (response dropped, retry false, profile section epoch 2). In every row the player's analytics `isNewUser`
+  sequence equals the flags. 8/8 rows match SC-001 (the T018 race row is in `LoginAnalyticsTests`).
+- [x] T020 [P] [US1] SDK reads the flag (after T019; FR-004): `tests/GameServer.Client.Tests/ClientTests.cs` gains: the
   `LoginResponse` returned by `LoginGuestAsync` / `LoginWithProviderAsync` carries `IsNewPlayer` (true then false
   against the sample host); a fake transport answering a login without field 8 reads `false`; the login sections are
   applied as today. No SDK source change (generated message).
   Done when: green; `SdkPublicApiTests` green. (FR-004, US1-5)
-- [ ] T021 [P] [US1] Architecture guards (after T018; research R16):
+  Note: `Guest_and_provider_logins_carry_the_new_player_flag` (guest true then false from a second client; provider true
+  then false, profile rev 2) and `A_login_answer_without_the_flag_reads_false_and_its_sections_still_apply` (the
+  `ScriptedTransport` rewrites the real answer with `IsNewPlayer = false`, which proto3 never writes: no field 8, as an old
+  server; session, player id and the profile section rev 1 still applied). No SDK source change. `ClientTests` 25 and
+  `SdkPublicApiTests` 2 green.
+- [x] T021 [P] [US1] Architecture guards (after T018; research R16):
   `tests/GameServer.Architecture.Tests/ArchitectureTests.cs` — new `Login_writes_accounts_only_through_the_account_writer`
   (reflection over `LoginCompletion`'s constructor and fields: depends on `IAccountWriter`, not on
   `IPlayerAggregateWriter`); `Rules_engine_detects_real_dependencies` gains the positive control "`AccountWriter`
@@ -368,10 +579,23 @@ diff is `Core.cs` and `Identity.cs`; receipts byte-identical to the base.
   `Only_platform_writes_through_transactions` green unchanged.
   Done when: green; each new assertion fails when its target is reverted (checked once, recorded in a Note). (FR-011,
   constitution I)
-- [ ] T022 [US1] US1 checkpoint (after T019–T021): release notes draft — FG-013 section (flag definition, lost
+  Note: `Login_writes_accounts_only_through_the_account_writer` checks `LoginCompletion`'s constructor parameters and
+  fields (helper `LoginWriteDependencyViolations`) and a NetArchTest rule (no dependency on `IPlayerAggregateWriter`);
+  `Rules_engine_detects_real_dependencies` gains the `AccountWriter` → `ITransactionContext` control; the comment of
+  `Inside_platform_only_…` names the creation writer. Revert check (temporary test file, deleted): a stand-in
+  `RevertedLoginCompletion(IPlayerAggregateWriter)` gives both violation lines, and the control's rule run on a type
+  without the dependency (`AccountCreation`) passes, so the control fails if `AccountWriter` lost it. `ArchitectureTests`
+  14 and the project's 68 tests green (`Only_platform_writes_through_transactions` unchanged).
+- [x] T022 [US1] US1 checkpoint (after T019–T021): release notes draft — FG-013 section (flag definition, lost
   response = `false`, `isNewUser` equals the flag), BC-7 and BC-10 rows with "how it surfaces" from the real codes;
   full suite in memory and File.
   Done when: green with T001 counts plus the new tests. (FR-090)
+  Note (2026-11-04): Debug and Release 0 warnings. In memory and `GAMESERVER_TEST_STORE=File` each 2371 total / 2270
+  passed / 101 skipped / 0 failed (T001's 2321 + 23 Phase 2 + 27 US1 tests); the two known-flaky TelemetryTests passed in
+  both runs. Release notes: FG-013 section written; BC-7 now names the optional `correlationId` of the three login
+  methods; BC-10 "how it surfaces" from the writer's real codes and log line. Extra check on the changed login path: the
+  Couchbase integration project alone (local EE 7.6.12) 142 total / 140 passed / 2 skipped / 0 failed (incl. the purge
+  and login races of `CouchbaseLeaseAndPurgeTests`); the full Couchbase gate stays T080.
 
 **Checkpoint (MVP)**: every login goes through `IAccountWriter`; the flag is true exactly for the creating login and
 equals `isNewUser`; two racing first logins report one new user; login store failures answer typed codes.

@@ -27,6 +27,8 @@ message LoginResponse {
   int64 server_time_utc_ms = 5;
   int64 session_expires_at_utc_ms = 6;
   string client_config_version = 7;   // client config version (015); config_version (4) stays the server version
+  bool is_new_player = 8;             // 016: this login created the player (FG-013); false after a lost first-login response
+  repeated gameserver.core.v1.UnavailableSection unavailable_sections = 9;   // 016: client-visible sections the login could not read
 }
 
 // Proof of a provider identity (IDN-03). The server verifies it with the provider; ids sent here are never trusted.

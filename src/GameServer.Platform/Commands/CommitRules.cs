@@ -1,3 +1,4 @@
+using System.Globalization;
 using GameServer.Actors;
 using GameServer.Aggregates;
 using GameServer.Commands;
@@ -10,8 +11,9 @@ namespace GameServer.Platform.Commands;
 
 /// <summary>
 /// Commit rules shared by <see cref="CommandRunner"/> and the consumer test kit (API-11, SEC-14, CMD-03, DAT-01). Each check
-/// returns the violation message, or null when the outcome may commit; the runner turns a code, audit or size message into
-/// INTERNAL and an aggregate above its budget into the AGGREGATE_TOO_LARGE rejection (nothing commits either way).
+/// returns the violation (a message, or a <see cref="CommitViolation"/> for the size rules of FG-016), or null when the outcome
+/// may commit; the runner turns a code, audit or size message into INTERNAL and an aggregate above its budget into the
+/// AGGREGATE_TOO_LARGE rejection (nothing commits either way).
 /// </summary>
 internal static class CommitRules
 {
@@ -102,6 +104,25 @@ internal static class CommitRules
             ? $"Result of '{operation}' is {resultBytes} bytes; resultCompact max is {settings.ResultCompactMaxBytes} (CMD-03)."
             : null;
 
+    /// <summary>
+    /// CMD-03 (FG-016): the receipt document must fit <see cref="CommandSettings.ReceiptMaxBytes"/>; exactly at the limit commits.
+    /// <paramref name="operation"/> is the command's operation, or <c>identity.create_account (initializer {name})</c> for an
+    /// account initializer.
+    /// </summary>
+    internal static CommitViolation? CheckReceiptSize(string operation, int receiptBytes, CommandSettings settings) =>
+        receiptBytes > settings.ReceiptMaxBytes
+            ? CommitViolation.OutputTooLarge(
+                OutputPartReceipt,
+                receiptBytes,
+                settings.ReceiptMaxBytes,
+                $"Command '{operation}' receipt would be {receiptBytes} bytes; ReceiptMaxBytes is {settings.ReceiptMaxBytes}: the runner rejects the " +
+                $"command with {CoreErrorCodes.CommandOutputTooLarge.Name} (part {OutputPartReceipt}) and nothing commits. " +
+                "Fix: fewer ledger/outbox entries or raise GameServer:Commands:ReceiptMaxBytes.")
+            : null;
+
+    /// <summary>Value of the <c>part</c> detail of <c>COMMAND_OUTPUT_TOO_LARGE</c> for the receipt.</summary>
+    internal const string OutputPartReceipt = "receipt";
+
     /// <summary>Owning module of a command, and the replacing handler when <c>ReplaceHandler</c> swapped it (EXT-02).</summary>
     private static string DescribeOwner(CommandRegistration registration, ModuleRegistry registry)
     {
@@ -113,4 +134,27 @@ internal static class CommitRules
             ? $"module '{module}', handler replaced by {registration.HandlerType.Name} through ReplaceHandler"
             : $"module '{module}'";
     }
+}
+
+/// <summary>
+/// A commit rule the run broke, found before anything is staged: the code the runner rejects with, the details sent with it
+/// and the line for the log, the startup report or the test kit (errors-and-report-lines §5).
+/// </summary>
+internal sealed record CommitViolation(ErrorCode Code, IReadOnlyDictionary<string, string> Details, string Line)
+{
+    internal const string PartDetail = "part";
+    internal const string BytesDetail = "bytes";
+    internal const string LimitDetail = "limit";
+
+    /// <summary><c>COMMAND_OUTPUT_TOO_LARGE</c> with details <c>part</c>, <c>bytes</c> and <c>limit</c> (FR-030).</summary>
+    internal static CommitViolation OutputTooLarge(string part, int bytes, int limit, string line) =>
+        new(
+            CoreErrorCodes.CommandOutputTooLarge,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [PartDetail] = part,
+                [BytesDetail] = bytes.ToString(CultureInfo.InvariantCulture),
+                [LimitDetail] = limit.ToString(CultureInfo.InvariantCulture),
+            },
+            line);
 }

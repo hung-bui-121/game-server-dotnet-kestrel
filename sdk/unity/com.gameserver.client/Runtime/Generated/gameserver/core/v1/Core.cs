@@ -35,43 +35,51 @@ namespace GameServer.Protocol.Core.V1 {
             "CRINCgV2YWx1ZRgCIAEoCToCOAEiMwoHU2VjdGlvbhIKCgJpZBgBIAEoCRIL",
             "CgNyZXYYAiABKAMSDwoHcGF5bG9hZBgDIAEoDCJdCg1TZWN0aW9uVXBkYXRl",
             "EgoKAmlkGAEgASgJEhAKCGJhc2VfcmV2GAIgASgDEg8KB25ld19yZXYYAyAB",
-            "KAMSDwoHcGF5bG9hZBgEIAEoDBIMCgRmdWxsGAUgASgIIvEBCg9Db21tYW5k",
-            "UmVzcG9uc2USDAoEY29kZRgBIAEoCRITCgtjb2RlX251bWJlchgCIAEoBRIS",
-            "CgpyZWNlaXB0X2lkGAMgASgJEjIKB3VwZGF0ZXMYBCADKAsyIS5nYW1lc2Vy",
-            "dmVyLmNvcmUudjEuU2VjdGlvblVwZGF0ZRIOCgZyZXN1bHQYBSABKAwSFgoO",
-            "Y29uZmlnX3ZlcnNpb24YBiABKAkSGgoSc2VydmVyX3RpbWVfdXRjX21zGAcg",
-            "ASgDEhAKCHJlcGxheWVkGAggASgIEh0KFWNsaWVudF9jb25maWdfdmVyc2lv",
-            "bhgJIAEoCSIjCg9TbmFwc2hvdFJlcXVlc3QSEAoIc2VjdGlvbnMYASADKAki",
-            "lAEKEFNuYXBzaG90UmVzcG9uc2USLQoIc2VjdGlvbnMYASADKAsyGy5nYW1l",
-            "c2VydmVyLmNvcmUudjEuU2VjdGlvbhIWCg5jb25maWdfdmVyc2lvbhgCIAEo",
-            "CRIaChJzZXJ2ZXJfdGltZV91dGNfbXMYAyABKAMSHQoVY2xpZW50X2NvbmZp",
-            "Z192ZXJzaW9uGAQgASgJIqkCCgtSZWNlaXB0VmlldxISCgpyZWNlaXB0X2lk",
-            "GAEgASgJEhEKCW9wZXJhdGlvbhgCIAEoCRISCgpyZXF1ZXN0X2lkGAMgASgJ",
-            "EhMKC3Jlc3VsdF9jb2RlGAQgASgJEg4KBnJlc3VsdBgFIAEoDBI0CgphZ2dy",
-            "ZWdhdGVzGAYgAygLMiAuZ2FtZXNlcnZlci5jb3JlLnYxLkFnZ3JlZ2F0ZVJl",
-            "dhIWCg5jb25maWdfdmVyc2lvbhgHIAEoCRIbChNjb21taXR0ZWRfYXRfdXRj",
-            "X21zGAggASgDEjMKBm91dGJveBgJIAMoCzIjLmdhbWVzZXJ2ZXIuY29yZS52",
-            "MS5PdXRib3hFbnRyeVZpZXcSGgoSc2VydmVyX3RpbWVfdXRjX21zGAogASgD",
-            "IjUKDEFnZ3JlZ2F0ZVJldhIUCgxhZ2dyZWdhdGVfaWQYASABKAkSDwoHbmV3",
-            "X3JldhgCIAEoAyJHCg9PdXRib3hFbnRyeVZpZXcSEAoIZW50cnlfaWQYASAB",
-            "KAkSDAoEa2luZBgCIAEoCRIUCgxwYXlsb2FkX2pzb24YAyABKAkiKgoMVGlt",
-            "ZVJlc3BvbnNlEhoKEnNlcnZlcl90aW1lX3V0Y19tcxgBIAEoAyIqChBHZXRD",
-            "b25maWdSZXF1ZXN0EhYKDmNvbmZpZ192ZXJzaW9uGAEgASgJIisKCkNvbmZp",
-            "Z0ZpbGUSDAoEbmFtZRgBIAEoCRIPCgdjb250ZW50GAIgASgMIqsBChFHZXRD",
-            "b25maWdSZXNwb25zZRIWCg5jb25maWdfdmVyc2lvbhgBIAEoCRIUCgxub3Rf",
-            "bW9kaWZpZWQYAiABKAgSLQoFZmlsZXMYAyADKAsyHi5nYW1lc2VydmVyLmNv",
-            "cmUudjEuQ29uZmlnRmlsZRIaChJzZXJ2ZXJfdGltZV91dGNfbXMYBCABKAMS",
-            "HQoVY2xpZW50X2NvbmZpZ192ZXJzaW9uGAUgASgJQh6qAhtHYW1lU2VydmVy",
-            "LlByb3RvY29sLkNvcmUuVjFiBnByb3RvMw=="));
+            "KAMSDwoHcGF5bG9hZBgEIAEoDBIMCgRmdWxsGAUgASgIIkMKElVuYXZhaWxh",
+            "YmxlU2VjdGlvbhIKCgJpZBgBIAEoCRIMCgRjb2RlGAIgASgJEhMKC2NvZGVf",
+            "bnVtYmVyGAMgASgFIqoDCg9Db21tYW5kUmVzcG9uc2USDAoEY29kZRgBIAEo",
+            "CRITCgtjb2RlX251bWJlchgCIAEoBRISCgpyZWNlaXB0X2lkGAMgASgJEjIK",
+            "B3VwZGF0ZXMYBCADKAsyIS5nYW1lc2VydmVyLmNvcmUudjEuU2VjdGlvblVw",
+            "ZGF0ZRIOCgZyZXN1bHQYBSABKAwSFgoOY29uZmlnX3ZlcnNpb24YBiABKAkS",
+            "GgoSc2VydmVyX3RpbWVfdXRjX21zGAcgASgDEhAKCHJlcGxheWVkGAggASgI",
+            "Eh0KFWNsaWVudF9jb25maWdfdmVyc2lvbhgJIAEoCRJEChR1bmF2YWlsYWJs",
+            "ZV9zZWN0aW9ucxgKIAMoCzImLmdhbWVzZXJ2ZXIuY29yZS52MS5VbmF2YWls",
+            "YWJsZVNlY3Rpb24SQQoHZGV0YWlscxgLIAMoCzIwLmdhbWVzZXJ2ZXIuY29y",
+            "ZS52MS5Db21tYW5kUmVzcG9uc2UuRGV0YWlsc0VudHJ5Gi4KDERldGFpbHNF",
+            "bnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIiMKD1NuYXBz",
+            "aG90UmVxdWVzdBIQCghzZWN0aW9ucxgBIAMoCSLaAQoQU25hcHNob3RSZXNw",
+            "b25zZRItCghzZWN0aW9ucxgBIAMoCzIbLmdhbWVzZXJ2ZXIuY29yZS52MS5T",
+            "ZWN0aW9uEhYKDmNvbmZpZ192ZXJzaW9uGAIgASgJEhoKEnNlcnZlcl90aW1l",
+            "X3V0Y19tcxgDIAEoAxIdChVjbGllbnRfY29uZmlnX3ZlcnNpb24YBCABKAkS",
+            "RAoUdW5hdmFpbGFibGVfc2VjdGlvbnMYBSADKAsyJi5nYW1lc2VydmVyLmNv",
+            "cmUudjEuVW5hdmFpbGFibGVTZWN0aW9uIqkCCgtSZWNlaXB0VmlldxISCgpy",
+            "ZWNlaXB0X2lkGAEgASgJEhEKCW9wZXJhdGlvbhgCIAEoCRISCgpyZXF1ZXN0",
+            "X2lkGAMgASgJEhMKC3Jlc3VsdF9jb2RlGAQgASgJEg4KBnJlc3VsdBgFIAEo",
+            "DBI0CgphZ2dyZWdhdGVzGAYgAygLMiAuZ2FtZXNlcnZlci5jb3JlLnYxLkFn",
+            "Z3JlZ2F0ZVJldhIWCg5jb25maWdfdmVyc2lvbhgHIAEoCRIbChNjb21taXR0",
+            "ZWRfYXRfdXRjX21zGAggASgDEjMKBm91dGJveBgJIAMoCzIjLmdhbWVzZXJ2",
+            "ZXIuY29yZS52MS5PdXRib3hFbnRyeVZpZXcSGgoSc2VydmVyX3RpbWVfdXRj",
+            "X21zGAogASgDIjUKDEFnZ3JlZ2F0ZVJldhIUCgxhZ2dyZWdhdGVfaWQYASAB",
+            "KAkSDwoHbmV3X3JldhgCIAEoAyJHCg9PdXRib3hFbnRyeVZpZXcSEAoIZW50",
+            "cnlfaWQYASABKAkSDAoEa2luZBgCIAEoCRIUCgxwYXlsb2FkX2pzb24YAyAB",
+            "KAkiKgoMVGltZVJlc3BvbnNlEhoKEnNlcnZlcl90aW1lX3V0Y19tcxgBIAEo",
+            "AyIqChBHZXRDb25maWdSZXF1ZXN0EhYKDmNvbmZpZ192ZXJzaW9uGAEgASgJ",
+            "IisKCkNvbmZpZ0ZpbGUSDAoEbmFtZRgBIAEoCRIPCgdjb250ZW50GAIgASgM",
+            "IqsBChFHZXRDb25maWdSZXNwb25zZRIWCg5jb25maWdfdmVyc2lvbhgBIAEo",
+            "CRIUCgxub3RfbW9kaWZpZWQYAiABKAgSLQoFZmlsZXMYAyADKAsyHi5nYW1l",
+            "c2VydmVyLmNvcmUudjEuQ29uZmlnRmlsZRIaChJzZXJ2ZXJfdGltZV91dGNf",
+            "bXMYBCABKAMSHQoVY2xpZW50X2NvbmZpZ192ZXJzaW9uGAUgASgJQh6qAhtH",
+            "YW1lU2VydmVyLlByb3RvY29sLkNvcmUuVjFiBnByb3RvMw=="));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
           new pbr::FileDescriptor[] { },
           new pbr::GeneratedClrTypeInfo(null, null, new pbr::GeneratedClrTypeInfo[] {
             new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.ErrorEnvelope), global::GameServer.Protocol.Core.V1.ErrorEnvelope.Parser, new[]{ "Code", "CodeNumber", "Message", "RequestId", "Retryable", "RetryAfterMs", "ServerTimeUtcMs", "ConfigVersion", "Details", "ClientConfigVersion" }, null, null, null, new pbr::GeneratedClrTypeInfo[] { null, }),
             new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.Section), global::GameServer.Protocol.Core.V1.Section.Parser, new[]{ "Id", "Rev", "Payload" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.SectionUpdate), global::GameServer.Protocol.Core.V1.SectionUpdate.Parser, new[]{ "Id", "BaseRev", "NewRev", "Payload", "Full" }, null, null, null, null),
-            new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.CommandResponse), global::GameServer.Protocol.Core.V1.CommandResponse.Parser, new[]{ "Code", "CodeNumber", "ReceiptId", "Updates", "Result", "ConfigVersion", "ServerTimeUtcMs", "Replayed", "ClientConfigVersion" }, null, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.UnavailableSection), global::GameServer.Protocol.Core.V1.UnavailableSection.Parser, new[]{ "Id", "Code", "CodeNumber" }, null, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.CommandResponse), global::GameServer.Protocol.Core.V1.CommandResponse.Parser, new[]{ "Code", "CodeNumber", "ReceiptId", "Updates", "Result", "ConfigVersion", "ServerTimeUtcMs", "Replayed", "ClientConfigVersion", "UnavailableSections", "Details" }, null, null, null, new pbr::GeneratedClrTypeInfo[] { null, }),
             new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.SnapshotRequest), global::GameServer.Protocol.Core.V1.SnapshotRequest.Parser, new[]{ "Sections" }, null, null, null, null),
-            new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.SnapshotResponse), global::GameServer.Protocol.Core.V1.SnapshotResponse.Parser, new[]{ "Sections", "ConfigVersion", "ServerTimeUtcMs", "ClientConfigVersion" }, null, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.SnapshotResponse), global::GameServer.Protocol.Core.V1.SnapshotResponse.Parser, new[]{ "Sections", "ConfigVersion", "ServerTimeUtcMs", "ClientConfigVersion", "UnavailableSections" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.ReceiptView), global::GameServer.Protocol.Core.V1.ReceiptView.Parser, new[]{ "ReceiptId", "Operation", "RequestId", "ResultCode", "Result", "Aggregates", "ConfigVersion", "CommittedAtUtcMs", "Outbox", "ServerTimeUtcMs" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.AggregateRev), global::GameServer.Protocol.Core.V1.AggregateRev.Parser, new[]{ "AggregateId", "NewRev" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Protocol.Core.V1.OutboxEntryView), global::GameServer.Protocol.Core.V1.OutboxEntryView.Parser, new[]{ "EntryId", "Kind", "PayloadJson" }, null, null, null, null),
@@ -1260,6 +1268,287 @@ namespace GameServer.Protocol.Core.V1 {
   }
 
   /// <summary>
+  /// A client-visible aggregate the response cannot carry (016, FG-029): absent from sections/updates, never sent empty.
+  /// </summary>
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
+  public sealed partial class UnavailableSection : pb::IMessage<UnavailableSection>
+  #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      , pb::IBufferMessage
+  #endif
+  {
+    private static readonly pb::MessageParser<UnavailableSection> _parser = new pb::MessageParser<UnavailableSection>(() => new UnavailableSection());
+    private pb::UnknownFieldSet _unknownFields;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pb::MessageParser<UnavailableSection> Parser { get { return _parser; } }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pbr::MessageDescriptor Descriptor {
+      get { return global::GameServer.Protocol.Core.V1.CoreReflection.Descriptor.MessageTypes[3]; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    pbr::MessageDescriptor pb::IMessage.Descriptor {
+      get { return Descriptor; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public UnavailableSection() {
+      OnConstruction();
+    }
+
+    partial void OnConstruction();
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public UnavailableSection(UnavailableSection other) : this() {
+      id_ = other.id_;
+      code_ = other.code_;
+      codeNumber_ = other.codeNumber_;
+      _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public UnavailableSection Clone() {
+      return new UnavailableSection(this);
+    }
+
+    /// <summary>Field number for the "id" field.</summary>
+    public const int IdFieldNumber = 1;
+    private string id_ = "";
+    /// <summary>
+    /// aggregateId
+    /// </summary>
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public string Id {
+      get { return id_; }
+      set {
+        id_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
+    }
+
+    /// <summary>Field number for the "code" field.</summary>
+    public const int CodeFieldNumber = 2;
+    private string code_ = "";
+    /// <summary>
+    /// AGGREGATE_VERSION_AHEAD | AGGREGATE_UNREADABLE
+    /// </summary>
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public string Code {
+      get { return code_; }
+      set {
+        code_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
+    }
+
+    /// <summary>Field number for the "code_number" field.</summary>
+    public const int CodeNumberFieldNumber = 3;
+    private int codeNumber_;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public int CodeNumber {
+      get { return codeNumber_; }
+      set {
+        codeNumber_ = value;
+      }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override bool Equals(object other) {
+      return Equals(other as UnavailableSection);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public bool Equals(UnavailableSection other) {
+      if (ReferenceEquals(other, null)) {
+        return false;
+      }
+      if (ReferenceEquals(other, this)) {
+        return true;
+      }
+      if (Id != other.Id) return false;
+      if (Code != other.Code) return false;
+      if (CodeNumber != other.CodeNumber) return false;
+      return Equals(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override int GetHashCode() {
+      int hash = 1;
+      if (Id.Length != 0) hash ^= Id.GetHashCode();
+      if (Code.Length != 0) hash ^= Code.GetHashCode();
+      if (CodeNumber != 0) hash ^= CodeNumber.GetHashCode();
+      if (_unknownFields != null) {
+        hash ^= _unknownFields.GetHashCode();
+      }
+      return hash;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override string ToString() {
+      return pb::JsonFormatter.ToDiagnosticString(this);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void WriteTo(pb::CodedOutputStream output) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      output.WriteRawMessage(this);
+    #else
+      if (Id.Length != 0) {
+        output.WriteRawTag(10);
+        output.WriteString(Id);
+      }
+      if (Code.Length != 0) {
+        output.WriteRawTag(18);
+        output.WriteString(Code);
+      }
+      if (CodeNumber != 0) {
+        output.WriteRawTag(24);
+        output.WriteInt32(CodeNumber);
+      }
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(output);
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalWriteTo(ref pb::WriteContext output) {
+      if (Id.Length != 0) {
+        output.WriteRawTag(10);
+        output.WriteString(Id);
+      }
+      if (Code.Length != 0) {
+        output.WriteRawTag(18);
+        output.WriteString(Code);
+      }
+      if (CodeNumber != 0) {
+        output.WriteRawTag(24);
+        output.WriteInt32(CodeNumber);
+      }
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(ref output);
+      }
+    }
+    #endif
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public int CalculateSize() {
+      int size = 0;
+      if (Id.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeStringSize(Id);
+      }
+      if (Code.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeStringSize(Code);
+      }
+      if (CodeNumber != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeInt32Size(CodeNumber);
+      }
+      if (_unknownFields != null) {
+        size += _unknownFields.CalculateSize();
+      }
+      return size;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(UnavailableSection other) {
+      if (other == null) {
+        return;
+      }
+      if (other.Id.Length != 0) {
+        Id = other.Id;
+      }
+      if (other.Code.Length != 0) {
+        Code = other.Code;
+      }
+      if (other.CodeNumber != 0) {
+        CodeNumber = other.CodeNumber;
+      }
+      _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(pb::CodedInputStream input) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      input.ReadRawMessage(this);
+    #else
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
+            break;
+          case 10: {
+            Id = input.ReadString();
+            break;
+          }
+          case 18: {
+            Code = input.ReadString();
+            break;
+          }
+          case 24: {
+            CodeNumber = input.ReadInt32();
+            break;
+          }
+        }
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
+            break;
+          case 10: {
+            Id = input.ReadString();
+            break;
+          }
+          case 18: {
+            Code = input.ReadString();
+            break;
+          }
+          case 24: {
+            CodeNumber = input.ReadInt32();
+            break;
+          }
+        }
+      }
+    }
+    #endif
+
+  }
+
+  /// <summary>
   /// Response của mọi command thay đổi trạng thái.
   /// </summary>
   [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
@@ -1277,7 +1566,7 @@ namespace GameServer.Protocol.Core.V1 {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public static pbr::MessageDescriptor Descriptor {
-      get { return global::GameServer.Protocol.Core.V1.CoreReflection.Descriptor.MessageTypes[3]; }
+      get { return global::GameServer.Protocol.Core.V1.CoreReflection.Descriptor.MessageTypes[4]; }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
@@ -1306,6 +1595,8 @@ namespace GameServer.Protocol.Core.V1 {
       serverTimeUtcMs_ = other.serverTimeUtcMs_;
       replayed_ = other.replayed_;
       clientConfigVersion_ = other.clientConfigVersion_;
+      unavailableSections_ = other.unavailableSections_.Clone();
+      details_ = other.details_.Clone();
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -1440,6 +1731,34 @@ namespace GameServer.Protocol.Core.V1 {
       }
     }
 
+    /// <summary>Field number for the "unavailable_sections" field.</summary>
+    public const int UnavailableSectionsFieldNumber = 10;
+    private static readonly pb::FieldCodec<global::GameServer.Protocol.Core.V1.UnavailableSection> _repeated_unavailableSections_codec
+        = pb::FieldCodec.ForMessage(82, global::GameServer.Protocol.Core.V1.UnavailableSection.Parser);
+    private readonly pbc::RepeatedField<global::GameServer.Protocol.Core.V1.UnavailableSection> unavailableSections_ = new pbc::RepeatedField<global::GameServer.Protocol.Core.V1.UnavailableSection>();
+    /// <summary>
+    /// 016: replay or post-commit mapping could not carry it
+    /// </summary>
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public pbc::RepeatedField<global::GameServer.Protocol.Core.V1.UnavailableSection> UnavailableSections {
+      get { return unavailableSections_; }
+    }
+
+    /// <summary>Field number for the "details" field.</summary>
+    public const int DetailsFieldNumber = 11;
+    private static readonly pbc::MapField<string, string>.Codec _map_details_codec
+        = new pbc::MapField<string, string>.Codec(pb::FieldCodec.ForString(10, ""), pb::FieldCodec.ForString(18, ""), 90);
+    private readonly pbc::MapField<string, string> details_ = new pbc::MapField<string, string>();
+    /// <summary>
+    /// 016: details of a business rejection (HTTP 200), e.g. part/bytes/limit
+    /// </summary>
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public pbc::MapField<string, string> Details {
+      get { return details_; }
+    }
+
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
@@ -1464,6 +1783,8 @@ namespace GameServer.Protocol.Core.V1 {
       if (ServerTimeUtcMs != other.ServerTimeUtcMs) return false;
       if (Replayed != other.Replayed) return false;
       if (ClientConfigVersion != other.ClientConfigVersion) return false;
+      if(!unavailableSections_.Equals(other.unavailableSections_)) return false;
+      if (!Details.Equals(other.Details)) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -1480,6 +1801,8 @@ namespace GameServer.Protocol.Core.V1 {
       if (ServerTimeUtcMs != 0L) hash ^= ServerTimeUtcMs.GetHashCode();
       if (Replayed != false) hash ^= Replayed.GetHashCode();
       if (ClientConfigVersion.Length != 0) hash ^= ClientConfigVersion.GetHashCode();
+      hash ^= unavailableSections_.GetHashCode();
+      hash ^= Details.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -1531,6 +1854,8 @@ namespace GameServer.Protocol.Core.V1 {
         output.WriteRawTag(74);
         output.WriteString(ClientConfigVersion);
       }
+      unavailableSections_.WriteTo(output, _repeated_unavailableSections_codec);
+      details_.WriteTo(output, _map_details_codec);
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -1574,6 +1899,8 @@ namespace GameServer.Protocol.Core.V1 {
         output.WriteRawTag(74);
         output.WriteString(ClientConfigVersion);
       }
+      unavailableSections_.WriteTo(ref output, _repeated_unavailableSections_codec);
+      details_.WriteTo(ref output, _map_details_codec);
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -1609,6 +1936,8 @@ namespace GameServer.Protocol.Core.V1 {
       if (ClientConfigVersion.Length != 0) {
         size += 1 + pb::CodedOutputStream.ComputeStringSize(ClientConfigVersion);
       }
+      size += unavailableSections_.CalculateSize(_repeated_unavailableSections_codec);
+      size += details_.CalculateSize(_map_details_codec);
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
       }
@@ -1646,6 +1975,8 @@ namespace GameServer.Protocol.Core.V1 {
       if (other.ClientConfigVersion.Length != 0) {
         ClientConfigVersion = other.ClientConfigVersion;
       }
+      unavailableSections_.Add(other.unavailableSections_);
+      details_.MergeFrom(other.details_);
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
 
@@ -1699,6 +2030,14 @@ namespace GameServer.Protocol.Core.V1 {
           }
           case 74: {
             ClientConfigVersion = input.ReadString();
+            break;
+          }
+          case 82: {
+            unavailableSections_.AddEntriesFrom(input, _repeated_unavailableSections_codec);
+            break;
+          }
+          case 90: {
+            details_.AddEntriesFrom(input, _map_details_codec);
             break;
           }
         }
@@ -1756,6 +2095,14 @@ namespace GameServer.Protocol.Core.V1 {
             ClientConfigVersion = input.ReadString();
             break;
           }
+          case 82: {
+            unavailableSections_.AddEntriesFrom(ref input, _repeated_unavailableSections_codec);
+            break;
+          }
+          case 90: {
+            details_.AddEntriesFrom(ref input, _map_details_codec);
+            break;
+          }
         }
       }
     }
@@ -1778,7 +2125,7 @@ namespace GameServer.Protocol.Core.V1 {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public static pbr::MessageDescriptor Descriptor {
-      get { return global::GameServer.Protocol.Core.V1.CoreReflection.Descriptor.MessageTypes[4]; }
+      get { return global::GameServer.Protocol.Core.V1.CoreReflection.Descriptor.MessageTypes[5]; }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
@@ -1968,7 +2315,7 @@ namespace GameServer.Protocol.Core.V1 {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public static pbr::MessageDescriptor Descriptor {
-      get { return global::GameServer.Protocol.Core.V1.CoreReflection.Descriptor.MessageTypes[5]; }
+      get { return global::GameServer.Protocol.Core.V1.CoreReflection.Descriptor.MessageTypes[6]; }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
@@ -1992,6 +2339,7 @@ namespace GameServer.Protocol.Core.V1 {
       configVersion_ = other.configVersion_;
       serverTimeUtcMs_ = other.serverTimeUtcMs_;
       clientConfigVersion_ = other.clientConfigVersion_;
+      unavailableSections_ = other.unavailableSections_.Clone();
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -2051,6 +2399,20 @@ namespace GameServer.Protocol.Core.V1 {
       }
     }
 
+    /// <summary>Field number for the "unavailable_sections" field.</summary>
+    public const int UnavailableSectionsFieldNumber = 5;
+    private static readonly pb::FieldCodec<global::GameServer.Protocol.Core.V1.UnavailableSection> _repeated_unavailableSections_codec
+        = pb::FieldCodec.ForMessage(42, global::GameServer.Protocol.Core.V1.UnavailableSection.Parser);
+    private readonly pbc::RepeatedField<global::GameServer.Protocol.Core.V1.UnavailableSection> unavailableSections_ = new pbc::RepeatedField<global::GameServer.Protocol.Core.V1.UnavailableSection>();
+    /// <summary>
+    /// 016: requested sections that could not be read or mapped
+    /// </summary>
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public pbc::RepeatedField<global::GameServer.Protocol.Core.V1.UnavailableSection> UnavailableSections {
+      get { return unavailableSections_; }
+    }
+
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
@@ -2070,6 +2432,7 @@ namespace GameServer.Protocol.Core.V1 {
       if (ConfigVersion != other.ConfigVersion) return false;
       if (ServerTimeUtcMs != other.ServerTimeUtcMs) return false;
       if (ClientConfigVersion != other.ClientConfigVersion) return false;
+      if(!unavailableSections_.Equals(other.unavailableSections_)) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -2081,6 +2444,7 @@ namespace GameServer.Protocol.Core.V1 {
       if (ConfigVersion.Length != 0) hash ^= ConfigVersion.GetHashCode();
       if (ServerTimeUtcMs != 0L) hash ^= ServerTimeUtcMs.GetHashCode();
       if (ClientConfigVersion.Length != 0) hash ^= ClientConfigVersion.GetHashCode();
+      hash ^= unavailableSections_.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -2112,6 +2476,7 @@ namespace GameServer.Protocol.Core.V1 {
         output.WriteRawTag(34);
         output.WriteString(ClientConfigVersion);
       }
+      unavailableSections_.WriteTo(output, _repeated_unavailableSections_codec);
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -2135,6 +2500,7 @@ namespace GameServer.Protocol.Core.V1 {
         output.WriteRawTag(34);
         output.WriteString(ClientConfigVersion);
       }
+      unavailableSections_.WriteTo(ref output, _repeated_unavailableSections_codec);
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -2155,6 +2521,7 @@ namespace GameServer.Protocol.Core.V1 {
       if (ClientConfigVersion.Length != 0) {
         size += 1 + pb::CodedOutputStream.ComputeStringSize(ClientConfigVersion);
       }
+      size += unavailableSections_.CalculateSize(_repeated_unavailableSections_codec);
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
       }
@@ -2177,6 +2544,7 @@ namespace GameServer.Protocol.Core.V1 {
       if (other.ClientConfigVersion.Length != 0) {
         ClientConfigVersion = other.ClientConfigVersion;
       }
+      unavailableSections_.Add(other.unavailableSections_);
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
 
@@ -2210,6 +2578,10 @@ namespace GameServer.Protocol.Core.V1 {
           }
           case 34: {
             ClientConfigVersion = input.ReadString();
+            break;
+          }
+          case 42: {
+            unavailableSections_.AddEntriesFrom(input, _repeated_unavailableSections_codec);
             break;
           }
         }
@@ -2247,6 +2619,10 @@ namespace GameServer.Protocol.Core.V1 {
             ClientConfigVersion = input.ReadString();
             break;
           }
+          case 42: {
+            unavailableSections_.AddEntriesFrom(ref input, _repeated_unavailableSections_codec);
+            break;
+          }
         }
       }
     }
@@ -2269,7 +2645,7 @@ namespace GameServer.Protocol.Core.V1 {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public static pbr::MessageDescriptor Descriptor {
-      get { return global::GameServer.Protocol.Core.V1.CoreReflection.Descriptor.MessageTypes[6]; }
+      get { return global::GameServer.Protocol.Core.V1.CoreReflection.Descriptor.MessageTypes[7]; }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
@@ -2778,7 +3154,7 @@ namespace GameServer.Protocol.Core.V1 {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public static pbr::MessageDescriptor Descriptor {
-      get { return global::GameServer.Protocol.Core.V1.CoreReflection.Descriptor.MessageTypes[7]; }
+      get { return global::GameServer.Protocol.Core.V1.CoreReflection.Descriptor.MessageTypes[8]; }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
@@ -3013,7 +3389,7 @@ namespace GameServer.Protocol.Core.V1 {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public static pbr::MessageDescriptor Descriptor {
-      get { return global::GameServer.Protocol.Core.V1.CoreReflection.Descriptor.MessageTypes[8]; }
+      get { return global::GameServer.Protocol.Core.V1.CoreReflection.Descriptor.MessageTypes[9]; }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
@@ -3285,7 +3661,7 @@ namespace GameServer.Protocol.Core.V1 {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public static pbr::MessageDescriptor Descriptor {
-      get { return global::GameServer.Protocol.Core.V1.CoreReflection.Descriptor.MessageTypes[9]; }
+      get { return global::GameServer.Protocol.Core.V1.CoreReflection.Descriptor.MessageTypes[10]; }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
@@ -3486,7 +3862,7 @@ namespace GameServer.Protocol.Core.V1 {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public static pbr::MessageDescriptor Descriptor {
-      get { return global::GameServer.Protocol.Core.V1.CoreReflection.Descriptor.MessageTypes[10]; }
+      get { return global::GameServer.Protocol.Core.V1.CoreReflection.Descriptor.MessageTypes[11]; }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
@@ -3687,7 +4063,7 @@ namespace GameServer.Protocol.Core.V1 {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public static pbr::MessageDescriptor Descriptor {
-      get { return global::GameServer.Protocol.Core.V1.CoreReflection.Descriptor.MessageTypes[11]; }
+      get { return global::GameServer.Protocol.Core.V1.CoreReflection.Descriptor.MessageTypes[12]; }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
@@ -3925,7 +4301,7 @@ namespace GameServer.Protocol.Core.V1 {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public static pbr::MessageDescriptor Descriptor {
-      get { return global::GameServer.Protocol.Core.V1.CoreReflection.Descriptor.MessageTypes[12]; }
+      get { return global::GameServer.Protocol.Core.V1.CoreReflection.Descriptor.MessageTypes[13]; }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]

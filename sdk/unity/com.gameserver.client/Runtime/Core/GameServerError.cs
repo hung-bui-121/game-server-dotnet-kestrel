@@ -31,6 +31,15 @@ namespace GameServer.Client
 
         public const string ProviderUnavailable = "PROVIDER_UNAVAILABLE";
 
+        /// <summary>Business code (FG-016): the command's result or receipt is over its server limit; nothing was committed.</summary>
+        public const string CommandOutputTooLarge = "COMMAND_OUTPUT_TOO_LARGE";
+
+        /// <summary>A section was written by a newer server version (rolling deploy, FG-029). Retryable.</summary>
+        public const string AggregateVersionAhead = "AGGREGATE_VERSION_AHEAD";
+
+        /// <summary>A section cannot be read on the server (FG-029). Not retryable.</summary>
+        public const string AggregateUnreadable = "AGGREGATE_UNREADABLE";
+
         /// <summary>Client-side code: no HTTP response after every retry.</summary>
         public const string NetworkError = "NETWORK_ERROR";
 

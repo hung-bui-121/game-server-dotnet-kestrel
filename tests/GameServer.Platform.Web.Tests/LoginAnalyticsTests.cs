@@ -107,6 +107,41 @@ public sealed class LoginAnalyticsTests
     }
 
     [Fact]
+    public async Task Two_racing_first_logins_of_one_credential_report_one_new_user()
+    {
+        // Slice 016 T018 (trap T3): both logins read "no profile" before either writes; only the committed creation is new.
+        await using var host = await StartAsync();
+        var localId = IdentityHttp.NewLocalId();
+        var secret = IdentityHttp.NewSecret();
+        var completion = host.Services.GetRequiredService<LoginCompletion>();
+        var arrived = 0;
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        completion.AfterMappingRead = async _ =>
+        {
+            if (Interlocked.Increment(ref arrived) == 2)
+            {
+                release.TrySetResult();
+            }
+
+            await release.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        };
+        try
+        {
+            var logins = await Task.WhenAll(host.Client().LoginAsync(localId, secret), host.Client().LoginAsync(localId, secret));
+
+            var playerId = logins.Select(l => l.PlayerId).Distinct().ShouldHaveSingleItem();
+            var records = await RecordsAsync(host, "login", playerId);
+            records.Count.ShouldBe(2);
+            records.Count(r => r["isNewUser"]!.GetValue<bool>()).ShouldBe(1);
+            logins.Count(l => l.IsNewPlayer).ShouldBe(1);
+        }
+        finally
+        {
+            completion.AfterMappingRead = null;
+        }
+    }
+
+    [Fact]
     public async Task Refused_and_failed_logins_and_identity_links_emit_nothing()
     {
         await using var host = await StartAsync();

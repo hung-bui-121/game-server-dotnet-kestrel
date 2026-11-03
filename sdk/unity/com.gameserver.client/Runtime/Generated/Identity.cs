@@ -28,42 +28,44 @@ namespace GameServer.Modules.Identity.Protocol.V1 {
             "ZXNlcnZlci9jb3JlL3YxL2NvcmUucHJvdG8iOwoMUHJvZmlsZVN0YXRlEhQK",
             "DGRpc3BsYXlfbmFtZRgBIAEoCRIVCg1zZXNzaW9uX2Vwb2NoGAIgASgDIjUK",
             "EUd1ZXN0TG9naW5SZXF1ZXN0EhAKCGxvY2FsX2lkGAEgASgJEg4KBnNlY3Jl",
-            "dBgCIAEoDCLeAQoNTG9naW5SZXNwb25zZRIVCg1zZXNzaW9uX3Rva2VuGAEg",
+            "dBgCIAEoDCK7AgoNTG9naW5SZXNwb25zZRIVCg1zZXNzaW9uX3Rva2VuGAEg",
             "ASgJEhEKCXBsYXllcl9pZBgCIAEoCRItCghzZWN0aW9ucxgDIAMoCzIbLmdh",
             "bWVzZXJ2ZXIuY29yZS52MS5TZWN0aW9uEhYKDmNvbmZpZ192ZXJzaW9uGAQg",
             "ASgJEhoKEnNlcnZlcl90aW1lX3V0Y19tcxgFIAEoAxIhChlzZXNzaW9uX2V4",
             "cGlyZXNfYXRfdXRjX21zGAYgASgDEh0KFWNsaWVudF9jb25maWdfdmVyc2lv",
-            "bhgHIAEoCSLmAQoSUHJvdmlkZXJDcmVkZW50aWFsEkEKCnBsYXlfZ2FtZXMY",
-            "ASABKAsyKy5nYW1lc2VydmVyLmlkZW50aXR5LnYxLlBsYXlHYW1lc0NyZWRl",
-            "bnRpYWxIABJDCgtnYW1lX2NlbnRlchgCIAEoCzIsLmdhbWVzZXJ2ZXIuaWRl",
-            "bnRpdHkudjEuR2FtZUNlbnRlckNyZWRlbnRpYWxIABI6CgZjdXN0b20YDyAB",
-            "KAsyKC5nYW1lc2VydmVyLmlkZW50aXR5LnYxLkN1c3RvbUNyZWRlbnRpYWxI",
-            "AEIMCgpjcmVkZW50aWFsIi8KE1BsYXlHYW1lc0NyZWRlbnRpYWwSGAoQc2Vy",
-            "dmVyX2F1dGhfY29kZRgBIAEoCSKlAQoUR2FtZUNlbnRlckNyZWRlbnRpYWwS",
-            "FgoOcHVibGljX2tleV91cmwYASABKAkSEQoJc2lnbmF0dXJlGAIgASgMEgwK",
-            "BHNhbHQYAyABKAwSEQoJdGltZXN0YW1wGAQgASgEEhYKDnRlYW1fcGxheWVy",
-            "X2lkGAUgASgJEhYKDmdhbWVfcGxheWVyX2lkGAYgASgJEhEKCWJ1bmRsZV9p",
-            "ZBgHIAEoCSIyChBDdXN0b21DcmVkZW50aWFsEhAKCHByb3ZpZGVyGAEgASgJ",
-            "EgwKBGRhdGEYAiABKAwibgoUUHJvdmlkZXJMb2dpblJlcXVlc3QSPgoKY3Jl",
-            "ZGVudGlhbBgBIAEoCzIqLmdhbWVzZXJ2ZXIuaWRlbnRpdHkudjEuUHJvdmlk",
-            "ZXJDcmVkZW50aWFsEhYKDnN3aXRjaF9hY2NvdW50GAIgASgIIlUKE0xpbmtJ",
-            "ZGVudGl0eVJlcXVlc3QSPgoKY3JlZGVudGlhbBgBIAEoCzIqLmdhbWVzZXJ2",
-            "ZXIuaWRlbnRpdHkudjEuUHJvdmlkZXJDcmVkZW50aWFsIj4KEkxpbmtJZGVu",
-            "dGl0eVJlc3VsdBIQCghwcm92aWRlchgBIAEoCRIWCg5hbHJlYWR5X2xpbmtl",
-            "ZBgCIAEoCCItChVTZXREaXNwbGF5TmFtZVJlcXVlc3QSFAoMZGlzcGxheV9u",
-            "YW1lGAEgASgJIiwKFFNldERpc3BsYXlOYW1lUmVzdWx0EhQKDGRpc3BsYXlf",
-            "bmFtZRgBIAEoCSIfCh1SZXF1ZXN0QWNjb3VudERlbGV0aW9uUmVxdWVzdCJX",
-            "ChxSZXF1ZXN0QWNjb3VudERlbGV0aW9uUmVzdWx0EhsKE3JlcXVlc3RlZF9h",
-            "dF91dGNfbXMYASABKAMSGgoScHVyZ2VfYWZ0ZXJfdXRjX21zGAIgASgDIg8K",
-            "DUxvZ291dFJlcXVlc3QiLAoOTG9nb3V0UmVzcG9uc2USGgoSc2VydmVyX3Rp",
-            "bWVfdXRjX21zGAEgASgDQiqqAidHYW1lU2VydmVyLk1vZHVsZXMuSWRlbnRp",
-            "dHkuUHJvdG9jb2wuVjFiBnByb3RvMw=="));
+            "bhgHIAEoCRIVCg1pc19uZXdfcGxheWVyGAggASgIEkQKFHVuYXZhaWxhYmxl",
+            "X3NlY3Rpb25zGAkgAygLMiYuZ2FtZXNlcnZlci5jb3JlLnYxLlVuYXZhaWxh",
+            "YmxlU2VjdGlvbiLmAQoSUHJvdmlkZXJDcmVkZW50aWFsEkEKCnBsYXlfZ2Ft",
+            "ZXMYASABKAsyKy5nYW1lc2VydmVyLmlkZW50aXR5LnYxLlBsYXlHYW1lc0Ny",
+            "ZWRlbnRpYWxIABJDCgtnYW1lX2NlbnRlchgCIAEoCzIsLmdhbWVzZXJ2ZXIu",
+            "aWRlbnRpdHkudjEuR2FtZUNlbnRlckNyZWRlbnRpYWxIABI6CgZjdXN0b20Y",
+            "DyABKAsyKC5nYW1lc2VydmVyLmlkZW50aXR5LnYxLkN1c3RvbUNyZWRlbnRp",
+            "YWxIAEIMCgpjcmVkZW50aWFsIi8KE1BsYXlHYW1lc0NyZWRlbnRpYWwSGAoQ",
+            "c2VydmVyX2F1dGhfY29kZRgBIAEoCSKlAQoUR2FtZUNlbnRlckNyZWRlbnRp",
+            "YWwSFgoOcHVibGljX2tleV91cmwYASABKAkSEQoJc2lnbmF0dXJlGAIgASgM",
+            "EgwKBHNhbHQYAyABKAwSEQoJdGltZXN0YW1wGAQgASgEEhYKDnRlYW1fcGxh",
+            "eWVyX2lkGAUgASgJEhYKDmdhbWVfcGxheWVyX2lkGAYgASgJEhEKCWJ1bmRs",
+            "ZV9pZBgHIAEoCSIyChBDdXN0b21DcmVkZW50aWFsEhAKCHByb3ZpZGVyGAEg",
+            "ASgJEgwKBGRhdGEYAiABKAwibgoUUHJvdmlkZXJMb2dpblJlcXVlc3QSPgoK",
+            "Y3JlZGVudGlhbBgBIAEoCzIqLmdhbWVzZXJ2ZXIuaWRlbnRpdHkudjEuUHJv",
+            "dmlkZXJDcmVkZW50aWFsEhYKDnN3aXRjaF9hY2NvdW50GAIgASgIIlUKE0xp",
+            "bmtJZGVudGl0eVJlcXVlc3QSPgoKY3JlZGVudGlhbBgBIAEoCzIqLmdhbWVz",
+            "ZXJ2ZXIuaWRlbnRpdHkudjEuUHJvdmlkZXJDcmVkZW50aWFsIj4KEkxpbmtJ",
+            "ZGVudGl0eVJlc3VsdBIQCghwcm92aWRlchgBIAEoCRIWCg5hbHJlYWR5X2xp",
+            "bmtlZBgCIAEoCCItChVTZXREaXNwbGF5TmFtZVJlcXVlc3QSFAoMZGlzcGxh",
+            "eV9uYW1lGAEgASgJIiwKFFNldERpc3BsYXlOYW1lUmVzdWx0EhQKDGRpc3Bs",
+            "YXlfbmFtZRgBIAEoCSIfCh1SZXF1ZXN0QWNjb3VudERlbGV0aW9uUmVxdWVz",
+            "dCJXChxSZXF1ZXN0QWNjb3VudERlbGV0aW9uUmVzdWx0EhsKE3JlcXVlc3Rl",
+            "ZF9hdF91dGNfbXMYASABKAMSGgoScHVyZ2VfYWZ0ZXJfdXRjX21zGAIgASgD",
+            "Ig8KDUxvZ291dFJlcXVlc3QiLAoOTG9nb3V0UmVzcG9uc2USGgoSc2VydmVy",
+            "X3RpbWVfdXRjX21zGAEgASgDQiqqAidHYW1lU2VydmVyLk1vZHVsZXMuSWRl",
+            "bnRpdHkuUHJvdG9jb2wuVjFiBnByb3RvMw=="));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
           new pbr::FileDescriptor[] { global::GameServer.Protocol.Core.V1.CoreReflection.Descriptor, },
           new pbr::GeneratedClrTypeInfo(null, null, new pbr::GeneratedClrTypeInfo[] {
             new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Modules.Identity.Protocol.V1.ProfileState), global::GameServer.Modules.Identity.Protocol.V1.ProfileState.Parser, new[]{ "DisplayName", "SessionEpoch" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Modules.Identity.Protocol.V1.GuestLoginRequest), global::GameServer.Modules.Identity.Protocol.V1.GuestLoginRequest.Parser, new[]{ "LocalId", "Secret" }, null, null, null, null),
-            new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Modules.Identity.Protocol.V1.LoginResponse), global::GameServer.Modules.Identity.Protocol.V1.LoginResponse.Parser, new[]{ "SessionToken", "PlayerId", "Sections", "ConfigVersion", "ServerTimeUtcMs", "SessionExpiresAtUtcMs", "ClientConfigVersion" }, null, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Modules.Identity.Protocol.V1.LoginResponse), global::GameServer.Modules.Identity.Protocol.V1.LoginResponse.Parser, new[]{ "SessionToken", "PlayerId", "Sections", "ConfigVersion", "ServerTimeUtcMs", "SessionExpiresAtUtcMs", "ClientConfigVersion", "IsNewPlayer", "UnavailableSections" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Modules.Identity.Protocol.V1.ProviderCredential), global::GameServer.Modules.Identity.Protocol.V1.ProviderCredential.Parser, new[]{ "PlayGames", "GameCenter", "Custom" }, new[]{ "Credential" }, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Modules.Identity.Protocol.V1.PlayGamesCredential), global::GameServer.Modules.Identity.Protocol.V1.PlayGamesCredential.Parser, new[]{ "ServerAuthCode" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::GameServer.Modules.Identity.Protocol.V1.GameCenterCredential), global::GameServer.Modules.Identity.Protocol.V1.GameCenterCredential.Parser, new[]{ "PublicKeyUrl", "Signature", "Salt", "Timestamp", "TeamPlayerId", "GamePlayerId", "BundleId" }, null, null, null, null),
@@ -607,6 +609,8 @@ namespace GameServer.Modules.Identity.Protocol.V1 {
       serverTimeUtcMs_ = other.serverTimeUtcMs_;
       sessionExpiresAtUtcMs_ = other.sessionExpiresAtUtcMs_;
       clientConfigVersion_ = other.clientConfigVersion_;
+      isNewPlayer_ = other.isNewPlayer_;
+      unavailableSections_ = other.unavailableSections_.Clone();
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -705,6 +709,35 @@ namespace GameServer.Modules.Identity.Protocol.V1 {
       }
     }
 
+    /// <summary>Field number for the "is_new_player" field.</summary>
+    public const int IsNewPlayerFieldNumber = 8;
+    private bool isNewPlayer_;
+    /// <summary>
+    /// 016: this login created the player (FG-013); false after a lost first-login response
+    /// </summary>
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public bool IsNewPlayer {
+      get { return isNewPlayer_; }
+      set {
+        isNewPlayer_ = value;
+      }
+    }
+
+    /// <summary>Field number for the "unavailable_sections" field.</summary>
+    public const int UnavailableSectionsFieldNumber = 9;
+    private static readonly pb::FieldCodec<global::GameServer.Protocol.Core.V1.UnavailableSection> _repeated_unavailableSections_codec
+        = pb::FieldCodec.ForMessage(74, global::GameServer.Protocol.Core.V1.UnavailableSection.Parser);
+    private readonly pbc::RepeatedField<global::GameServer.Protocol.Core.V1.UnavailableSection> unavailableSections_ = new pbc::RepeatedField<global::GameServer.Protocol.Core.V1.UnavailableSection>();
+    /// <summary>
+    /// 016: client-visible sections the login could not read
+    /// </summary>
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public pbc::RepeatedField<global::GameServer.Protocol.Core.V1.UnavailableSection> UnavailableSections {
+      get { return unavailableSections_; }
+    }
+
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
@@ -727,6 +760,8 @@ namespace GameServer.Modules.Identity.Protocol.V1 {
       if (ServerTimeUtcMs != other.ServerTimeUtcMs) return false;
       if (SessionExpiresAtUtcMs != other.SessionExpiresAtUtcMs) return false;
       if (ClientConfigVersion != other.ClientConfigVersion) return false;
+      if (IsNewPlayer != other.IsNewPlayer) return false;
+      if(!unavailableSections_.Equals(other.unavailableSections_)) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -741,6 +776,8 @@ namespace GameServer.Modules.Identity.Protocol.V1 {
       if (ServerTimeUtcMs != 0L) hash ^= ServerTimeUtcMs.GetHashCode();
       if (SessionExpiresAtUtcMs != 0L) hash ^= SessionExpiresAtUtcMs.GetHashCode();
       if (ClientConfigVersion.Length != 0) hash ^= ClientConfigVersion.GetHashCode();
+      if (IsNewPlayer != false) hash ^= IsNewPlayer.GetHashCode();
+      hash ^= unavailableSections_.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -784,6 +821,11 @@ namespace GameServer.Modules.Identity.Protocol.V1 {
         output.WriteRawTag(58);
         output.WriteString(ClientConfigVersion);
       }
+      if (IsNewPlayer != false) {
+        output.WriteRawTag(64);
+        output.WriteBool(IsNewPlayer);
+      }
+      unavailableSections_.WriteTo(output, _repeated_unavailableSections_codec);
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -819,6 +861,11 @@ namespace GameServer.Modules.Identity.Protocol.V1 {
         output.WriteRawTag(58);
         output.WriteString(ClientConfigVersion);
       }
+      if (IsNewPlayer != false) {
+        output.WriteRawTag(64);
+        output.WriteBool(IsNewPlayer);
+      }
+      unavailableSections_.WriteTo(ref output, _repeated_unavailableSections_codec);
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -848,6 +895,10 @@ namespace GameServer.Modules.Identity.Protocol.V1 {
       if (ClientConfigVersion.Length != 0) {
         size += 1 + pb::CodedOutputStream.ComputeStringSize(ClientConfigVersion);
       }
+      if (IsNewPlayer != false) {
+        size += 1 + 1;
+      }
+      size += unavailableSections_.CalculateSize(_repeated_unavailableSections_codec);
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
       }
@@ -879,6 +930,10 @@ namespace GameServer.Modules.Identity.Protocol.V1 {
       if (other.ClientConfigVersion.Length != 0) {
         ClientConfigVersion = other.ClientConfigVersion;
       }
+      if (other.IsNewPlayer != false) {
+        IsNewPlayer = other.IsNewPlayer;
+      }
+      unavailableSections_.Add(other.unavailableSections_);
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
 
@@ -926,6 +981,14 @@ namespace GameServer.Modules.Identity.Protocol.V1 {
             ClientConfigVersion = input.ReadString();
             break;
           }
+          case 64: {
+            IsNewPlayer = input.ReadBool();
+            break;
+          }
+          case 74: {
+            unavailableSections_.AddEntriesFrom(input, _repeated_unavailableSections_codec);
+            break;
+          }
         }
       }
     #endif
@@ -971,6 +1034,14 @@ namespace GameServer.Modules.Identity.Protocol.V1 {
           }
           case 58: {
             ClientConfigVersion = input.ReadString();
+            break;
+          }
+          case 64: {
+            IsNewPlayer = input.ReadBool();
+            break;
+          }
+          case 74: {
+            unavailableSections_.AddEntriesFrom(ref input, _repeated_unavailableSections_codec);
             break;
           }
         }

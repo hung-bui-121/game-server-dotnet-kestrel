@@ -46,7 +46,13 @@ public sealed class GuestLoginService
         _perLocalId = new FixedWindowCounter(clock, TimeSpan.FromMinutes(1), settings.LoginPerLocalIdPerMinute);
     }
 
-    public async Task<LoginResult> LoginAsync(string localId, ReadOnlyMemory<byte> secret, string clientIp, CancellationToken cancellationToken)
+    /// <param name="correlationId">Correlation id of the request, stored in the creation receipt of a new account (FG-015).</param>
+    public async Task<LoginResult> LoginAsync(
+        string localId,
+        ReadOnlyMemory<byte> secret,
+        string clientIp,
+        CancellationToken cancellationToken,
+        string? correlationId = null)
     {
         if (!GuestCredentials.IsValidLocalId(localId) || !GuestCredentials.IsValidSecret(secret.Span))
         {
@@ -63,7 +69,7 @@ public sealed class GuestLoginService
 
         var mappingKey = GuestCredentials.MappingKey(localId);
         var playerId = await ResolvePlayerAsync(mappingKey, secret, clientIp, cancellationToken);
-        return await _completion.CompleteAsync(playerId, mappingKey, cancellationToken);
+        return await _completion.CompleteAsync(playerId, mappingKey, cancellationToken, correlationId);
     }
 
     private async Task<string> ResolvePlayerAsync(string mappingKey, ReadOnlyMemory<byte> secret, string clientIp, CancellationToken cancellationToken)

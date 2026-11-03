@@ -1,0 +1,183 @@
+# Release notes draft — v0.7.0 (slice 016 login-command)
+
+Framework `0.7.0` (unreleased). Input of `docs/releases/v0.7.0.md` (T083), which merges the drafts of slices 013, 014, 015 and
+016 into one round note (cross-slice ids written `0NN/BC-n`). Started in T002 (2026-11-04, framework `6054a04`); extended
+by the story checkpoints T022, T032, T046, T054, T062 and T075; final pass in T076. The release date, the restamp of the
+pages marked "chưa phát hành", the tag and any push are a separate round-close step, not part of this slice.
+
+**Fixed:** FG-013 (the login says whether it created the player; its sections are the client's boot read), FG-015 (a new
+account gets its starting state in the transaction that creates it), FG-029 (one broken aggregate no longer takes down the
+snapshot or the login), FG-016 (command limits are documented, validated settings; going over one is the typed rejection
+`COMMAND_OUTPUT_TOO_LARGE`), FG-022 (caller-owned request ids and an opt-in pending-command store let a command sent before
+the app died be replayed, not run twice). **Breaking:** BC-1 to BC-11 (table below).
+
+**Unchanged:** no route and no persisted document shape changes; five additive proto fields and one message
+(`LoginResponse.is_new_player` = 8, `LoginResponse.unavailable_sections` = 9, `SnapshotResponse.unavailable_sections` = 5,
+`CommandResponse.unavailable_sections` = 10, `CommandResponse.details` = 11, message `UnavailableSection`); additive GM JSON
+members; no existing field changes meaning (API-03); the Unity package stays `0.7.0`.
+
+## FG-013 — new-player flag
+
+- **`LoginResponse.is_new_player`** (field 8, SDK `LoginResponse.IsNewPlayer`) is `true` only for the login whose
+  transaction created the player. It is `false` for a returning player, for the loser of two racing first logins of one
+  credential, for a takeover from a second device, for an unconfirmed `switch_account` (which answers `SWITCH_ACCOUNT` and
+  creates nothing), and for the retry of a first login whose response was lost: the server had committed the creation, so
+  the retry is a normal login (session epoch + 1 once more). A confirmed `switch_account` into an identity without an
+  account creates that account and answers `true`.
+- **Analytics:** the login record's `isNewUser` comes from the same value, so it always equals the flag. Before, two
+  racing first logins of one credential both reported `isNewUser = true` (the value came from a read before the write).
+- **How:** every login writes the profile through the new Platform service `IAccountWriter`
+  (`GameServer.Platform.Commands`). Each transaction attempt decides "create or update" from what it read and returns the
+  decision; a returning login is the same transaction as before (one read, one replace). Login store failures answer
+  typed codes (BC-10).
+- **SDK:** no source change; `IsNewPlayer` is a generated member. Against a server before 016 it reads `false`.
+- The login sections are unchanged: every client-visible section with its `rev`, so a client can boot on the login
+  answer without a second snapshot (unavailable sections are added at the FG-029 checkpoint).
+
+## FG-015 — account initializers
+
+_Filled at the US2 checkpoint (T032)._
+
+## FG-029 — degraded reads of a broken aggregate
+
+_Filled at the US3 checkpoint (T046)._
+
+## FG-016 — command limits and `COMMAND_OUTPUT_TOO_LARGE`
+
+_Filled at the US4 checkpoint (T054)._
+
+## FG-022 — caller request ids and the pending-command store
+
+_Filled at the US5 checkpoint (T062)._
+
+## Breaking changes
+
+"How it surfaces" is replaced by the real lines and codes at each story checkpoint (asserted literally by the slice 016
+tests, or measured where noted).
+
+| Id | Change | Who is affected | How it surfaces | Fix |
+| --- | --- | --- | --- | --- |
+| BC-1 | A result or receipt over its limit is the business rejection `COMMAND_OUTPUT_TOO_LARGE` (HTTP 200, nothing commits) instead of a 500 `INTERNAL` (FR-030, FR-031) | Clients and tests that expect 500 for an oversized command; dashboards counting `command_results_total{code="INTERNAL"}` for it | Command response with the new code and details `part`/`bytes`/`limit`; metric `command_output_too_large_total{operation, part}`; Error log line (pending T054) | Treat the code as a design bug of the command; raise the limit (FR-032) or return less |
+| BC-2 | `GameServer:Commands:*` values are validated at startup (FR-032); `MaxAggregatesPerGame` above 16 is refused | Deployments with out-of-range values (silently accepted before) | Startup exit 1, one line per setting naming the range (pending T054) | Use a value in range |
+| BC-3 | **Snapshot and login semantics (PCR platform §4, API-10):** a snapshot or login no longer always holds every client-visible section; an unreadable one is absent and listed in the new unavailable field (FR-022, FR-023) | Client code that assumes every section is present after login or snapshot (old SDKs see the section missing, where the whole call used to fail) | A section missing from the SDK's store; the new list in new SDKs (pending T046) | Check the unavailable list (or a missing section) and show a recoverable state |
+| BC-4 | A command or replay that touches or reads an unreadable aggregate answers `AGGREGATE_VERSION_AHEAD` (503, retryable) or `AGGREGATE_UNREADABLE` (500) instead of 500 `INTERNAL`; a broken `profile` fails login and authenticated requests with these codes (FR-020, FR-023, FR-024). PCR §6 "newer than code → 500 `INTERNAL`" changes | Clients and tests that match `INTERNAL`; SDKs now retry the version-ahead case (retryable) | New codes in error envelopes and `http_errors_total{code}` (pending T046) | Match the new codes; keep the deploy rule of PCR §6 |
+| BC-5 | `AggregateDocumentSerializer.Load` and `PlayerSnapshotReader.ReadAsync/ReadAllAsync/ReadOneAsync` throw a `GameServerException` with `AGGREGATE_VERSION_AHEAD` or `AGGREGATE_UNREADABLE` (details `aggregate`) instead of `GameServerException(INTERNAL)`, `JsonException`, `InvalidOperationException`, `FormatException`, `OverflowException` or an upgrader's own exception. Signatures are unchanged; the additive `TryLoad`, `ReadAvailableAsync` and `ReadAllAvailableAsync` return the failures instead of throwing (FR-021; plan N1). A stored `state` that is missing, `null` or not a JSON object was silently read as the default state; it is now `AGGREGATE_UNREADABLE` (T004) | Game or test code that calls these readers directly and catches the old exception types | Different exception type and code at run time (no compile error) | Catch `GameServerException` (or use the degrading members) |
+| BC-6 | A first login runs every registered account initializer in the creation transaction (FR-011): new accounts start with seeded aggregates at `rev ≥ 1`, one `identity.create_account` receipt and the ledger entries of the grants, **when an initializer changes something** (no receipt otherwise) | Tests and tools that assert a new player's sections are defaults at `rev = 0` when a module registers an initializer with effects (the sample game does only when `account.json` exists, FR-050) | Different sections and revs in the first login response; one creation receipt per new account (pending T032) | Assert the seeded state; only modules that register an initializer change anything |
+| BC-7 | `LoginResult` gains the init properties `IsNewPlayer` (T018) and `Unavailable` (FR-002, FR-023; plan N2). `LoginCompletion.CompleteAsync`, `GuestLoginService.LoginAsync` and `ProviderLoginService.LoginAsync` gain a trailing optional `string? correlationId = null` (Planning note 8; the services pass the request's `X-Request-Id` correlation id down to the creation receipt). `LoginCompletion` takes `IAccountWriter` instead of `IPlayerAggregateWriter` (DI-created) | Code that reads `LoginResult` or calls these methods | None at compile time (additive init properties, optional parameters); a binary built against the old signatures must be rebuilt | Read the new values where needed |
+| BC-8 | **SDK semantics (PCR unity-sdk):** an unavailable section keeps its last good copy and is marked; `AGGREGATE_VERSION_AHEAD` is retried by the SDK (retryable) (FR-027) | Game code that reads every section after login without checking | The mark and event; a few retries before an exception on the version-ahead code (pending T046) | Read the unavailable set; handle the codes |
+| BC-9 | Account initializer declarations are validated at startup (FR-015) | Modules that register an initializer with a bad declaration (new API, so only new code) | Startup exit 1, one line per fault (pending T032) | Fix the declaration |
+| BC-10 | A login whose transaction ends ambiguous, expires or loses every race round answers `COMMIT_UNKNOWN_RETRY` (503) or `CONCURRENT_UPDATE` (409, retryable) instead of a 500 `INTERNAL` (FR-014; plan N11, architect decision) | Clients and dashboards that count login 500s | Error envelope instead of the raw 500: an ambiguous commit answers 503 `COMMIT_UNKNOWN_RETRY` (`retryable`, `retry_after_ms = 1000`); an expired transaction or three lost insert races answer 409 `CONCURRENT_UPDATE` (`retryable`, `retry_after_ms = 200`); a failed transaction stays 500 `INTERNAL`, now logged as `Request failed with INTERNAL: Login transaction failed for player {id}.` instead of `Unhandled exception.`. Nothing is written in any of these cases (`AccountWriterTests`, T017) | Handle them like any retryable code; the SDK still never retries a login after an unknown outcome |
+| BC-11 | `CommandResponse.details` (new field 11) and the GM command response's `details` carry the details of every HTTP 200 rejection, module codes included; the XML doc of `ICommandOutcome.Details` changes from "not sent" to "sent" (FR-030; plan N5, architect decision) | Modules that pass details to `CommandOutcome.Reject` with an HTTP 200 code | Details visible to the client (pending T054) | Keep rejection details safe to show (they already must be, as for non-200 codes) |
+
+## zh-pvp-server migration checklist (in this order)
+
+After the 013, 014 and 015 steps of their release notes. File:line references are zh-pvp-server `7911f20` and the client
+`research-and-development-games` `49df950ad` (spec "First-consumer migration"); the client writes its markers without the
+colon (`FRAMEWORK-GAP FG-NNN`). Verified in a temp clone by T078.
+
+1. **Bump** the `framework/` submodule to `v0.7.0` (with the 013–015 steps). BC-7 needs no code change: no game test builds
+   `LoginResult`.
+2. **`InitAccountHandler` into an `IAccountInitializer` (FG-015, BC-6, BC-9).**
+   - `src/ZhPvp.Game/Account/InitAccountHandler.cs:16` (marker `FRAMEWORK-GAP: FG-015`): the handler body (command
+     `account.init`, touches `progress`, `wallet`, `armory`; starting CASH grant through `EconomyOperations.Grant` with
+     ledger source `account_init`, starter guns, equipped gun, `InitVersion = 1`) becomes an initializer with the same
+     touches (`profile` + 3 = 4, exactly the creation budget) registered in `ModuleDescriptor.AccountInitializers`.
+   - `InitAccountHandler.cs:17` (marker `FRAMEWORK-GAP: FG-022`): goes with the handler (the state flag no longer guards a
+     second init; the profile insert does).
+   - Registration `src/ZhPvp.Game/GameModuleDefinition.cs:25` and route `src/ZhPvp.Game.Adapters/GameModule.cs:20,34-38`:
+     remove the `account.init` command, route and code `ACCOUNT_ALREADY_INITIALIZED` (50101), or keep them only for
+     accounts created before the bump (D6, no backfill). The game is pre-launch: deleting the dev/test data is simpler.
+     `ProgressState.InitVersion` may stay as seeded state.
+   - `docs/pcr/game.md` lines 41-57, 66-69 and 78 (the `account.init` command and its rules) are updated by the game.
+3. **Reset dev data** (accounts created before the bump never run the initializer, D6).
+4. **Kit-based tests (FG-016, FR-017, FR-034).** `tests/ZhPvp.Tests/Game/AccountInitTests.cs:124` (marker
+   `FRAMEWORK-GAP: FG-016`): delete the file-store measurement of result and receipt sizes (an overflow is now
+   `COMMAND_OUTPUT_TOO_LARGE`, BC-1); the test becomes "a first login seeds the account once" (concurrent logins, lost
+   response), and `InitAccountHandlerTests.cs` runs the initializer through `CommandContextDouble.ForAccountInitializer`
+   and `CheckAccountCreation()`. Raise `GameServer:Commands:ReceiptMaxBytes` if P2 chests need more than about 11 ledger
+   entries (BC-2: the value must stay in 1024..65536).
+5. **Client boot on the login sections (FG-013, BC-3, BC-8).**
+   - `Assets/MadProject/Scripts/Online/OnlineSession.cs:200` (marker `FRAMEWORK-GAP FG-013`: login sections ignored, boot
+     reads the snapshot) and `PlayerReadModel.cs:24` (marker `FRAMEWORK-GAP FG-013`: `IsReady` only after that snapshot):
+     login → config → apply the login sections and mark ready.
+   - `OnlineSession.cs:214-217` and `:279-320` (boot step `Initializing`, `RefreshSectionsAsync`, `InitAccountAsync`):
+     drop the step; the initializer already ran. Read `LoginResponse.IsNewPlayer` for a first-time screen instead of
+     `progress.init_version == 0`. A missing `progress` now means "unavailable section" (read `Sections.Unavailable`).
+   - `docs/pcr/game.md` line 79 ("login sections are not read") is updated by the game.
+6. **Request ids and the pending store for P2 commands (FG-022).** `OnlineSession.cs:276` (marker `FRAMEWORK-GAP FG-022`:
+   an unknown outcome fails the boot, RETRY re-runs it): P2 commands pass `GameServerClient.NewRequestId()` (or `null`) to
+   `SendCommandAsync(route, request, parser, requestId)`; set `Options.PendingCommands =
+   UnityPendingCommandStore.Create(environmentName)` where the client is created (`OnlineSession.cs:83`, one folder per
+   environment like the 015 config cache); after login, list `PendingCommands`, resend the `Resendable` ones and discard
+   the others.
+7. **Remove the six markers:** server `InitAccountHandler.cs:16` (FG-015), `InitAccountHandler.cs:17` (FG-022),
+   `AccountInitTests.cs:124` (FG-016); client `OnlineSession.cs:200` (FG-013), `PlayerReadModel.cs:24` (FG-013),
+   `OnlineSession.cs:276` (FG-022). FG-029 has no marker; its rule in `docs/pcr/game.md` (deploy code before writing a new
+   schema version) stays. The friction-log entries FG-013, FG-015, FG-016, FG-022 and FG-029 can move to
+   `fixed-in-v0.7.0`.
+
+## Rolling deploy
+
+- The deploy order rule of PCR platform §6 stays: deploy code that reads a new `schemaVersion` everywhere before any
+  instance writes it.
+- During a rolling deploy an old instance that reads an aggregate written by a new one no longer answers 500: the snapshot
+  and the login leave the section out and list it (`AGGREGATE_VERSION_AHEAD`), and a command touching it answers 503
+  `AGGREGATE_VERSION_AHEAD` (retryable, 1000 ms), which the SDK retries. A broken `profile` fails the login and every
+  authenticated request with that code until the new code is everywhere.
+
+Compatibility (contracts/wire-changes.md §5):
+
+| Peer | Effect |
+| --- | --- |
+| SDK ≤ 0.7.0-before-016 against this server | ignores fields 8/9, 5, 10/11 (proto3 unknown fields); a broken section is simply absent from `sections` (BC-3); `AGGREGATE_VERSION_AHEAD` is retried by the existing retryable rule; `COMMAND_OUTPUT_TOO_LARGE` is returned as a business code |
+| This SDK against a server before 016 | `IsNewPlayer` reads `false`; `unavailable_sections`/`details` empty; nothing else changes |
+| Mixed rollout (old and new instances) | old instances never send the new fields; `is_new_player` from an old instance is `false` (presentation flag only, D1) |
+| GM frontend | additive JSON members only |
+
+## Decisions awaiting owner override
+
+Each was applied as an architect decision; owner confirmation pending.
+
+| # | Decision | Status |
+| --- | --- | --- |
+| 1 | **A3 / N4**: the `identity.create_account` receipt is written only when initializers had effects (none for a game without initializers) | applied as architect decision, owner confirmation pending |
+| 2 | **A8 / BC-11**: `CommandResponse.details` (and the GM `details`) carry module rejection details too, not only framework codes | applied as architect decision, owner confirmation pending |
+| 3 | **D12 changed**: the sample game seeds starting gold from an optional server-only `account.json` (SampleHost has it, test configs do not) | applied as architect decision, owner confirmation pending |
+| 4 | **D13 changed**: 016 writes `docs/releases/v0.7.0.md` as a draft; date, page restamp and tag are a separate round-close step | applied as architect decision, owner confirmation pending |
+| 5 | **A9 / BC-10**: login store failures answer `COMMIT_UNKNOWN_RETRY` / `CONCURRENT_UPDATE` instead of 500 | applied as architect decision, owner confirmation pending |
+| 6 | **A12**: a same-player re-login keeps the last good copy of the sections it lists as unavailable | applied as architect decision, owner confirmation pending |
+
+## Platform facts checked before coding (VERIFY)
+
+| Item | Result (2026-11-04) | Consequence |
+| --- | --- | --- |
+| V1 (T003) | Unity 6000.3.22f1 (`-langversion:9.0`) binds `(r, q, p)`, `(r, q, p, default)`, `(r, q, p, ct)` to the existing overload and `(r, q, p, "id")`, `(r, q, p, null)` to the new one; no `CS0121`, 0 `error CS`/`warning CS` | new overload as in public-api §7.1 (no rename) |
+| V2 (T006) | in-memory, File and Couchbase rethrow a body exception (private type or `GameServerException`) as the same instance, `Exception.Data` kept, no inner exception, body run once, nothing committed — before and after one staged insert | no unwrap in the store adapter |
+| V4 (T006) | two sequential `GetManyAsync` calls in one attempt work on all three stores; a concurrent anchor removal after the rewrite: in-memory/File → the login's commit conflicts, the re-run sees no anchor (`AggregateAnchorMissingException`, nothing written); Couchbase → the removal waits for the login commit (write-write conflict, 3 attempts), then removes the rewritten anchor | sequential second read (no bundle-read fallback) |
+| V5 (T005) | a marked `GameServerException` from `HandleAuthenticateAsync` reaches `ExceptionMiddleware` unchanged (503, `Retry-After: 1`, `retry_after_ms = 1000`, details kept) when `ProfileEnforcementMiddleware` authenticates — but a host with **exactly one** authentication scheme gets ASP.NET's automatic default scheme and the `UseAuthentication` middleware `WebApplication` adds in front of the whole pipeline, so the exception escapes `ExceptionMiddleware` (raw 500, no envelope, no request log line) | fallback for T040: the bearer handler catches the marked exception and `Fail`s with code and details (the envelope's retry delay is the writer's default 1000 ms for retryable codes, so nothing is lost) |
+| V6 (T004) | the loader raises `JsonException` (some wrapping `InvalidOperationException`/`FormatException`), `InvalidOperationException` (`GetValue<string>`, a missing upgrader step, null state), `FormatException`/`OverflowException` (`JsonNumbers` on absurd or non-numeric envelope fields) and whatever an upgrader throws; `NotSupportedException` was not observed. A missing, `null`, array or string `state` is **not** an error today (read as the default state) | explicit list for the envelope and the deserialize block, catch-all except `OperationCanceledException`/`OutOfMemoryException` for the upgrade chain, plus an explicit "state is not a JSON object → `unreadable`" check (BC-5 row) |
+| V8 (T007) | 4 KiB record (temp + `Flush(true)` + `File.Move`) p95: C: `%TEMP%` 6.09 ms, D: 32.24 ms; remove p95 1.52 ms / 0.46 ms; with `Flush(false)` record p95 1.69 ms / 0.37 ms | `Flush(true)` kept; SC-008 reference drive C: (where `persistentDataPath` lives on Windows); D: recorded only |
+| V9 (T007, .NET 10) | `File.Move` with the destination absent is a rename; onto an existing file `IOException` (0x800700B7); `EnumerateFiles(folder, "*.pending")` returns neither `*.pending.tmp` nor `x.pendingx` but does return `y.PENDING` (Windows names are case-insensitive); a process killed between flush and move leaves a complete temp file and no entry | per-entry files kept; the loader validates the file name (lowercase UUID + `.pending`). Unity Mono: T068; devices: T069 |
+| V11 (T008) | the GM OpenAPI generator emits `unreadable` (array of `$ref`), `details` (object, string `additionalProperties`) and `unavailable` (array of `$ref`) — but only for endpoints that declare `.Produces<T>()`; today the GM player view and the GM command endpoints declare none, so neither response has a schema in `docs/api/gm-openapi.json` | generator output as is, with `.Produces<GmPlayerView>()` and `.Produces<GmCommandResponse>()` added (T043/T049); no hand-written fragment |
+| V12 (T009) | `LoginPerLocalIdPerMinute` = 10 (guest login, per local id) is below SC-002's 25 logins of one credential; `FailedLoginPerIpPerMinute` = 60 counts failures only; `LoginPerIpWarnPerMinute` = 600 only logs | the SC-002 tests raise `Identity:LoginPerLocalIdPerMinute` in test settings; production defaults unchanged |
+
+## Manual checks
+
+| Check | What | Status |
+| --- | --- | --- |
+| T003 | V1 overload binding with a stub in the KestrelDemo Editor (Unity 6000.3.22f1) | done 2026-11-04 (agent-run, see V1) |
+| T064 | the real SampleHost config tests after `account.json` lands | pending |
+| T068 | Editor compile, Windows player and Android IL2CPP build of KestrelDemo with the real package; pending store in the Editor and the Windows player | pending |
+| T069 | Android device and iOS build + device run (with the pending 015 T058 session) | pending (owner) |
+| T077 | fresh reviewer walkthrough of the consumer guide | pending |
+| T078 | first-consumer check in a temp clone of zh-pvp-server | pending |
+
+## Known before the tag
+
+- **Single-scheme hosts (found by T005, pre-existing).** A host that registers exactly one authentication scheme (Identity
+  without the GM module and without test authentication) gets ASP.NET's automatic default scheme, and `WebApplication`
+  then adds its own authentication middleware in front of the `UseGameServer` pipeline. Any exception thrown by that
+  scheme's handler escapes `ExceptionMiddleware` and the request log (raw 500). Slice 016 makes the broken-profile path
+  safe in the handler (T040); other handler exceptions (for example a store timeout in session validation) keep the
+  pre-existing behaviour on such hosts. Hosts with Identity and GM, or with test authentication, are not affected.
+- 015 T058 (Android/iOS device run) is still open and gates the tag.
