@@ -2,7 +2,8 @@
 
 Framework `0.7.0` (unreleased). Input of the `v0.7.0` annotated tag message (FR-090), merged with the notes of slices 013,
 014 and 016 at the end of the round (one tag). Started in T002, extended by T028, T033, T040, T045, T052 and T064; final
-pass in T065.
+pass in T065 (2026-11-04, framework `abfc32d`, after the first-consumer check T067). **The tag waits for** the device run
+T058 (owner) and the reviewer walkthrough T066 (see "Manual checks").
 
 **Fixed:** FG-018 (config content validated at startup, every catalog built before traffic), FG-023 (a startup check never
 loses the combined report and reads config safely), FG-024 (the server config version hashes the client-visible set),
@@ -15,48 +16,114 @@ FG-019 (a client config version, compressed `GetConfig`, persistent SDK cache). 
 
 ## Breaking changes
 
+"How it surfaces" quotes the real lines (asserted literally by the slice 015 tests, or measured where noted).
+
 | Id | Change | Who is affected | How it surfaces | Fix |
 | --- | --- | --- | --- | --- |
-| BC-1 | Config content is checked at startup: framework rules for `resources.json` and `iap.json` (IAP grants must name a defined resource), sample rules, and catalogs built before traffic (FR-013..FR-016, FR-021) | Every deployment whose config was accepted only because nothing read the bad row before; test configs given to `TestHost`, `LocalFlavorFactory` and `TestGameConfig`-based hosts | Startup exit 1, one line per fault naming module, file, row/key and fix | Fix the file as the line says |
-| BC-2 | A JSON object with a repeated property name in a config file or manifest is a loader fault (FR-002) | Configs that relied on "last one wins" (usually an unnoticed copy-paste) | Startup exit 1 naming file and JSON path | Keep one property |
-| BC-3 | `FileGameConfigLoader.Load` reports every fault in one `GameServerStartupException` instead of throwing at the first one (FR-001) | Code or tests that call the loader and read the first violation only | More violations in the same exception; existing line texts unchanged | Read every violation |
-| BC-4 | SDK semantics (PCR unity-sdk): five player messages gain `client_config_version` (additive, FR-043; `config_version` keeps its meaning). The SDK keys its cache, `ConfigOutdated` and `ConfigVersionChanged` on the client version when the server sends it (FR-046) | Game code that reads the `ConfigVersionChanged` argument or compares `Config.Version` with `ServerConfigVersion`; every client that cached a bundle reloads it once after the upgrade | Fewer `ConfigVersionChanged` events (none on server-only edits); one bundle download per client after deploy | Compare the cache with `ClientConfigVersion`; read `ServerConfigVersion` only to correlate with receipts |
-| BC-5 | The server config version also hashes the `clientVisible` set (FR-040), so its value changes once at the upgrade | Dashboards or alerts keyed on a fixed `config_version_info{version}` value; receipts after the deploy carry the new value | New value in metric and receipts | None (format unchanged); update pinned values |
-| BC-6 | `IGameConfig` gains `ClientConfigVersion`; the `GameConfig` constructor computes both versions; `FileGameConfigLoader.ComputeVersion(label, files)` is obsolete (FR-042) | Custom `IGameConfig` implementations and direct `GameConfig`/`ComputeVersion` callers (game test support code) | Compile error (missing member), CS0618 = build error under `TreatWarningsAsErrors` | Implement the member; use `TestGameConfig` or `new GameConfig(label, files, clientVisible)` |
-| BC-7 | A client-visible bundle larger than `GameServer:Limits:ConfigBundleBytes` stops the host (FR-053); it was a 413 for every client | Deployments with an oversized bundle (already broken for clients) | Startup exit 1 naming size, limit and fix | Raise the limit or make files server-only |
-| BC-8 | `ResourceCatalog`, `IapCatalog`, `BattleCatalog` and `ShopCatalog` are registered from their declarations by the platform, no longer by the modules' `ConfigureServices` (FR-021, FR-024, FR-070) | Code that builds a service collection from a module's `ConfigureServices` alone (without `AddGameServer`) and resolves a catalog | `InvalidOperationException` (no service registered) when resolving the catalog | Register the catalog instance explicitly, or `ConfigDeclarationCheck.Check(config, modules).ThrowIfFailed().AddCatalogsTo(services)` |
-| BC-9 | Provision mode never loads game config: `IGameConfig` cannot be resolved there, and a startup check that needs it is skipped with a **warning** (FR-032, D4) | Checks that read config in provision mode (today they silently load it) | Warning line on stderr; provisioning does not fail because of it | Take `GameConfigStatus` and skip when it is `NotLoaded` |
-| BC-10 | Startup checks are created by the framework from their registration at each start, inside their own isolation (FR-030); they are no longer resolved as container singletons and are not disposed | A check type that is also resolved elsewhere (it gets a different instance there); disposable checks | None (behaviour) | Keep checks stateless and not disposable |
+| BC-1 | Config content is checked at startup: framework rules for `resources.json` and `iap.json` (IAP grants must name a defined resource), sample rules, and catalogs built before traffic (FR-013..FR-016, FR-021) | Every deployment whose config was accepted only because nothing read the bad row before; test configs given to `TestHost`, `LocalFlavorFactory` and `TestGameConfig`-based hosts | Startup exit 1, one line per fault: `[module economy] config resources.json row 3: 'maxQuantity' must be an integer of at least 1, found "999". Fix: set the largest quantity a player may hold (ECO-07).` | Fix the file as the line says |
+| BC-2 | A JSON object with a repeated property name in a config file or manifest is a loader fault (FR-002) | Configs that relied on "last one wins" (usually an unnoticed copy-paste) | Startup exit 1: `[config] '…/config/base/iap.json' has property 'google:gems_100' twice at $.products (line 4, byte 5). Fix: keep one property; the last one used to win silently (CFG-01).` | Keep one property |
+| BC-3 | `FileGameConfigLoader.Load` reports every fault in one `GameServerStartupException` instead of throwing at the first one (FR-001) | Code or tests that call the loader and read the first violation only | Several `[config] …` lines in one exception (two missing files + one invalid JSON file = 3 lines); existing line texts unchanged | Read every violation |
+| BC-4 | SDK semantics (PCR unity-sdk): five player messages gain `client_config_version` (additive, FR-043; `config_version` keeps its meaning). The SDK keys its cache, `ConfigOutdated` and `ConfigVersionChanged` on the client version when the server sends it (FR-046) | Game code that reads the `ConfigVersionChanged` argument or compares `Config.Version` with `ServerConfigVersion`; every client that cached a bundle reloads it once after the upgrade | No `ConfigVersionChanged` on server-only edits; the event argument and `Config.Version` hold the client version (`test-1+4c5423c2dad9`), `ServerConfigVersion` the server version (`test-1+9b2cd1009ff1`); one bundle download per client after deploy | Compare the cache with `ClientConfigVersion`; read `ServerConfigVersion` only to correlate with receipts |
+| BC-5 | The server config version also hashes the `clientVisible` set (FR-040), so its value changes once at the upgrade | Dashboards or alerts keyed on a fixed `config_version_info{version}` value; receipts after the deploy carry the new value | New value in metric and receipts: SampleHost config `sample-1+0a58d1cc006c` (v0.6.0 formula) → server `sample-1+8a37f29ee2dc`, client `sample-1+9b25b8b6bc0b` | None (format unchanged); update pinned values |
+| BC-6 | `IGameConfig` gains `ClientConfigVersion`; the `GameConfig` constructor computes both versions; `FileGameConfigLoader.ComputeVersion(label, files)` is obsolete (FR-042) | Custom `IGameConfig` implementations and direct `GameConfig`/`ComputeVersion` callers (game test support code) | `error CS0535: 'X' does not implement interface member 'GameServer.Config.IGameConfig.ClientConfigVersion'`; `error CS0618: 'GameConfig.GameConfig(string, string, IReadOnlyDictionary<string, byte[]>, IReadOnlySet<string>)' is obsolete: '…'` and `error CS0618: 'FileGameConfigLoader.ComputeVersion(string, IReadOnlyDictionary<string, byte[]>)' is obsolete: '…'` (under `TreatWarningsAsErrors`; both on one line in zh-pvp, T067) | Implement the member; use `TestGameConfig` or `new GameConfig(label, files, clientVisible)` |
+| BC-7 | A client-visible bundle larger than `GameServer:Limits:ConfigBundleBytes` stops the host (FR-053); it was a 413 for every client | Deployments with an oversized bundle (already broken for clients) | Startup exit 1: `[config] the client-visible bundle needs a GetConfig response of up to 1747 bytes (4 files), over GameServer:Limits:ConfigBundleBytes = 1746. Fix: raise the limit or remove files from 'clientVisible' (CFG-03, API-06).` (SampleHost, run 2026-11-04) | Raise the limit or make files server-only |
+| BC-8 | `ResourceCatalog`, `IapCatalog`, `BattleCatalog` and `ShopCatalog` are registered from their declarations by the platform, no longer by the modules' `ConfigureServices` (FR-021, FR-024, FR-070) | Code that builds a service collection from a module's `ConfigureServices` alone (without `AddGameServer`) and resolves a catalog | `No service for type 'GameServer.Modules.Economy.ResourceCatalog' has been registered.` (services from `ConfigureServices` alone) or `ResourceCatalog is a declared config catalog: the platform builds it in UseGameServer. Fix: … (FG-018).` (host built without `UseGameServer`) | Register the catalog instance explicitly, or `ConfigDeclarationCheck.Check(config, modules).ThrowIfFailed().AddCatalogsTo(services)` |
+| BC-9 | Provision mode never loads game config: `IGameConfig` cannot be resolved there, and a startup check that needs it is skipped with a **warning** (FR-032, D4) | Checks that read config in provision mode (today they silently load it) | stderr of `--provision`, exit code unaffected: `warning: [{check}] the startup check did not run: provision mode does not load the game config. Fix: take GameConfigStatus and skip when it is NotLoaded (FG-023).` | Take `GameConfigStatus` and skip when it is `NotLoaded` |
+| BC-10 | Startup checks are created by the framework from their registration at each start, inside their own isolation (FR-030); they are no longer resolved as container singletons and are not disposed | A check type that is also resolved elsewhere (it gets a different instance there); disposable checks | None for a stateless check | Keep checks stateless and not disposable |
 
-## zh-pvp-server migration checklist (in this order)
+## zh-pvp-server migration checklist (in this order; verified in a temp clone, T067)
 
-1. **Bump** the `framework/` submodule to `v0.7.0`.
-2. **BC-1 / BC-2 / BC-6 lines, if any.** Start each flavor once; fix every `[module …] config …` or `[config] … twice at …`
-   line (none expected: the current config passes FR-015/FR-016 and has no duplicate property, checked 2026-11-04).
-   `tests/ZhPvp.Tests/Support/TestGameConfig.cs` builds `new GameConfig(label, FileGameConfigLoader.ComputeVersion(label,
-   files), files, clientVisible)`: use `new GameConfig(label, files, clientVisible)` (CS0618 = error otherwise).
+Checked 2026-11-04 in a temp clone of zh-pvp-server `7911f20` (framework `v0.6.0`) with `framework/` = this repository at
+`abfc32d` (tag `v0.7.0` set in that clone only). Every file:line below matches the game files at `7911f20` and the client at
+`research-and-development-games` `49df950ad`. The game is on `v0.6.0`, so the bump also carries the 013 and 014 breaking
+changes; their checklists come first and their errors show first.
+
+1. **Bump** the `framework/` submodule to `v0.7.0`, `GameServerFrameworkTag` in `Directory.Build.props`, and the tag named in
+   `CLAUDE.md` and `README.md` (`RepositoryConsistencyTests` checks all three). Then the **013 and 014 steps**, in the order the
+   build reports them (T067): 014 BC-3 (`CS0618` at `src/ZhPvp.Game.Adapters/GameModule.cs:28-30`: typed mappers with the four
+   `Hidden` paths) and 014 BC-1 (the `account.init` declaration; without it the host exits 1); then 013 BC-4 (`CS2001` for the
+   three `tests/Shared` links of `tests/ZhPvp.Tests/ZhPvp.Tests.csproj`: a `ProjectReference` to
+   `framework/src/GameServer.TestKit` and `using GameServer.TestKit;` in six test files). The rest of the 013/014 checklists
+   (RequestLog folder, run-local, `wiregen.json`, …) does not block the build or the suite.
+2. **BC-6 / BC-1 / BC-2.** Build: `tests/ZhPvp.Tests/Support/TestGameConfig.cs:37` gives two `CS0618` (constructor and
+   `ComputeVersion`): replace the line with `return new GameConfig(label, files, clientVisible);`. With the kit referenced,
+   `TestGameConfig` is also ambiguous in `tests/ZhPvp.Tests/Game/ConfigDeliveryTests.cs` (`CS0104`, kit
+   `GameServer.TestKit.TestGameConfig` vs the game's `ZhPvp.Tests.Support.TestGameConfig`): add
+   `using TestGameConfig = ZhPvp.Tests.Support.TestGameConfig;` there (or rename the game helper). Then start each flavor once:
+   the committed config gives **no** `[module …] config …` or `[config] … twice at …` line (T067, Local flavor):
+   `Config zhpvp-1: version zhpvp-1+3d29d982d748, client version zhpvp-1+c2ba61ed994a, 10 files (7 client-visible, bundle 27860 B), 2 rules, 2 catalogs.`
 3. **`GameConfigCheck` into declarations (FG-018, FG-023).** Delete `src/ZhPvp.Game.Adapters/GameConfigCheck.cs` (markers
-   FG-018 line 11, FG-023 line 12) and its registration at `src/ZhPvp.Game.Adapters/GameModule.cs:27`. Replace the lazy
-   `GameModule.cs:26` `TryAddSingleton(sp => GameCatalog.Load(…))` with a declared catalog in `GameModuleDefinition`
-   whose build is `GameCatalog.TryLoad`. `GameModuleDefinition.cs:23` `RequiredConfigFiles = GameCatalog.ConfigFiles`
-   becomes file declarations with rules; the table checks move into those rules and the CASH/GOLD rule becomes a game
-   rule on `resources.json`. `GameConfigStartupTests.A_config_that_does_not_load_keeps_the_report_complete_and_the_game_check_adds_nothing`
-   keeps passing (2 lines) and drops its FG-023 comment.
+   FG-018 line 11, FG-023 line 12), its registration at `src/ZhPvp.Game.Adapters/GameModule.cs:27` and the lazy
+   `GameModule.cs:26` `TryAddSingleton(sp => GameCatalog.Load(…))`. `GameModuleDefinition.cs:23`
+   `RequiredConfigFiles = GameCatalog.ConfigFiles` becomes `ConfigFiles` (one rule per table file, plus a game rule on
+   `resources.json` for CASH/GOLD) and `ConfigCatalogs` (`GameCatalog` built through `TryLoad`; its files include
+   `resources.json`, which `TryLoad` reads). The shape that passed the game suite in T067 (the rule reports the problems
+   `TryLoad` finds in its own file; `ConfigTable.Error` strings are `[zhpvp.game] config {file}: [row {n}: ]{problem}[ Fix: {fix}]`):
+
+   ```csharp
+   public static IReadOnlyList<ConfigFileDeclaration> Files { get; } =
+   [
+       .. GameCatalog.ConfigFiles.Select(file => ConfigFileDeclaration.Required(file, new ConfigRule("zhpvp.tables", ReportTableProblems))),
+       ConfigFileDeclaration.Required(ResourceCatalog.ConfigFile, new ConfigRule("zhpvp.resources", CheckWalletCurrencies)),
+   ];
+
+   public static IReadOnlyList<ConfigCatalogDeclaration> Catalogs { get; } =
+   [
+       ConfigCatalogDeclaration.Of(c => GameCatalog.TryLoad(c.Config).Catalog, [.. GameCatalog.ConfigFiles, ResourceCatalog.ConfigFile]),
+   ];
+   ```
+
+   `ReportTableProblems` calls `context.Problems.Error(ConfigLocation.Row(n) or WholeFile, problem, fix)` for each `TryLoad`
+   error of `context.File` (the module, file and row prefix removed: the framework adds them; `fix` is required).
+   `CheckWalletCurrencies` returns when `ResourceCatalog.Load` throws (the economy rule reports that) and otherwise reports
+   `resource 'GOLD' must exist with kind "currency"`. A game may instead pass the sink down into `ConfigTable`. Results:
+   `GameConfigStartupTests.A_config_that_does_not_load_keeps_the_report_complete_and_the_game_check_adds_nothing` keeps
+   passing unchanged (2 lines; drop its FG-023 comment). The other three facts still give exactly one line each, in the
+   framework line format, so their expected texts change: `[module zhpvp.game] config ConfigGunChest.json row 2: duplicate GunId 'ar_0' (first at row 1). Fix: keep one row per gun.`,
+   `[module zhpvp.game] config ConfigChestCard.json row 2: duplicate Id '1_Bronze' (first at row 1). Fix: keep one row per Id.`,
+   `[module zhpvp.game] config ConfigChapter.json: 'table' must be "ConfigChapter". Fix: export the table again (02_design_p1.md §7.1).`
+   (was `[zhpvp.game] config …: row 2: …`). The kit call `ConfigDeclarationCheck.Check(config, new IdentityModule(), new EconomyModule(), new GameModule())`
+   passes for the committed config and gives `[module zhpvp.game] config resources.json: resource 'GOLD' must exist with kind "currency". Fix: add 'GOLD' with kind "currency".`
+   for GOLD as an item. `GameCatalog.Load` is then used only by `tests/ZhPvp.Tests/Game/InitAccountHandlerTests.cs`.
 4. **Version tests (FG-024, FG-019, BC-4).** `tests/ZhPvp.Tests/Game/ConfigDeliveryTests.cs`:
-   `Making_a_file_client_visible_keeps_the_version` (marker line 136) fails by design: delete or invert it (both versions
-   change). `A_server_only_file_change_changes_the_version_the_client_sees` (marker line 119) does **not** fail by itself
-   (it asserts the server version): rewrite it to assert the client version is unchanged and the server version changed.
-   Remove the label rule of `docs/pcr/game.md` lines 94–96 and update line 114.
-   `Every_response_type_carries_the_version_of_the_committed_config` stays valid; optionally assert `client_config_version`.
-5. **Client persistent cache (FG-019).** `Assets/MadProject/Scripts/Online/OnlineSession.cs:83`:
-   `new GameServerClient(options, new UnityWebRequestTransport(), config: UnityConfigCache.Create(environmentName))`; drop
-   the markers `ServerConfigInjector.cs:39` and `OnlineSession.cs:333` (and the remark at `:329`). `FetchConfigAsync`
-   (`:335-347`) already applies cached files when `updated` is false. Compression needs no client change.
+   `Making_a_file_client_visible_keeps_the_version` (marker line 136) fails by design (T067): invert it
+   (`Making_a_file_client_visible_changes_both_versions`: `ConfigVersion` and `ClientConfigVersion` both differ) or delete it.
+   `A_server_only_file_change_changes_the_version_the_client_sees` (marker line 119) still **passes** (the trap: it asserts the
+   server version): rewrite it to assert `ClientConfigVersion` unchanged and `ConfigVersion` changed. Remove the label rule of
+   `docs/pcr/game.md` lines 94–96 and update line 114. `Every_response_type_carries_the_version_of_the_committed_config` passes;
+   asserting `ClientConfigVersion` on all seven responses too passes (T067).
+5. **Client persistent cache (FG-019).** `Assets/MadProject/Scripts/Online/OnlineSession.cs:83` is
+   `this.Client = new GameServerClient(options, transport);`: pass
+   `config: UnityConfigCache.Create(cacheName)`, where `cacheName` is a plain folder name per server environment (`local`,
+   `dev`, `beta`, `live`). `OnlineSettings` has only `BaseUrl`: add the name there; do not derive it from the URL (`:` is
+   refused on Windows/Editor but not on Android/iOS). Drop the markers `ServerConfigInjector.cs:39` and `OnlineSession.cs:333`
+   (and the remark at `:329`). `FetchConfigAsync` (`:335-347`) already applies the cached files at boot when `updated` is false
+   (`appliedConfigVersion` starts null). It still sends one `GetConfig` per boot, answered `not_modified`; a
+   `if (this.Client.ConfigOutdated)` gate as in KestrelDemo skips it. `OnConfigVersionChanged` (`OnlineSession.cs:179`) now
+   receives the client version (BC-4); its log text says "Server config version". Compression needs no client change.
+
+Then build Debug and Release (0 warnings) and run the game suite: in T067, 121 tests, 120 passed; the one failure was
+`RepositoryConsistencyTests.Claude_md_and_readme_name_the_pinned_tag`, because the clone's `CLAUDE.md`/`README.md` still named
+`v0.6.0` (step 1). SC-009 against the clone's host (scratch C# 9 client over `sdk/GameServer.Client`, `PersistentConfigCache`):
+start 1 downloaded the 7 files under `zhpvp-1+c2ba61ed994a`; after a server-only `ConfigMission.json` edit (server version
+`zhpvp-1+3d29d982d748` → `zhpvp-1+f9d52cfb7538`, client version unchanged) start 2 read the 7 files from the cache,
+`ConfigOutdated` false, `RefreshConfigAsync` false (`not_modified`): **0 downloads**. The client snippet of step 5 compiles
+with C# 9 against the package `Runtime` and the Unity 6000.3.22f1 `UnityEngine` modules (`UNITY_5_3_OR_NEWER`, warnings as errors).
 
 Markers removable (SC-009): 4 on the server (FG-018 and FG-023 in `GameConfigCheck.cs`, FG-019 and FG-024 pinned in
 `ConfigDeliveryTests.cs`) and 2 on the client (FG-019 in `ServerConfigInjector.cs` and `OnlineSession.cs`) = **6
 markers**, plus the label rule of `docs/pcr/game.md`. The friction log entries FG-018, FG-019, FG-023 and FG-024 move to
 `fixed-in-v0.7.0`.
+
+### Removable vs stays
+
+| FG | Removable after `v0.7.0` | Stays (game choice) |
+| --- | --- | --- |
+| FG-018 | `GameConfigCheck.cs` (marker `GameConfigCheck.cs:11`) and its registration (`GameModule.cs:27`); the lazy `GameModule.cs:26` factory (declared `GameCatalog` built with `TryLoad`); `RequiredConfigFiles` at `GameModuleDefinition.cs:23` (file declarations with rules); `GameCatalog.Load` once its test callers move to the kit | `ConfigTable.cs`, `ConfigTableChecks.cs`, `ClientEnums.cs`, `CatalogRows.cs` (game schema code, optionally reporting through the framework sink); `GameConfigStartupTests` facts 1–3 with the framework line texts |
+| FG-023 | The marker at `GameConfigCheck.cs:12` with the file; the FG-023 comment of the 2-line test | The 2-line test as a plain regression test |
+| FG-024 | `Making_a_file_client_visible_keeps_the_version` (marker `ConfigDeliveryTests.cs:136`; invert or delete); the label rule of `docs/pcr/game.md` lines 94–96 | — |
+| FG-019 | The pinned `A_server_only_file_change_changes_the_version_the_client_sees` (marker `ConfigDeliveryTests.cs:119`; rewrite); client markers `ServerConfigInjector.cs:39`, `OnlineSession.cs:333` (+ remark `:329`); `docs/pcr/game.md` line 114 | `The_bundle_fits_the_client_visible_budget` (uncompressed bytes, still valid; 27 860 B in T067) |
+| BC-4 / BC-6 | — | `Every_response_type_carries_the_version_of_the_committed_config` (valid once `TestGameConfig.Create` uses `new GameConfig(label, files, clientVisible)`; optionally assert `client_config_version`) |
 
 ## Rolling deploy
 
@@ -127,7 +194,9 @@ Consumer impact (FG-018 rows of the first-consumer table): `src/ZhPvp.Game.Adapt
 registration (`GameModule.cs:27`) can go; the lazy `GameModule.cs:26` `TryAddSingleton(sp => GameCatalog.Load(…))` becomes a
 declared catalog built with `GameCatalog.TryLoad`; `GameModuleDefinition.cs:23` `RequiredConfigFiles = GameCatalog.ConfigFiles`
 becomes file declarations with rules (the table checks), and the CASH/GOLD check becomes a game rule on `resources.json`.
-`ConfigTable.cs`, `ConfigTableChecks.cs`, `ClientEnums.cs`, `CatalogRows.cs` stay (game schema code).
+`ConfigTable.cs`, `ConfigTableChecks.cs`, `ClientEnums.cs`, `CatalogRows.cs` stay (game schema code). Verified in T067
+(checklist step 3): the game suite passes with the declared catalog and rules; the game's table lines then use the framework
+format (`[module zhpvp.game] config ConfigGunChest.json row 2: …`), so three `GameConfigStartupTests` expected texts change.
 
 ## FG-023 — a startup check never loses the combined report and reads config safely
 
@@ -181,7 +250,8 @@ warning: [NeedsConfigCheck] the startup check did not run: provision mode does n
 Consumer impact (FG-023 row): `GameConfigStartupTests.A_config_that_does_not_load_keeps_the_report_complete_and_the_game_check_adds_nothing`
 keeps passing with its 2 lines (the zh-pvp `GameConfigCheck` resolves `IGameConfig` inside `Check` and catches; the same
 shape is tested here, `StartupCheckHostTests.A_check_that_resolves_the_config_itself_and_catches_adds_nothing`). Its FG-023
-comment can go once `GameConfigCheck` moves into declarations (checklist step 3). A host or test that passes an
+comment can go once `GameConfigCheck` moves into declarations (checklist step 3; T067: still 2 lines after the move, and with
+the declared `GameCatalog` not built no third line appears). A host or test that passes an
 `IGameConfig` instance (`TestHost` `config:`) bypasses the loader, so such a check still runs in provision mode there.
 
 ## FG-024 and FG-019 (version) — the server version hashes the client-visible set; a client config version
@@ -210,10 +280,11 @@ comment can go once `GameConfigCheck` moves into declarations (checklist step 3)
 | --- | --- | --- |
 | BC-4 | No `ConfigVersionChanged` on server-only edits; the event argument and `Config.Version` hold the client version (`test-1+4c5423c2dad9`), `ServerConfigVersion` the server version (`test-1+9b2cd1009ff1`) | Compare the cache with `ClientConfigVersion`; read `ServerConfigVersion` only to correlate with receipts |
 | BC-5 | SampleHost config: `sample-1+0a58d1cc006c` (v0.6.0 formula) → server `sample-1+8a37f29ee2dc`, client `sample-1+9b25b8b6bc0b`. tests/Shared config: server `test-1+9b2cd1009ff1`, client `test-1+4c5423c2dad9` | Update pinned values (dashboards, alerts, tests) |
-| BC-6 | `error CS0535: 'X' does not implement interface member 'GameServer.Config.IGameConfig.ClientConfigVersion'`; `error CS0618: 'GameConfig.GameConfig(string, string, IReadOnlyDictionary<string, byte[]>, IReadOnlySet<string>)' is obsolete: '…'` (under `TreatWarningsAsErrors`) | Implement the member; `new GameConfig(label, files, clientVisible)` or `TestGameConfig` |
+| BC-6 | `error CS0535: 'X' does not implement interface member 'GameServer.Config.IGameConfig.ClientConfigVersion'`; `error CS0618: 'GameConfig.GameConfig(string, string, IReadOnlyDictionary<string, byte[]>, IReadOnlySet<string>)' is obsolete: '…'` and `error CS0618: 'FileGameConfigLoader.ComputeVersion(string, IReadOnlyDictionary<string, byte[]>)' is obsolete: '…'` (under `TreatWarningsAsErrors`) | Implement the member; `new GameConfig(label, files, clientVisible)` or `TestGameConfig` |
 
-zh-pvp rows: `tests/ZhPvp.Tests/Support/TestGameConfig.cs` needs the one-line fix `return new GameConfig(label, files,
-clientVisible);` (CS0618 otherwise). In `ConfigDeliveryTests.cs`, `Making_a_file_client_visible_keeps_the_version` (marker
+zh-pvp rows (verified in T067): `tests/ZhPvp.Tests/Support/TestGameConfig.cs:37` needs the one-line fix `return new GameConfig(label, files,
+clientVisible);` (two CS0618 otherwise; with the 013 kit, a `using` alias for the game's `TestGameConfig` in
+`ConfigDeliveryTests.cs`, CS0104). In `ConfigDeliveryTests.cs`, `Making_a_file_client_visible_keeps_the_version` (marker
 line 136) fails by design: both versions change now (delete or invert it). `A_server_only_file_change_changes_the_version_the_client_sees`
 (marker line 119) does **not** fail by itself, because it asserts the server version, which still changes: rewrite it to
 assert that `client_config_version` is unchanged and `config_version` changed. `Every_response_type_carries_the_version_of_the_committed_config`
@@ -239,14 +310,19 @@ the compatibility table above hold.
   `persistentDataPath` lives on Windows). On the repository's D: drive a save took ~70 ms p95 (T009), dominated by
   `Flush(true)`; the flush is kept on purpose (a crash must leave the old or the new version, never a short file).
 
-Consumer setup (first consumer, `Assets/MadProject/Scripts/Online/OnlineSession.cs:83`):
+Consumer setup (first consumer, `Assets/MadProject/Scripts/Online/OnlineSession.cs:83`, today
+`this.Client = new GameServerClient(options, transport);`):
 
 ```csharp
-var client = new GameServerClient(options, new UnityWebRequestTransport(), config: UnityConfigCache.Create(environmentName));
+this.Client = new GameServerClient(options, transport, config: UnityConfigCache.Create(cacheName));
 ```
 
-Client markers removable: `ServerConfigInjector.cs:39` and `OnlineSession.cs:333` (and the remark at `:329`).
-`FetchConfigAsync` (`OnlineSession.cs:335-347`) already applies the cached files when `RefreshConfigAsync` returns false.
+`cacheName` is a plain folder name per server environment kept in the client settings (`OnlineSettings` has only `BaseUrl`
+today); `Create` refuses the platform's invalid file-name characters, which differ (`:` on Windows/Editor only), so it is not
+derived from the URL. Client markers removable: `ServerConfigInjector.cs:39` and `OnlineSession.cs:333` (and the remark at
+`:329`). `FetchConfigAsync` (`OnlineSession.cs:335-347`) already applies the cached files when `RefreshConfigAsync` returns
+false. T067: the snippet compiles (C# 9, package `Runtime`, Unity 6000.3.22f1 `UnityEngine` modules), and a .NET client with
+`PersistentConfigCache` downloaded 0 files on its second start after a server-only `ConfigMission.json` edit (SC-009).
 
 ## FG-019 (delivery) — compressed `GetConfig`, the bundle checked at startup
 
@@ -302,11 +378,13 @@ Client markers removable: `ServerConfigInjector.cs:39` and `OnlineSession.cs:333
 
 ## Owner confirmations
 
-| # | Decision | Status |
-| --- | --- | --- |
-| 1 | Additive `client_config_version` (`config_version` unchanged), with the CFG-03/SDK-02 cache-key reading ("by the version of the client-visible part") | Applied as architect decision, owner confirmation pending |
-| 2 | D3 strictness: duplicate property names fail startup (BC-2), `maxQuantity ≥ 1`, integer `kind` refused | Applied as architect decision, owner confirmation pending |
-| 3 | BC-9: provision mode no longer loads game config for a startup check that asks for it (warning instead) | Applied as architect decision, owner confirmation pending |
+All three are implemented as architect decisions and none blocks a task; each needs the owner's yes before the tag.
+
+| # | Decision | Status | If the owner says no |
+| --- | --- | --- | --- |
+| 1 | Additive `client_config_version` (`config_version` unchanged), with the CFG-03/SDK-02 cache-key reading ("the client caches the bundle by the version of the client-visible part"); the owner may add `clientConfigVersion` to CFG-03 in the requirements | Applied as architect decision (spec D6, research R1), **owner confirmation pending** | The rejected draft default (redefine `config_version` on the player API) needs a new slice: API-03 forbids changing a published field's meaning |
+| 2 | D3 strictness: duplicate property names fail startup (BC-2), `maxQuantity` a JSON integer ≥ 1, an integer `kind` refused (`kind` matched case-insensitively) | Applied as architect decision (research R4), **owner confirmation pending**; first consumer unaffected (T067: no BC-1/BC-2 line) | Relax the loader duplicate check or the `economy.resources` rule; lines and tests change |
+| 3 | BC-9: provision mode never loads game config; a startup check that asks for it is skipped with a warning | Applied as architect decision (research R8), **owner confirmation pending** | Provision would load config again for such checks (config faults would then fail `--provision`) |
 
 ## Manual checks
 
@@ -315,13 +393,32 @@ Client markers removable: `ServerConfigInjector.cs:39` and `OnlineSession.cs:333
 | T008 | V8 UnityWebRequest `Accept-Encoding` and decoding on Editor (Windows) and Windows player | done 2026-11-04 (agent-run, Unity 6000.3.22f1): both send `Accept-Encoding: deflate, gzip` by default and decode gzip; `br` is neither sent nor decoded; no SDK code needed |
 | T051 | KestrelDemo E2E with compression on (Editor) | done 2026-11-04 (agent-run, Unity 6000.3.22f1): `-CompileOnly` 0 `error CS`/`warning CS`; `-E2E` through a logging forwarder on 5092: request `Accept-Encoding: deflate, gzip`, `/api/v1/config/get` answered `Content-Encoding: gzip`, `Vary: Accept-Encoding`, 494 B; bundle parsed (`config downloaded sample-1+9b25b8b6bc0b`), exit 0 |
 | T057 | KestrelDemo persistent cache in the Editor (V10 Mono) | done 2026-11-04 (agent-run): run 1 `config downloaded sample-1+9b25b8b6bc0b`, run 2 `config from cache sample-1+9b25b8b6bc0b` with no `GetConfig` request, run 3 after a client-visible `shop.json` edit `config downloaded sample-1+523717009cea` (the `File.Replace` path on Mono); exit 0 each; the cache folder holds only `gameserver-config.bin` |
-| T058 | Android device run and iOS build/device (V8, V9, V10, V11) — owner | **pending (owner)**. APK built by the agent 2026-11-04 (`samples/SampleGame/KestrelDemo/Build/KestrelDemo.apk`, IL2CPP arm64, stripping High, 54 193 600 B). Steps: (1) `tools/local/run-local.ps1 -Port 5080 -Lan`; (2) optional logging forwarder (scratch, see tasks.md T058 Note) to see `Accept-Encoding`/`Content-Encoding`; (3) set `serverUrl` of the `SampleGameClient` object to `http://<PC LAN IP>:5080/` (rebuild the APK) or use a build with that URL; install with `adb install -r Build/KestrelDemo.apk`; start the app three times: first start → `config downloaded {v}`, second start → `config from cache {v}`, then restart the host with `GameServer__ConfigPath` pointing at a copy of `samples/SampleHost/config` with `shop.json` edited and start the app → `config downloaded {w}`; record `Accept-Encoding`, compressed or not, parse OK, no crash (SHA-256 and `File.Replace` under IL2CPP). iOS: same three starts from a macOS build. A platform that advertises gzip without decoding → `GameServer:ConfigCompression=false` for it. The tag waits for this run (FR-091) |
-| T066 | Consumer-guide walkthrough by a fresh reviewer agent | pending |
-| T067 | First-consumer temp clone (zh-pvp-server) — owner may defer to the game session | pending |
+| T058 | Android device run and iOS build/device (V8, V9, V10, V11) | **pending (owner); the tag waits for it (FR-091).** Steps below |
+| T066 | Consumer-guide walkthrough by a fresh reviewer agent (FR-075, US6-2) | pending (not run yet; the tag waits for it) |
+| T067 | First-consumer temp clone (zh-pvp-server), SC-009 | done 2026-11-04 (agent-run, temp clone of `7911f20`, framework `abfc32d`, deleted afterwards; `E:\ProjGits\*` untouched; host on 5097, never 5180): every step of the checklist above verified; game suite 120/121 (the failure is the game's own docs naming `v0.6.0`, bump step 1); SC-009: 0 client downloads after a server-only `ConfigMission.json` edit; doc fixes: this checklist, consumer guide §11/§12.2/§12.8, PCR unity-sdk, 013 BC-4 |
+
+T058 steps (owner; Android on a device on the same network, iOS on macOS):
+
+1. `tools/local/run-local.ps1 -Port 5080 -Lan` (SampleHost, local flavor, committed config).
+2. Optional: a logging forwarder on 5092 → 5080 bound to all interfaces (the T051 scratch program or any logging proxy), to
+   see `Accept-Encoding` and `Content-Encoding`.
+3. KestrelDemo's serialized `serverUrl` is `http://localhost:5080/`: set it on the `SampleGameClient` object to
+   `http://<PC LAN IP>:5080/` (or `:5092/`) and rebuild with
+   `sdk/unity/ci/smoke-build.ps1 -Unity "D:\DevTools\Unity\Unity 6000.3.22f1\Editor\Unity.exe"` (IL2CPP arm64, stripping High).
+   The APK the agent built on 2026-11-04 (`samples/SampleGame/KestrelDemo/Build/KestrelDemo.apk`, 54 193 600 B) still has the
+   localhost URL.
+4. `adb install -r samples/SampleGame/KestrelDemo/Build/KestrelDemo.apk`; start the app (run 1 → `config downloaded {v}`);
+   close and start it again (run 2 → `config from cache {v}`, no `config/get` request); stop the host, restart it with
+   `GameServer__ConfigPath` pointing at a **copy** of `samples/SampleHost/config` whose `shop.json` is edited (never the committed
+   folder); start the app (run 3 → `config downloaded {w}`).
+5. iOS: the same three starts from a macOS build (the iOS module is not installed on the agent's machine).
+6. Record per platform: `Accept-Encoding` sent, response compressed or not, bundle parsed, the two cache lines, no crash
+   (SHA-256 and `File.Replace` under IL2CPP). A platform that advertises gzip without decoding: set
+   `GameServer:ConfigCompression=false` for the deployments serving it (V9 not needed while V8 holds).
 
 ## Known before the tag
 
-- (final list by T065)
+- **Open before the tag:** T058 (owner device run), T066 (reviewer walkthrough), owner confirmations 1–3.
 - V6 (T006, T050): gzip 9 / Brotli 6 measured 17.8–18.7 ms p95 at 1 MiB on the real path, within 10 % of the 20 ms budget;
   **gzip 6 / Brotli 4 ship** (p95 9.2 / 7.5 ms, gzip ratio ≤ 28.3 %). Android/iOS decoding is still T058.
 - V11 (T009, T045): SC-006 (1 MiB load and save ≤ 50 ms) is met on the C: drive (save p95 11–15 ms) but not on D: (≈ 70 ms
@@ -331,3 +428,6 @@ Client markers removable: `ServerConfigInjector.cs:39` and `OnlineSession.cs:333
   now writes nothing once the request token is cancelled.
 - Provision mode treats every config-related unavailability (config or declared catalog) as the BC-9 warning, never an
   error (T029, T031).
+- `UnityConfigCache.Create` checks the name with the running platform's `Path.GetInvalidFileNameChars()`, so the same name can
+  be refused in the Windows Editor and accepted on Android/iOS (found in T067, reported for the review T070; the docs tell games
+  to use plain names such as `local` or `live`).

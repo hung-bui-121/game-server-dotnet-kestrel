@@ -951,7 +951,10 @@ client.Sections.SectionChanged += id =>
    `[config] … twice at …` or bundle-size line (BC-1, BC-2, BC-7); move config checks out of `IStartupCheck`s that take
    `IGameConfig` into file declarations and rules, or make the check take `GameConfigStatus` (section 12.5); turn lazy catalog
    factories in `ConfigureServices` into `ConfigCatalogs` declarations (section 12.3); rewrite tests that pin a config version
-   (section 12.6).
+   (section 12.6). A check moved into a rule reports in the framework line format, so tests that assert its old text change
+   (`[module zhpvp.game] config ConfigGunChest.json row 2: …` instead of `[zhpvp.game] config ConfigGunChest.json: row 2: …`).
+   A game test helper with the name of a kit type (a game `TestGameConfig`) is ambiguous (CS0104) in a file that also has
+   `using GameServer.TestKit;`: add a `using` alias for the game type or rename it.
 6. Regenerate the client files (`generate`, section 10.4), commit them and the `.meta` files Unity creates in the client
    repository, and check that `verify --no-build` passes (the framework's protoc, messages or generator may have changed).
 7. Build Debug and Release (0 warnings) and run the full game test suite; run the host once with `run-local`.
@@ -1032,6 +1035,10 @@ declared with `ConfigFiles = [ConfigFileDeclaration.Required(RulesFile, FixtureC
   no rule of that file runs.
 - A game may put its own rule on a framework file (a "CASH and GOLD must be currencies" rule on `resources.json`): both the
   economy lines and the game lines appear, each naming its module.
+- Porting a check that builds its own text lines: report each fault as
+  `context.Problems.Error(ConfigLocation.Row(n), problem, fix)` (or `WholeFile`, `Key`, `Path`); `problem` and `fix` are both
+  required and end without a period, and the framework adds the module, the file and the location, so they are not repeated in
+  `problem`. A rule may read other files (`context.Config`, `context.Json(file)`) for cross-file checks.
 - A "JSON integer" is `TryGetInt64`: `1.0`, `1e3` and `"5"` are faults. Unknown properties are ignored.
 - A warning (`context.Problems.Warning(…)`) has the same text and is logged once at startup; it does not stop the host.
 - The framework ships rules for `resources.json` (`economy.resources`) and `iap.json` (`iap.products`, grants checked
@@ -1177,6 +1184,13 @@ else if (client.Config.Version != null)
     log($"config from cache {client.Config.Version}: {string.Join(", ", client.Config.Files.Keys)}");
 }
 ```
+
+`environmentName` is a plain folder name chosen by the game, one per server it talks to (`local`, `dev`, `beta`, `live`): keep
+it in the client settings next to the server URL. Do not derive it from the URL: `Create` refuses path separators and the
+platform's invalid file-name characters (`Path.GetInvalidFileNameChars`), which differ between platforms: `:` is invalid on
+Windows, so `localhost:5080` throws in the Windows Editor, while .NET on Android and iOS refuses only `/` and NUL. Without the
+`ConfigOutdated` gate above, a start with an unchanged client version still sends one `GetConfig`, answered `not_modified` (no
+files downloaded).
 
 A damaged or unknown-format file reads as an empty cache (`LoadProblem` says why); a failed save keeps the new files in memory
 (`WriteProblem`); it never throws for file problems. It is not thread-safe (use it from the main thread, like the client) and

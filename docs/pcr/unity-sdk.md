@@ -81,7 +81,9 @@ var client = new GameServerClient(options, new UnityWebRequestTransport(), confi
 
 `UnityConfigCache.Create(environmentName)` = `new PersistentConfigCache(Path.Combine(Application.persistentDataPath,
 "gameserver-config", environmentName))`; tên môi trường phải là tên thư mục đơn (không rỗng, không `.`/`..`, không dấu phân cách
-hay ký tự cấm) — **một thư mục cho mỗi môi trường server** (local, dev, beta, live không dùng chung cache). Thành viên:
+hay ký tự cấm) — **một thư mục cho mỗi môi trường server** (local, dev, beta, live không dùng chung cache). "Ký tự cấm" là
+`Path.GetInvalidFileNameChars()` của nền tảng đang chạy, nên khác nhau theo nền tảng (`:` bị cấm trên Windows/Editor, Android
+và iOS chỉ cấm `/` và NUL): game đặt tên trong settings của client (vd. `local`, `live`), không suy ra từ URL. Thành viên:
 `FileName` (`gameserver-config.bin`), `Folder`, `Version`, `Files`, `LoadProblem`, `WriteProblem`, `Store(version, files)`.
 
 - **Container v1** (một file mỗi thư mục, little-endian): magic `GSCC`, format version `1` (u16), reserved (u16), độ dài payload

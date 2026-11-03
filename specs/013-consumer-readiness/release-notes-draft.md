@@ -199,7 +199,10 @@ Migration (game test projects):
 2. Add `<ProjectReference Include="$(GameServerRoot)src/GameServer.TestKit/GameServer.TestKit.csproj" />`; a direct
    `Microsoft.AspNetCore.Mvc.Testing` reference in the test project may stay but is no longer needed (its build targets
    flow through the kit).
-3. Replace `using GameServer.Tests.Shared;` with `using GameServer.TestKit;`.
+3. Replace `using GameServer.Tests.Shared;` with `using GameServer.TestKit;`. The kit also brings `TestGameConfig`, `TestHost`
+   and `CommandContextDouble`: a game helper of the same name becomes ambiguous (CS0104) in every file that also imports the
+   game's support namespace (zh-pvp-server: `tests/ZhPvp.Tests/Support/TestGameConfig.cs` in `ConfigDeliveryTests.cs`, checked
+   by slice 015 T067). Add `using TestGameConfig = ZhPvp.Tests.Support.TestGameConfig;` there, or rename the game helper.
 4. Replace hand-written local-flavor factories with `LocalFlavorFactory<Program>` (data now under `{Root}/data`: use
    `factory.DataFolder`, `AnalyticsFolder`, `LogFolder`, `InstanceId`; extra settings through `LocalFlavorOptions.Settings`,
    services through `LocalFlavorOptions.Services`, a restart on the same data through `LocalFlavorOptions.Folder`).
