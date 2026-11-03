@@ -23,9 +23,13 @@ P0 is merged into `main` and pushed (fda9f00). The real-environment test tools f
 | 011 local-env (batch 2026-10-30 tasks 1+2) | `011-local-env` | DONE: 57/57 tasks + T048a. Flavors, file store, `--provision`, run-local scripts. Review CONDITIONAL (0 Blocker, 4 Major, 9 Minor, all fixed) |
 | 012 analytics-audit (batch task 3, ANA-01 part 1) | `012-analytics-audit` | DONE: 68/68 tasks. Login/Payment JSONL audit log. Review CONDITIONAL (0 Blocker, 4 Major, 8 Minor; all fixed except Minor 8 = owner policy) |
 | (batch 2026-10-30) HTML docs | `docs-html-guides` | DONE: task 5 → `docs/html/{index,01-gioi-thieu,02-them-command,03-deploy}.html` (self-contained, drafts in `AgentMemories/features/task-30102026/docs-draft-5{a,b,c}-*.md`; HTML is now hand-maintained, drafts are historical). Accuracy review: reviewer followed 02 to add `counter.reset`, build + tests green. Also startup-validation fixes D1–D4 + m5/m6 (see notes). 5c checklist finished in ops-readiness. Packaging (task 4) skipped, separate later |
-| 013 giftcode | — | GFT-01..06, GM-04 API, reaper (ACC-08, 22, 23) |
-| 014 iap-notifications | — | IAP-03 S2S: Google RTDN, Apple v2, refund/revoke; add refund analytics event on the 012 seam |
-| 015 ops-readiness | — | Secret scan in CI, PERF-05 budgets, load test report (TST-03), Linux/container guide, runbooks, deploy/rollback, restore drill (ACC-16, 19, 48; ACC-19 blocked on TBD-09), finish deploy guide (task 5c), TLS release gate, analytics re-drive tool |
+| 013 consumer-readiness (improvement round, FG group A) | `013-consumer-readiness` | DONE: 81/81 tasks + B1. FG-010 (Dev lockdown), FG-001/006 (TestKit), FG-025 (request log), FG-002/003/004 (run-local, build seal), FG-007/011/012 (version, error band, consumer guide). Review CONDITIONAL (0 Blocker, 0 Major, 13 Minor, all fixed `b8a8623`) |
+| 014 wire-contract (FG group B) | — | FG-026 direction B (route catalog), FG-028, FG-021, FG-027 |
+| 015 config (FG group C) | — | FG-018, FG-023, FG-024, FG-019 |
+| 016 login-command (FG group D) | — | FG-013, FG-015, FG-029, FG-016, FG-022 |
+| giftcode | — | GFT-01..06, GM-04 API, reaper (ACC-08, 22, 23) — number after the improvement round |
+| iap-notifications | — | IAP-03 S2S: Google RTDN, Apple v2, refund/revoke; add refund analytics event on the 012 seam |
+| ops-readiness | — | Secret scan in CI, PERF-05 budgets, load test report (TST-03), Linux/container guide, runbooks, deploy/rollback, restore drill (ACC-16, 19, 48; ACC-19 blocked on TBD-09), finish deploy guide (task 5c), TLS release gate, analytics re-drive tool |
 
 Slice numbers are "next free number" (owner Q18). HTML docs (task 5) is docs-only and may not take a slice number.
 
@@ -177,7 +181,48 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
 - HTML docs: footer "Đúng với commit 175df65 + sửa sau review"; DoD for later slices: update `docs/html` when the
   pipeline, hosting or deploy changes.
 
-## Current state (2026-11-02) — SESSION ENDED, framework work PAUSED
+## Improvement round 2026-11-03 (zh-pvp-server friction log)
+
+- Owner (2026-11-03) chose all four FG groups: 013 = A, 014 = B, 015 = C, 016 = D (table above). Deferred: FG-005/008/009
+  (packaging, task 4), FG-014/017/030/031; FG-020 proposed `game-only`. **One annotated tag `v0.7.0` at the end of the
+  round** (not per slice). Release notes: per-slice `specs/0NN-*/release-notes-draft.md`, merged into
+  `docs/releases/v0.7.0.md` at round end.
+- **After the tag, this session bumps the game's submodule** (`E:\ProjGits\zh-pvp-server`, `docs/framework-feedback/UPGRADE.md`
+  §2) and messages the waiting game agent (local session `gameclient-65`, works across client + server; check
+  ListAgents). Ask the owner before pushing branch/tag.
+- Orchestrator defaults awaiting owner override: request log on by default local/dev/Test, off beta/uat/live (FR-086);
+  no switch to allow cheats on Staging; version only via GM `ops.read`; `DeploymentEnvironment=Test` refused unless
+  EnvironmentId `test` (BC-8, review m9).
+
+## Technical notes from 013
+
+- Dev lockdown: `GameServerOptions.AllowsDevProfile` (= AllowsDevelopmentTools) is the one rule for
+  `EndpointSecurityValidator`, `ModuleRegistry.ValidateCommands` (incl. service-only, `--provision`),
+  `ProfileEnforcementMiddleware` (Dev refused before auth; unknown/missing profile → 403) and
+  `CommandRunner.EnsureActorAllowed` (execute + replay, before PlayerId check). Commit checks live in internal `CommitRules`.
+- `src/GameServer.TestKit` (consumer test kit): ProtobufHttp, IdentityHttp, TestStores, GmBrowser, TestHost
+  (Identity-only), LocalFlavorFactory<T> (8 settings), CapturedLog, TestGameConfig, CommandContextDouble (wraps internal
+  CommandContext; HardBytes + result size via CommitRules; receipt size NOT checked; no-op sets not recorded).
+  Framework tests use `tests/Shared/SampleTestHost`. `TestKitReferenceCheck` fails startup outside Development/Test.
+  `tests/ConsumerFixture` = game-shaped repo in the slnx.
+- Request log: outermost `RequestLogMiddleware`, public `IRequestOutcomeFeature` / `context.RequestOutcome()` (reused if a
+  consumer created it first), category `GameServer.Requests`; unmatched paths log first segment only (`/api/...`);
+  `GameServer:RequestLog:{Enabled,ExcludedPaths}`; console sink `Observability:Logging:Console:*` (bounded, dropping,
+  control chars cleaned); `log_dropped_total{sink=file|console}`; `request_log_failures_total`.
+- Build: empty root `Directory.Build.targets`; `IsTestProject` relative to framework root; `BuildSealingTests` (hostile
+  parent incl. `Directory.Packages.props`), `tools/local/check-build-seal.ps1`. run-local `-HostProject/-LaunchProfile/-Name`
+  via `tools/GameServer.LocalRun describe`; passes `--project`; warns on bash < 4.4.
+- Version: `GameServerFrameworkVersion` 0.7.0 in `Directory.Build.props` = Unity package version (test enforces);
+  informational `0.7.0+sha`; startup line `Starting {GameId} {GameVersion} on framework {FrameworkVersion}…`;
+  `service.version` + `gameserver.framework.version`; `GameServerRuntimeInfo` (one instance id); `GET /gm/v1/ops/version`.
+- `ErrorCodeBands` 50000–89999 reserved for games (arch test); docs/template examples use 90000–90099.
+- Bug B1 fixed: `DailyPlayerSet.TryMark` re-checks before clearing a full set.
+- Docs: `docs/guides/consumer-guide.md` (new), HTML pages stamped "framework v0.7.0 (chưa phát hành)" — restamp at tag.
+- Tests after review fixes: 1482 total; in-memory and File 1387 pass / 95 skip; Couchbase 1464 pass / 17 skip (full suite ~5 min, Couchbase project alone 4 min 14 s — was ~24 min in 012, reason not investigated). Known flaky TelemetryTests failed once, passed 3/3 on rerun.
+- Open: `run-local.sh` on macOS/Linux not run; `CommandContextDouble.cs` ~370 lines (split later); page 03 "→ 015"
+  badges use the old ops-readiness number.
+
+## Previous state (2026-11-02) — SESSION ENDED, framework work PAUSED
 
 - **Owner ended the framework session on 2026-11-02.** Framework work restarts only when the owner brings
   improvements from the zh-pvp-server pilot. `main` = `cd7ff0b` (docs only after tag `v0.6.0` = `2ba963f`), pushed,
