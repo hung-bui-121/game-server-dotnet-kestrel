@@ -123,7 +123,7 @@ Ordered by `id` (ordinal). A section is never both in `sections`/`updates` and i
 | --- | --- | --- | --- |
 | `ReplayWindowHours` | 24 | 1..168 | no |
 | `PerPlayerQueueLimit` | 2 | 0..16 | no |
-| `ReceiptMaxBytes` | 4096 | 1024..65536 | no |
+| `ReceiptMaxBytes` | 4096 | 1112..65536 (the cross rule for the smallest `ResultCompactMaxBytes`, 64: `4·⌈64/3⌉ + 1024`; T082 m2) | no |
 | `ResultCompactMaxBytes` | 512 | 64..16384; base64 length + 1024 ≤ `ReceiptMaxBytes` | no |
 | `MaxAggregatesPerGame` | 16 | 1..16 | no |
 | `CommandDescriptor.MaxTouches` | 4 | — | yes (DAT-09) |

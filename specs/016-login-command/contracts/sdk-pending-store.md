@@ -54,8 +54,9 @@ enumerate `*.pending` → read and validate each → keep valid entries ordered 
 File problems while enumerating give an empty store with `LoadProblem = "unreadable: {ExceptionType}"`. The constructor
 never throws for the disk.
 
-`Entries` (and `GameServerClient.PendingCommands`) is a snapshot array, replaced after a `Record`, a successful `Remove` and a
-load failure: a resend or a discard inside a `foreach` over it never changes the array being enumerated (T082 B1).
+`Entries` (and `GameServerClient.PendingCommands`) is a read-only snapshot (`Array.AsReadOnly` over a copy, not an array a
+caller could cast and write into; T082 round 2 m6), replaced after a `Record`, a successful `Remove` and a load failure: a
+resend or a discard inside a `foreach` over it never changes the list being enumerated (T082 B1).
 
 **Record(entry).**
 1. Memory first: add or replace the entry in `Entries`.
@@ -81,7 +82,8 @@ SendCommandAsync(route, req, parser, requestId?)            (store configured)
   try   response = SendAsync(… body, id …)                  (existing retries, same id + bytes)
         store.Remove(id)                                    ← CommandResponse with any code
   catch GameServerException e when e is an envelope error and !e.Error.Retryable
-                              and e.Error.Code is not UNAUTHENTICATED, SESSION_REPLACED or ACCOUNT_*
+                              and e.Error.Code is not UNAUTHENTICATED, SESSION_REPLACED or ACCOUNT_* other than
+                              ACCOUNT_DELETED (final: no later login of that account runs a resend; T082 round 2 m3)
         store.Remove(id); throw                             ← final answer
   catch anything else (network, invalid response, retryable last answer, cancellation,
                        an authentication answer: refused before the command ran, T082 m6)

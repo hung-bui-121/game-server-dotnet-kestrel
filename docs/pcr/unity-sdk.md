@@ -233,11 +233,13 @@ và config của consumer fixture trong mọi build framework, nên gói và cli
 - Có store: command được ghi `(id, player của session, route, bytes chính xác, ServerNow)` **trước** lần thử đầu; xoá khi server
   trả command response với mã bất kỳ, hoặc error envelope không retryable (ví dụ `IDEMPOTENCY_PAYLOAD_MISMATCH`); **giữ** khi không
   rõ kết quả (không response, `INVALID_RESPONSE`, mã retryable ở lần cuối như `COMMIT_UNKNOWN_RETRY` hoặc `AGGREGATE_VERSION_AHEAD`,
-  huỷ) và khi server từ chối xác thực (`UNAUTHENTICATED`, `SESSION_REPLACED`, `ACCOUNT_*`: request bị chặn trước khi command chạy,
-  entry chờ được gửi lại sau lần login kế tiếp; slice 016 T082). Login, logout, snapshot, config và time không đụng store. Lỗi đĩa
+  huỷ) và khi server từ chối xác thực (`UNAUTHENTICATED`, `SESSION_REPLACED`, `ACCOUNT_*` trừ `ACCOUNT_DELETED`: request bị chặn
+  trước khi command chạy, entry chờ được gửi lại sau lần login kế tiếp; slice 016 T082). `ACCOUNT_DELETED` là câu trả lời cuối và
+  xoá entry: không lần login nào của account đó chạy được nó nữa (T082 vòng 2). Login, logout, snapshot, config và time không đụng store. Lỗi đĩa
   không bao giờ chặn command: entry giữ trong bộ nhớ, `WriteProblem` nói lý do.
-- Sau khi khởi động lại: `client.PendingCommands` (một **snapshot**: gửi lại hoặc bỏ entry ngay trong `foreach` trên nó là an toàn;
-  đọc lại để có danh sách hiện tại), `StatusOf(entry)` = `OtherPlayer` (player khác hoặc chưa có session), `Expired` (≥ `PendingCommandMaxAge` theo **đồng
+- Sau khi khởi động lại: `client.PendingCommands` (một **snapshot chỉ đọc**, không phải mảng để ghi vào: gửi lại hoặc bỏ entry
+  ngay trong `foreach` trên nó là an toàn, nhưng kiểm tra entry còn trong danh sách trước khi gửi lại vì câu trả lời của lần gửi
+  trước có thể đã xoá nó; đọc lại để có danh sách hiện tại), `StatusOf(entry)` = `OtherPlayer` (player khác hoặc chưa có session), `Expired` (≥ `PendingCommandMaxAge` theo **đồng
   hồ server**, đổi giờ máy không làm thay đổi) hoặc `Resendable`; `ResendPendingAsync(entry, parser)` gửi bytes đã lưu với id đã
   lưu tới route đã lưu (command đã commit trả `Replayed` với receipt gốc), ném `InvalidOperationException` cho entry không
   resendable hoặc không còn trong store; `DiscardPendingCommand(id)` bỏ một entry (id lạ bị bỏ qua). SDK **không bao giờ** tự gửi
@@ -274,7 +276,8 @@ T069 (owner): nếu p95 của ghi trên thiết bị mục tiêu chậm nhất v
 - `LoginResponse.unavailable_sections` (field 9), `SnapshotResponse.unavailable_sections` (5), `CommandResponse.unavailable_sections`
   (10): `{id, code, code_number}`. SDK đánh dấu section: `Sections.Unavailable` / `IsUnavailable(id)`, kiểu
   `UnavailableSectionState` (`Id`, `Code`, `CodeNumber`), event `AvailabilityChanged(id)`; section bị đánh dấu **giữ bản tốt cuối**;
-  `Set`/`Apply` kế tiếp của nó xoá dấu, `Clear()` xoá mọi dấu.
+  `Set`/`Apply` kế tiếp của nó xoá dấu **sau khi** đã lưu bản mới (handler của `AvailabilityChanged` đọc được bản mới), `Clear()`
+  xoá mọi dấu.
 - **Luật cùng player**: login của **cùng** player giữ bản của các section nó liệt kê là unavailable; login của player khác bắt đầu
   từ store rỗng. Login cùng player chỉ phát `AvailabilityChanged` khi có thay đổi: section vẫn unavailable cùng mã thì không phát,
   section đã đọc lại được thì phát một lần (slice 016 T082).

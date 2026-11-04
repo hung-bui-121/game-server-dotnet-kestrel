@@ -20,11 +20,23 @@ public sealed partial class ModuleRegistry
     {
         var aggregates = _modules.SelectMany(m => m.Descriptor.Aggregates).Select(a => a.AggregateId).ToHashSet(StringComparer.Ordinal);
         var names = new Dictionary<string, string>(StringComparer.Ordinal);
+        var unprefixable = new HashSet<string>(StringComparer.Ordinal);
         foreach (var (module, registration) in AccountInitializers)
         {
             var name = registration.Name;
-            var prefix = ModulePrefix(module);
-            if (!InitializerNamePattern().IsMatch(name) || !name.StartsWith(prefix, StringComparison.Ordinal))
+            var segment = FirstSegment(module);
+
+            // A module whose first segment is no valid name segment cannot prefix anything: one line per module, and its
+            // initializers are checked against the pattern only (T082 round 2, m4).
+            var prefixable = ModuleSegmentPattern().IsMatch(segment);
+            if (!prefixable && unprefixable.Add(module))
+            {
+                errors.Add(
+                    $"[module {module}] module name '{module}' cannot prefix an account initializer. Fix: start the module name with a lowercase segment.");
+            }
+
+            var prefix = prefixable ? segment + "." : "<module>.";
+            if (!InitializerNamePattern().IsMatch(name) || (prefixable && !name.StartsWith(prefix, StringComparison.Ordinal)))
             {
                 errors.Add($"[module {module}] account initializer '{name}' has an invalid name. Fix: use '{prefix}<name>' in lowercase.");
             }
@@ -115,16 +127,20 @@ public sealed partial class ModuleRegistry
             .ToArray();
 
     /// <summary>
-    /// The first segment of the module name and a dot (<c>sample.game</c> → <c>sample.</c>): an initializer name starts with it, so
+    /// The first segment of the module name (<c>sample.game</c> → <c>sample</c>): an initializer name starts with it and a dot, so
     /// the name says which module's code runs in every creation (T082 m10).
     /// </summary>
-    private static string ModulePrefix(string module)
+    private static string FirstSegment(string module)
     {
         var dot = module.IndexOf('.', StringComparison.Ordinal);
-        return (dot < 0 ? module : module[..dot]) + ".";
+        return dot < 0 ? module : module[..dot];
     }
 
     /// <summary>Two or more dot-separated segments, each a lowercase letter then letters, digits or <c>_</c> (data-model §1.1).</summary>
     [GeneratedRegex("^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$")]
     private static partial Regex InitializerNamePattern();
+
+    /// <summary>One segment of <see cref="InitializerNamePattern"/>: what a module's first segment must be to prefix its initializers.</summary>
+    [GeneratedRegex("^[a-z][a-z0-9_]*$")]
+    private static partial Regex ModuleSegmentPattern();
 }

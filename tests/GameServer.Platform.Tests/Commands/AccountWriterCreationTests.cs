@@ -36,6 +36,8 @@ public sealed class AccountWriterCreationTests
         OversizeAggregate,
         ClaimOverOwnLimit,
         ReceiptTooLarge,
+        EmptyClaimKey,
+        UndeclaredClaimCollection,
     }
 
     [Fact]
@@ -182,6 +184,8 @@ public sealed class AccountWriterCreationTests
     [InlineData(Failure.OversizeAggregate)]
     [InlineData(Failure.ClaimOverOwnLimit)]
     [InlineData(Failure.ReceiptTooLarge)]
+    [InlineData(Failure.EmptyClaimKey)]
+    [InlineData(Failure.UndeclaredClaimCollection)]
     public async Task A_failing_initializer_creates_nothing_is_reported_once_and_the_next_login_creates(Failure failure)
     {
         using var f = new Fixture(receiptMaxBytes: failure == Failure.ReceiptTooLarge ? 1112 : null);
@@ -334,10 +338,10 @@ public sealed class AccountWriterCreationTests
                     return Ok();
                 };
 
-                // The measured size is the runner's (CommitRules.CheckAggregateSize); the line keeps it.
+                // The measured size is the runner's (CommitRules.CheckAggregateSize); the line names the login's answer (T082 round 2).
                 return (SeedModules.First, "rule", actual => Prefix +
                     $"Command '{First}' would store aggregate 'seed_a' as {Between(actual, "' as ", " bytes")} bytes; its HardBytes is 2048: " +
-                    "the runner rejects the command with AGGREGATE_TOO_LARGE and nothing commits. Fix: keep the state smaller or split it into another aggregate." +
+                    "the account writer refuses the creation and the login answers INTERNAL. Fix: keep the state smaller or split it into another aggregate." +
                     Suffix);
             case Failure.ClaimOverOwnLimit:
                 f.Script.Steps[SeedModules.Second] = async ctx =>
@@ -347,6 +351,24 @@ public sealed class AccountWriterCreationTests
                     return null;
                 };
                 return (SeedModules.Second, "rule", _ => Prefix + $"Command '{Second}' exceeded MaxClaimMarkers = 1 (DAT-04)." + Suffix);
+            case Failure.EmptyClaimKey:
+                // T082 round 2 m1: checked before the transaction read, so it is the initializer's rule, never "Login transaction failed".
+                f.Script.Steps[SeedModules.Second] = async ctx =>
+                {
+                    await ctx.TryClaimAsync(SeedModules.ClaimCollection, string.Empty);
+                    return null;
+                };
+                return (SeedModules.Second, "rule", _ =>
+                    Prefix + $"Command '{Second}': Claim key in collection '{SeedModules.ClaimCollection}' is empty. Fix: pass a non-empty claim key." + Suffix);
+            case Failure.UndeclaredClaimCollection:
+                f.Script.Steps[SeedModules.Second] = async ctx =>
+                {
+                    await ctx.TryClaimAsync("undeclared_claims", "k");
+                    return null;
+                };
+                return (SeedModules.Second, "rule", _ => Prefix +
+                    $"Command '{Second}': Claim markers cannot live in collection 'undeclared_claims': no module declares it (DAT-07). " +
+                    "Fix: declare it in ModuleDescriptor.Collections." + Suffix);
             default:
                 f.Script.Steps[SeedModules.First] = ctx =>
                 {

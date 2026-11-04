@@ -115,7 +115,7 @@ public sealed partial class CommandContextDouble
         {
             if (inner.TryGetNewState(aggregateId, out var json) && CommitRules.ChangesState(_loaded![aggregateId], json))
             {
-                violations.Add(CommitRules.CheckAggregateSize(operation, _actor.GameId, _actor.EnvironmentId, _loaded[aggregateId], json, _now));
+                violations.Add(CommitRules.CheckCreationAggregateSize(operation, _actor.GameId, _actor.EnvironmentId, _loaded[aggregateId], json, _now));
                 writes.Add(new ReceiptAggregate(aggregateId, _loaded[aggregateId].Rev + 1));
             }
         }

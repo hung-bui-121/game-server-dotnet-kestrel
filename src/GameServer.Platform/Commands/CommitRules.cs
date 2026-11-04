@@ -88,13 +88,50 @@ internal static class CommitRules
         string environmentId,
         LoadedAggregate before,
         byte[] newStateJson,
-        DateTimeOffset now)
+        DateTimeOffset now) =>
+        CheckAggregateSize(
+            operation,
+            gameId,
+            environmentId,
+            before,
+            newStateJson,
+            now,
+            $"the runner rejects the command with {CoreErrorCodes.AggregateTooLarge.Name} and nothing commits");
+
+    /// <summary>
+    /// <see cref="CheckAggregateSize(string, string, string, LoadedAggregate, byte[], DateTimeOffset)"/> for an aggregate an account
+    /// initializer wrote, which is no command rejection: the account writer refuses the creation and the login answers
+    /// <c>INTERNAL</c> (D15; T082 round 2, the receipt line's wording).
+    /// </summary>
+    internal static string? CheckCreationAggregateSize(
+        string operation,
+        string gameId,
+        string environmentId,
+        LoadedAggregate before,
+        byte[] newStateJson,
+        DateTimeOffset now) =>
+        CheckAggregateSize(
+            operation,
+            gameId,
+            environmentId,
+            before,
+            newStateJson,
+            now,
+            $"the account writer refuses the creation and the login answers {CoreErrorCodes.Internal.Name}");
+
+    private static string? CheckAggregateSize(
+        string operation,
+        string gameId,
+        string environmentId,
+        LoadedAggregate before,
+        byte[] newStateJson,
+        DateTimeOffset now,
+        string consequence)
     {
         var (_, size) = AggregateDocumentSerializer.BuildDocument(gameId, environmentId, before, newStateJson, before.Rev + 1, now);
         return ExceedsHardBytes(before.Descriptor, size)
             ? $"Command '{operation}' would store aggregate '{before.Descriptor.AggregateId}' as {size} bytes; its HardBytes is " +
-              $"{before.Descriptor.HardBytes}: the runner rejects the command with {CoreErrorCodes.AggregateTooLarge.Name} and nothing commits. " +
-              "Fix: keep the state smaller or split it into another aggregate."
+              $"{before.Descriptor.HardBytes}: {consequence}. Fix: keep the state smaller or split it into another aggregate."
             : null;
     }
 

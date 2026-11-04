@@ -125,15 +125,16 @@ namespace GameServer.Client
         /// A final answer removes the pending entry: an error envelope (the server answered; its codes have numbers) that is not
         /// retryable. SDK-made errors (no response, unreadable response) and retryable answers leave the outcome unknown. An
         /// authentication answer is not final either: the request was refused before the command ran, so the entry stays for a
-        /// resend after the next login (T082 m6).
+        /// resend after the next login (T082 m6). <c>ACCOUNT_DELETED</c> is final: no later login of that account can run the
+        /// resend (T082 round 2, m3).
         /// </summary>
         private static bool IsFinalAnswer(GameServerError error) => error.CodeNumber >= 0 && !error.Retryable && !IsAuthenticationAnswer(error.Code);
 
-        /// <summary><c>UNAUTHENTICATED</c>, <c>SESSION_REPLACED</c> and every <c>ACCOUNT_*</c> code (suspended, deleted).</summary>
+        /// <summary><c>UNAUTHENTICATED</c>, <c>SESSION_REPLACED</c> and every <c>ACCOUNT_*</c> code except <c>ACCOUNT_DELETED</c> (e.g. suspended).</summary>
         private static bool IsAuthenticationAnswer(string code) =>
             code == ErrorCodes.Unauthenticated
             || code == ErrorCodes.SessionReplaced
-            || code.StartsWith("ACCOUNT_", StringComparison.Ordinal);
+            || (code.StartsWith("ACCOUNT_", StringComparison.Ordinal) && code != ErrorCodes.AccountDeleted);
 
         private async Task<CommandResult<TResult>> SendCommandCoreAsync<TResult>(
             string route,

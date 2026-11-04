@@ -99,6 +99,9 @@ namespace SampleGame.Client
     /// <summary>The SampleGame flow, shared by the scene client and the batch-mode end-to-end check.</summary>
     public static class SampleGameFlow
     {
+        /// <summary>How long a pending command may wait for its resend (the SDK default, named here because the resend loop uses it too).</summary>
+        private static readonly TimeSpan PendingCommandMaxAge = TimeSpan.FromHours(23);
+
         public static GameServerClient CreateClient(Uri serverUrl, string platform, Action<string> log)
         {
             var client = new GameServerClient(
@@ -106,6 +109,7 @@ namespace SampleGame.Client
                 {
                     // A command whose answer was lost (app killed, network gone) stays on disk until the next start (FG-022).
                     PendingCommands = UnityPendingCommandStore.Create("local"),
+                    PendingCommandMaxAge = PendingCommandMaxAge,
                 },
                 new UnityWebRequestTransport(),
                 config: UnityConfigCache.Create("local"));
@@ -210,16 +214,24 @@ namespace SampleGame.Client
         /// <summary>
         /// After login: resends every Resendable entry of the pending store with its stored id and bytes (a committed command answers
         /// Replayed with its original receipt) and discards the Expired ones. Another player's entries stay for that player's next
-        /// login on this device.
+        /// login on this device until they are PendingCommandMaxAge old on the server clock (that player may never log in here again,
+        /// e.g. a deleted account); then they are discarded too.
         /// </summary>
         private static async Task ResendPendingAsync(GameServerClient client, Action<string> log)
         {
             // PendingCommands is a snapshot: a resend or a discard inside the loop does not change it.
             foreach (var pending in client.PendingCommands)
             {
+                // The snapshot predates the loop: an earlier resend may already have removed this entry.
+                if (!IsPending(client, pending.RequestId))
+                {
+                    continue;
+                }
+
                 var status = client.StatusOf(pending);
                 log($"pending {pending.RequestId} {status}");
-                if (status == PendingCommandStatus.Expired)
+                var tooOld = client.ServerNow - pending.RecordedAtServerUtc >= PendingCommandMaxAge;
+                if (status == PendingCommandStatus.Expired || (status == PendingCommandStatus.OtherPlayer && tooOld))
                 {
                     client.DiscardPendingCommand(pending.RequestId);
                     continue;

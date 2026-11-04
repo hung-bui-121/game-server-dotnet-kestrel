@@ -228,7 +228,10 @@ AccountInitializers = [AccountInitializerRegistration.Of<MyStartingState>("my.st
   (`Account creation of player {id} failed: … Nothing was created; the next login retries.`, không bao giờ có message của
   exception; error middleware không ghi thêm dòng nào), metric `account_initializer_failures_total{initializer, result}` và
   `account_creations_total{result="failed"}`. Login kế tiếp của cùng credential tạo lại từ đầu. Lỗi store trong lời gọi
-  context (ví dụ đọc claim) không tính là initializer ném: nó là lỗi store của transaction login (016/BC-10).
+  context (ví dụ đọc claim) không tính là initializer ném: nó là lỗi store của transaction login (016/BC-10). Claim có key rỗng,
+  hoặc trong collection không module nào khai báo (hay `receipts`, `pa_*`), bị chặn trước lần đọc đó như một luật tạo tài khoản
+  có tên initializer (`Command 'identity.create_account (initializer {name})': …`, `result="rule"`); runner kiểm tra y hệt trước
+  lần đọc claim của command.
 - **Receipt**: chỉ khi initializer có hiệu ứng (đổi aggregate, giữ claim, thêm outbox) thì có một receipt
   `identity.create_account` (actor `system`, actor id = player); outbox của nó (ledger của grant) được relay như command.
 - Tài khoản tạo trước khi đăng ký initializer **không** được seed về sau (không backfill): giữ command "init" cũ cho chúng, hoặc

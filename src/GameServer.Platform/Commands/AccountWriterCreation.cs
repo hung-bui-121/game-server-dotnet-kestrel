@@ -57,7 +57,7 @@ internal sealed partial class AccountWriter
         // A fresh context per attempt: no outbox entry, claim or state of a discarded attempt survives (trap T2).
         var now = _clock.UtcNow;
         var actor = new ActorContext(write.PlayerId, ActorType.System, write.PlayerId, _options.GameId, _options.EnvironmentId, NoPermissions, write.CorrelationId);
-        var context = new CommandContext(actor, now, _config, loaded, plan.Descriptor, tx, run.ReceiptId);
+        var context = new CommandContext(actor, now, _config, loaded, plan.Descriptor, tx, run.ReceiptId, _registry.ProvisionedCollections);
         var writers = new Dictionary<string, string>(StringComparer.Ordinal);
         var views = await RunInitializersAsync(plan, context, writers);
 
@@ -165,7 +165,7 @@ internal sealed partial class AccountWriter
             if (CommitRules.ExceedsHardBytes(descriptor, size))
             {
                 var writer = writers[descriptor.AggregateId];
-                var line = CommitRules.CheckAggregateSize(AccountCreation.InitializerOperation(writer), _options.GameId, _options.EnvironmentId, before, json, now)!;
+                var line = CommitRules.CheckCreationAggregateSize(AccountCreation.InitializerOperation(writer), _options.GameId, _options.EnvironmentId, before, json, now)!;
                 throw AccountInitializerFailedException.Rule(writer, line);
             }
 

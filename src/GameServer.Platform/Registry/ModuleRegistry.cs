@@ -26,6 +26,7 @@ public sealed partial class ModuleRegistry
     private Dictionary<string, PlayerAggregateDescriptor>? _aggregates;
     private Dictionary<string, CommandRegistration>? _commands;
     private ErrorCodeCatalog? _errors;
+    private HashSet<string>? _provisionedCollections;
 
     public IReadOnlyList<RegisteredModule> Modules => _modules;
 
@@ -61,6 +62,12 @@ public sealed partial class ModuleRegistry
             .Concat(OutboxProjections.Select(p => p.Collection))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
+
+    /// <summary>
+    /// <see cref="RequiredCollections"/> as a set, built once: a claim marker outside it is a module bug the command context
+    /// reports before its transaction read (T082 round 2, m1).
+    /// </summary>
+    internal IReadOnlySet<string> ProvisionedCollections => _provisionedCollections ??= RequiredCollections().ToHashSet(StringComparer.Ordinal);
 
     public void Add(IGameModule module, bool serviceOnly)
     {
@@ -397,6 +404,7 @@ public sealed partial class ModuleRegistry
         _commands = null;
         _errors = null;
         _deletionPlan = null;
+        _provisionedCollections = null;
     }
 
     private Dictionary<string, PlayerAggregateDescriptor> BuildAggregates()

@@ -68,6 +68,30 @@ public sealed class AccountInitializerValidationTests
             ["[module seed.game] account initializer 'game.starting_gold' has an invalid name. Fix: use 'seed.<name>' in lowercase."]);
     }
 
+    /// <summary>
+    /// T082 round 2 m4: a module whose first segment is no valid name segment gets one line of its own (not one per initializer) and
+    /// no prefix check; its initializers are still checked against the pattern.
+    /// </summary>
+    [Theory]
+    [InlineData("Seed")]
+    [InlineData("Seed.game")]
+    [InlineData("1seed.game")]
+    [InlineData("_seed")]
+    public void A_module_name_that_cannot_prefix_is_one_line_and_skips_the_prefix_check(string module)
+    {
+        static DescriptorModule Module(string module, params string[] names) => new(new ModuleDescriptor
+        {
+            Name = module,
+            Aggregates = [SeedAggregates.ADescriptor],
+            AccountInitializers = [.. names.Select(n => AccountInitializerRegistration.Of<FirstSeedInitializer>(n, [SeedAggregates.A]))],
+        });
+        var moduleLine = $"[module {module}] module name '{module}' cannot prefix an account initializer. Fix: start the module name with a lowercase segment.";
+
+        Validate(Module(module, "seed.first", "other.second")).ShouldBe([moduleLine]);
+        Validate(Module(module, "Bad")).ShouldBe(
+            [moduleLine, $"[module {module}] account initializer 'Bad' has an invalid name. Fix: use '<module>.<name>' in lowercase."]);
+    }
+
     [Fact]
     public void A_name_registered_by_two_modules_is_one_line()
     {

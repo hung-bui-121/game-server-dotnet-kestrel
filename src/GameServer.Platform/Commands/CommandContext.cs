@@ -29,10 +29,15 @@ internal sealed class CommandContext : ICommandContext
     private readonly CommandDescriptor _descriptor;
     private readonly ITransactionContext _transaction;
     private readonly string _receiptId;
+    private readonly IReadOnlySet<string>? _collections;
     private readonly Dictionary<string, byte[]> _newStates = new(StringComparer.Ordinal);
     private readonly Dictionary<DocumentKey, JsonObject> _claims = [];
     private readonly List<OutboxEntry> _outbox = [];
 
+    /// <param name="collections">
+    /// The host's provisioned collections (<see cref="Registry.ModuleRegistry.ProvisionedCollections"/>): a claim outside them fails
+    /// before the transaction read. Null skips that check (the test kit's double, which has no registry).
+    /// </param>
     public CommandContext(
         ActorContext actor,
         DateTimeOffset now,
@@ -40,7 +45,8 @@ internal sealed class CommandContext : ICommandContext
         IReadOnlyDictionary<string, LoadedAggregate> loaded,
         CommandDescriptor descriptor,
         ITransactionContext transaction,
-        string receiptId)
+        string receiptId,
+        IReadOnlySet<string>? collections = null)
     {
         Actor = actor;
         Now = now;
@@ -49,6 +55,7 @@ internal sealed class CommandContext : ICommandContext
         _descriptor = descriptor;
         _transaction = transaction;
         _receiptId = receiptId;
+        _collections = collections;
     }
 
     public ActorContext Actor { get; }
@@ -91,6 +98,18 @@ internal sealed class CommandContext : ICommandContext
         if (collection == ReceiptDocument.Collection || collection.StartsWith("pa_", StringComparison.Ordinal))
         {
             throw new InvalidOperationException($"Claim markers cannot live in collection '{collection}'.");
+        }
+
+        // Module bugs fail here, before the transaction read, so they are never mistaken for the store's failure (T082 round 2, m1).
+        if (_collections is not null && !_collections.Contains(collection))
+        {
+            throw new InvalidOperationException(
+                $"Claim markers cannot live in collection '{collection}': no module declares it (DAT-07). Fix: declare it in ModuleDescriptor.Collections.");
+        }
+
+        if (string.IsNullOrEmpty(claimKey))
+        {
+            throw new InvalidOperationException($"Claim key in collection '{collection}' is empty. Fix: pass a non-empty claim key.");
         }
 
         var key = new DocumentKey(collection, claimKey);

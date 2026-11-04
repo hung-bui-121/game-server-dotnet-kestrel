@@ -1478,6 +1478,7 @@ Rules (checked at startup; one report line per fault, 016/BC-9):
 - **Name**: lowercase segments separated by dots (`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`) that start with the first segment of
   the module name and a dot (module `fixture` → `fixture.welcome`, module `sample.game` → `sample.starting_gold`); unique per
   deployment. A wrong name is the line `[module {m}] account initializer '{name}' has an invalid name. Fix: use '{prefix}<name>' in lowercase.`
+  A module whose name does not start with a lowercase segment (`Sample.Game`) gets `[module {m}] module name '{m}' cannot prefix an account initializer. Fix: start the module name with a lowercase segment.` once instead of a prefix check.
 - **Touches**: the aggregates it may read and write, never `profile`. `profile` plus the union of every initializer's touches
   is at most 4 aggregates (`CommandDescriptor.MaxTouches`); the claim markers of all initializers together are at most 2. A
   `Get`/`Set` outside the touches throws the runner's message naming the initializer
@@ -1496,7 +1497,10 @@ Rules (checked at startup; one report line per fault, 016/BC-9):
   error middleware writes no second line, the request log records `INTERNAL`) and
   `account_initializer_failures_total{initializer, result}` plus `account_creations_total{result="failed"}`. The next login of
   the same credential retries the creation. A store failure inside the initializer's context calls (for example the read of
-  a claim) is not the initializer's: it is the login's store failure (016/BC-10 codes, no `GameServer.Accounts` line).
+  a claim) is not the initializer's: it is the login's store failure (016/BC-10 codes, no `GameServer.Accounts` line). A
+  claim with an empty key, or in a collection no module declares (or `receipts`, `pa_*`), fails before that read as a
+  creation rule naming the initializer (`Command 'identity.create_account (initializer {name})': …`, `result="rule"`). The
+  runner checks the same before a command's claim read.
 - **Legacy accounts** (created before the initializer was registered) are never seeded later (no backfill). Two ways out:
   keep the old "init" game command for them (guarded by a state flag, as before), or — before launch — reset the dev and
   test data so every account is created with the initializer.
@@ -1531,10 +1535,12 @@ An initializer that grants writes the ledger entry to `context.Outbox`; its `Pay
 assert it as `context.Outbox.ShouldHaveSingleItem().Payload!["sourceType"]!.GetValue<string>()`. To check the creation
 receipt against a smaller `ReceiptMaxBytes`, pass `WithCommandSettings(new CommandSettings { ReceiptMaxBytes = …,
 ResultCompactMaxBytes = … })` (`CommandSettings` is in `GameServer.Platform`). Over the limit, the line is the account
-writer's, which the writer also logs inside its `Account creation of player … failed:` line:
+writer's, which the writer also logs inside its `Account creation of player … failed:` line; an aggregate over its
+`HardBytes` gives the second line:
 
 ```text
 Command 'identity.create_account (initializer {name})' receipt would be {bytes} bytes; ReceiptMaxBytes is {limit}: the account writer refuses the creation and the login answers INTERNAL. Fix: fewer ledger/outbox entries or raise GameServer:Commands:ReceiptMaxBytes.
+Command 'identity.create_account (initializer {name})' would store aggregate '{aggregateId}' as {bytes} bytes; its HardBytes is {hardBytes}: the account writer refuses the creation and the login answers INTERNAL. Fix: keep the state smaller or split it into another aggregate.
 ```
 
 Nothing is created and the next login retries. A creation that seeds three aggregates with one grant measures about 1.1 KB
@@ -1561,7 +1567,9 @@ One broken aggregate no longer takes down the snapshot or the login (FG-029). Tw
   `client.Sections.Unavailable[id].Code`, event `AvailabilityChanged(id)`; the next `Set`/`Apply` of it clears the mark. A login
   of the **same** player keeps the copies it lists as unavailable; another player's login starts empty (016/BC-8). On a
   same-player login the event fires only for a change: once for a section that is readable again, never for one that is
-  still unavailable with the same code.
+  still unavailable with the same code. The mark is dropped only after the new copy is stored, so an `AvailabilityChanged`
+  handler of a recovered section reads it (`TryGet` is `true`, the revision is the new one) for a login, a snapshot and a
+  command update alike.
   `AGGREGATE_VERSION_AHEAD` is retried by the SDK's retryable rule with the same bytes and request id.
 - Show a recoverable state for a marked section (for example "this part of your account is being updated, try again"),
   and never treat a missing section as "default state": a write from that state would overwrite the real data.
@@ -1647,8 +1655,9 @@ with the **same request id and the same bytes** replays the committed command in
 - `GameServerClientOptions.PendingCommands` (opt-in, default null): with a store, every command is recorded before its first
   attempt and removed once the server answered it (a command response with any code, or an error that is not retryable). It
   stays when the outcome is unknown (no response, an unreadable response, a retryable last answer, cancellation) and when the
-  request was refused before the command ran (`UNAUTHENTICATED`, `SESSION_REPLACED`, `ACCOUNT_*`): resend it after the next
-  login. Login, logout, snapshot, config and time calls never touch it. The SDK never resends by itself.
+  request was refused before the command ran (`UNAUTHENTICATED`, `SESSION_REPLACED`, `ACCOUNT_*` such as
+  `ACCOUNT_SUSPENDED`): resend it after the next login. `ACCOUNT_DELETED` is a final answer and removes the entry: no later
+  login of that account can run it. Login, logout, snapshot, config and time calls never touch it. The SDK never resends by itself.
 - **A token cancelled before the call** still records the entry (the record comes first) and sends nothing: the call throws
   `OperationCanceledException`, and a later resend runs the command for the first time (`Replayed` is `false`).
 - The stores: in Unity `UnityPendingCommandStore.Create(environmentName)` →
@@ -1659,11 +1668,15 @@ with the **same request id and the same bytes** replays the committed command in
   `samples/SampleGame/KestrelDemo/Assets/SampleGame/SampleGameClient.cs`:
 
 ```csharp
+// How long a pending command may wait for its resend (the SDK default, named here because the resend loop uses it too).
+static readonly TimeSpan PendingCommandMaxAge = TimeSpan.FromHours(23);
+
 var client = new GameServerClient(
     new GameServerClientOptions(serverUrl, Application.version, platform, Application.buildGUID)
     {
         // A command whose answer was lost (app killed, network gone) stays on disk until the next start (FG-022).
         PendingCommands = UnityPendingCommandStore.Create("local"),
+        PendingCommandMaxAge = PendingCommandMaxAge,
     },
     new UnityWebRequestTransport(),
     config: UnityConfigCache.Create("local"));
@@ -1672,18 +1685,30 @@ var client = new GameServerClient(
 - **After login**, list `client.PendingCommands` (before login every entry is `OtherPlayer`: there is no session).
   `StatusOf(entry)` is `Resendable`, `OtherPlayer` (another player's, or no session) or `Expired`. Resend the `Resendable`
   ones with `ResendPendingAsync(entry, parser)` (a committed command answers `Replayed` with its original receipt), discard the
-  `Expired` ones with `DiscardPendingCommand(id)` after deciding from the player's state, and leave `OtherPlayer` entries
-  alone: they are another account's on this device and become `Resendable` when that player logs in again.
-  `PendingCommands` is a snapshot, so resending or discarding inside the `foreach` is safe; read it again for the current
-  entries. Same file:
+  `Expired` ones with `DiscardPendingCommand(id)` after deciding from the player's state, and leave young `OtherPlayer`
+  entries alone: they are another account's on this device and become `Resendable` when that player logs in again.
+  `StatusOf` reports `OtherPlayer` before `Expired`, so an `OtherPlayer` entry never turns `Expired` on its own; discard it
+  once `client.ServerNow - pending.RecordedAtServerUtc` reaches `PendingCommandMaxAge` (that player may never log in here
+  again, for example a deleted account; for that player it would be `Expired` anyway). `PendingCommands` is a read-only
+  snapshot, so resending or discarding inside the `foreach` is safe, but an entry of the snapshot may already be gone when
+  the loop reaches it (an earlier resend's answer removed it): check `IsPending` (the helper below) first. Read
+  `PendingCommands` again for the current entries. Same file (`PendingCommandMaxAge` is the sample's constant, also passed
+  to `GameServerClientOptions.PendingCommandMaxAge`):
 
 ```csharp
 // PendingCommands is a snapshot: a resend or a discard inside the loop does not change it.
 foreach (var pending in client.PendingCommands)
 {
+    // The snapshot predates the loop: an earlier resend may already have removed this entry.
+    if (!IsPending(client, pending.RequestId))
+    {
+        continue;
+    }
+
     var status = client.StatusOf(pending);
     log($"pending {pending.RequestId} {status}");
-    if (status == PendingCommandStatus.Expired)
+    var tooOld = client.ServerNow - pending.RecordedAtServerUtc >= PendingCommandMaxAge;
+    if (status == PendingCommandStatus.Expired || (status == PendingCommandStatus.OtherPlayer && tooOld))
     {
         client.DiscardPendingCommand(pending.RequestId);
         continue;
@@ -1719,8 +1744,8 @@ foreach (var pending in client.PendingCommands)
 The `case` labels compare with the generated route constants, which are relative to the SDK base URL and have **no leading
 slash** (`SampleGameRoutes.BattleEnd` is `"api/v1/battle/end"`); `PendingCommand.Route` is the same string.
 
-For a command whose outcome is unknown after the SDK's retries (KestrelDemo's battle end, with a cancellation token and the
-helper it uses):
+For a command whose outcome is unknown after the SDK's retries (KestrelDemo's battle end, with a cancellation token), and the
+`IsPending` helper both loops use:
 
 ```csharp
 static bool IsPending(GameServerClient client, string requestId)

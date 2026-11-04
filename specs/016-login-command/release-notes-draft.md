@@ -78,11 +78,18 @@ members; no existing field changes meaning (API-03); the Unity package stays `0.
   {bytes} bytes; ReceiptMaxBytes is {limit}: the account writer refuses the creation and the login answers INTERNAL. Fix:
   fewer ledger/outbox entries or raise GameServer:Commands:ReceiptMaxBytes.` — in the writer's Error line and from the kit's
   `CheckAccountCreation()` (T082: before, the creation reused the runner's "rejects the command with
-  COMMAND_OUTPUT_TOO_LARGE" text, but a creation is no command rejection).
+  COMMAND_OUTPUT_TOO_LARGE" text, but a creation is no command rejection). An initializer aggregate over its `HardBytes`
+  gives `Command 'identity.create_account (initializer {name})' would store aggregate '{id}' as {bytes} bytes; its HardBytes
+  is {hardBytes}: the account writer refuses the creation and the login answers INTERNAL. Fix: keep the state smaller or
+  split it into another aggregate.` the same way (T082 round 2; before, "the runner rejects the command with
+  AGGREGATE_TOO_LARGE and nothing commits").
 - **Store failures stay store failures:** a store exception of a context call made for an initializer (the read of a claim)
   is marked by the context and reaches the store unchanged, so the login answers the store's code (BC-10; a failed
   transaction is 500 `INTERNAL` with the middleware line `Request failed with INTERNAL: Login transaction failed for player
-  {id}.`), never "initializer threw" (T082). `account_creations_total{result="failed"}` also counts a creation that lost its
+  {id}.`), never "initializer threw" (T082). A claim with an empty key or in a collection no module declares (the store
+  would refuse or time out) fails before that read: for an initializer it is a creation rule naming it (`Command
+  'identity.create_account (initializer {name})': …`), for a command the handler's `InvalidOperationException` (review
+  round 2). `account_creations_total{result="failed"}` also counts a creation that lost its
   identity anchor (`AggregateAnchorMissingException`) or met an unreadable initializer aggregate (FG-029).
 - **Metrics:** `account_creations_total{result=created|failed}` and `account_initializer_failures_total`; the creation also
   records `receipt_size_bytes`, `aggregate_size_bytes` and `txn_*` with operation `identity.create_account`.
@@ -184,13 +191,15 @@ members; no existing field changes meaning (API-03); the Unity package stays `0.
   route, exact body bytes, ServerNow)` before its first attempt; removed on a command response with any code or an error
   envelope that is not retryable (e.g. `IDEMPOTENCY_PAYLOAD_MISMATCH`); kept when the outcome is unknown (no response,
   `INVALID_RESPONSE`, a retryable last answer such as `COMMIT_UNKNOWN_RETRY` or `AGGREGATE_VERSION_AHEAD`, cancellation) and
-  when the request was refused before the command ran (`UNAUTHENTICATED`, `SESSION_REPLACED`, `ACCOUNT_*`; T082), so it is
-  resent after the next login. A token cancelled before the call still records the entry; its resend runs the command for
+  when the request was refused before the command ran (`UNAUTHENTICATED`, `SESSION_REPLACED`, `ACCOUNT_*` other than
+  `ACCOUNT_DELETED`; T082), so it is resent after the next login; `ACCOUNT_DELETED` is final and removes it (no later login
+  of that account can run it). A token cancelled before the call still records the entry; its resend runs the command for
   the first time (`Replayed = false`). Login, logout, snapshot, config and time calls never touch it. A disk failure never
   stops the command: the store keeps the entry in memory and reports `WriteProblem`.
-- **After a restart:** `client.PendingCommands` lists the entries as a **snapshot** (an array replaced after each change, so a
-  resend or a discard inside a `foreach` over it is safe; T082 — before, it was the store's live list and the loop threw
-  "Collection was modified"); `StatusOf(entry)` is `OtherPlayer` (another player or no
+- **After a restart:** `client.PendingCommands` lists the entries as a **read-only snapshot** (a list replaced after each
+  change, not an array a caller could write into, so a resend or a discard inside a `foreach` over it is safe; T082 — before,
+  it was the store's live list and the loop threw "Collection was modified"; check that an entry is still listed before
+  resending it, an earlier resend's answer may have removed it); `StatusOf(entry)` is `OtherPlayer` (another player or no
   session), `Expired` (at least `PendingCommandMaxAge` old on the server clock, so a device clock change does not move it)
   or `Resendable`; `ResendPendingAsync(entry, parser)` sends the stored bytes with the stored id to the stored route (a
   committed command answers `Replayed` with its original receipt) and throws `InvalidOperationException` for an entry that
@@ -234,15 +243,35 @@ members; no existing field changes meaning (API-03); the Unity package stays `0.
   }
 
   // Resend what an earlier run left with an unknown outcome. PendingCommands is a snapshot: resending or discarding in the
-  // loop is safe. Another player's entries (OtherPlayer) stay for that player's next login on this device.
+  // loop is safe. Another player's entries (OtherPlayer) stay for that player's next login on this device until they are
+  // PendingCommandMaxAge old (StatusOf reports OtherPlayer before Expired, so they never turn Expired on their own).
+  static bool IsPending(GameServerClient client, string requestId)
+  {
+      foreach (var entry in client.PendingCommands)
+      {
+          if (entry.RequestId == requestId)
+          {
+              return true;
+          }
+      }
+
+      return false;
+  }
+
   foreach (var pending in client.PendingCommands)
   {
+      if (!IsPending(client, pending.RequestId))
+      {
+          continue;                                           // an earlier resend's answer already removed it
+      }
+
       var status = client.StatusOf(pending);
+      var tooOld = client.ServerNow - pending.RecordedAtServerUtc >= options.PendingCommandMaxAge;
       if (status == PendingCommandStatus.Resendable && pending.Route == GameRoutes.BattleEnd)
       {
           var replay = await client.ResendPendingAsync(pending, BattleEndResult.Parser);   // replay.Replayed: it had committed
       }
-      else if (status == PendingCommandStatus.Expired)
+      else if (status == PendingCommandStatus.Expired || (status == PendingCommandStatus.OtherPlayer && tooOld))
       {
           client.DiscardPendingCommand(pending.RequestId);   // decide from the player's state
       }
@@ -270,7 +299,7 @@ members; no existing field changes meaning (API-03); the Unity package stays `0.
 - **Template** gains a commented initializer example (registration, touches budget, purity, failure, kit test).
 - **KestrelDemo** logs `new player: {IsNewPlayer}`, boots on the login sections, keeps commands in
   `UnityPendingCommandStore.Create("local")`, resends the `Resendable` entries after login (`resent {id}: replayed=…`),
-  discards the `Expired` ones and leaves another player's (T082), and sends battle end with `GameServerClient.NewRequestId()` (an unknown outcome logs `EndBattle → pending
+  discards the `Expired` ones and leaves another player's until they are `PendingCommandMaxAge` old on the server clock (T082), and sends battle end with `GameServerClient.NewRequestId()` (an unknown outcome logs `EndBattle → pending
   {id}`). `SmokeBuild.EndToEnd` accepts `-e2eDevice <name>` to keep one guest device across runs (PlayerPrefs).
 - **Docs:** consumer guide §13 (login flow, account initializers, degraded reads, command limits, request ids and the pending
   store; §5.1 table, §10 pointer and §11 bump steps updated); module-authoring §3/§4 and the template README; PCR platform §2,
@@ -297,7 +326,7 @@ m8); zh-pvp-server does not construct `CommandRunner` (its game code builds none
 | Id | Change | Who is affected | How it surfaces | Fix |
 | --- | --- | --- | --- | --- |
 | BC-1 | A result or receipt over its limit is the business rejection `COMMAND_OUTPUT_TOO_LARGE` (HTTP 200, nothing commits) instead of a 500 `INTERNAL` (FR-030, FR-031) | Clients and tests that expect 500 for an oversized command; dashboards counting `command_results_total{code="INTERNAL"}` for it | HTTP 200 command response `COMMAND_OUTPUT_TOO_LARGE` (23) with details `part`/`bytes`/`limit`, e.g. `{part: "result", bytes: "513", limit: "512"}`; nothing written, no receipt; `command_output_too_large_total{operation, part}`; Error line `Command {Operation} refused with COMMAND_OUTPUT_TOO_LARGE: {Part} is {Bytes} bytes, limit {Limit}. Fix: return less or raise GameServer:Commands:{SettingName} (PCR platform §22).` (category `GameServer.Commands`); TestKit lines `Command '{op}' result is …` / `… receipt would be …` (errors-and-report-lines §5) | Treat the code as a design bug of the command; raise the limit (FR-032) or return less |
-| BC-2 | `GameServer:Commands:*` values are validated at startup (FR-032); `MaxAggregatesPerGame` above 16 is refused | Deployments with out-of-range values (silently accepted before) | Startup exit 1 (serve and provision), one line per value after the account-initializer lines, e.g. `[deployment] GameServer:Commands:ReplayWindowHours is 0; allowed 1..168 (CMD-07).` and `[deployment] GameServer:Commands:ResultCompactMaxBytes 512 needs 1708 receipt bytes (base64 + 1024) but ReceiptMaxBytes is 1024. Fix: raise ReceiptMaxBytes or lower ResultCompactMaxBytes.` | Use a value in range |
+| BC-2 | `GameServer:Commands:*` values are validated at startup (FR-032); `MaxAggregatesPerGame` above 16 is refused | Deployments with out-of-range values (silently accepted before) | Startup exit 1 (serve and provision), one line per value after the account-initializer lines, e.g. `[deployment] GameServer:Commands:ReplayWindowHours is 0; allowed 1..168 (CMD-07).` and `[deployment] GameServer:Commands:ResultCompactMaxBytes 512 needs 1708 receipt bytes (base64 + 1024) but ReceiptMaxBytes is 1707. Fix: raise ReceiptMaxBytes or lower ResultCompactMaxBytes.` | Use a value in range |
 | BC-3 | **Snapshot and login semantics (PCR platform §4, API-10):** a snapshot or login no longer always holds every client-visible section; an unreadable one is absent and listed in the new unavailable field (FR-022, FR-023) | Client code that assumes every section is present after login or snapshot (old SDKs see the section missing, where the whole call used to fail) | `unavailable_sections` entry `{id, code, code_number}` (`AGGREGATE_VERSION_AHEAD` 24 / `AGGREGATE_UNREADABLE` 25), HTTP 200; the section absent from `sections` (old SDKs see only that) | Check the unavailable list (or a missing section) and show a recoverable state |
 | BC-4 | A command or replay that touches or reads an unreadable aggregate answers `AGGREGATE_VERSION_AHEAD` (503, retryable) or `AGGREGATE_UNREADABLE` (500) instead of 500 `INTERNAL`; a broken `profile` fails login and authenticated requests with these codes (FR-020, FR-023, FR-024). PCR §6 "newer than code → 500 `INTERNAL`" changes | Clients and tests that match `INTERNAL`; SDKs now retry the version-ahead case (retryable) | Error envelope 503 `AGGREGATE_VERSION_AHEAD` (`retryable`, `Retry-After: 1`, `retry_after_ms = 1000`) or 500 `AGGREGATE_UNREADABLE`, details `{"aggregate": id}`; `http_errors_total{code}` and `command_results_total{code}` with the new codes; nothing written; the replay of a command committed before the damage stays 200 and lists the aggregate | Match the new codes; keep the deploy rule of PCR §6 |
 | BC-5 | `AggregateDocumentSerializer.Load` and `PlayerSnapshotReader.ReadAsync/ReadAllAsync/ReadOneAsync` throw a `GameServerException` with `AGGREGATE_VERSION_AHEAD` or `AGGREGATE_UNREADABLE` (details `aggregate`) instead of `GameServerException(INTERNAL)`, `JsonException`, `InvalidOperationException`, `FormatException`, `OverflowException` or an upgrader's own exception. Signatures are unchanged; the additive `TryLoad`, `ReadAvailableAsync` and `ReadAllAvailableAsync` return the failures instead of throwing (FR-021; plan N1). A stored `state` that is missing, `null` or not a JSON object was silently read as the default state; it is now `AGGREGATE_UNREADABLE` (T004) | Game or test code that calls these readers directly and catches the old exception types | Different exception type and code at run time (no compile error) | Catch `GameServerException` (or use the degrading members) |
@@ -426,8 +455,9 @@ compiled (the game files need Unity). The client writes its markers without the 
    `SendCommandAsync(route, request, parser, requestId)`; set `Options.PendingCommands =
    UnityPendingCommandStore.Create(environmentName)` where the client is created (`OnlineSession.cs:83`,
    `new GameServerClient(options, transport)`, one folder per environment like the 015 config cache); after login, list
-   `PendingCommands` (a snapshot since T082), resend the `Resendable` ones, discard the `Expired` ones and leave another
-   player's `OtherPlayer` entries for that player (the client snippet above; consumer guide
+   `PendingCommands` (a snapshot since T082; skip an entry no longer listed), resend the `Resendable` ones, discard the
+   `Expired` ones and leave another player's `OtherPlayer` entries for that player until they are `PendingCommandMaxAge` old
+   (the client snippet above; consumer guide
    §13.5 and KestrelDemo `SampleGameClient.cs` show the full loop). Keep `PendingCommandMaxAge` (23 h) below
    `GameServer:Commands:ReplayWindowHours` (24 h). Checked in T078 with a C# 9 console over `sdk/GameServer.Client`
    (`HttpClientTransport`, `PersistentPendingCommandStore`) against the clone's host: run A logged in a new guest
@@ -571,10 +601,6 @@ and copy the 015 results under 015 T058.
   request). A client that keeps polling during a rolling deploy therefore writes one line per request; ops watch
   `aggregate_read_failures_total{aggregateId="profile"}`. A per-player rate limit of that line is a later slice; no code
   change in 016.
-- **The creation's aggregate-size line (follow-up, found while fixing the T078 receipt wording).** For an initializer
-  aggregate over its `HardBytes`, the rule line still ends "the runner rejects the command with AGGREGATE_TOO_LARGE and
-  nothing commits" (the runner's text); the login answers 500 `INTERNAL`. T082 changed only the receipt line (the ruling's
-  scope).
 - **`smoke-build.ps1` has no `-E2EDevice` pass-through.** The `-e2eDevice` switch of `SmokeBuild.EndToEnd` is a Unity
   command-line argument; T068 ran those two E2E runs with `Unity.exe … -executeMethod KestrelDemoBuild.EndToEnd -e2eDevice t068`
   directly (the script's own E2E command line plus the switch), because T067/T068 allow changes to the two KestrelDemo files
@@ -582,5 +608,5 @@ and copy the 015 results under 015 T058.
 - **PCR platform §8 still lacks codes 21 `CSRF_FAILED` and 22 `METHOD_NOT_ALLOWED`** (pre-existing; T072 added only 23–25).
 
 Fixed by the review (T082), no longer open: the live `PendingCommands` list (now a snapshot), the double log line of a
-failed creation (one line), the `ReceiptMaxBytes` lower bound (range 1112..65536), and the creation's receipt-line wording
-(the account writer's own text).
+failed creation (one line), the `ReceiptMaxBytes` lower bound (range 1112..65536), and the creation's receipt-line and
+aggregate-size-line wording (the account writer's own text; the aggregate line in review round 2).

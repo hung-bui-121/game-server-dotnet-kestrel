@@ -271,9 +271,10 @@ namespace GameServer.Client
 
             // A login for the player whose sections the store holds keeps the last good copy of each section it lists as unavailable
             // (a re-login during a rolling deploy still shows them, FG-029); any other login starts from an empty store.
+            var keep = new HashSet<string>(response.UnavailableSections.Select(u => u.Id), StringComparer.Ordinal);
             if (string.Equals(_sectionsPlayerId, response.PlayerId, StringComparison.Ordinal))
             {
-                Sections.ClearExcept(new HashSet<string>(response.UnavailableSections.Select(u => u.Id), StringComparer.Ordinal));
+                Sections.ClearExcept(keep);
             }
             else
             {
@@ -286,6 +287,8 @@ namespace GameServer.Client
                 Sections.Set(section);
             }
 
+            // After the sections are stored: a recovered section's copy is in the store when its event fires (T082 round 2, M1).
+            Sections.DropMarksExcept(keep);
             Sections.MarkUnavailable(response.UnavailableSections);
 
             TrackConfig(response.ConfigVersion, response.ClientConfigVersion);

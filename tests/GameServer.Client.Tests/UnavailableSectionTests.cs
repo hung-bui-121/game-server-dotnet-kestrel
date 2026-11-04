@@ -125,7 +125,11 @@ public sealed class UnavailableSectionTests : IAsyncLifetime
         };
         await client.LoginGuestAsync(localId, secret);
         var events = new List<string>();
+        var heldWhenRaised = new List<bool>();
         client.Sections.AvailabilityChanged += events.Add;
+
+        // T082 round 2 M1: the store swallows handler exceptions, so the handler only records what it saw.
+        client.Sections.AvailabilityChanged += id => heldWhenRaised.Add(client.Sections.TryGet(id, out _));
 
         await client.LoginGuestAsync(localId, secret);
 
@@ -136,8 +140,93 @@ public sealed class UnavailableSectionTests : IAsyncLifetime
         await client.LoginGuestAsync(localId, secret);
 
         events.ShouldBe([Wallet], "the wallet recovered: one event");
+        heldWhenRaised.ShouldBe([true], "the recovered wallet is in the store when its event fires");
         client.Sections.IsUnavailable(Wallet).ShouldBeFalse();
         client.Sections.TryGet(Wallet, out _).ShouldBeTrue();
+    }
+
+    /// <summary>
+    /// T082 round 2 M1: <see cref="SectionStore.Set"/> drops the mark after it stores the copy, so an availability handler of a
+    /// section that had no copy reads the new one.
+    /// </summary>
+    [Fact]
+    public void Set_raises_availability_after_the_copy_is_stored()
+    {
+        var store = new SectionStore();
+        store.MarkUnavailable([WalletAhead]);
+        var seen = new List<(bool Held, long Rev)>();
+        store.AvailabilityChanged += id => seen.Add((store.TryGet(id, out _), store.RevOf(id)));
+
+        store.Set(new SdkCore.Section { Id = Wallet, Rev = 7, Payload = ByteString.CopyFromUtf8("w7") });
+
+        seen.ShouldBe([(true, 7L)]);
+        store.IsUnavailable(Wallet).ShouldBeFalse();
+    }
+
+    /// <summary>
+    /// T082 round 2 M1: an applied command update (full without a copy, then the exact next revision of a copy) drops the mark
+    /// after it stores the copy; a stale update keeps the mark and raises nothing.
+    /// </summary>
+    [Fact]
+    public void Apply_raises_availability_after_the_copy_is_stored()
+    {
+        var store = new SectionStore();
+        var seen = new List<(bool Held, long Rev)>();
+        store.AvailabilityChanged += id => seen.Add((store.TryGet(id, out _), store.RevOf(id)));
+
+        store.MarkUnavailable([WalletAhead]);
+        seen.Clear();
+        store.Apply(new SdkCore.SectionUpdate { Id = Wallet, BaseRev = 0, NewRev = 3, Payload = ByteString.CopyFromUtf8("w3"), Full = true }).ShouldBeTrue();
+        seen.ShouldBe([(true, 3L)], "a full update without a copy");
+
+        store.MarkUnavailable([WalletAhead]);
+        seen.Clear();
+        store.Apply(new SdkCore.SectionUpdate { Id = Wallet, BaseRev = 2, NewRev = 3, Payload = ByteString.CopyFromUtf8("x"), Full = false }).ShouldBeFalse();
+        seen.ShouldBeEmpty("a stale update keeps the mark");
+        store.IsUnavailable(Wallet).ShouldBeTrue();
+
+        store.Apply(new SdkCore.SectionUpdate { Id = Wallet, BaseRev = 3, NewRev = 4, Payload = ByteString.CopyFromUtf8("w4"), Full = false }).ShouldBeTrue();
+        seen.ShouldBe([(true, 4L)], "the exact next revision");
+        store.IsUnavailable(Wallet).ShouldBeFalse();
+    }
+
+    /// <summary>T082 round 2 M1: a command answer whose update recovers a section raises availability with the new copy stored.</summary>
+    [Fact]
+    public async Task A_command_update_that_recovers_a_section_raises_availability_with_the_new_copy()
+    {
+        var (client, transport, _) = _harness.NewClient();
+        var (localId, secret) = SdkHarness.NewDevice();
+        await client.LoginGuestAsync(localId, secret);
+        var walletRev = client.Sections.RevOf(Wallet);
+
+        // A snapshot that cannot read the wallet marks it and keeps its copy at the server's revision, so the grant's update applies.
+        transport.After = (request, _, response) =>
+        {
+            if (request.Url.AbsolutePath.TrimStart('/') != GameServerClient.SnapshotRoute)
+            {
+                return response;
+            }
+
+            var snapshot = SdkCore.SnapshotResponse.Parser.ParseFrom(response.Body);
+            var kept = snapshot.Sections.Where(s => s.Id != Wallet).ToArray();
+            snapshot.Sections.Clear();
+            snapshot.Sections.Add(kept);
+            snapshot.UnavailableSections.Add(WalletAhead);
+            return new TransportResponse(response.Status, response.ContentType, snapshot.ToByteArray());
+        };
+        await client.RefreshSectionsAsync([Wallet]);
+        client.Sections.IsUnavailable(Wallet).ShouldBeTrue();
+        transport.After = null;
+        var seen = new List<(string Id, long Rev)>();
+        client.Sections.AvailabilityChanged += id => seen.Add((id, client.Sections.RevOf(id)));
+
+        var result = await client.SendCommandAsync(Grant, new Economy.CheatGrantRequest { Resource = "gold", Quantity = 1 }, Economy.CheatGrantResult.Parser);
+
+        result.IsOk.ShouldBeTrue();
+        result.SectionsStale.ShouldBeFalse("the update applied without a refetch");
+        client.Sections.IsUnavailable(Wallet).ShouldBeFalse();
+        client.Sections.RevOf(Wallet).ShouldBeGreaterThan(walletRev);
+        seen.ShouldBe([(Wallet, client.Sections.RevOf(Wallet))], "one event, and the handler read the wallet's new revision");
     }
 
     [Fact]

@@ -155,31 +155,26 @@ namespace GameServer.Client
 
         /// <summary>
         /// Stores a snapshot/login section unless the client already has a newer revision (a snapshot read before a command's
-        /// update can arrive after it). Login clears the store first. The section is available again.
+        /// update can arrive after it). Login clears the store first. The section is available again; the mark is dropped after the
+        /// copy is stored, so an <see cref="AvailabilityChanged"/> handler reads the new copy (T082 round 2, M1).
         /// </summary>
         public void Set(Section section)
         {
-            MarkAvailable(section.Id);
-            if (_sections.TryGetValue(section.Id, out var current) && section.Rev < current.Rev)
+            if (!_sections.TryGetValue(section.Id, out var current) || section.Rev >= current.Rev)
             {
-                return;
+                Store(section.Id, section.Rev, section.Payload);
             }
 
-            Store(section.Id, section.Rev, section.Payload);
+            MarkAvailable(section.Id);
         }
 
         /// <summary>
         /// Applies a <c>SectionUpdate</c>; false when the section is now stale and must be refetched. An applied update makes the
-        /// section available again.
+        /// section available again, after its copy is stored.
         /// </summary>
         public bool Apply(SectionUpdate update)
         {
             _sections.TryGetValue(update.Id, out var current);
-            if (update.Full || (current != null && current.Rev == update.BaseRev && update.NewRev == update.BaseRev + 1))
-            {
-                MarkAvailable(update.Id);
-            }
-
             if (update.Full)
             {
                 // Retries/replays return the current aggregate (rev >= newRev); never go back in time.
@@ -188,12 +183,14 @@ namespace GameServer.Client
                     Store(update.Id, update.NewRev, update.Payload);
                 }
 
+                MarkAvailable(update.Id);
                 return true;
             }
 
             if (current != null && current.Rev == update.BaseRev && update.NewRev == update.BaseRev + 1)
             {
                 Store(update.Id, update.NewRev, update.Payload);
+                MarkAvailable(update.Id);
                 return true;
             }
 
@@ -209,9 +206,9 @@ namespace GameServer.Client
 
         /// <summary>
         /// A same-player login (FG-029, research R12): removes every section except <paramref name="keep"/>, whose last good copies
-        /// stay because the login lists them as unavailable. Their marks stay too, so the login's <see cref="MarkUnavailable"/>
-        /// raises only for a changed code; every other mark is dropped with <see cref="AvailabilityChanged"/> (a recovered section,
-        /// T082 M2).
+        /// stay because the login lists them as unavailable. Marks are left alone (no events): the login stores its sections first
+        /// (each <see cref="Set"/> drops its own mark), then calls <see cref="DropMarksExcept"/>, so a handler never sees a recovered
+        /// section as available before its copy is stored (T082 round 2, M1).
         /// </summary>
         internal void ClearExcept(ICollection<string> keep)
         {
@@ -222,7 +219,14 @@ namespace GameServer.Client
                     _sections.Remove(id);
                 }
             }
+        }
 
+        /// <summary>
+        /// Drops every unavailable mark except those of <paramref name="keep"/>, raising <see cref="AvailabilityChanged"/> once per
+        /// dropped mark. The kept marks stay, so the login's <see cref="MarkUnavailable"/> raises only for a changed code (T082 M2).
+        /// </summary>
+        internal void DropMarksExcept(ICollection<string> keep)
+        {
             foreach (var id in new List<string>(_unavailable.Keys))
             {
                 if (!keep.Contains(id))

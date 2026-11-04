@@ -89,8 +89,9 @@ internal sealed class InitializerContext : ICommandContext
         }
         catch (InvalidOperationException ex) when (!CommandContext.IsStoreFailure(ex))
         {
-            // The context's own rules (a forbidden collection): a module bug, reported as a creation rule, not as a throw.
-            throw new AccountCreationRuleException(ex.Message);
+            // The context's own rules (a forbidden or undeclared collection, an empty key): a module bug, reported as a creation
+            // rule naming this initializer, not as a throw (T082 m4; round 2 m1).
+            throw new AccountCreationRuleException($"Command '{Operation}': {ex.Message}");
         }
 
         if (claimed)

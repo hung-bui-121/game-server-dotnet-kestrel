@@ -307,7 +307,7 @@ public sealed class CommandRunner(
             loaded[descriptors[i].AggregateId] = serializer.Load(descriptors[i], playerId, documents[i]);
         }
 
-        var context = new CommandContext(invocation.Actor, now, config, loaded, descriptor, tx, receiptId);
+        var context = new CommandContext(invocation.Actor, now, config, loaded, descriptor, tx, receiptId, registry.ProvisionedCollections);
         var handler = ActivatorUtilities.CreateInstance(services, registration.HandlerType);
         var outcome = await registration.InvokeAsync(handler, invocation.Request, context);
         if (!outcome.IsOk)

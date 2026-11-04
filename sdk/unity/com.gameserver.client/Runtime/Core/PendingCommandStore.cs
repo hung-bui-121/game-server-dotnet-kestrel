@@ -83,7 +83,7 @@ namespace GameServer.Client
     {
         /// <summary>
         /// The entries, ordered by recorded time, then request id. A snapshot: <see cref="Record"/> and <see cref="Remove"/> do not
-        /// change a list already returned (the two SDK stores return a new array after each change).
+        /// change a list already returned (the two SDK stores return a new read-only list after each change).
         /// </summary>
         IReadOnlyList<PendingCommand> Entries { get; }
 
@@ -328,12 +328,15 @@ namespace GameServer.Client
     /// <summary>Entries ordered by recorded time, then request id (ordinal); one entry per request id.</summary>
     internal sealed class PendingCommandList
     {
+        private static readonly IReadOnlyList<PendingCommand> NoItems = Array.AsReadOnly(Array.Empty<PendingCommand>());
+
         private readonly List<PendingCommand> _items = new List<PendingCommand>();
-        private PendingCommand[] _snapshot = Array.Empty<PendingCommand>();
+        private IReadOnlyList<PendingCommand> _snapshot = NoItems;
 
         /// <summary>
-        /// A snapshot taken after the last change: a Record, Remove or Discard during a <c>foreach</c> over it (e.g. a resend loop)
-        /// never changes the array being enumerated. Read it again for the current entries.
+        /// A read-only snapshot taken after the last change: a Record, Remove or Discard during a <c>foreach</c> over it (e.g. a
+        /// resend loop) never changes the list being enumerated, and a caller cannot write into it (it is no array; T082 round 2,
+        /// m6). Read it again for the current entries.
         /// </summary>
         public IReadOnlyList<PendingCommand> Items => _snapshot;
 
@@ -347,7 +350,7 @@ namespace GameServer.Client
             }
 
             _items.Insert(index, command);
-            _snapshot = _items.ToArray();
+            _snapshot = Array.AsReadOnly(_items.ToArray());
         }
 
         /// <summary>True when an entry with <paramref name="requestId"/> was removed.</summary>
@@ -358,14 +361,14 @@ namespace GameServer.Client
                 return false;
             }
 
-            _snapshot = _items.ToArray();
+            _snapshot = Array.AsReadOnly(_items.ToArray());
             return true;
         }
 
         public void Clear()
         {
             _items.Clear();
-            _snapshot = Array.Empty<PendingCommand>();
+            _snapshot = NoItems;
         }
 
         private bool RemoveItem(string? requestId)

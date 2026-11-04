@@ -134,7 +134,7 @@ public sealed class InitializerContextTests : IDisposable
             var ex = await Should.ThrowAsync<InvalidOperationException>(async () => await view.TryClaimAsync(collection, "k"));
 
             ex.ShouldBeOfType<AccountCreationRuleException>();
-            ex.Message.ShouldBe($"Claim markers cannot live in collection '{collection}'.");
+            ex.Message.ShouldBe($"Command 'identity.create_account (initializer seed.first)': Claim markers cannot live in collection '{collection}'.");
             context.Claims.ShouldBeEmpty();
         });
     }

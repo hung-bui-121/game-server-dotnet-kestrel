@@ -57,6 +57,7 @@ existing later blocks.
 ### 4.1 Account initializers (FR-015, BC-9)
 
 ```text
+[module {m}] module name '{m}' cannot prefix an account initializer. Fix: start the module name with a lowercase segment.
 [module {m}] account initializer '{name}' has an invalid name. Fix: use '{prefix}<name>' in lowercase.
 [module {m}] account initializer '{name}' is already registered by module '{other}'. Fix: initializer names must be unique per game.
 [module {m}] account initializer '{name}' touches unknown aggregate '{id}'. Fix: register the aggregate or fix Touches.
@@ -69,7 +70,9 @@ existing later blocks.
 ```
 
 A valid name matches `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$` and starts with `{prefix}` = the first segment of the module name
-and a dot (`sample.game` → `sample.`, `fixture` → `fixture.`; T082 m10).
+and a dot (`sample.game` → `sample.`, `fixture` → `fixture.`; T082 m10). When that first segment is no valid segment itself
+(`^[a-z][a-z0-9_]*$` fails, e.g. `Sample.Game`), the module gets the first line once, the prefix check is skipped and only the
+pattern applies to its initializers (`{prefix}` is then written `<module>.`; T082 round 2 m4).
 
 ### 4.2 Command settings (FR-032, BC-2)
 
@@ -102,13 +105,14 @@ Command '{operation}' receipt would be {bytes} bytes; ReceiptMaxBytes is {limit}
 ```
 
 `CheckAccountCreation()` returns the account writer's texts. A creation is no command rejection (D15), so its receipt line
-names what the login answers (T082, the T078 finding); the writer logs the same text as `{RuleLine}` of "creation rule
-violated" (§2):
+(T082, the T078 finding) and its aggregate-size line (T082 round 2, `CommitRules.CheckCreationAggregateSize`) name what the
+login answers; the writer logs the same text as `{RuleLine}` of "creation rule violated" (§2):
 
 ```text
 Command 'identity.create_account (initializer {names})' receipt would be {bytes} bytes; ReceiptMaxBytes is {limit}: the account writer refuses the creation and the login answers INTERNAL. Fix: fewer ledger/outbox entries or raise GameServer:Commands:ReceiptMaxBytes.
+Command 'identity.create_account (initializer {name})' would store aggregate '{aggregateId}' as {bytes} bytes; its HardBytes is {hardBytes}: the account writer refuses the creation and the login answers INTERNAL. Fix: keep the state smaller or split it into another aggregate.
 ```
 
 For an initializer, `'{operation}'` is `identity.create_account (initializer {name})` (the writer's receipt line names every
-initializer, comma-separated). The aggregate-size line of a creation still reads "the runner rejects the command with
-AGGREGATE_TOO_LARGE" (not part of T082; follow-up in the release notes).
+initializer, comma-separated; the aggregate line names the initializer that set the aggregate last). The size is measured
+with the runner's envelope (`CommitRules.CheckAggregateSize`'s), so both lines keep the command's numbers.

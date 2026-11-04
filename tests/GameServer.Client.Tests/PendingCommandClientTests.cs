@@ -77,7 +77,6 @@ public sealed class PendingCommandClientTests : IDisposable
         { "UNAUTHENTICATED", 2, 401 },
         { "SESSION_REPLACED", 18, 401 },
         { "ACCOUNT_SUSPENDED", 16, 403 },
-        { "ACCOUNT_DELETED", 17, 401 },
     };
 
     /// <summary>T082 m6: an authentication answer refused the request before the command ran, so the entry stays for a resend.</summary>
@@ -92,6 +91,20 @@ public sealed class PendingCommandClientTests : IDisposable
         (await Should.ThrowAsync<GameServerException>(() => SendAsync(client))).Error.Code.ShouldBe(code);
 
         store.Entries.ShouldHaveSingleItem().RequestId.ShouldBe(CallerId);
+    }
+
+    /// <summary>T082 round 2 m3: <c>ACCOUNT_DELETED</c> is a final answer (no later login of that account runs a resend).</summary>
+    [Fact]
+    public async Task An_account_deleted_answer_removes_the_entry()
+    {
+        var store = new InMemoryPendingCommandStore();
+        var (client, transport, _, _) = PendingClients.Create(store);
+        transport.ThenAnswer(FakeTransport.Envelope(401, ErrorCodes.AccountDeleted, retryable: false, codeNumber: 17));
+
+        (await Should.ThrowAsync<GameServerException>(() => SendAsync(client))).Error.Code.ShouldBe(ErrorCodes.AccountDeleted);
+
+        store.Entries.ShouldBeEmpty();
+        client.PendingCommands.ShouldBeEmpty();
     }
 
     public static TheoryData<string> UnknownOutcomes() => new("network", "invalid response", "COMMIT_UNKNOWN_RETRY", "AGGREGATE_VERSION_AHEAD");
@@ -407,6 +420,31 @@ public sealed class PendingCommandClientTests : IDisposable
 
         client.PendingCommands.ShouldBeEmpty();
         store.Entries.ShouldBeEmpty();
+    }
+
+    /// <summary>T082 round 2 m6: the snapshot is no array a caller can cast and write into; it is read-only.</summary>
+    [Theory]
+    [MemberData(nameof(StoreKinds))]
+    public async Task The_entries_snapshot_cannot_be_written(string kind)
+    {
+        IPendingCommandStore store = kind == "memory" ? new InMemoryPendingCommandStore() : new PersistentPendingCommandStore(_folder);
+        var (client, transport, _, _) = PendingClients.Create(store, maxRetries: 0);
+        transport.ThenDrop();
+        await Should.ThrowAsync<GameServerException>(() => SendAsync(client));
+
+        foreach (var entries in new[] { client.PendingCommands, store.Entries })
+        {
+            var entry = entries.ShouldHaveSingleItem();
+            (entries is PendingCommand[]).ShouldBeFalse("a cast to an array would let a caller replace entries");
+            var list = entries.ShouldBeAssignableTo<IList<PendingCommand>>()!;
+            list.IsReadOnly.ShouldBeTrue();
+            Should.Throw<NotSupportedException>(() => list[0] = entry);
+            Should.Throw<NotSupportedException>(() => list.Add(entry));
+        }
+
+        store.Remove(CallerId);
+        store.Entries.ShouldBeEmpty();
+        (store.Entries is PendingCommand[]).ShouldBeFalse("the empty snapshot too");
     }
 
     [Fact]

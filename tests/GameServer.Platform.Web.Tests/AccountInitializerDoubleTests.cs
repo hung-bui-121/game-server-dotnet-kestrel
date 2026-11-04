@@ -114,6 +114,20 @@ public sealed class AccountInitializerDoubleTests
             "Fix: fewer ledger/outbox entries or raise GameServer:Commands:ReceiptMaxBytes.");
     }
 
+    /// <summary>T082 round 2 (creation aggregate-size line): like the receipt line, it says what the login answers.</summary>
+    [Fact]
+    public async Task The_kits_creation_aggregate_line_names_the_logins_answer()
+    {
+        var ctx = Double();
+
+        (await new StartingStateInitializer(StartingStateBehaviour.OversizeAggregate(), Resources).InitializeAsync(ctx)).ShouldBeNull();
+
+        var line = ctx.CheckAccountCreation().ShouldHaveSingleItem();
+        line.ShouldStartWith("Command 'identity.create_account (initializer test.starting_state)' would store aggregate ");
+        line.ShouldEndWith(
+            ": the account writer refuses the creation and the login answers INTERNAL. Fix: keep the state smaller or split it into another aggregate.");
+    }
+
     /// <summary>T082 m3: the double scopes ids and seeds to the initializer, as the account writer's view does.</summary>
     [Fact]
     public void The_double_scopes_ids_and_seeds_to_the_initializer_like_the_writer()

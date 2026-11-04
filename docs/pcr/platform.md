@@ -1626,10 +1626,12 @@ Error). Không dòng nào chứa nội dung state hay message exception của co
 hạn, thất bại) vẫn đi đường cũ: không có dòng `GameServer.Accounts`, error middleware ghi
 `Request failed with INTERNAL: Login transaction failed for player {id}.` (hoặc trả mã retryable, BC-10).
 
-`{RuleLine}` của receipt quá lớn khi tạo tài khoản (cũng là dòng `CheckAccountCreation()` của kit):
+`{RuleLine}` của receipt và của aggregate quá lớn khi tạo tài khoản (cũng là dòng `CheckAccountCreation()` của kit; dòng aggregate
+từ T082 vòng 2, trước đó dùng văn bản của runner "rejects the command with AGGREGATE_TOO_LARGE"):
 
 ```text
 Command 'identity.create_account (initializer {names})' receipt would be {Bytes} bytes; ReceiptMaxBytes is {Limit}: the account writer refuses the creation and the login answers INTERNAL. Fix: fewer ledger/outbox entries or raise GameServer:Commands:ReceiptMaxBytes.
+Command 'identity.create_account (initializer {name})' would store aggregate '{AggregateId}' as {Bytes} bytes; its HardBytes is {HardBytes}: the account writer refuses the creation and the login answers INTERNAL. Fix: keep the state smaller or split it into another aggregate.
 ```
 
 `account_creations_total{result="failed"}` đếm mọi lần tạo tài khoản không thành: initializer lỗi, lỗi store của transaction tạo,
