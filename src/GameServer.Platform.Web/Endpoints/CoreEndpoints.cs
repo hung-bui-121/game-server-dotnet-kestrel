@@ -39,8 +39,8 @@ internal static class CoreEndpoints
                 var options = services.GetRequiredService<GameServerOptions>();
                 var request = ProtobufBinding.Parse<SnapshotRequest>(await ProtobufBinding.ReadBodyAsync(http, options.Limits.PlayerBodyBytes));
                 var actor = services.GetRequiredService<ActorContextAccessor>().GetActor(http);
-                var aggregates = await services.GetRequiredService<PlayerSnapshotReader>().ReadAsync(actor.PlayerId!, request.Sections, http.RequestAborted);
-                var mappers = services.GetRequiredService<AggregateWireMapperRegistry>();
+                // A broken section is left out and listed; the others are sent as read (FG-029, wire-changes §2).
+                var snapshot = await services.GetRequiredService<PlayerSnapshotReader>().ReadAvailableAsync(actor.PlayerId!, request.Sections, http.RequestAborted);
                 var config = services.GetRequiredService<IGameConfig>();
 
                 var response = new SnapshotResponse
@@ -49,12 +49,8 @@ internal static class CoreEndpoints
                     ClientConfigVersion = config.ClientConfigVersion,
                     ServerTimeUtcMs = services.GetRequiredService<IClock>().UtcNow.ToUnixTimeMilliseconds(),
                 };
-                response.Sections.AddRange(aggregates.Select(a => new Section
-                {
-                    Id = a.Descriptor.AggregateId,
-                    Rev = a.Rev,
-                    Payload = mappers.ToPayload(a.Descriptor.AggregateId, a.State),
-                }));
+                services.GetRequiredService<SectionWriter>()
+                    .WriteSections(actor.PlayerId!, snapshot.Sections, snapshot.Unavailable, response.Sections, response.UnavailableSections);
                 await ProtobufBinding.WriteAsync(http, response);
             })
             .AsPlayerEndpoint();

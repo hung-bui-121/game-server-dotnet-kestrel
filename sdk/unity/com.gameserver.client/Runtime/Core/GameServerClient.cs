@@ -83,6 +83,9 @@ namespace GameServer.Client
         private readonly Random _random;
         private string? _announcedConfigVersion;
 
+        /// <summary>The player whose sections <see cref="Sections"/> holds (FG-029: a same-player login keeps unavailable copies).</summary>
+        private string? _sectionsPlayerId;
+
         // Server time anchor on the monotonic clock (device wall-clock changes do not move ServerNow).
         private DateTimeOffset _serverAnchor;
         private TimeSpan _monotonicAnchor;
@@ -226,14 +229,14 @@ namespace GameServer.Client
             catch (GameServerException ex) when (ex.Error.Code == ErrorCodes.AccountDeleted)
             {
                 // The error path already cleared the session and raised AccountBlocked.
-                Sections.Clear();
+                ClearSections();
                 throw;
             }
 
             if (result.IsOk)
             {
                 _session.Clear();
-                Sections.Clear();
+                ClearSections();
                 var details = new Dictionary<string, string>(StringComparer.Ordinal);
                 if (result.Result != null)
                 {
@@ -256,14 +259,35 @@ namespace GameServer.Client
 
             _session.Token = response.SessionToken;
             _session.PlayerId = response.PlayerId;
-            Sections.Clear();
+
+            // A login for the player whose sections the store holds keeps the last good copy of each section it lists as unavailable
+            // (a re-login during a rolling deploy still shows them, FG-029); any other login starts from an empty store.
+            if (string.Equals(_sectionsPlayerId, response.PlayerId, StringComparison.Ordinal))
+            {
+                Sections.ClearExcept(new HashSet<string>(response.UnavailableSections.Select(u => u.Id), StringComparer.Ordinal));
+            }
+            else
+            {
+                ClearSections();
+            }
+
+            _sectionsPlayerId = response.PlayerId;
             foreach (var section in response.Sections)
             {
                 Sections.Set(section);
             }
 
+            Sections.MarkUnavailable(response.UnavailableSections);
+
             TrackConfig(response.ConfigVersion, response.ClientConfigVersion);
             return response;
+        }
+
+        /// <summary>Empties the section store and forgets whose sections it held.</summary>
+        private void ClearSections()
+        {
+            Sections.Clear();
+            _sectionsPlayerId = null;
         }
 
         /// <summary>Ends the session on the server and forgets it locally.</summary>
@@ -276,7 +300,7 @@ namespace GameServer.Client
             finally
             {
                 _session.Clear();
-                Sections.Clear();
+                ClearSections();
             }
         }
 
@@ -294,6 +318,8 @@ namespace GameServer.Client
             {
                 Sections.Set(section);
             }
+
+            Sections.MarkUnavailable(response.UnavailableSections);
 
             TrackConfig(response.ConfigVersion, response.ClientConfigVersion);
             return response;
@@ -323,6 +349,7 @@ namespace GameServer.Client
             // request id would apply it twice).
             TrackConfig(response.ConfigVersion, response.ClientConfigVersion);
             var stale = response.Updates.Where(u => !Sections.Apply(u)).Select(u => u.Id).ToList();
+            Sections.MarkUnavailable(response.UnavailableSections);
             var sectionsStale = false;
             if (stale.Count > 0)
             {

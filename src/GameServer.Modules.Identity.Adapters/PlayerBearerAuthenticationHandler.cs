@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using GameServer.Errors;
+using GameServer.Platform.Aggregates;
 using GameServer.Platform.Web.Auth;
 using GameServer.Time;
 using Microsoft.AspNetCore.Authentication;
@@ -12,7 +13,8 @@ namespace GameServer.Modules.Identity;
 /// <summary>
 /// Player scheme <c>PlayerBearer</c> (SEC-02, IDN-09, IDN-10): <c>Authorization: Bearer</c> → session → profile checks in
 /// the order deleted → suspended → replaced; unknown or expired token → UNAUTHENTICATED. A session whose profile document
-/// is missing belongs to a purged account: ACCOUNT_DELETED without details (research R9, D9).
+/// is missing belongs to a purged account: ACCOUNT_DELETED without details (research R9, D9). A profile that cannot be read fails
+/// with its typed code (<c>AGGREGATE_VERSION_AHEAD</c> / <c>AGGREGATE_UNREADABLE</c>, details <c>aggregate</c>; FG-029).
 /// </summary>
 public sealed class PlayerBearerAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
@@ -48,7 +50,18 @@ public sealed class PlayerBearerAuthenticationHandler(
             return Fail(CoreErrorCodes.Unauthenticated);
         }
 
-        var profile = await profiles.GetAsync(session.PlayerId, Context.RequestAborted);
+        ProfileState? profile;
+        try
+        {
+            profile = await profiles.GetAsync(session.PlayerId, Context.RequestAborted);
+        }
+        catch (GameServerException ex) when (AggregateReadFailure.TryGet(ex, out var failure))
+        {
+            // A broken profile (FG-029): the scheme may run before the pipeline on a single-scheme host (VERIFY V5), so the typed
+            // code travels as an authentication failure; the envelope gets the retry delay of a retryable code from the writer.
+            return Fail(failure.Code, ex.Details);
+        }
+
         if (profile is null)
         {
             return Fail(CoreErrorCodes.AccountDeleted);

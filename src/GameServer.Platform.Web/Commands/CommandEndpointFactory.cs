@@ -200,8 +200,9 @@ public static class CommandEndpointFactory
 
                 var response = BuildResponse(
                     execution,
+                    actor.PlayerId!,
                     services.GetRequiredService<IGameConfig>().ClientConfigVersion,
-                    services.GetRequiredService<AggregateWireMapperRegistry>(),
+                    services.GetRequiredService<SectionWriter>(),
                     services.GetRequiredService<IClock>());
                 await ProtobufBinding.WriteAsync(http, response);
             })
@@ -216,8 +217,12 @@ public static class CommandEndpointFactory
         outcome.Operation = operation;
     }
 
-    /// <summary>The wire response; <paramref name="clientConfigVersion"/> is the instance's, next to the server version of the execution.</summary>
-    internal static CommandResponse BuildResponse(CommandExecution execution, string clientConfigVersion, AggregateWireMapperRegistry mappers, IClock clock)
+    /// <summary>
+    /// The wire response; <paramref name="clientConfigVersion"/> is the instance's, next to the server version of the execution. Runs
+    /// after the commit: a section whose mapper throws is listed in <c>unavailable_sections</c> and the committed answer stands
+    /// (FG-029, research R7).
+    /// </summary>
+    internal static CommandResponse BuildResponse(CommandExecution execution, string playerId, string clientConfigVersion, SectionWriter sections, IClock clock)
     {
         var response = new CommandResponse
         {
@@ -230,18 +235,7 @@ public static class CommandEndpointFactory
             ServerTimeUtcMs = clock.UtcNow.ToUnixTimeMilliseconds(),
             Replayed = execution.Replayed,
         };
-        foreach (var change in execution.Updates)
-        {
-            response.Updates.Add(new SectionUpdate
-            {
-                Id = change.AggregateId,
-                BaseRev = change.BaseRev,
-                NewRev = change.NewRev,
-                Payload = mappers.ToPayload(change.AggregateId, change.State),
-                Full = true,
-            });
-        }
-
+        sections.WriteUpdates(playerId, execution.Updates, execution.Unavailable, response.Updates, response.UnavailableSections);
         return response;
     }
 }

@@ -697,7 +697,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmPlayerView"
+                }
+              }
+            }
           },
           "4XX": {
             "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
@@ -747,7 +754,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmPlayerView"
+                }
+              }
+            }
           },
           "4XX": {
             "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
@@ -857,7 +871,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmCommandResponse"
+                }
+              }
+            }
           },
           "4XX": {
             "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
@@ -877,7 +898,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmCommandResponse"
+                }
+              }
+            }
           },
           "4XX": {
             "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
@@ -897,7 +925,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmCommandResponse"
+                }
+              }
+            }
           },
           "4XX": {
             "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
@@ -917,7 +952,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmCommandResponse"
+                }
+              }
+            }
           },
           "4XX": {
             "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
@@ -967,7 +1009,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmCommandResponse"
+                }
+              }
+            }
           },
           "4XX": {
             "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
@@ -1113,6 +1162,187 @@
           }
         }
       },
+      "GmAggregateUpdate": {
+        "required": [
+          "id",
+          "baseRev",
+          "newRev",
+          "state"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "baseRev": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "newRev": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "state": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/JsonNode"
+              }
+            ]
+          }
+        }
+      },
+      "GmAggregateView": {
+        "required": [
+          "id",
+          "exists",
+          "clientVisible",
+          "rev",
+          "schemaVersion",
+          "storedSchemaVersion",
+          "sizeBytes",
+          "updatedAtUtc",
+          "state"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "exists": {
+            "type": "boolean"
+          },
+          "clientVisible": {
+            "type": "boolean"
+          },
+          "rev": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "schemaVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "storedSchemaVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "sizeBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "updatedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "state": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/JsonNode"
+              }
+            ]
+          }
+        }
+      },
+      "GmCommandResponse": {
+        "required": [
+          "code",
+          "codeNumber",
+          "receiptId",
+          "replayed",
+          "configVersion",
+          "serverTimeUtcMs",
+          "result",
+          "updates"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "codeNumber": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "receiptId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "configVersion": {
+            "type": "string"
+          },
+          "serverTimeUtcMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "result": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/JsonNode"
+              }
+            ]
+          },
+          "updates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GmAggregateUpdate"
+            }
+          },
+          "unavailable": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GmUnavailableAggregate"
+            }
+          }
+        }
+      },
       "GmCsrfResponse": {
         "required": [
           "token"
@@ -1121,6 +1351,39 @@
         "properties": {
           "token": {
             "type": "string"
+          }
+        }
+      },
+      "GmDeletionView": {
+        "required": [
+          "state",
+          "requestedAtUtc",
+          "purgeAfterUtc",
+          "purgeStartedAtUtc",
+          "purgedAtUtc"
+        ],
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "requestedAtUtc": {
+            "type": "string"
+          },
+          "purgeAfterUtc": {
+            "type": "string"
+          },
+          "purgeStartedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "purgedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -1268,6 +1531,41 @@
           }
         }
       },
+      "GmPlayerView": {
+        "required": [
+          "playerId",
+          "aggregates",
+          "deletion"
+        ],
+        "type": "object",
+        "properties": {
+          "playerId": {
+            "type": "string"
+          },
+          "aggregates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GmAggregateView"
+            }
+          },
+          "deletion": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/GmDeletionView"
+              }
+            ]
+          },
+          "unreadable": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GmUnreadableAggregate"
+            }
+          }
+        }
+      },
       "GmRotateResponse": {
         "required": [
           "keyId",
@@ -1290,6 +1588,58 @@
           },
           "replayed": {
             "type": "boolean"
+          }
+        }
+      },
+      "GmUnavailableAggregate": {
+        "required": [
+          "id",
+          "code"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          }
+        }
+      },
+      "GmUnreadableAggregate": {
+        "required": [
+          "id",
+          "code",
+          "reason",
+          "storedSchemaVersion",
+          "codeSchemaVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "storedSchemaVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "codeSchemaVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         }
       },
@@ -1320,6 +1670,7 @@
           }
         }
       },
+      "JsonNode": {},
       "MaintenanceBody": {
         "required": [
           "enabled",

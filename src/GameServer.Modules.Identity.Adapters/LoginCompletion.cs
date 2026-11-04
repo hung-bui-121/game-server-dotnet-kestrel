@@ -17,6 +17,9 @@ public sealed record LoginResult(
 {
     /// <summary>True when this login created the player (FG-013); equals the analytics isNewUser.</summary>
     public bool IsNewPlayer { get; init; }
+
+    /// <summary>Client-visible aggregates the login could not read (FG-029), ordered by id; never the profile (its failure fails the login).</summary>
+    public IReadOnlyList<AggregateReadFailure> Unavailable { get; init; } = [];
 }
 
 /// <summary>
@@ -63,6 +66,8 @@ public sealed class LoginRateLimits
 /// <see cref="IAccountWriter"/>: a first login creates the account anchored on the identity mapping
 /// (<c>identities/{mappingKey}</c>, research R9); when the account purge removed the mapping meanwhile, nothing is created
 /// and the login answers ACCOUNT_DELETED. Whether this login created the player comes only from the committed write (FG-013).
+/// A broken profile fails the login with its typed code before any write; any other broken aggregate is only listed in
+/// <see cref="LoginResult.Unavailable"/> (FG-029).
 /// </summary>
 public sealed class LoginCompletion(
     IAccountWriter accounts,
@@ -105,13 +110,13 @@ public sealed class LoginCompletion(
         profiles.Set(playerId, updated);
 
         var (token, expiresAt) = await sessions.CreateAsync(playerId, updated.SessionEpoch, cancellationToken);
-        var sections = await snapshots.ReadAsync(playerId, null, cancellationToken);
+        var snapshot = await snapshots.ReadAvailableAsync(playerId, null, cancellationToken);
         metrics.Login("ok");
         logger.LogInformation("Login of player {PlayerId} with {Provider} (epoch {Epoch}).", playerId, ProviderIdentities.ProviderOf(mappingKey), updated.SessionEpoch);
 
         // Last step that can fail is done: one login record (FR-015); refused or failed logins threw earlier (FR-016).
         analytics.LoggedIn(playerId, ProviderIdentities.ProviderOf(mappingKey), createdPlayer: written.Created);
-        return new LoginResult(token, playerId, expiresAt, sections) { IsNewPlayer = written.Created };
+        return new LoginResult(token, playerId, expiresAt, snapshot.Sections) { IsNewPlayer = written.Created, Unavailable = snapshot.Unavailable };
     }
 
     private async Task<AccountWriteResult<ProfileState>> WriteEpochAsync(

@@ -92,6 +92,13 @@ public sealed class RunnerHarness : IDisposable
     public CommandRunner CreateRunner() =>
         new(Registry, TransactionalStore, Serializer, Config, Clock, Options, new PerPlayerCommandLimiter(Options), Relay, Metrics, Guards, Services, new QueueLogger(RunnerLogs));
 
+    /// <summary>Logs of the account writers made by <see cref="CreateAccountWriter"/>.</summary>
+    public CapturingLoggerFactory Logs { get; } = new();
+
+    /// <summary>The login writer on <paramref name="store"/> (default: the harness store), logging into <see cref="Logs"/>.</summary>
+    internal AccountWriter CreateAccountWriter(ITransactionalDocumentStore? store = null) =>
+        new(Registry, store ?? TransactionalStore, Serializer, Config, Clock, Options, Relay, Metrics, Services, Logs);
+
     public static ActorContext Player(string playerId) =>
         new(playerId, ActorType.Player, playerId, "test", "dev", new HashSet<string>(), "corr-" + playerId);
 

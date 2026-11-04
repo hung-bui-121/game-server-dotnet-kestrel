@@ -24,14 +24,36 @@ namespace GameServer.Client
     }
 
     /// <summary>
+    /// A section the server could not send in its last answer (FG-029): <see cref="Code"/> is <c>AGGREGATE_VERSION_AHEAD</c> (a rolling
+    /// deploy; a later read usually works) or <c>AGGREGATE_UNREADABLE</c>. The store keeps the last good copy of the section.
+    /// </summary>
+    public sealed class UnavailableSectionState
+    {
+        public UnavailableSectionState(string id, string code, int codeNumber)
+        {
+            Id = id;
+            Code = code;
+            CodeNumber = codeNumber;
+        }
+
+        public string Id { get; }
+
+        public string Code { get; }
+
+        public int CodeNumber { get; }
+    }
+
+    /// <summary>
     /// Sections by aggregate id with their <c>rev</c> (SDK-03). Full updates replace a section unless they are older than what
     /// the client has; partial updates apply only on the exact next revision, otherwise the section is reported stale and the
     /// client refetches it. Sections are read through typed keys of registered tables (FG-028); ids no table knows are still
-    /// stored raw and never parsed.
+    /// stored raw and never parsed. A section the server lists as unavailable (FG-029) is marked in <see cref="Unavailable"/> and keeps
+    /// its last good copy until a later answer carries it again.
     /// </summary>
     public sealed class SectionStore
     {
         private readonly Dictionary<string, SectionState> _sections = new Dictionary<string, SectionState>(StringComparer.Ordinal);
+        private readonly Dictionary<string, UnavailableSectionState> _unavailable = new Dictionary<string, UnavailableSectionState>(StringComparer.Ordinal);
         private readonly Dictionary<string, SectionKey> _keys = new Dictionary<string, SectionKey>(StringComparer.Ordinal);
 
         /// <summary>Creates an empty store that knows the framework sections (<see cref="FrameworkSections.Table"/>).</summary>
@@ -43,8 +65,16 @@ namespace GameServer.Client
         /// <summary>Raised after a section changed (id).</summary>
         public event Action<string>? SectionChanged;
 
-        /// <summary>A <see cref="SectionChanged"/> handler threw; the store caught it.</summary>
+        /// <summary>Raised when a section becomes unavailable or available again (id); not raised by <see cref="Clear"/>.</summary>
+        public event Action<string>? AvailabilityChanged;
+
+        /// <summary>A <see cref="SectionChanged"/> or <see cref="AvailabilityChanged"/> handler threw; the store caught it.</summary>
         public event Action<Exception>? HandlerFailed;
+
+        /// <summary>Sections the last answers listed as unavailable, by id; their last good copy (if any) is still in the store.</summary>
+        public IReadOnlyDictionary<string, UnavailableSectionState> Unavailable => _unavailable;
+
+        public bool IsUnavailable(string id) => _unavailable.ContainsKey(id);
 
         public IReadOnlyCollection<SectionState> All => _sections.Values;
 
@@ -125,10 +155,11 @@ namespace GameServer.Client
 
         /// <summary>
         /// Stores a snapshot/login section unless the client already has a newer revision (a snapshot read before a command's
-        /// update can arrive after it). Login clears the store first.
+        /// update can arrive after it). Login clears the store first. The section is available again.
         /// </summary>
         public void Set(Section section)
         {
+            MarkAvailable(section.Id);
             if (_sections.TryGetValue(section.Id, out var current) && section.Rev < current.Rev)
             {
                 return;
@@ -137,10 +168,18 @@ namespace GameServer.Client
             Store(section.Id, section.Rev, section.Payload);
         }
 
-        /// <summary>Applies a <c>SectionUpdate</c>; false when the section is now stale and must be refetched.</summary>
+        /// <summary>
+        /// Applies a <c>SectionUpdate</c>; false when the section is now stale and must be refetched. An applied update makes the
+        /// section available again.
+        /// </summary>
         public bool Apply(SectionUpdate update)
         {
             _sections.TryGetValue(update.Id, out var current);
+            if (update.Full || (current != null && current.Rev == update.BaseRev && update.NewRev == update.BaseRev + 1))
+            {
+                MarkAvailable(update.Id);
+            }
+
             if (update.Full)
             {
                 // Retries/replays return the current aggregate (rev >= newRev); never go back in time.
@@ -161,12 +200,60 @@ namespace GameServer.Client
             return false;
         }
 
-        public void Clear() => _sections.Clear();
+        /// <summary>Removes every section and every unavailable mark (no events).</summary>
+        public void Clear()
+        {
+            _sections.Clear();
+            _unavailable.Clear();
+        }
+
+        /// <summary>
+        /// A same-player login (FG-029, research R12): removes every section except <paramref name="keep"/>, whose last good copies
+        /// stay because the login lists them as unavailable; marks are cleared (the login marks again).
+        /// </summary>
+        internal void ClearExcept(ICollection<string> keep)
+        {
+            foreach (var id in new List<string>(_sections.Keys))
+            {
+                if (!keep.Contains(id))
+                {
+                    _sections.Remove(id);
+                }
+            }
+
+            _unavailable.Clear();
+        }
+
+        /// <summary>Marks the sections an answer lists in <c>unavailable_sections</c>; the last good copy of each stays.</summary>
+        internal void MarkUnavailable(IEnumerable<UnavailableSection> sections)
+        {
+            foreach (var section in sections)
+            {
+                var known = _unavailable.TryGetValue(section.Id, out var current);
+                _unavailable[section.Id] = new UnavailableSectionState(section.Id, section.Code, section.CodeNumber);
+                if (!known || current!.Code != section.Code)
+                {
+                    Raise(AvailabilityChanged, section.Id);
+                }
+            }
+        }
+
+        private void MarkAvailable(string id)
+        {
+            if (_unavailable.Remove(id))
+            {
+                Raise(AvailabilityChanged, id);
+            }
+        }
 
         private void Store(string id, long rev, ByteString payload)
         {
             _sections[id] = new SectionState(id, rev, payload);
-            var handler = SectionChanged;
+            Raise(SectionChanged, id);
+        }
+
+        private void Raise(Action<string>? handler, string id)
+        {
             if (handler == null)
             {
                 return;

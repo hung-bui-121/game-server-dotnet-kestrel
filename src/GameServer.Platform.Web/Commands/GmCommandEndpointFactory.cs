@@ -44,9 +44,16 @@ public sealed record GmCommandResponse(
     string ConfigVersion,
     long ServerTimeUtcMs,
     JsonNode? Result,
-    IReadOnlyList<GmAggregateUpdate> Updates);
+    IReadOnlyList<GmAggregateUpdate> Updates)
+{
+    /// <summary>Aggregates this response cannot carry (a replay whose aggregate cannot be read now, FG-029); empty normally.</summary>
+    public IReadOnlyList<GmUnavailableAggregate> Unavailable { get; init; } = [];
+}
 
 public sealed record GmAggregateUpdate(string Id, long BaseRev, long NewRev, JsonNode? State);
+
+/// <summary>An aggregate a GM command response cannot carry, with the code a reader of it gets (wire-changes §4.2).</summary>
+public sealed record GmUnavailableAggregate(string Id, string Code);
 
 /// <summary>
 /// Maps GM command endpoints onto <see cref="ICommandRunner"/>: same receipt/idempotency/audit pipeline as Player
@@ -185,6 +192,7 @@ public static class GmCommandEndpointFactory
                 return Results.Json(BuildResponse(execution, services.GetRequiredService<IClock>()), GameServerJson.Options);
             })
             .WithMetadata(new CommandOperationMetadata(operation))
+            .Produces<GmCommandResponse>()
             .AsGmEndpoint(permission);
     }
 
@@ -199,7 +207,10 @@ public static class GmCommandEndpointFactory
             execution.Result.Length == 0 ? null : JsonNode.Parse(execution.Result),
             execution.Updates
                 .Select(u => new GmAggregateUpdate(u.AggregateId, u.BaseRev, u.NewRev, JsonSerializer.SerializeToNode(u.State, u.State.GetType(), GameServerJson.Options)))
-                .ToArray());
+                .ToArray())
+        {
+            Unavailable = execution.Unavailable.Select(f => new GmUnavailableAggregate(f.AggregateId, f.Code.Name)).ToArray(),
+        };
 
     private static TBody Deserialize<TBody>(byte[] body)
     {

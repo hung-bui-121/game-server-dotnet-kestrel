@@ -145,3 +145,105 @@ public sealed class IdentityLoginTests : IAsyncLifetime
         public ValueTask<GateResult> EvaluateAsync(HttpContext context) => ValueTask.FromResult(new GateResult(GateDecision.Maintenance));
     }
 }
+
+/// <summary>
+/// Slice 016 T039 (FR-003, FR-023, US3-2, US3-6, BC-3, wire-changes §2): the login sections are every client-visible section; a
+/// broken non-profile aggregate is listed and the login still succeeds (epoch + 1 once); a profile that cannot be loaded fails the
+/// login with its typed code and writes nothing, while a profile whose mapper throws is listed like any section.
+/// </summary>
+public sealed class IdentityLoginDegradationTests
+{
+    private const string ProfileMapperFails = "mapper fails";
+
+    [Fact]
+    public async Task The_login_sections_are_every_client_visible_section()
+    {
+        await using var host = await BrokenAggregateHost.StartAsync();
+
+        var login = await host.Client().LoginAsync(IdentityHttp.NewLocalId(), IdentityHttp.NewSecret());
+
+        var visible = host.Services.GetRequiredService<GameServer.Platform.Registry.ModuleRegistry>().Aggregates.Values
+            .Where(a => a.ClientVisible).Select(a => a.AggregateId).Order(StringComparer.Ordinal).ToArray();
+        login.Sections.Select(s => s.Id).ShouldBe(visible);
+        login.UnavailableSections.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task A_broken_aggregate_is_listed_and_the_login_succeeds_with_one_epoch_step()
+    {
+        await using var host = await BrokenAggregateHost.StartAsync();
+        var (localId, secret) = (IdentityHttp.NewLocalId(), IdentityHttp.NewSecret());
+        var first = await host.Client().LoginAsync(localId, secret);
+        BrokenDocuments.Seed(host.Store, BrokenReason.VersionAhead, first.PlayerId);
+
+        var login = await host.Client().LoginAsync(localId, secret);
+
+        login.Sections.Select(s => s.Id).ShouldNotContain(StartingStateAggregates.Starter);
+        login.UnavailableSections.ShouldBe([new UnavailableSection { Id = StartingStateAggregates.Starter, Code = "AGGREGATE_VERSION_AHEAD", CodeNumber = 24 }]);
+        StoredEpoch(host, login.PlayerId).ShouldBe(2);
+        var snapshot = await host.BearerClient(login.SessionToken).PostProtobufAsync("/api/v1/player/snapshot", new SnapshotRequest());
+        snapshot.StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task A_profile_whose_mapper_throws_is_listed_like_any_section()
+    {
+        await using var host = await BrokenAggregateHost.StartAsync(modules: b => b.ConfigureExtensions(e =>
+            e.ReplaceWireMapper<GameServer.Modules.Identity.ProfileState, GameServer.Modules.Identity.Protocol.V1.ProfileState>(
+                "profile",
+                state => state.DisplayName == ProfileMapperFails
+                    ? throw new InvalidOperationException("profile mapper failed (test marker).")
+                    : new GameServer.Modules.Identity.Protocol.V1.ProfileState { DisplayName = state.DisplayName, SessionEpoch = state.SessionEpoch },
+                o => o.Hidden("Ban", "Deleted", "Identities"))));
+        var (localId, secret) = (IdentityHttp.NewLocalId(), IdentityHttp.NewSecret());
+        var first = await host.Client().LoginAsync(localId, secret);
+        var key = ProfileKey(first.PlayerId);
+        var profile = host.Store.Peek(key)!;
+        profile["state"]!["displayName"] = ProfileMapperFails;
+        host.Store.Seed(key, profile);
+
+        var login = await host.Client().LoginAsync(localId, secret);
+
+        login.Sections.Select(s => s.Id).ShouldNotContain("profile");
+        login.UnavailableSections.ShouldBe([new UnavailableSection { Id = "profile", Code = "AGGREGATE_UNREADABLE", CodeNumber = 25 }]);
+        StoredEpoch(host, login.PlayerId).ShouldBe(2);
+    }
+
+    [Theory]
+    [InlineData(true, HttpStatusCode.ServiceUnavailable, "AGGREGATE_VERSION_AHEAD")]
+    [InlineData(false, HttpStatusCode.InternalServerError, "AGGREGATE_UNREADABLE")]
+    public async Task A_profile_that_cannot_be_loaded_fails_the_login_typed_and_writes_nothing(bool versionAhead, HttpStatusCode status, string code)
+    {
+        await using var host = await BrokenAggregateHost.StartAsync();
+        var (localId, secret) = (IdentityHttp.NewLocalId(), IdentityHttp.NewSecret());
+        var first = await host.Client().LoginAsync(localId, secret);
+        var key = ProfileKey(first.PlayerId);
+        var profile = host.Store.Peek(key)!;
+        if (versionAhead)
+        {
+            profile["schemaVersion"] = GameServer.Modules.Identity.IdentityAggregates.ProfileDescriptor.SchemaVersion + 1;
+        }
+        else
+        {
+            profile["state"] = new System.Text.Json.Nodes.JsonArray();
+        }
+
+        host.Store.Seed(key, profile);
+        var before = host.Store.Peek(key)!.ToJsonString();
+
+        var refused = await host.Client().PostLoginAsync(localId, secret);
+
+        refused.StatusCode.ShouldBe(status);
+        var error = await refused.ReadErrorAsync();
+        error.Code.ShouldBe(code);
+        error.RetryAfterMs.ShouldBe(versionAhead ? 1000 : 0);
+        error.Details.ShouldBe(new Dictionary<string, string> { ["aggregate"] = "profile" });
+        host.Store.Peek(key)!.ToJsonString().ShouldBe(before);
+        host.LogEntries.Count(e => e.Category == GameServer.Platform.Aggregates.AggregateReadFailures.LogCategory).ShouldBe(1);
+        host.LogEntries.Lines(typeof(ExceptionMiddleware).FullName!).ShouldNotContain(l => l.Contains(code, StringComparison.Ordinal));
+    }
+
+    private static GameServer.Platform.Persistence.DocumentKey ProfileKey(string playerId) => new("pa_profile", playerId);
+
+    private static long StoredEpoch(TestHost host, string playerId) => host.Store.Peek(ProfileKey(playerId))!["state"]!["sessionEpoch"]!.GetValue<long>();
+}

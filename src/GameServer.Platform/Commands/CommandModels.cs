@@ -1,5 +1,6 @@
 using GameServer.Actors;
 using GameServer.Errors;
+using GameServer.Platform.Aggregates;
 
 namespace GameServer.Platform.Commands;
 
@@ -34,7 +35,14 @@ public sealed record CommandExecution(
     IReadOnlyList<AggregateChange> Updates,
     byte[] Result,
     bool Replayed,
-    string ConfigVersion);
+    string ConfigVersion)
+{
+    /// <summary>
+    /// Client-visible aggregates this response cannot carry (FG-029): a replay whose aggregate cannot be read now. Never in
+    /// <see cref="Updates"/>; ordered by aggregate id.
+    /// </summary>
+    public IReadOnlyList<AggregateReadFailure> Unavailable { get; init; } = [];
+}
 
 /// <summary>Single entry point for state-changing commands (DAT-04, CMD-01..09).</summary>
 public interface ICommandRunner

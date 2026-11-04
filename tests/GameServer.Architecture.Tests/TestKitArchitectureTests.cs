@@ -34,6 +34,13 @@ public sealed class TestKitArchitectureTests
         "GameServer.Platform.Config.ConfigDeclarationRunner",
         "GameServer.Platform.Config.ConfigDeclarationResult",
         "GameServer.Platform.Config.CatalogBinding",
+
+        // The account initializer double (slice 016 T030, FR-017): the writer's view, the receipt builder and its size rule.
+        "GameServer.Platform.Commands.InitializerContext",
+        "GameServer.Platform.Commands.ReceiptBuilder",
+        "GameServer.Platform.Commands.ReceiptInputs",
+        "GameServer.Platform.Commands.CommitViolation",
+        "GameServer.Platform.Registry.RegisteredAccountInitializer",
     ];
 
     private static readonly string[] AllowedInternalMembers =
@@ -45,6 +52,10 @@ public sealed class TestKitArchitectureTests
         "GameServer.Platform.GameConfigStatus::.ctor",
         "GameServer.Platform.GameConfigStatus::PublishLoaded",
         "GameServer.Platform.GameConfigStatus::PublishFailed",
+
+        // The account initializer double (slice 016 T030): the initializers in run order and the label of their rule lines.
+        "GameServer.Platform.Registry.ModuleRegistry::get_AccountInitializers",
+        "GameServer.Platform.Commands.AccountCreation::InitializerOperation",
     ];
 
     /// <summary>
@@ -114,9 +125,10 @@ public sealed class TestKitArchitectureTests
         used.Where(u => !AllowedInternalTypes.Any(t => u == t || u.StartsWith(t + "::", StringComparison.Ordinal)) && !AllowedInternalMembers.Contains(u))
             .ShouldBeEmpty(
                 "GameServer.TestKit may use only CommandContext, CommitRules, the LoadedAggregate constructor, the config declaration " +
-                "engine, ModuleRegistry.ValidateConfig and the GameConfigStatus constructor and publish methods of GameServer.Platform's " +
-                "internals (InternalsVisibleTo for the command-context double, FR-025, the config check, FR-018, and TestGameConfigStatus, " +
-                "FG-023); anything else needs a review and a new entry here");
+                "engine, ModuleRegistry.ValidateConfig, the GameConfigStatus constructor and publish methods, and the account initializer " +
+                "view, receipt builder and initializer list of GameServer.Platform's internals (InternalsVisibleTo for the command-context " +
+                "double, FR-025, the config check, FR-018, TestGameConfigStatus, FG-023, and the initializer double, FR-017); anything " +
+                "else needs a review and a new entry here");
     }
 
     [Fact]

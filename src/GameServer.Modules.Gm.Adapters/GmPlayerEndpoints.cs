@@ -62,8 +62,21 @@ public sealed record GmDeletionView(
             record.PurgedAtUtc is { } purged ? AggregateDocumentSerializer.FormatTime(purged) : null);
 }
 
-/// <summary>A player as GM sees it; <see cref="Deletion"/> is null when the player never requested deletion.</summary>
-public sealed record GmPlayerView(string PlayerId, IReadOnlyList<GmAggregateView> Aggregates, GmDeletionView? Deletion);
+/// <summary>
+/// A player as GM sees it; <see cref="Deletion"/> is null when the player never requested deletion or when the profile cannot be
+/// read. <see cref="Unreadable"/> lists the stored aggregates that cannot be read (FG-029); they are not in <see cref="Aggregates"/>.
+/// </summary>
+public sealed record GmPlayerView(string PlayerId, IReadOnlyList<GmAggregateView> Aggregates, GmDeletionView? Deletion)
+{
+    /// <summary>Always present (empty when every aggregate reads), ordered by id (wire-changes §4.1).</summary>
+    public IReadOnlyList<GmUnreadableAggregate> Unreadable { get; init; } = [];
+}
+
+/// <summary>
+/// A stored aggregate GM cannot read (FG-029): the code a reader gets, the reason (<c>version_ahead</c>, <c>upgrade_failed</c>,
+/// <c>unreadable</c>), and the stored and code schema versions (0 stored when the envelope cannot be read).
+/// </summary>
+public sealed record GmUnreadableAggregate(string Id, string Code, string Reason, int StoredSchemaVersion, int CodeSchemaVersion);
 
 public sealed record GmPlayerSearchItem(string PlayerId, string DisplayName);
 
@@ -106,6 +119,7 @@ public static class GmPlayerEndpoints
                     ?? throw new GameServerException(CoreErrorCodes.NotFound, "No player for this mapping key.");
                 return GmHttp.Json(await LookupAsync(http, playerId));
             })
+            .Produces<GmPlayerView>()
             .AsGmEndpoint(GmPermissions.PlayerRead);
 
         routes.MapDeclared(GmRoutes.PlayerSearch, async (HttpContext http) =>
@@ -130,6 +144,7 @@ public static class GmPlayerEndpoints
             .AsGmEndpoint(GmPermissions.PlayerRead);
 
         routes.MapDeclared(GmRoutes.Player, async (HttpContext http, string playerId) => GmHttp.Json(await LookupAsync(http, ValidPlayerId(playerId))))
+            .Produces<GmPlayerView>()
             .AsGmEndpoint(GmPermissions.PlayerRead);
 
         routes.MapDeclared(GmRoutes.PlayerReceipts, async (HttpContext http, string playerId) =>
@@ -171,8 +186,11 @@ public static class GmPlayerEndpoints
     private static async Task<GmPlayerView> LookupAsync(HttpContext http, string playerId)
     {
         var services = http.RequestServices;
-        var aggregates = await services.GetRequiredService<PlayerSnapshotReader>().ReadAllAsync(playerId, http.RequestAborted);
-        if (!aggregates.Any(a => a.Exists))
+        var snapshot = await services.GetRequiredService<PlayerSnapshotReader>().ReadAllAvailableAsync(playerId, http.RequestAborted);
+        var aggregates = snapshot.Sections;
+
+        // A broken document still exists: such a player is not purged (wire-changes §4.1).
+        if (!aggregates.Any(a => a.Exists) && snapshot.Unavailable.Count == 0)
         {
             // A purged player has no aggregate left but a purge record: 200 without data (PRIV-01, D7).
             var record = await services.GetRequiredService<AccountDeletionRecords>().GetAsync(playerId, http.RequestAborted)
@@ -181,9 +199,14 @@ public static class GmPlayerEndpoints
         }
 
         var showPii = services.GetRequiredService<ActorContextAccessor>().GetActor(http).HasPermission(GmPermissions.PlayerReadPii);
-        var profile = aggregates.Single(a => a.Descriptor.AggregateId == IdentityAggregates.Profile);
-        var deletion = profile.Exists ? GmDeletionView.Of((ProfileState)profile.State) : null;
-        return new GmPlayerView(playerId, aggregates.Select(a => View(a, showPii)).ToArray(), deletion);
+        var profile = aggregates.SingleOrDefault(a => a.Descriptor.AggregateId == IdentityAggregates.Profile);
+        var deletion = profile is { Exists: true } ? GmDeletionView.Of((ProfileState)profile.State) : null;
+        return new GmPlayerView(playerId, aggregates.Select(a => View(a, showPii)).ToArray(), deletion)
+        {
+            Unreadable = snapshot.Unavailable
+                .Select(f => new GmUnreadableAggregate(f.AggregateId, f.Code.Name, f.ReasonName, f.StoredSchemaVersion, f.CodeSchemaVersion))
+                .ToArray(),
+        };
     }
 
     private static GmAggregateView View(LoadedAggregate aggregate, bool showPii)

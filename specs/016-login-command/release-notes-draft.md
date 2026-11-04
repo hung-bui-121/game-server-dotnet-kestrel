@@ -31,16 +31,83 @@ members; no existing field changes meaning (API-03); the Unity package stays `0.
   decision; a returning login is the same transaction as before (one read, one replace). Login store failures answer
   typed codes (BC-10).
 - **SDK:** no source change; `IsNewPlayer` is a generated member. Against a server before 016 it reads `false`.
-- The login sections are unchanged: every client-visible section with its `rev`, so a client can boot on the login
-  answer without a second snapshot (unavailable sections are added at the FG-029 checkpoint).
+- The login sections are every client-visible section with its `rev`, so a client can boot on the login answer without a
+  second snapshot. A section the server cannot read is left out and listed in `unavailable_sections` (FG-029 below).
 
 ## FG-015 — account initializers
 
-_Filled at the US2 checkpoint (T032)._
+- **API (Core, `GameServer.Accounts`):** `IAccountInitializer.InitializeAsync(ICommandContext) → ValueTask<ErrorCode?>`
+  (null = OK), registered with `AccountInitializerRegistration.Of<T>(name, touches, maxClaimMarkers = 0)` in the new
+  `ModuleDescriptor.AccountInitializers`. An initializer is created per transaction attempt from DI (constructor
+  injection, like a command handler) and must be pure over the context: the transaction may run it several times.
+- **When it runs:** only in the transaction attempt of a first login that finds no profile, in module registration order
+  then list order, over one shared context (initializers that declare the same aggregate see each other's writes). An
+  existing account never runs an initializer, and accounts created before an initializer was registered are not seeded
+  later (no backfill, D6): keep the old game command for them or reset pre-launch data.
+- **Scope per initializer:** each one sees its own view: `Get`/`Set` outside its `Touches` throw the runner's DAT-11/DAT-09
+  message naming it (`Command 'identity.create_account (initializer {name})' wrote aggregate '…' …`), and its claims count
+  against its own `maxClaimMarkers`.
+- **Budget (D4, checked at startup, BC-9):** `profile` + the union of all initializers' touches ≤ 4 aggregates
+  (`CommandDescriptor.MaxTouches`), claim markers summed over all initializers ≤ 2, names unique, `profile` never touched,
+  no module command named `identity.create_account`.
+- **Receipt only with effects:** when an initializer changed an aggregate, reserved a claim or added an outbox entry, the
+  creation writes one receipt `identity.create_account` (actor type `system`, actor id = the player, a random request id
+  per login call, empty result, schema versions of the touched aggregates). Its outbox (ledger entries of grants) is relayed
+  like a command's. Without effects, the profile is written alone, exactly as before. The player reads the receipt through
+  `GET /api/v1/player/receipts/{id}`; the id is in the Information line `Account {PlayerId} created: {n} initializers,
+  receipt {ReceiptId|none}.` and in the GM receipt list (it is not on the wire, plan N3).
+- **Every commit rule before the first staged write:** aggregate sizes, audit (0 entries), receipt size. A failing
+  initializer — a returned code, a throw (`OperationCanceledException` excluded) or a rule — leaves nothing (no profile,
+  aggregate, claim or receipt), is logged once in category `GameServer.Accounts` (`… returned {Code}.`, `… threw
+  {ExceptionType}.` or `{RuleLine}`, each ending `Nothing was created; the next login retries.`; never an exception
+  message), is counted in `account_initializer_failures_total{initializer, result=rejected|threw|rule}` (a receipt over its
+  limit uses `initializer="*"` and also counts `command_output_too_large_total{operation="identity.create_account",
+  part="receipt"}`) and `account_creations_total{result="failed"}`, and the login answers 500 `INTERNAL` (D15). The next
+  login of the same credential retries the creation.
+- **Metrics:** `account_creations_total{result=created|failed}` and `account_initializer_failures_total`; the creation also
+  records `receipt_size_bytes`, `aggregate_size_bytes` and `txn_*` with operation `identity.create_account`.
+- **Kit:** `CommandContextDouble.ForAccountInitializer(name, modules)` runs an initializer host-free behind the writer's view
+  (system actor for `p_test`, touches at their default state, operation `identity.create_account`), and
+  `CheckAccountCreation()` returns the writer's own rule lines (aggregate size, audit, receipt size measured with the
+  writer's receipt builder).
+- **Measured (SC-002, SC-003):** 20 concurrent first logins of one credential plus 5 retries after a lost response create
+  one account, one receipt, one ledger entry and exactly one `is_new_player = true` on the in-memory, File and Couchbase
+  stores (Couchbase: every race loser became a normal login in its second round, 0 store retries). On local Couchbase EE
+  7.6.12 a first login with an initializer over three aggregates and one grant has p95 14.36 ms against 9.09 ms without
+  (+5.27 ms, budget 20 ms); returning logins p95 5.50 ms with the initializer registered against 4.85 ms without.
 
 ## FG-029 — degraded reads of a broken aggregate
 
-_Filled at the US3 checkpoint (T046)._
+- **Two codes:** `AGGREGATE_VERSION_AHEAD` (24, HTTP 503, retryable, `retry_after_ms = 1000`: the stored `schemaVersion` is
+  newer than the code's — a rolling deploy) and `AGGREGATE_UNREADABLE` (25, HTTP 500: an upgrader is missing or threw, an
+  envelope field has the wrong type, the state is missing, `null`, not a JSON object or does not deserialize, or the wire
+  mapper threw). Details carry only `aggregate`; the exception has no inner exception.
+- **Degrading sites (200):** the snapshot (all sections or an explicit list), the login (a non-profile aggregate), the replay
+  of a committed command, the command response when a wire mapper throws after the commit (the commit stands), and the GM
+  player view. The broken section is left out — never sent with an empty payload — and listed in `unavailable_sections`
+  (`{id, code, code_number}`, ordered by id; GM: `unreadable[]` with `id`, `code`, `reason`, `storedSchemaVersion`,
+  `codeSchemaVersion`, and `unavailable[]` in the GM command response). Every other section is byte-identical to an
+  undamaged read.
+- **Typed refusals:** a command that touches or reads a broken aggregate answers the typed envelope before its handler and
+  writes nothing; GM commands and the GM target validator answer the GM JSON error with the code; `ReadOneAsync` and the
+  other throwing readers throw it.
+- **Broken profile:** the login, every authenticated request (bearer) and the provider login answer the typed code (503 with
+  the retry delay for a version-ahead profile); the profile is never cached broken, so a repaired document serves the next
+  request. A profile whose *mapper* throws is only listed (the server still holds the state). The GM view lists a broken
+  profile and gives `deletion = null`; the player still exists. The account purge cannot begin for a broken profile
+  (reported as today: `Purge of player {id} could not begin (GameServer.Errors.GameServerException); retried next run.`); a
+  broken non-profile aggregate never blocks a deletion.
+- **One log line and one metric per failed read:** category `GameServer.Aggregates`, Warning `Aggregate {AggregateId} of
+  player {PlayerId} is unavailable: version_ahead (stored schemaVersion {Stored}, code {Code}). Deploy code that reads it
+  before writing it (PCR platform §6).`, Error `… is unavailable: {Reason} ({ExceptionType}).` otherwise; never state content
+  or an exception message. `aggregate_read_failures_total{aggregateId, reason}`. The error middleware writes no second line
+  for these, and "Unhandled exception." is never reached (SC-004 matrix: four reasons × nine readers).
+- **SDK:** `SectionStore.Unavailable` / `IsUnavailable(id)` / event `AvailabilityChanged` (new type
+  `UnavailableSectionState`). A marked section keeps its last good copy; the next `Set`/`Apply` of it clears the mark. A
+  login for the same player keeps the copies of the sections it lists as unavailable; another player's login starts from
+  an empty store. `AGGREGATE_VERSION_AHEAD` is retried by the existing retryable rule with the same bytes and request id.
+- **Deploy order rule kept** (PCR platform §6): deploy code that reads a new schema version everywhere before any instance
+  writes it; the degradation only keeps the other sections and the login working during the window.
 
 ## FG-016 — command limits and `COMMAND_OUTPUT_TOO_LARGE`
 
@@ -59,13 +126,13 @@ tests, or measured where noted).
 | --- | --- | --- | --- | --- |
 | BC-1 | A result or receipt over its limit is the business rejection `COMMAND_OUTPUT_TOO_LARGE` (HTTP 200, nothing commits) instead of a 500 `INTERNAL` (FR-030, FR-031) | Clients and tests that expect 500 for an oversized command; dashboards counting `command_results_total{code="INTERNAL"}` for it | Command response with the new code and details `part`/`bytes`/`limit`; metric `command_output_too_large_total{operation, part}`; Error log line (pending T054) | Treat the code as a design bug of the command; raise the limit (FR-032) or return less |
 | BC-2 | `GameServer:Commands:*` values are validated at startup (FR-032); `MaxAggregatesPerGame` above 16 is refused | Deployments with out-of-range values (silently accepted before) | Startup exit 1, one line per setting naming the range (pending T054) | Use a value in range |
-| BC-3 | **Snapshot and login semantics (PCR platform §4, API-10):** a snapshot or login no longer always holds every client-visible section; an unreadable one is absent and listed in the new unavailable field (FR-022, FR-023) | Client code that assumes every section is present after login or snapshot (old SDKs see the section missing, where the whole call used to fail) | A section missing from the SDK's store; the new list in new SDKs (pending T046) | Check the unavailable list (or a missing section) and show a recoverable state |
-| BC-4 | A command or replay that touches or reads an unreadable aggregate answers `AGGREGATE_VERSION_AHEAD` (503, retryable) or `AGGREGATE_UNREADABLE` (500) instead of 500 `INTERNAL`; a broken `profile` fails login and authenticated requests with these codes (FR-020, FR-023, FR-024). PCR §6 "newer than code → 500 `INTERNAL`" changes | Clients and tests that match `INTERNAL`; SDKs now retry the version-ahead case (retryable) | New codes in error envelopes and `http_errors_total{code}` (pending T046) | Match the new codes; keep the deploy rule of PCR §6 |
+| BC-3 | **Snapshot and login semantics (PCR platform §4, API-10):** a snapshot or login no longer always holds every client-visible section; an unreadable one is absent and listed in the new unavailable field (FR-022, FR-023) | Client code that assumes every section is present after login or snapshot (old SDKs see the section missing, where the whole call used to fail) | `unavailable_sections` entry `{id, code, code_number}` (`AGGREGATE_VERSION_AHEAD` 24 / `AGGREGATE_UNREADABLE` 25), HTTP 200; the section absent from `sections` (old SDKs see only that) | Check the unavailable list (or a missing section) and show a recoverable state |
+| BC-4 | A command or replay that touches or reads an unreadable aggregate answers `AGGREGATE_VERSION_AHEAD` (503, retryable) or `AGGREGATE_UNREADABLE` (500) instead of 500 `INTERNAL`; a broken `profile` fails login and authenticated requests with these codes (FR-020, FR-023, FR-024). PCR §6 "newer than code → 500 `INTERNAL`" changes | Clients and tests that match `INTERNAL`; SDKs now retry the version-ahead case (retryable) | Error envelope 503 `AGGREGATE_VERSION_AHEAD` (`retryable`, `Retry-After: 1`, `retry_after_ms = 1000`) or 500 `AGGREGATE_UNREADABLE`, details `{"aggregate": id}`; `http_errors_total{code}` and `command_results_total{code}` with the new codes; nothing written; the replay of a command committed before the damage stays 200 and lists the aggregate | Match the new codes; keep the deploy rule of PCR §6 |
 | BC-5 | `AggregateDocumentSerializer.Load` and `PlayerSnapshotReader.ReadAsync/ReadAllAsync/ReadOneAsync` throw a `GameServerException` with `AGGREGATE_VERSION_AHEAD` or `AGGREGATE_UNREADABLE` (details `aggregate`) instead of `GameServerException(INTERNAL)`, `JsonException`, `InvalidOperationException`, `FormatException`, `OverflowException` or an upgrader's own exception. Signatures are unchanged; the additive `TryLoad`, `ReadAvailableAsync` and `ReadAllAvailableAsync` return the failures instead of throwing (FR-021; plan N1). A stored `state` that is missing, `null` or not a JSON object was silently read as the default state; it is now `AGGREGATE_UNREADABLE` (T004) | Game or test code that calls these readers directly and catches the old exception types | Different exception type and code at run time (no compile error) | Catch `GameServerException` (or use the degrading members) |
-| BC-6 | A first login runs every registered account initializer in the creation transaction (FR-011): new accounts start with seeded aggregates at `rev ≥ 1`, one `identity.create_account` receipt and the ledger entries of the grants, **when an initializer changes something** (no receipt otherwise) | Tests and tools that assert a new player's sections are defaults at `rev = 0` when a module registers an initializer with effects (the sample game does only when `account.json` exists, FR-050) | Different sections and revs in the first login response; one creation receipt per new account (pending T032) | Assert the seeded state; only modules that register an initializer change anything |
+| BC-6 | A first login runs every registered account initializer in the creation transaction (FR-011): new accounts start with seeded aggregates at `rev ≥ 1`, one `identity.create_account` receipt and the ledger entries of the grants, **when an initializer changes something** (no receipt otherwise) | Tests and tools that assert a new player's sections are defaults at `rev = 0` when a module registers an initializer with effects (the sample game does only when `account.json` exists, FR-050) | Seeded sections at `rev = 1` in the first login answer (`is_new_player = true`); one `identity.create_account` receipt (actor type `system`, actor id = player) and its ledger entries per new account; Information line `Account {PlayerId} created: {n} initializers, receipt {ReceiptId}.` | Assert the seeded state; only modules that register an initializer change anything |
 | BC-7 | `LoginResult` gains the init properties `IsNewPlayer` (T018) and `Unavailable` (FR-002, FR-023; plan N2). `LoginCompletion.CompleteAsync`, `GuestLoginService.LoginAsync` and `ProviderLoginService.LoginAsync` gain a trailing optional `string? correlationId = null` (Planning note 8; the services pass the request's `X-Request-Id` correlation id down to the creation receipt). `LoginCompletion` takes `IAccountWriter` instead of `IPlayerAggregateWriter` (DI-created) | Code that reads `LoginResult` or calls these methods | None at compile time (additive init properties, optional parameters); a binary built against the old signatures must be rebuilt | Read the new values where needed |
-| BC-8 | **SDK semantics (PCR unity-sdk):** an unavailable section keeps its last good copy and is marked; `AGGREGATE_VERSION_AHEAD` is retried by the SDK (retryable) (FR-027) | Game code that reads every section after login without checking | The mark and event; a few retries before an exception on the version-ahead code (pending T046) | Read the unavailable set; handle the codes |
-| BC-9 | Account initializer declarations are validated at startup (FR-015) | Modules that register an initializer with a bad declaration (new API, so only new code) | Startup exit 1, one line per fault (pending T032) | Fix the declaration |
+| BC-8 | **SDK semantics (PCR unity-sdk):** an unavailable section keeps its last good copy and is marked; `AGGREGATE_VERSION_AHEAD` is retried by the SDK (retryable) (FR-027) | Game code that reads every section after login without checking | `Sections.IsUnavailable(id)` and `Sections.Unavailable[id].Code`, event `AvailabilityChanged(id)`; the last good copy stays in the store; the version-ahead code is retried (1000 ms delay) before a `GameServerException` | Read the unavailable set; handle the codes |
+| BC-9 | Account initializer declarations are validated at startup (FR-015) | Modules that register an initializer with a bad declaration (new API, so only new code) | Startup exit 1 (serve and provision), one line per fault in the aggregated report after the command lines, e.g. `[module m] account initializer 'm.x' touches 'profile'. Fix: remove it; the framework writes the profile of a new account.` and `[deployment] account creation touches 5 aggregates (profile + …); max is 4. …` (errors-and-report-lines §4.1) | Fix the declaration |
 | BC-10 | A login whose transaction ends ambiguous, expires or loses every race round answers `COMMIT_UNKNOWN_RETRY` (503) or `CONCURRENT_UPDATE` (409, retryable) instead of a 500 `INTERNAL` (FR-014; plan N11, architect decision) | Clients and dashboards that count login 500s | Error envelope instead of the raw 500: an ambiguous commit answers 503 `COMMIT_UNKNOWN_RETRY` (`retryable`, `retry_after_ms = 1000`); an expired transaction or three lost insert races answer 409 `CONCURRENT_UPDATE` (`retryable`, `retry_after_ms = 200`); a failed transaction stays 500 `INTERNAL`, now logged as `Request failed with INTERNAL: Login transaction failed for player {id}.` instead of `Unhandled exception.`. Nothing is written in any of these cases (`AccountWriterTests`, T017) | Handle them like any retryable code; the SDK still never retries a login after an unknown outcome |
 | BC-11 | `CommandResponse.details` (new field 11) and the GM command response's `details` carry the details of every HTTP 200 rejection, module codes included; the XML doc of `ICommandOutcome.Details` changes from "not sent" to "sent" (FR-030; plan N5, architect decision) | Modules that pass details to `CommandOutcome.Reject` with an HTTP 200 code | Details visible to the client (pending T054) | Keep rejection details safe to show (they already must be, as for non-200 codes) |
 
@@ -119,7 +186,9 @@ colon (`FRAMEWORK-GAP FG-NNN`). Verified in a temp clone by T078.
 ## Rolling deploy
 
 - The deploy order rule of PCR platform §6 stays: deploy code that reads a new `schemaVersion` everywhere before any
-  instance writes it.
+  instance writes it. An old instance that meets a newer document logs one Warning line per read
+  (`… is unavailable: version_ahead (stored schemaVersion {n}, code {m}). Deploy code that reads it before writing it …`) and
+  counts `aggregate_read_failures_total{reason="version_ahead"}`: alert on it during a deploy.
 - During a rolling deploy an old instance that reads an aggregate written by a new one no longer answers 500: the snapshot
   and the login leave the section out and list it (`AGGREGATE_VERSION_AHEAD`), and a command touching it answers 503
   `AGGREGATE_VERSION_AHEAD` (retryable, 1000 ms), which the SDK retries. A broken `profile` fails the login and every
@@ -181,3 +250,7 @@ Each was applied as an architect decision; owner confirmation pending.
   safe in the handler (T040); other handler exceptions (for example a store timeout in session validation) keep the
   pre-existing behaviour on such hosts. Hosts with Identity and GM, or with test authentication, are not affected.
 - 015 T058 (Android/iOS device run) is still open and gates the tag.
+- **Creation failure logging (T026).** A failing initializer writes its one `GameServer.Accounts` line; the 500 `INTERNAL` the
+  login answers is also logged by the error middleware as `Request failed with INTERNAL: Account creation of player {id}
+  failed ({result}, initializer {name}).` (no exception message, no inner exception). Ops see two lines for one failed
+  creation: the creation line carries the cause.

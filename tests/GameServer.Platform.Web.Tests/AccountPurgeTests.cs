@@ -53,9 +53,20 @@ public abstract class AccountPurgeTests
     /// <summary>The store each host of this class runs on (a host sharing another's store keeps that store).</summary>
     protected abstract TestStoreKind StoreKind { get; }
 
-    private Task<TestHost> StartAsync(Action<Dictionary<string, string?>>? settings = null, InMemoryDocumentStore? store = null, FakeClock? clock = null) =>
+    private Task<TestHost> StartAsync(
+        Action<Dictionary<string, string?>>? settings = null,
+        InMemoryDocumentStore? store = null,
+        FakeClock? clock = null,
+        StartingStateBehaviour? initializer = null) =>
         SampleTestHost.StartAsync(
-            modules: b => GameHttp.FullGame(b.AddModule<GmModule>()),
+            modules: b =>
+            {
+                GameHttp.FullGame(b.AddModule<GmModule>());
+                if (initializer is not null)
+                {
+                    b.AddModule(new StartingStateModule());
+                }
+            },
             settings: s =>
             {
                 s["Identity:SessionSlidingDays"] = "60";
@@ -63,6 +74,13 @@ public abstract class AccountPurgeTests
             },
             store: store,
             clock: clock,
+            services: s =>
+            {
+                if (initializer is not null)
+                {
+                    s.AddSingleton(initializer);
+                }
+            },
             storeKind: StoreKind);
 
     private static ProviderCredential Pgs(string id) => new() { PlayGames = new PlayGames { ServerAuthCode = FakeIdentityAdapter.Prefix + id } };
@@ -682,6 +700,99 @@ public abstract class AccountPurgeTests
         Record(host, older.PlayerId).ShouldBeNull(); // not processed in this run
         listener.RecordObservableInstruments();
         overdue.ShouldContain(9_877);
+    }
+
+    /// <summary>
+    /// Slice 016 T028 (FR-011): a player seeded by an account initializer is purged like any other: the seeded aggregates are
+    /// removed, the creation receipt is anonymized in place (key kept, 010 B1) and its ledger entry follows the anonymous id.
+    /// </summary>
+    [Fact]
+    public async Task A_player_seeded_at_creation_is_purged_with_its_seeded_aggregates_and_creation_receipt()
+    {
+        await using var host = await StartAsync(initializer: StartingStateBehaviour.Grant(100));
+        var login = await host.Client().LoginAsync(IdentityHttp.NewLocalId(), IdentityHttp.NewSecret());
+        login.IsNewPlayer.ShouldBeTrue();
+        var creation = host.Store.All(ReceiptDocument.Collection)
+            .Single(d => d.Content["playerId"]?.GetValue<string>() == login.PlayerId && d.Content["operation"]?.GetValue<string>() == AccountCreation.Operation);
+        (await RequestDeletionAsync(host, login.SessionToken)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        host.Clock.Advance(Grace + TimeSpan.FromSeconds(1));
+
+        (await RunPurgeAsync(host)).ShouldBe(JobRunResult.Completed);
+
+        host.Store.Peek(new DocumentKey("pa_" + EconomyAggregates.Wallet, login.PlayerId)).ShouldBeNull();
+        host.Store.Peek(new DocumentKey("pa_" + StartingStateAggregates.Starter, login.PlayerId)).ShouldBeNull();
+        var receipt = host.Store.Peek(creation.Key).ShouldNotBeNull();
+        var anonymousId = receipt["playerId"]!.GetValue<string>();
+        anonymousId.ShouldMatch(AnonymousIdPattern);
+        receipt["actorId"]!.GetValue<string>().ShouldBe(anonymousId);
+        receipt["requestId"]!.GetValue<string>().ShouldBeEmpty();
+        receipt["correlationId"]!.GetValue<string>().ShouldBeEmpty();
+        var ledger = Owned(host, EconomyOperations.LedgerCollection, anonymousId).ShouldHaveSingleItem();
+        ledger["receiptId"]!.GetValue<string>().ShouldBe(receipt["receiptId"]!.GetValue<string>());
+        Owned(host, EconomyOperations.LedgerCollection, login.PlayerId).ShouldBeEmpty();
+        ReproducibleReceiptKeys(host, login.PlayerId, anonymousId).ShouldBeEmpty();
+    }
+
+    /// <summary>Slice 016 T028: a login that waits until the purge removed the account never runs the initializer (anchor first).</summary>
+    [Fact]
+    public async Task A_login_racing_the_purge_with_an_initializer_answers_account_deleted_and_seeds_nothing()
+    {
+        var behaviour = StartingStateBehaviour.Grant(100);
+        await using var host = await StartAsync(initializer: behaviour);
+        var (localId, secret) = (IdentityHttp.NewLocalId(), IdentityHttp.NewSecret());
+        var login = await host.Client().LoginAsync(localId, secret);
+        (await RequestDeletionAsync(host, login.SessionToken)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        host.Clock.Advance(Grace + TimeSpan.FromSeconds(1));
+        var invocations = behaviour.Invocations;
+        var completion = host.Services.GetRequiredService<LoginCompletion>();
+        var purged = JobRunResult.NotDue;
+        completion.AfterMappingRead = async _ =>
+        {
+            completion.AfterMappingRead = null;
+            purged = await RunPurgeAsync(host);
+        };
+
+        var refused = await host.Client().PostLoginAsync(localId, secret);
+
+        purged.ShouldBe(JobRunResult.Completed);
+        refused.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await refused.ReadErrorAsync()).Code.ShouldBe("ACCOUNT_DELETED");
+        behaviour.Invocations.ShouldBe(invocations);
+        foreach (var collection in new[] { IdentityAggregates.ProfileDescriptor.Collection, "pa_" + EconomyAggregates.Wallet, "pa_" + StartingStateAggregates.Starter })
+        {
+            host.Store.Peek(new DocumentKey(collection, login.PlayerId)).ShouldBeNull(collection);
+        }
+    }
+
+    /// <summary>
+    /// Slice 016 T044 (FG-029, research R5 table): a profile that cannot be read stops the purge at its begin step, reported as
+    /// today (one line, step metric) and retried; a broken non-profile aggregate never blocks a deletion (removed raw).
+    /// </summary>
+    [Fact]
+    public async Task A_broken_profile_fails_the_purge_begin_and_a_broken_aggregate_is_removed()
+    {
+        var failures = new ConcurrentQueue<(string Name, long Value, string? Tag)>();
+        using var listener = PurgeMetrics(failures);
+        await using var host = await StartAsync(initializer: StartingStateBehaviour.Nothing());
+        var brokenProfile = await host.Client().LoginAsync(IdentityHttp.NewLocalId(), IdentityHttp.NewSecret());
+        var brokenStarter = await host.Client().LoginAsync(IdentityHttp.NewLocalId(), IdentityHttp.NewSecret());
+        (await RequestDeletionAsync(host, brokenProfile.SessionToken)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await RequestDeletionAsync(host, brokenStarter.SessionToken)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        var profileKey = new DocumentKey(IdentityAggregates.ProfileDescriptor.Collection, brokenProfile.PlayerId);
+        var damaged = (JsonObject)host.Store.Peek(profileKey)!.DeepClone();
+        damaged["schemaVersion"] = IdentityAggregates.ProfileDescriptor.SchemaVersion + 1;
+        host.Store.Seed(profileKey, damaged);
+        var starterKey = BrokenDocuments.Seed(host.Store, BrokenReason.VersionAhead, brokenStarter.PlayerId);
+        host.Clock.Advance(Grace + TimeSpan.FromSeconds(1));
+
+        (await RunPurgeAsync(host)).ShouldBe(JobRunResult.Completed);
+
+        host.Store.Peek(profileKey).ShouldNotBeNull();
+        Record(host, brokenProfile.PlayerId).ShouldBeNull();
+        host.Logs.ShouldContain(l => l.Contains($"Purge of player {brokenProfile.PlayerId} could not begin (GameServer.Errors.GameServerException)", StringComparison.Ordinal));
+        failures.ShouldContain(m => m.Name == "account_purge_step_failures_total" && m.Tag == "begin");
+        host.Store.Peek(starterKey).ShouldBeNull();
+        AccountDeletionRecord.FromJson(Record(host, brokenStarter.PlayerId)!).State.ShouldBe(AccountDeletionState.Purged);
     }
 
     private static Task<PurgeTicket?> BeginAsync(TestHost host, string playerId, long token)

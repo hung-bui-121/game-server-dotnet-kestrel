@@ -437,14 +437,22 @@ public sealed class CommandRunner(
             visible.Select(x => AggregateDocumentSerializer.KeyFor(x.Descriptor!, receipt.PlayerId)).ToArray(),
             cancellationToken);
 
-        // Current state with rev >= committed newRev, full = true (CMD-04).
-        var updates = visible
-            .Select((x, i) =>
+        // Current state with rev >= committed newRev, full = true (CMD-04). An aggregate that cannot be read now is listed instead
+        // (FG-029): the committed result is still the answer.
+        var updates = new List<AggregateChange>(visible.Length);
+        var unavailable = new List<AggregateReadFailure>();
+        for (var i = 0; i < visible.Length; i++)
+        {
+            var (committed, descriptor) = visible[i];
+            if (serializer.TryLoad(descriptor!, receipt.PlayerId, documents[i], out var current, out var failure))
             {
-                var current = serializer.Load(x.Descriptor!, receipt.PlayerId, documents[i]);
-                return new AggregateChange(x.Committed.AggregateId, x.Committed.NewRev - 1, current.Rev, current.State);
-            })
-            .ToArray();
+                updates.Add(new AggregateChange(committed.AggregateId, committed.NewRev - 1, current.Rev, current.State));
+            }
+            else
+            {
+                unavailable.Add(failure);
+            }
+        }
 
         var code = registry.Errors.FindByName(receipt.ResultCode);
         if (code is null)
@@ -460,7 +468,10 @@ public sealed class CommandRunner(
             code = CoreErrorCodes.Ok;
         }
 
-        return new CommandExecution(code, receipt.ReceiptId, updates, Convert.FromBase64String(receipt.ResultCompact), true, config.ConfigVersion);
+        return new CommandExecution(code, receipt.ReceiptId, updates, Convert.FromBase64String(receipt.ResultCompact), true, config.ConfigVersion)
+        {
+            Unavailable = unavailable.OrderBy(f => f.AggregateId, StringComparer.Ordinal).ToArray(),
+        };
     }
 
     private bool IsInReplayWindow(ReceiptDocument receipt, DateTimeOffset now) =>

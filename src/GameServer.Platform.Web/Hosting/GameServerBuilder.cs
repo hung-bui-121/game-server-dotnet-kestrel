@@ -183,7 +183,11 @@ public static class GameServerBuilderExtensions
         services.AddSingleton(registry);
         services.TryAddSingleton<IClock, GameServer.Time.SystemClock>();
         services.AddSingleton<PlatformMetrics>();
-        services.AddSingleton<AggregateDocumentSerializer>();
+        services.AddSingleton<AggregateReadFailures>();
+        services.AddSingleton(sp => new AggregateDocumentSerializer(
+            sp.GetRequiredService<GameServerOptions>(),
+            sp.GetRequiredService<PlatformMetrics>(),
+            sp.GetRequiredService<AggregateReadFailures>()));
         services.AddSingleton<PerPlayerCommandLimiter>();
         services.AddSingleton<ICommandRunner, CommandRunner>();
         services.AddSingleton<IOutboxRelay, OutboxRelay>();
@@ -227,6 +231,7 @@ public static class GameServerBuilderExtensions
         // The GetConfig bundle and the startup config line's counts, published by the config phase (R11, data-model §5.6).
         services.AddSingleton<GameServer.Platform.Web.Config.ConfigPhaseSummary>();
         services.AddSingleton<AggregateWireMapperRegistry>();
+        services.AddSingleton<SectionWriter>();
 
         // FG-026: the route and section catalog, built on first use from registrations only (export mode, the endpoint check).
         var hostRoutes = new HostRouteDeclarations();

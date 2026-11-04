@@ -112,6 +112,7 @@ public sealed partial class ModuleRegistry
         ValidateModules(errors);
         ValidateAggregates(options, errors);
         ValidateCommands(options, errors);
+        ValidateAccountInitializers(errors);
         ValidateErrorCodes(errors);
         ValidateOutbox(errors);
         ValidateDeletion(errors);

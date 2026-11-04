@@ -169,6 +169,7 @@
   GameServer.Client.SectionStore :: GameServer.Client.SectionRead TryRead<>(System.String id, Google.Protobuf.IMessage& message)
   GameServer.Client.SectionStore :: System.Boolean Apply<>(GameServer.Protocol.Core.V1.SectionUpdate update)
   GameServer.Client.SectionStore :: System.Boolean IsKnown<>(System.String id)
+  GameServer.Client.SectionStore :: System.Boolean IsUnavailable<>(System.String id)
   GameServer.Client.SectionStore :: System.Boolean TryGet<>(System.String id, GameServer.Client.SectionState& section)
   GameServer.Client.SectionStore :: System.Int64 RevOf<>(System.String id)
   GameServer.Client.SectionStore :: System.Void Clear<>()
@@ -177,8 +178,10 @@
   GameServer.Client.SectionStore :: T Get<T>(GameServer.Client.SectionKey`1[T] key)
   GameServer.Client.SectionStore :: T Get<T>(System.String id, Google.Protobuf.MessageParser`1[T] parser)
   GameServer.Client.SectionStore :: event System.Action`1[System.Exception] HandlerFailed
+  GameServer.Client.SectionStore :: event System.Action`1[System.String] AvailabilityChanged
   GameServer.Client.SectionStore :: event System.Action`1[System.String] SectionChanged
   GameServer.Client.SectionStore :: prop System.Collections.Generic.IReadOnlyCollection`1[GameServer.Client.SectionState] All {get;}
+  GameServer.Client.SectionStore :: prop System.Collections.Generic.IReadOnlyDictionary`2[System.String,GameServer.Client.UnavailableSectionState] Unavailable {get;}
   GameServer.Client.SectionTable :: .ctor(GameServer.Client.SectionKey[] keys)
   GameServer.Client.SectionTable :: System.Boolean TryGet<>(System.String id, GameServer.Client.SectionKey& key)
   GameServer.Client.SectionTable :: prop System.Collections.Generic.IReadOnlyCollection`1[GameServer.Client.SectionKey] Keys {get;}
@@ -199,6 +202,10 @@
   GameServer.Client.TransportResponse :: prop System.Byte[] Body {get;}
   GameServer.Client.TransportResponse :: prop System.Int32 Status {get;}
   GameServer.Client.TransportResponse :: prop System.String ContentType {get;}
+  GameServer.Client.UnavailableSectionState :: .ctor(System.String id, System.String code, System.Int32 codeNumber)
+  GameServer.Client.UnavailableSectionState :: prop System.Int32 CodeNumber {get;}
+  GameServer.Client.UnavailableSectionState :: prop System.String Code {get;}
+  GameServer.Client.UnavailableSectionState :: prop System.String Id {get;}
   GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest :: .ctor()
   GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest :: .ctor(GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest other)
   GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest :: GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest Clone<>()
@@ -937,6 +944,7 @@ type GameServer.Client.TaskDelay : System.Object [GameServer.Client.IDelay]
 type GameServer.Client.TransportException : System.Exception [System.Runtime.Serialization.ISerializable]
 type GameServer.Client.TransportRequest : System.Object []
 type GameServer.Client.TransportResponse : System.Object []
+type GameServer.Client.UnavailableSectionState : System.Object []
 type GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Modules.Economy.Protocol.V1.CheatGrantRequest, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
 type GameServer.Modules.Economy.Protocol.V1.CheatGrantResult : System.Object [Google.Protobuf.IBufferMessage,Google.Protobuf.IDeepCloneable`1[[GameServer.Modules.Economy.Protocol.V1.CheatGrantResult, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],Google.Protobuf.IMessage,Google.Protobuf.IMessage`1[[GameServer.Modules.Economy.Protocol.V1.CheatGrantResult, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]],System.IEquatable`1[[GameServer.Modules.Economy.Protocol.V1.CheatGrantResult, GameServer.Client, Version=0.7.0.0, Culture=neutral, PublicKeyToken=null]]]
 type GameServer.Modules.Economy.Protocol.V1.EconomyReflection : System.Object []

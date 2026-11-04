@@ -17,9 +17,10 @@ namespace GameServer.TestKit;
 /// ICommandContext for handler unit tests without host, store or DI (FR-020..FR-026). Wraps the runner's own context, so
 /// every access rule, exception type and message is the runner's. Configure first; the first ICommandContext call freezes
 /// the configuration. Not simulated: transactions, retries, receipts (and so the receipt size limit, see
-/// <see cref="CheckCommit(ICommandOutcome, Func{object, byte[]})"/>) and the outbox relay.
+/// <see cref="CheckCommit(ICommandOutcome, Func{object, byte[]})"/>) and the outbox relay. The double of an account initializer
+/// (<see cref="ForAccountInitializer"/>) is in AccountCreationCheck.cs.
 /// </summary>
-public sealed class CommandContextDouble : ICommandContext
+public sealed partial class CommandContextDouble : ICommandContext
 {
     /// <summary>Request id of the receipt id when none is configured (and correlation id of the default actors).</summary>
     private const string DefaultRequestId = "00000000-0000-4000-8000-000000000001";
@@ -30,7 +31,13 @@ public sealed class CommandContextDouble : ICommandContext
     private static readonly DateTimeOffset DefaultNow = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     private readonly ModuleRegistry _registry;
-    private readonly CommandRegistration _registration;
+    private readonly CommandDescriptor _descriptor;
+
+    /// <summary>The command of <see cref="Create"/>; null for an account initializer.</summary>
+    private readonly CommandRegistration? _registration;
+
+    /// <summary>The initializer of <see cref="ForAccountInitializer"/>; null for a command.</summary>
+    private readonly RegisteredAccountInitializer? _initializer;
     private readonly Dictionary<string, PlayerAggregateDescriptor> _aggregates;
     private readonly Dictionary<string, object> _seeds = new(StringComparer.Ordinal);
     private readonly HashSet<DocumentKey> _seededClaims = [];
@@ -44,15 +51,16 @@ public sealed class CommandContextDouble : ICommandContext
     private CommandSettings _commands = new();
     private Dictionary<string, LoadedAggregate>? _loaded;
     private CommandContext? _inner;
+    private InitializerContext? _view;
 
     private CommandContextDouble(ModuleRegistry registry, CommandRegistration registration, Dictionary<string, PlayerAggregateDescriptor> aggregates)
     {
         _registry = registry;
         _registration = registration;
+        _descriptor = registration.Descriptor;
         _aggregates = aggregates;
-        var descriptor = registration.Descriptor;
-        _actor = descriptor.Profile == SecurityProfile.Gm
-            ? GmActor(DefaultStaffId, DefaultPlayerId, descriptor.Permission is null ? [] : [descriptor.Permission])
+        _actor = _descriptor.Profile == SecurityProfile.Gm
+            ? GmActor(DefaultStaffId, DefaultPlayerId, _descriptor.Permission is null ? [] : [_descriptor.Permission])
             : PlayerActor(DefaultPlayerId);
     }
 
@@ -94,7 +102,8 @@ public sealed class CommandContextDouble : ICommandContext
         return new CommandContextDouble(registry, registration, aggregates);
     }
 
-    public CommandDescriptor Descriptor => _registration.Descriptor;
+    /// <summary>The command's descriptor; for an account initializer, operation <c>identity.create_account</c> over its touches.</summary>
+    public CommandDescriptor Descriptor => _descriptor;
 
     /// <summary>The configured receipt id, else <c>ReceiptIds.Compute(actorId, playerId, operation, requestId)</c> like the runner.</summary>
     public string ReceiptId =>
@@ -201,13 +210,13 @@ public sealed class CommandContextDouble : ICommandContext
     }
 
     public TState Get<TState>(string aggregateId)
-        where TState : class => Inner.Get<TState>(aggregateId);
+        where TState : class => Surface.Get<TState>(aggregateId);
 
     public void Set<TState>(string aggregateId, TState state)
         where TState : class
     {
         var inner = Inner;
-        inner.Set(aggregateId, state);
+        Surface.Set(aggregateId, state);
         inner.TryGetNewState(aggregateId, out var json);
         var index = _writes.FindIndex(w => w.AggregateId == aggregateId);
         if (!CommitRules.ChangesState(_loaded![aggregateId], json))
@@ -240,7 +249,7 @@ public sealed class CommandContextDouble : ICommandContext
 
     public async ValueTask<bool> TryClaimAsync(string collection, string claimKey, IReadOnlyDictionary<string, string>? attributes)
     {
-        var claimed = await Inner.TryClaimAsync(collection, claimKey, attributes);
+        var claimed = await Surface.TryClaimAsync(collection, claimKey, attributes);
         if (claimed)
         {
             _claims.Add(new RecordedClaim(collection, claimKey, new Dictionary<string, string>(attributes ?? new Dictionary<string, string>(), StringComparer.Ordinal)));
@@ -249,7 +258,7 @@ public sealed class CommandContextDouble : ICommandContext
         return claimed;
     }
 
-    public void AddOutbox(string kind, object payload) => Inner.AddOutbox(kind, payload);
+    public void AddOutbox(string kind, object payload) => Surface.AddOutbox(kind, payload);
 
     public string NewId(string purpose) => Inner.NewId(purpose);
 
@@ -284,6 +293,8 @@ public sealed class CommandContextDouble : ICommandContext
 
     private string[] CheckCommit(ICommandOutcome outcome, int? resultBytes)
     {
+        var registration = _registration ?? throw new InvalidOperationException(
+            $"The double of account initializer '{_initializer!.Registration.Name}' checks with CheckAccountCreation(), not CheckCommit.");
         if (!outcome.IsOk)
         {
             return [];
@@ -292,7 +303,7 @@ public sealed class CommandContextDouble : ICommandContext
         // The runner's order: code, result size, aggregate sizes (Touches order), audit.
         var violations = new List<string?>
         {
-            CommitRules.CheckCode(_registration, _registry, outcome.Error),
+            CommitRules.CheckCode(registration, _registry, outcome.Error),
             resultBytes is { } size ? CommitRules.CheckResultSize(Descriptor.Operation, size, _commands) : null,
         };
         foreach (var aggregateId in Descriptor.Touches)
@@ -309,6 +320,9 @@ public sealed class CommandContextDouble : ICommandContext
 
     private CommandContext Inner => _inner ??= CreateInner();
 
+    /// <summary>What the code under test calls: the runner's context, or for an initializer the writer's view over it.</summary>
+    private ICommandContext Surface => (ICommandContext?)View ?? Inner;
+
     private CommandContext CreateInner()
     {
         var playerId = _actor.PlayerId
@@ -320,7 +334,13 @@ public sealed class CommandContextDouble : ICommandContext
         }
 
         _loaded = loaded;
-        return new CommandContext(_actor, _now, _config, loaded, Descriptor, new DetachedTransaction(_seededClaims), ReceiptId);
+        var inner = new CommandContext(_actor, _now, _config, loaded, Descriptor, new DetachedTransaction(_seededClaims), ReceiptId);
+        if (_initializer is not null)
+        {
+            _view = new InitializerContext(inner, _initializer.Registration, new Dictionary<string, string>(StringComparer.Ordinal));
+        }
+
+        return inner;
     }
 
     /// <summary>Like the runner's load of a missing document: the descriptor's default state at rev 0.</summary>

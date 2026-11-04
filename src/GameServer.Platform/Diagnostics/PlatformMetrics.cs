@@ -37,6 +37,10 @@ public sealed class PlatformMetrics : IDisposable
     private readonly Counter<long> _accountPurgeDocuments;
     private readonly Counter<long> _requestLogFailures;
     private readonly Counter<long> _configCompressionSkipped;
+    private readonly Counter<long> _aggregateReadFailures;
+    private readonly Counter<long> _commandOutputTooLarge;
+    private readonly Counter<long> _accountCreations;
+    private readonly Counter<long> _accountInitializerFailures;
     private string _configVersion = string.Empty;
     private string _clientConfigVersion = string.Empty;
     private OverdueSample? _purgeOverdue;
@@ -69,6 +73,16 @@ public sealed class PlatformMetrics : IDisposable
         _configCompressionSkipped = _meter.CreateCounter<long>(
             "config_compression_skipped_total",
             description: "Full GetConfig responses sent uncompressed although the request accepted an encoding, by reason (busy, probe)");
+        _aggregateReadFailures = _meter.CreateCounter<long>(
+            "aggregate_read_failures_total",
+            description: "Player aggregates that could not be loaded or mapped, by aggregate and reason (FG-029)");
+        _commandOutputTooLarge = _meter.CreateCounter<long>(
+            "command_output_too_large_total",
+            description: "Commands refused because the result or the receipt was over its limit, by operation and part (FG-016)");
+        _accountCreations = _meter.CreateCounter<long>("account_creations_total", description: "Account creations of first logins by result (FG-015)");
+        _accountInitializerFailures = _meter.CreateCounter<long>(
+            "account_initializer_failures_total",
+            description: "Account creations failed by an initializer, by initializer and result (FG-015)");
         _meter.CreateObservableGauge(
             "account_purge_overdue_seconds",
             ObserveAccountPurgeOverdue,
@@ -143,6 +157,21 @@ public sealed class PlatformMetrics : IDisposable
     /// </summary>
     public void ConfigCompressionSkipped(string reason) => _configCompressionSkipped.Add(1, new KeyValuePair<string, object?>("reason", reason));
 
+    /// <summary>A stored aggregate could not be loaded or mapped (FR-026); <paramref name="reason"/> is a reason name of data-model §2.1.</summary>
+    public void AggregateReadFailed(string aggregateId, string reason) =>
+        _aggregateReadFailures.Add(1, new KeyValuePair<string, object?>("aggregateId", aggregateId), new KeyValuePair<string, object?>("reason", reason));
+
+    /// <summary>A <c>COMMAND_OUTPUT_TOO_LARGE</c> refusal; <paramref name="part"/> is <c>result</c> or <c>receipt</c>.</summary>
+    public void CommandOutputTooLarge(string operation, string part) =>
+        _commandOutputTooLarge.Add(1, new KeyValuePair<string, object?>("operation", operation), new KeyValuePair<string, object?>("part", part));
+
+    /// <summary>A creation attempt that ended: <c>created</c> or <c>failed</c>.</summary>
+    public void AccountCreation(string result) => _accountCreations.Add(1, new KeyValuePair<string, object?>("result", result));
+
+    /// <summary>A creation failed by an initializer: <paramref name="result"/> is <c>rejected</c>, <c>threw</c> or <c>rule</c>.</summary>
+    public void AccountInitializerFailed(string initializer, string result) =>
+        _accountInitializerFailures.Add(1, new KeyValuePair<string, object?>("initializer", initializer), new KeyValuePair<string, object?>("result", result));
+
     public void HttpError(string code) => _httpErrors.Add(1, new KeyValuePair<string, object?>("code", code));
 
     /// <summary>One lease job run (JOB-01, research R12). <paramref name="result"/> is a <c>JobRunResult</c> name.</summary>
@@ -178,6 +207,9 @@ public sealed class PlatformMetrics : IDisposable
     /// </summary>
     public void SetAccountPurgeOverdue(TimeSpan overdue, TimeSpan validFor) =>
         Volatile.Write(ref _purgeOverdue, new OverdueSample(Math.Max(0, overdue.TotalSeconds), Environment.TickCount64 + (long)validFor.TotalMilliseconds));
+
+    /// <summary>The meter of this instance, so a test can listen to one host only (meters of parallel hosts share the name).</summary>
+    internal Meter Meter => _meter;
 
     public void Dispose() => _meter.Dispose();
 

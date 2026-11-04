@@ -93,12 +93,15 @@ public sealed class AggregateBudgetAndUpgradeTests : IDisposable
         ex.Code.ShouldBe(CoreErrorCodes.BadRequest);
     }
 
+    /// <summary>Slice 016 T034 (BC-5): was INTERNAL; a rolling deploy's newer document is the retryable typed failure.</summary>
     [Fact]
-    public async Task Newer_stored_schema_than_code_is_an_error()
+    public async Task Newer_stored_schema_than_code_is_version_ahead()
     {
         _h.Store.Seed(new DocumentKey("pa_counter", "p1"), new JsonObject { ["schemaVersion"] = 9, ["rev"] = 1, ["state"] = new JsonObject() });
 
         var ex = await Should.ThrowAsync<GameServerException>(() => _h.Snapshots.ReadAsync("p1", ["counter"], CancellationToken.None));
-        ex.Code.ShouldBe(CoreErrorCodes.Internal);
+        ex.Code.ShouldBe(CoreErrorCodes.AggregateVersionAhead);
+        ex.RetryAfterMs.ShouldBe(1000);
+        ex.Details!["aggregate"].ShouldBe("counter");
     }
 }

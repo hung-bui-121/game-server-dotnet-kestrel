@@ -1,9 +1,9 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using GameServer.Aggregates;
-using GameServer.Errors;
 using GameServer.Platform.Diagnostics;
 using GameServer.Platform.Persistence;
 
@@ -60,66 +60,164 @@ public sealed class LoadedAggregate
 
 /// <summary>
 /// Maps player aggregate documents (data-model.md) to typed state: default when missing, lazy upgrade
-/// chain on read, envelope fields on write (DAT-02, DAT-09, DAT-10).
+/// chain on read, envelope fields on write (DAT-02, DAT-09, DAT-10). A document that cannot be read is a typed read failure
+/// (FG-029): <see cref="TryLoad"/> reports it once and returns it, <see cref="Load"/> throws it.
 /// </summary>
-public sealed class AggregateDocumentSerializer(GameServerOptions options, PlatformMetrics metrics)
+public sealed class AggregateDocumentSerializer
 {
+    private readonly GameServerOptions _options;
+    private readonly PlatformMetrics _metrics;
+    private readonly AggregateReadFailures _failures;
+
+    /// <summary>Counts read failures without logging them (direct constructions in tests); hosts use the three-argument form.</summary>
+    public AggregateDocumentSerializer(GameServerOptions options, PlatformMetrics metrics)
+        : this(options, metrics, AggregateReadFailures.CountOnly(metrics))
+    {
+    }
+
+    public AggregateDocumentSerializer(GameServerOptions options, PlatformMetrics metrics, AggregateReadFailures failures)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(metrics);
+        ArgumentNullException.ThrowIfNull(failures);
+        _options = options;
+        _metrics = metrics;
+        _failures = failures;
+    }
+
     public static DocumentKey KeyFor(PlayerAggregateDescriptor descriptor, string playerId) =>
         new(descriptor.Collection, playerId);
 
-    public LoadedAggregate Load(PlayerAggregateDescriptor descriptor, string playerId, StoredDocument? document)
+    /// <summary>
+    /// The loaded aggregate (default state at rev 0 when <paramref name="document"/> is null). Throws the typed read failure
+    /// (<c>AGGREGATE_VERSION_AHEAD</c> or <c>AGGREGATE_UNREADABLE</c>, <see cref="AggregateReadFailure.ToException"/>), reported once
+    /// (BC-5: was INTERNAL or the raw exception).
+    /// </summary>
+    public LoadedAggregate Load(PlayerAggregateDescriptor descriptor, string playerId, StoredDocument? document) =>
+        TryLoad(descriptor, playerId, document, out var loaded, out var failure) ? loaded : throw failure.ToException();
+
+    /// <summary>
+    /// Loads the aggregate, or classifies why it cannot be read (data-model §2.1, in the loader's order) and reports the failure
+    /// once. Never throws for a read failure; cancellation and out-of-memory are never caught.
+    /// </summary>
+    public bool TryLoad(
+        PlayerAggregateDescriptor descriptor,
+        string playerId,
+        StoredDocument? document,
+        [NotNullWhen(true)] out LoadedAggregate? loaded,
+        [NotNullWhen(false)] out AggregateReadFailure? failure)
     {
+        ArgumentNullException.ThrowIfNull(descriptor);
+        var found = Read(descriptor, playerId, document, out var read);
+        if (read is not null)
+        {
+            loaded = read;
+            failure = null;
+            return true;
+        }
+
+        loaded = null;
+        failure = found ?? throw new InvalidOperationException($"Reading '{descriptor.AggregateId}' of {playerId} gave neither a state nor a failure.");
+        _failures.Report(failure);
+        return false;
+    }
+
+    private AggregateReadFailure? Read(PlayerAggregateDescriptor descriptor, string playerId, StoredDocument? document, out LoadedAggregate? loaded)
+    {
+        loaded = null;
         if (document is null)
         {
             var initial = descriptor.CreateDefault();
-            return new LoadedAggregate(descriptor, playerId, null, 0, descriptor.SchemaVersion, false, initial, SerializeState(initial, descriptor.StateType), null);
+            loaded = new LoadedAggregate(descriptor, playerId, null, 0, descriptor.SchemaVersion, false, initial, SerializeState(initial, descriptor.StateType), null);
+            return null;
         }
 
         var content = document.Content;
-        var version = JsonNumbers.ToInt32(content["schemaVersion"]) ?? 1;
-        var rev = JsonNumbers.ToInt64(content["rev"]) ?? 0;
-        var stateNode = content["state"]?.DeepClone() as JsonObject ?? [];
+        int version;
+        long rev;
+        string? createdAtUtc;
+        try
+        {
+            version = JsonNumbers.ToInt32(content["schemaVersion"]) ?? 1;
+            rev = JsonNumbers.ToInt64(content["rev"]) ?? 0;
+            createdAtUtc = content["createdAtUtc"]?.GetValue<string>();
+        }
+        catch (Exception ex) when (IsDamage(ex))
+        {
+            return Failure(descriptor, playerId, AggregateReadFailureReason.Unreadable, ex.GetType(), storedSchemaVersion: 0);
+        }
 
         if (version > descriptor.SchemaVersion)
         {
-            throw new GameServerException(
-                CoreErrorCodes.Internal,
-                $"Aggregate '{descriptor.AggregateId}' of player {playerId} has schemaVersion {version} newer than code ({descriptor.SchemaVersion}).");
+            return new AggregateReadFailure(descriptor.AggregateId, playerId, AggregateReadFailureReason.VersionAhead, string.Empty, version, descriptor.SchemaVersion);
         }
 
-        var upgraded = false;
-        for (var v = version; v < descriptor.SchemaVersion; v++)
+        // A present document whose state is missing, null or not an object is damage, never the default state (T004 finding):
+        // reading it as the default would let the next write overwrite what is left.
+        if (content["state"] is not JsonObject storedState)
         {
-            var upgrader = descriptor.Upgraders.First(u => u.FromVersion == v);
-            stateNode = upgrader.Upgrade(stateNode);
-            upgraded = true;
+            return Failure(descriptor, playerId, AggregateReadFailureReason.Unreadable, typeof(JsonException), version);
+        }
+
+        var stateNode = (JsonObject)storedState.DeepClone();
+        var upgraded = false;
+        try
+        {
+            for (var v = version; v < descriptor.SchemaVersion; v++)
+            {
+                var step = v;
+                var upgrader = descriptor.Upgraders.FirstOrDefault(u => u.FromVersion == step)
+                    ?? throw new InvalidOperationException($"No upgrader from schemaVersion {step} of '{descriptor.AggregateId}'.");
+                stateNode = upgrader.Upgrade(stateNode)
+                    ?? throw new InvalidOperationException($"The upgrader from schemaVersion {step} of '{descriptor.AggregateId}' returned null.");
+                upgraded = true;
+            }
+        }
+        catch (Exception ex) when (ex is not (OperationCanceledException or OutOfMemoryException))
+        {
+            // An upgrader may throw anything (research R5, VERIFY V6): only its type is kept.
+            return Failure(descriptor, playerId, AggregateReadFailureReason.UpgradeFailed, ex.GetType(), version);
         }
 
         if (upgraded)
         {
-            metrics.AggregateUpgraded(descriptor.AggregateId);
+            _metrics.AggregateUpgraded(descriptor.AggregateId);
         }
 
-        var stateJson = JsonSerializer.SerializeToUtf8Bytes(stateNode, GameServerJson.Options);
-        var state = DeserializeState(stateJson, descriptor.StateType);
+        object state;
+        byte[] canonical;
+        try
+        {
+            var stateJson = JsonSerializer.SerializeToUtf8Bytes(stateNode, GameServerJson.Options);
+            state = DeserializeState(stateJson, descriptor.StateType);
 
-        // Re-serialize through the state type so change detection compares canonical forms.
-        var canonical = SerializeState(state, descriptor.StateType);
-        return new LoadedAggregate(
-            descriptor,
-            playerId,
-            document,
-            rev,
-            version,
-            upgraded,
-            state,
-            canonical,
-            content["createdAtUtc"]?.GetValue<string>());
+            // Re-serialize through the state type so change detection compares canonical forms.
+            canonical = SerializeState(state, descriptor.StateType);
+        }
+        catch (Exception ex) when (IsDamage(ex))
+        {
+            return Failure(descriptor, playerId, AggregateReadFailureReason.Unreadable, ex.GetType(), version);
+        }
+
+        loaded = new LoadedAggregate(descriptor, playerId, document, rev, version, upgraded, state, canonical, createdAtUtc);
+        return null;
     }
+
+    /// <summary>What reading a damaged envelope or state throws (VERIFY V6, the explicit list); anything else is a bug and propagates.</summary>
+    private static bool IsDamage(Exception exception) =>
+        exception is JsonException or NotSupportedException or InvalidOperationException or FormatException or OverflowException;
+
+    private static AggregateReadFailure Failure(
+        PlayerAggregateDescriptor descriptor,
+        string playerId,
+        AggregateReadFailureReason reason,
+        Type exceptionType,
+        int storedSchemaVersion) =>
+        new(descriptor.AggregateId, playerId, reason, exceptionType.FullName ?? exceptionType.Name, storedSchemaVersion, descriptor.SchemaVersion);
 
     /// <summary>Builds the stored envelope for a new revision and returns it with its serialized size.</summary>
     public (JsonObject Document, int SizeBytes) BuildDocument(LoadedAggregate before, byte[] newStateJson, long newRev, DateTimeOffset now) =>
-        BuildDocument(options.GameId, options.EnvironmentId, before, newStateJson, newRev, now);
+        BuildDocument(_options.GameId, _options.EnvironmentId, before, newStateJson, newRev, now);
 
     /// <summary>The envelope for the given game and environment ids (also measured by the test kit's commit check, CommitRules).</summary>
     internal static (JsonObject Document, int SizeBytes) BuildDocument(

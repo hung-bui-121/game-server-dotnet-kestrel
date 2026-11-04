@@ -295,7 +295,6 @@ public sealed partial class IdentityModule
 
     private static Wire.LoginResponse LoginResponse(IServiceProvider services, LoginResult result)
     {
-        var mappers = services.GetRequiredService<AggregateWireMapperRegistry>();
         var config = services.GetRequiredService<IGameConfig>();
         var response = new Wire.LoginResponse
         {
@@ -307,12 +306,8 @@ public sealed partial class IdentityModule
             SessionExpiresAtUtcMs = result.ExpiresAt.ToUnixTimeMilliseconds(),
             IsNewPlayer = result.IsNewPlayer,
         };
-        response.Sections.AddRange(result.Sections.Select(s => new GameServer.Protocol.Core.V1.Section
-        {
-            Id = s.Descriptor.AggregateId,
-            Rev = s.Rev,
-            Payload = mappers.ToPayload(s.Descriptor.AggregateId, s.State),
-        }));
+        services.GetRequiredService<SectionWriter>()
+            .WriteSections(result.PlayerId, result.Sections, result.Unavailable, response.Sections, response.UnavailableSections);
         return response;
     }
 

@@ -294,6 +294,31 @@ public sealed class GameServerCommandLineTests
         provisioner.Calls.ShouldBe(0);
     }
 
+    /// <summary>Slice 016 T023 (FR-015, BC-9): an invalid account initializer declaration is one line in serve and provision mode.</summary>
+    [Fact]
+    public async Task An_invalid_account_initializer_is_reported_in_serve_and_provision_mode()
+    {
+        const string Line = "[module test.bad_initializer] account initializer 'test.bad' touches 'profile'. " +
+            "Fix: remove it; the framework writes the profile of a new account.";
+        static void Modules(GameServerBuilder b)
+        {
+            SampleTestHost.DefaultModules(b);
+            b.AddModule<EconomyModule>().AddModule(new BadInitializerModule());
+        }
+
+        var serve = await Should.ThrowAsync<GameServerStartupException>(async () =>
+        {
+            await using var host = await SampleTestHost.StartAsync(modules: Modules);
+        });
+        var provisioner = new FakeProvisioner();
+        var (code, _, error) = await ProvisionAsync(provisioner, modules: Modules);
+
+        serve.Message.ShouldContain(Line);
+        code.ShouldBe(HostExitCodes.InvalidConfiguration);
+        error.ShouldContain(Line);
+        provisioner.Calls.ShouldBe(0);
+    }
+
     /// <summary>T055 m2: a check that throws still gives one report naming the check; the other checks' errors are kept.</summary>
     [Fact]
     public async Task A_throwing_startup_check_joins_the_report_in_serve_and_provision_mode()
@@ -470,6 +495,20 @@ public sealed class GameServerCommandLineTests
             var error = new StringWriter();
             var code = await ProvisioningRunner.RunAsync(app, output, error, CancellationToken.None);
             return (code, output.ToString(), error.ToString());
+        }
+    }
+
+    /// <summary>A module whose only initializer touches the profile (one startup line).</summary>
+    private sealed class BadInitializerModule : GameServer.Modules.IGameModule
+    {
+        public GameServer.Modules.ModuleDescriptor Describe() => new()
+        {
+            Name = "test.bad_initializer",
+            AccountInitializers = [GameServer.Accounts.AccountInitializerRegistration.Of<StartingStateInitializer>("test.bad", ["profile"])],
+        };
+
+        public void ConfigureServices(IServiceCollection services, GameServer.Modules.ModuleContext context)
+        {
         }
     }
 
