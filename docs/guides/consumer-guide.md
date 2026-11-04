@@ -963,7 +963,9 @@ client.Sections.SectionChanged += id =>
    A game test helper with the name of a kit type (a game `TestGameConfig`) is ambiguous (CS0104) in a file that also has
    `using GameServer.TestKit;`: add a `using` alias for the game type or rename it.
    Login and commands (slice 016, section 13): move a "first login" game command into an `IAccountInitializer` (13.2,
-   016/BC-6, 016/BC-9) and reset dev data created before the bump (accounts are never seeded later); read
+   016/BC-6, 016/BC-9) and reset dev data created before the bump (accounts are never seeded later); tests that asserted a
+   new player's defaults (`rev = 0`, an init flag of 0, no starter items) now see the seeded state, and tests that used the
+   removed command as their example command (a config-version or request-log test) need another command; read
    `LoginResponse.IsNewPlayer` and boot on the login sections instead of a second snapshot (13.1); handle
    `unavailable_sections` and the codes `AGGREGATE_VERSION_AHEAD`/`AGGREGATE_UNREADABLE` where the game matched `INTERNAL`
    (13.3, 016/BC-3, 016/BC-4, 016/BC-8); expect `COMMAND_OUTPUT_TOO_LARGE` instead of a 500 for an oversized result or receipt,
@@ -1501,6 +1503,15 @@ public async Task A_new_account_starts_with_the_welcome_note_and_the_creation_wo
     context.CheckAccountCreation().ShouldBeEmpty();
 }
 ```
+
+An initializer that grants writes the ledger entry to `context.Outbox`; its `Payload` is the stored JSON (camelCase), so
+assert it as `context.Outbox.ShouldHaveSingleItem().Payload!["sourceType"]!.GetValue<string>()`. To check the creation
+receipt against a smaller `ReceiptMaxBytes`, pass `WithCommandSettings(new CommandSettings { ReceiptMaxBytes = …,
+ResultCompactMaxBytes = … })`. The line is the runner's receipt text with the operation
+`identity.create_account (initializer {name})`. For a creation, "the runner rejects the command with
+`COMMAND_OUTPUT_TOO_LARGE`" means that the creation fails: the login answers 500 `INTERNAL`, nothing is created, and the
+writer logs that line inside its `Account creation of player … failed:` line. A creation that seeds three aggregates with
+one grant measures about 1.1 KB (zh-pvp-server: 1073 B), well under the default 4096.
 
 Every new player of a host with an initializer that has effects gets one creation receipt; a test that counts a new
 player's receipts or asserts `rev = 0` on a seeded section changes (016/BC-6).

@@ -2,8 +2,10 @@
 
 Framework `0.7.0` (unreleased). Input of `docs/releases/v0.7.0.md` (T083), which merges the drafts of slices 013, 014, 015 and
 016 into one round note (cross-slice ids written `0NN/BC-n`). Started in T002 (2026-11-04, framework `6054a04`); extended
-by the story checkpoints T022, T032, T046, T054, T062 and T075 (done 2026-11-04); final pass in T076. The release date, the restamp of the
-pages marked "chưa phát hành", the tag and any push are a separate round-close step, not part of this slice.
+by the story checkpoints T022, T032, T046, T054, T062 and T075; final pass in T076 (2026-11-04, framework `777b030`, after the
+first-consumer check T078). The review (T081/T082) may still change it. **The tag waits for** the combined device session
+T069 + 015 T058 (owner; exact steps under "Manual checks"). The release date, the restamp of the pages marked "chưa phát
+hành", the tag and any push are a separate round-close step, not part of this slice.
 
 **Fixed:** FG-013 (the login says whether it created the player; its sections are the client's boot read), FG-015 (a new
 account gets its starting state in the transaction that creates it), FG-029 (one broken aggregate no longer takes down the
@@ -179,28 +181,44 @@ members; no existing field changes meaning (API-03); the Unity package stays `0.
   per folder, Unity main thread.
 - **Measured (SC-008, T061):** record of a 4 KiB entry p50 2.29 / p95 5.56 ms, remove p95 0.26 ms on C: (`%TEMP%`, opt-in
   `GAMESERVER_PERF=1`); `Flush(true)` kept.
-- Client snippet:
+- Client snippet (namespace `GameServer.Client`; `GameRoutes`, `BattleEndResult`, `request`, `ShowFirstTimeScreen` and
+  `ShowRecoverable` stand for the game's own code). It compiles with C# 9 against the package `Runtime` and the Unity
+  6000.3.22f1 `UnityEngine` modules (T078):
 
   ```csharp
+  // Where the client is created (zh-pvp OnlineSession.cs:83): one folder per server environment, like the config cache.
   var options = new GameServerClientOptions(baseUrl, clientVersion, platform, buildId)
   {
-      PendingCommands = UnityPendingCommandStore.Create("live"),
+      PendingCommands = UnityPendingCommandStore.Create(environmentName),
   };
-  var client = new GameServerClient(options, new UnityWebRequestTransport());
-  await client.LoginGuestAsync(localId, secret);
-  foreach (var pending in new List<PendingCommand>(client.PendingCommands))   // a copy: the live list changes below
+  var client = new GameServerClient(options, transport, config: UnityConfigCache.Create(environmentName));
+
+  // Boot: login → config → apply the login sections and mark ready (no snapshot, no account.init step).
+  var login = await client.LoginGuestAsync(localId, secret);
+  if (login.IsNewPlayer)
   {
-      if (client.StatusOf(pending) == PendingCommandStatus.Resendable)
+      ShowFirstTimeScreen();                                  // presentation only: false after a lost first-login response
+  }
+
+  foreach (var unavailable in client.Sections.Unavailable.Values)
+  {
+      ShowRecoverable(unavailable.Id, unavailable.Code);      // never treat a missing section as the default state
+  }
+
+  // Resend what an earlier run left with an unknown outcome. A copy: a resend or a discard changes the live list.
+  foreach (var pending in new List<PendingCommand>(client.PendingCommands))
+  {
+      if (client.StatusOf(pending) == PendingCommandStatus.Resendable && pending.Route == GameRoutes.BattleEnd)
       {
-          await client.ResendPendingAsync(pending, BattleEndResult.Parser);   // replays a committed command
+          var replay = await client.ResendPendingAsync(pending, BattleEndResult.Parser);   // replay.Replayed: it had committed
       }
       else
       {
-          client.DiscardPendingCommand(pending.RequestId);                   // decide from the player's state
+          client.DiscardPendingCommand(pending.RequestId);   // decide from the player's state
       }
   }
 
-  var requestId = GameServerClient.NewRequestId();                            // optional: keep it in game state first
+  var requestId = GameServerClient.NewRequestId();            // optional: keep it in game state first
   var result = await client.SendCommandAsync(GameRoutes.BattleEnd, request, BattleEndResult.Parser, requestId);
   ```
 
@@ -229,14 +247,17 @@ members; no existing field changes meaning (API-03); the Unity package stays `0.
   §3, §4, §5, §6, §8, §19 and the new §22 (limits table, measured receipt example, metrics, log and startup lines,
   BC-1..BC-11); PCR identity, economy, sample-game, gm and unity-sdk; HTML pages 01, 02 (§3 step 9, codes table, §6b,
   troubleshooting) and 03 (metrics, settings validation). Every touched page keeps the "0.7.0 (chưa phát hành / unreleased)"
-  stamp.
+  stamp. After the first-consumer check (T078) the consumer guide §11 step 5 names the tests a moved first-login command
+  changes, and §13.2 says how to assert a grant's outbox entry, how to check the creation receipt against a smaller limit and
+  what the receipt line means for a creation.
 - **Measured receipt sizes (PCR platform §22):** a creation receipt with the sample grant is 1068 B; each further ledger entry
   adds 277–279 B; 11 entries fit 4096 B (3841 B; 12 = 4120 B) and 55 fit 16384 B (16117 B; 56 = 16396 B).
 
 ## Breaking changes
 
-"How it surfaces" is replaced by the real lines and codes at each story checkpoint (asserted literally by the slice 016
-tests, or measured where noted).
+"How it surfaces" quotes the real lines and codes (asserted literally by the slice 016 tests, or measured where noted).
+In zh-pvp-server (T078) only BC-6 surfaced: no compile error, no startup line, two game tests that asserted a new player's
+defaults and the tests that used the removed `account.init` command (checklist step 4).
 
 | Id | Change | Who is affected | How it surfaces | Fix |
 | --- | --- | --- | --- | --- |
@@ -252,55 +273,146 @@ tests, or measured where noted).
 | BC-10 | A login whose transaction ends ambiguous, expires or loses every race round answers `COMMIT_UNKNOWN_RETRY` (503) or `CONCURRENT_UPDATE` (409, retryable) instead of a 500 `INTERNAL` (FR-014; plan N11, architect decision) | Clients and dashboards that count login 500s | Error envelope instead of the raw 500: an ambiguous commit answers 503 `COMMIT_UNKNOWN_RETRY` (`retryable`, `retry_after_ms = 1000`); an expired transaction or three lost insert races answer 409 `CONCURRENT_UPDATE` (`retryable`, `retry_after_ms = 200`); a failed transaction stays 500 `INTERNAL`, now logged as `Request failed with INTERNAL: Login transaction failed for player {id}.` instead of `Unhandled exception.`. Nothing is written in any of these cases (`AccountWriterTests`, T017) | Handle them like any retryable code; the SDK still never retries a login after an unknown outcome |
 | BC-11 | `CommandResponse.details` (new field 11) and the GM command response's `details` carry the details of every HTTP 200 rejection, module codes included; the XML doc of `ICommandOutcome.Details` changes from "not sent" to "sent" (FR-030; plan N5, architect decision) | Modules that pass details to `CommandOutcome.Reject` with an HTTP 200 code | `CommandResponse.details` / GM `details` hold the `Reject(code, details)` map for HTTP 200 codes (e.g. `{reason: "sold_out"}`); empty for commits. Fallback if the owner overrides: send framework codes' details only (a one-line filter in `CommandEndpointFactory.BuildResponse` and `GmCommandEndpointFactory.BuildResponse`) | Keep rejection details safe to show (they already must be, as for non-200 codes) |
 
-## zh-pvp-server migration checklist (in this order)
+## zh-pvp-server migration checklist (in this order; verified in a temp clone, T078)
 
-After the 013, 014 and 015 steps of their release notes. File:line references are zh-pvp-server `7911f20` and the client
-`research-and-development-games` `49df950ad` (spec "First-consumer migration"); the client writes its markers without the
-colon (`FRAMEWORK-GAP FG-NNN`). Verified in a temp clone by T078.
+Checked 2026-11-04 in a temp clone of zh-pvp-server `7911f20` (framework `v0.6.0`) with `framework/` = this repository at
+`777b030` (tag `v0.7.0` set in that clone only). Server file:line references are zh-pvp-server `7911f20`. Client references
+are `research-and-development-games` `49df950ad`, relative to its Unity project `src/GameClient/`; they were read, not
+compiled (the game files need Unity). The client writes its markers without the colon (`FRAMEWORK-GAP FG-NNN`).
 
-1. **Bump** the `framework/` submodule to `v0.7.0` (with the 013–015 steps). BC-7 needs no code change: no game test builds
-   `LoginResult`.
+0. **The 013, 014 and 015 steps first** (their release notes; T078 repeated 015 T067 and got the same results). Tag
+   `v0.7.0` in `Directory.Build.props`, `CLAUDE.md` and `README.md`. 014 BC-3 (`CS0618` at
+   `src/ZhPvp.Game.Adapters/GameModule.cs:28-30`: typed mappers with the four `Hidden` paths) and 014 BC-1 (`account.init`
+   declared in a `GameRoutes` class, listed in `Routes`, mapped with `MapPlayerCommand(GameRoutes.InitAccount, …)`). 013 BC-4
+   (`CS2001` for the three `tests/Shared` links: kit `ProjectReference` and `using GameServer.TestKit;` in six files). 015
+   BC-6 (two `CS0618` at `tests/ZhPvp.Tests/Support/TestGameConfig.cs:37`) and 7 × `CS0104` in `ConfigDeliveryTests.cs` (alias).
+   015 step 3 (`GameConfigCheck` into declarations; the three `GameConfigStartupTests` texts change to the framework line
+   format) and 015 step 4 (the two version tests). Result: Debug and Release 0 warnings, game suite 119/119; startup line
+   `Config zhpvp-1: version zhpvp-1+3d29d982d748, client version zhpvp-1+c2ba61ed994a, 10 files (7 client-visible, bundle 27860 B, compression br,gzip, permits 2), 11 rules, 3 catalogs.`
+1. **Bump (BC-7).** Slice 016 adds no compile result: after step 0 the build is 0 warnings, 0 errors in Debug and Release.
+   No game code builds `LoginResult` or calls `LoginCompletion` or the login services.
 2. **`InitAccountHandler` into an `IAccountInitializer` (FG-015, BC-6, BC-9).**
-   - `src/ZhPvp.Game/Account/InitAccountHandler.cs:16` (marker `FRAMEWORK-GAP: FG-015`): the handler body (command
-     `account.init`, touches `progress`, `wallet`, `armory`; starting CASH grant through `EconomyOperations.Grant` with
-     ledger source `account_init`, starter guns, equipped gun, `InitVersion = 1`) becomes an initializer with the same
-     touches (`profile` + 3 = 4, exactly the creation budget) registered in `ModuleDescriptor.AccountInitializers`.
-   - `InitAccountHandler.cs:17` (marker `FRAMEWORK-GAP: FG-022`): goes with the handler (the state flag no longer guards a
-     second init; the profile insert does).
-   - Registration `src/ZhPvp.Game/GameModuleDefinition.cs:25` and route `src/ZhPvp.Game.Adapters/GameModule.cs:20,34-38`:
-     remove the `account.init` command, route and code `ACCOUNT_ALREADY_INITIALIZED` (50101), or keep them only for
-     accounts created before the bump (D6, no backfill). The game is pre-launch: deleting the dev/test data is simpler.
-     `ProgressState.InitVersion` may stay as seeded state.
-   - `docs/pcr/game.md` lines 41-57, 66-69 and 78 (the `account.init` command and its rules) are updated by the game.
+   - `src/ZhPvp.Game/Account/InitAccountHandler.cs:16` (marker `FRAMEWORK-GAP: FG-015`) and `:17` (marker
+     `FRAMEWORK-GAP: FG-022`): replace the file by an initializer registered in `GameModuleDefinition`
+     `AccountInitializers`. It keeps the same touches (`progress`, `wallet`, `armory`; `profile` + 3 = 4, exactly the
+     creation budget) and the same body: the starting CASH grant through `EconomyOperations.Grant` with ledger source
+     `account_init`, the starter guns, the equipped gun and `InitVersion = 1`. The `InitVersion > 0` guard goes, because
+     the profile insert guards a second run. The shape that passed the game suite in T078:
+
+     ```csharp
+     public sealed class StartingStateInitializer(GameCatalog catalog, ResourceCatalog resources) : IAccountInitializer
+     {
+         public const string Name = "zhpvp.starting_state";
+
+         public static AccountInitializerRegistration Registration { get; } =
+             AccountInitializerRegistration.Of<StartingStateInitializer>(Name, [GameAggregates.Progress, EconomyAggregates.Wallet, GameAggregates.Armory]);
+
+         public ValueTask<ErrorCode?> InitializeAsync(ICommandContext context)
+         {
+             if (catalog.StartingCash > 0
+                 && EconomyOperations.Grant(context, resources, GameResources.Cash, catalog.StartingCash, new LedgerSource("account_init")) is { } error)
+             {
+                 return ValueTask.FromResult<ErrorCode?>(error);
+             }
+
+             // … the handler's armory and progress writes, unchanged …
+             return ValueTask.FromResult<ErrorCode?>(null);
+         }
+     }
+
+     // GameModuleDefinition.Describe():
+     AccountInitializers = [StartingStateInitializer.Registration],
+     ```
+
+     The Local flavor starts with no `[module …] account initializer …` and no `[deployment] account creation …` line
+     (BC-9). There is no startup line for initializers; a new player logs `Account {PlayerId} created: 1 initializers,
+     receipt {ReceiptId}.` (category `GameServer.Accounts`).
+   - Command, route and code: delete the command at `src/ZhPvp.Game/GameModuleDefinition.cs:25`, the route at
+     `src/ZhPvp.Game.Adapters/GameModule.cs:20,34-38` (with step 0, its `GameRoutes` declaration and `Routes` entry), and
+     `ACCOUNT_ALREADY_INITIALIZED` (`src/ZhPvp.Game/GameErrors.cs:12-13`, 50101; keep the number retired). `GameModule` then
+     maps no player route and drops `IPlayerApiModule`. The other choice is to keep them for accounts created before the
+     bump (D6, no backfill). The game is pre-launch, so resetting the dev and test data (step 3) is simpler.
+     `ProgressState.InitVersion` stays as seeded state; the proto messages `InitAccountRequest`/`InitAccountResult` may
+     stay or become `reserved` (game choice).
+   - `docs/pcr/game.md` lines 41-57, 66-69 and 78 (the `account.init` command and its rules) are updated by the game. The
+     measured "receipt **1172 B**" at line 58 was the command's receipt; the creation receipt is 1073 B (step 4).
 3. **Reset dev data** (accounts created before the bump never run the initializer, D6).
-4. **Kit-based tests (FG-016, FR-017, FR-034).** `tests/ZhPvp.Tests/Game/AccountInitTests.cs:124` (marker
-   `FRAMEWORK-GAP: FG-016`): delete the file-store measurement of result and receipt sizes (an overflow is now
-   `COMMAND_OUTPUT_TOO_LARGE`, BC-1); the test becomes "a first login seeds the account once" (concurrent logins, lost
-   response), and `InitAccountHandlerTests.cs` runs the initializer through `CommandContextDouble.ForAccountInitializer`
-   and `CheckAccountCreation()` (consumer guide §13.2, fixture `FixtureInitializerTests`). Raise
-   `GameServer:Commands:ReceiptMaxBytes` if P2 chests need more than about 11 ledger entries (measured 277–279 B per entry,
-   PCR platform §22; BC-2: the value must stay in 1024..65536 and, with the cross rule, at least 1112) and check the receipt
-   with `CheckCommit(outcome, encodeResult)` (fixture `FixtureReceiptSizeTests`).
+4. **Tests (FG-016, BC-1, BC-6; FR-017, FR-034).**
+   - `tests/ZhPvp.Tests/Game/AccountInitTests.cs` becomes "a first login seeds the account once". T078 wrote four Local
+     flavor tests: the first login answers `IsNewPlayer = true` with the seeded sections (progress, armory and wallet at
+     `rev 1`, chests at `rev 0`, no unavailable section); 8 concurrent first logins of one credential give one player id,
+     exactly one `IsNewPlayer = true`, 1 ledger entry and 1 `identity.create_account` receipt; the retry of a first login
+     whose response was lost answers `IsNewPlayer = false` and grants nothing; the GM ledger has one entry with source
+     `account_init`. Every login replaces the session of the one before (read the state with the last login's token), and
+     a guest credential gets at most 10 logins per minute (`Identity:LoginPerLocalIdPerMinute`; raise it in the test
+     settings for a larger race).
+   - `AccountInitTests.cs:124` (marker `FRAMEWORK-GAP: FG-016`): delete the file-store measurement of result and receipt
+     sizes (an overflow is now `COMMAND_OUTPUT_TOO_LARGE`, BC-1). The kit measures the creation receipt instead:
+     `CheckAccountCreation()` is empty at the default 4096, and with
+     `WithCommandSettings(new CommandSettings { ReceiptMaxBytes = 1024, ResultCompactMaxBytes = 64 })` it returns exactly
+     `Command 'identity.create_account (initializer zhpvp.starting_state)' receipt would be 1073 bytes; ReceiptMaxBytes is 1024: the runner rejects the command with COMMAND_OUTPUT_TOO_LARGE (part receipt) and nothing commits. Fix: fewer ledger/outbox entries or raise GameServer:Commands:ReceiptMaxBytes.`
+     (for a creation this means: the login answers 500 `INTERNAL` and nothing is created; consumer guide §13.2).
+   - `tests/ZhPvp.Tests/Game/InitAccountHandlerTests.cs` becomes initializer tests (T078: four) through
+     `CommandContextDouble.ForAccountInitializer(StartingStateInitializer.Name, new IdentityModule(), new EconomyModule(), new GameModule())`
+     and `CheckAccountCreation()` (consumer guide §13.2, fixture `FixtureInitializerTests`). The ledger entry is
+     `context.Outbox[0].Payload`, the stored JSON (`sourceType`, `resource`, `delta`), not a `LedgerEntry`. The "already
+     initialized" test goes with the guard. `tests/ZhPvp.Tests/Support/FakeCommandContext.cs` then has no user (013 FG-006:
+     delete it).
+   - BC-6 changes two more tests that asserted a new player's defaults: `tests/ZhPvp.Tests/Game/GameSectionsTests.cs:15-28`
+     (`rev == 0` on the three game sections, `InitVersion` 0, no guns) and `tests/ZhPvp.Tests/Game/PlayerSnapshotTests.cs:47-56`
+     (`InitVersion` 0). Assert the seeded state (`rev 1` for progress and armory, `InitVersion = 1`, the starter guns).
+   - Tests that used `account.init` as their command: `tests/ZhPvp.Tests/Game/ConfigDeliveryTests.cs:102-109`
+     (`Every_response_type_carries_the_version_of_the_committed_config`: a command and the `ACCOUNT_ALREADY_INITIALIZED`
+     rejection) and `tests/ZhPvp.Tests/Host/RequestLogTests.cs:30,39,55-58,65,74-76,129,212` (the 013 FG-025 workaround).
+     T078 switched both to `cheat.grant` (`CheatRoutes.GrantTemplate`, present on the Local flavor; quantity 0 is the HTTP
+     200 rejection `INVALID_QUANTITY`). Deleting the game's `RequestLog` folder and its tests (013 BC-7) removes the second
+     file instead.
+   - Raise `GameServer:Commands:ReceiptMaxBytes` if P2 chests need more than about 11 ledger entries (measured 277–279 B per
+     entry, PCR platform §22; BC-2: the value must stay in 1024..65536 and, with the cross rule, at least 1112) and check the
+     receipt with `CheckCommit(outcome, encodeResult)` (fixture `FixtureReceiptSizeTests`).
+
+   Result in T078: Debug and Release 0 warnings; game suite 116/116 (119 − 11 handler and size tests + 8 new).
 5. **Client boot on the login sections (FG-013, BC-3, BC-8).**
    - `Assets/MadProject/Scripts/Online/OnlineSession.cs:200` (marker `FRAMEWORK-GAP FG-013`: login sections ignored, boot
      reads the snapshot) and `PlayerReadModel.cs:24` (marker `FRAMEWORK-GAP FG-013`: `IsReady` only after that snapshot):
      login → config → apply the login sections and mark ready.
-   - `OnlineSession.cs:214-217` and `:279-320` (boot step `Initializing`, `RefreshSectionsAsync`, `InitAccountAsync`):
-     drop the step; the initializer already ran. Read `LoginResponse.IsNewPlayer` for a first-time screen instead of
-     `progress.init_version == 0`. A missing `progress` now means "unavailable section" (read `Sections.Unavailable`).
+   - `OnlineSession.cs:214-217` and `:279-320` (boot step `Initializing`, `RefreshSectionsAsync`, `InitAccountAsync` with
+     `AccountAlreadyInitializedCode`): drop the step; the initializer already ran. Regenerate the client files after the
+     route is gone (014 step 4): the generated `GameRoutes.AccountInit` disappears (and the two messages if the proto drops
+     them), so `InitAccountAsync` goes in the same client change. Read `LoginResponse.IsNewPlayer` for a first-time screen
+     instead of `progress.init_version == 0`. A missing `progress` now means "unavailable section" (read
+     `Sections.Unavailable`).
    - `docs/pcr/game.md` line 79 ("login sections are not read") is updated by the game.
 6. **Request ids and the pending store for P2 commands (FG-022).** `OnlineSession.cs:276` (marker `FRAMEWORK-GAP FG-022`:
    an unknown outcome fails the boot, RETRY re-runs it): P2 commands pass `GameServerClient.NewRequestId()` (or `null`) to
    `SendCommandAsync(route, request, parser, requestId)`; set `Options.PendingCommands =
-   UnityPendingCommandStore.Create(environmentName)` where the client is created (`OnlineSession.cs:83`, one folder per
-   environment like the 015 config cache); after login, list a copy of `PendingCommands`, resend the `Resendable` ones and
-   discard the others (consumer guide §13.5 and KestrelDemo `SampleGameClient.cs` show the loop). Keep
-   `PendingCommandMaxAge` (23 h) below `GameServer:Commands:ReplayWindowHours` (24 h).
+   UnityPendingCommandStore.Create(environmentName)` where the client is created (`OnlineSession.cs:83`,
+   `new GameServerClient(options, transport)`, one folder per environment like the 015 config cache); after login, list a
+   copy of `PendingCommands`, resend the `Resendable` ones and discard the others (the client snippet above; consumer guide
+   §13.5 and KestrelDemo `SampleGameClient.cs` show the full loop). Keep `PendingCommandMaxAge` (23 h) below
+   `GameServer:Commands:ReplayWindowHours` (24 h). Checked in T078 with a C# 9 console over `sdk/GameServer.Client`
+   (`HttpClientTransport`, `PersistentPendingCommandStore`) against the clone's host: run A logged in a new guest
+   (`IsNewPlayer = True`, sections `armory@1, chests@0, inventory@0, profile@1, progress@1, wallet@1`, CASH 1000), sent
+   `cheat.grant` +7 with its own request id and lost the answer (`NETWORK_ERROR`, error request id = the call's id, one
+   `{id}.pending` file); run B, a new client on the same folder, logged in again (`IsNewPlayer = False`, CASH 1007),
+   listed `pending {id} Resendable`, resent it (`replayed=True`, code `OK`) and left the folder empty; the ledger holds two
+   entries (the creation grant and one cheat grant).
 7. **Remove the six markers:** server `InitAccountHandler.cs:16` (FG-015), `InitAccountHandler.cs:17` (FG-022),
    `AccountInitTests.cs:124` (FG-016); client `OnlineSession.cs:200` (FG-013), `PlayerReadModel.cs:24` (FG-013),
-   `OnlineSession.cs:276` (FG-022). FG-029 has no marker; its rule in `docs/pcr/game.md` (deploy code before writing a new
-   schema version) stays. The friction-log entries FG-013, FG-015, FG-016, FG-022 and FG-029 can move to
-   `fixed-in-v0.7.0`.
+   `OnlineSession.cs:276` (FG-022). In T078 the three server markers were gone after steps 2 and 4 (no `FRAMEWORK-GAP` for
+   FG-013, FG-015, FG-016, FG-022 or FG-029 left under `src`, `tests` and `docs`). FG-029 has no marker; its rule in
+   `docs/pcr/game.md` (deploy code before writing a new schema version) stays. The friction-log entries FG-013, FG-015,
+   FG-016, FG-022 and FG-029 can move to `fixed-in-v0.7.0`.
+
+### Removable vs stays
+
+| FG | Removable after `v0.7.0` | Stays (game choice) |
+| --- | --- | --- |
+| FG-015 | `InitAccountHandler.cs` with its marker (`:16`); the command (`GameModuleDefinition.cs:25`), route (`GameModule.cs:20,34-38`) and code 50101 (`GameErrors.cs:12-13`), or keep them only for accounts created before the bump (D6); `InitAccountHandlerTests.cs` (→ kit initializer tests); client `InitAccountAsync` (`OnlineSession.cs:279-320`); `docs/pcr/game.md` lines 41-57, 66-69, 78 | `ProgressState.InitVersion` as seeded state; the two proto messages (or `reserved`) |
+| FG-013 | Client markers `OnlineSession.cs:200` and `PlayerReadModel.cs:24`; boot step `Initializing` (`OnlineSession.cs:214-217`) and the boot snapshot; `progress.init_version == 0` as the new-player test; `docs/pcr/game.md` line 79 | `RefreshSectionsAsync` where the game refreshes later |
+| FG-022 | Server marker `InitAccountHandler.cs:17` (with the file); client marker `OnlineSession.cs:276` (request ids and the pending store) | State idempotency of `battle.end` (`battle_id`), `chest.*`, `gun.upgrade` (`02_design_p1.md` §4) as good practice |
+| FG-016 | The marker and the file-store size measurement at `AccountInitTests.cs:124` (→ `CheckAccountCreation()` / `CheckCommit(outcome, encodeResult)`) | The design rule "≤ 3 Touches per game command" (`02_design_p1.md` §4); `MaxTouches` stays 4 |
+| FG-029 | — (no marker) | The deploy-order rule in `docs/pcr/game.md` (Aggregate section); the game doc can note that a broken aggregate now degrades instead of blocking login |
 
 ## Rolling deploy
 
@@ -324,8 +436,9 @@ Compatibility (contracts/wire-changes.md §5):
 
 ## Decisions awaiting owner override (owner confirmations)
 
-Each was applied as an architect decision; owner confirmation pending. Status unchanged at T075 (2026-11-04): none answered;
-the docs describe the applied decision and name the fallback where one exists (BC-11).
+Each was applied as an architect decision; owner confirmation pending. Status at T076 (2026-11-04): **all six open**, none
+answered; the docs describe the applied decision and name the fallback where one exists (BC-11). None blocks the
+first-consumer migration: T078 needed no decision to change.
 
 | # | Decision | Status |
 | --- | --- | --- |
@@ -360,9 +473,42 @@ the docs describe the applied decision and name the fallback where one exists (B
 | T060 | package `Runtime` compiled outside Unity (C# 9, netstandard2.1) against Unity 6000.3.22f1 `UnityEngine.CoreModule` + `UnityWebRequestModule`, with and without `UNITY_IOS` | done 2026-11-04: 0 warnings, 0 errors both ways |
 | T064 | the real SampleHost config tests after `account.json` lands | done 2026-11-04: `Sample.Counter.Tests`, `SampleGame.Tests`, Architecture, Client and Platform.Web suites green with no assertion change; Couchbase `SampleHostFlavorTests` skip without `COUCHBASE_CONNSTR` (they log in no player, T009) |
 | T068 | Editor compile, Windows player and Android IL2CPP build of KestrelDemo with the real package; pending store in the Editor and the Windows player | done 2026-11-04 (agent-run, Unity 6000.3.22f1): `-CompileOnly` 0 `error CS`/`warning CS`; run A through a dropping proxy `new player: True`, `EndBattle → pending {id}`, one `{id}.pending` file; run B `pending {id} Resendable`, `resent {id}: replayed=True`, folder empty, one battle reward for that command; Windows player probe recorded, reloaded and removed three entries; Android APK `Build/KestrelDemo.apk` built (IL2CPP arm64, stripping High, 0 errors) |
-| T069 | Android device and iOS build + device run (with the pending 015 T058 session) | pending (owner); APK built 2026-11-04, five starts listed in tasks.md T069; the tag waits for it |
-| T077 | fresh reviewer walkthrough of the consumer guide | pending |
-| T078 | first-consumer check in a temp clone of zh-pvp-server | pending |
+| T069 | Android device and iOS build + device run, one session with 015 T058 (V9 on devices; 015 V8, V10, V11) | **pending (owner)**; APK built 2026-11-04; exact steps below; the tag waits for it |
+| T077 | fresh reviewer walkthrough of the consumer guide (§13) and module-authoring in a temp copy | pending |
+| T078 | first-consumer check in a temp clone of zh-pvp-server | done 2026-11-04 (agent-run): the checklist above as verified — steps 0–1 build with 0 warnings and no 016 compile result, step 2 starts with no BC-9 line, step 4 game suite 116/116 (Debug and Release), the client snippet compiles (C# 9, Unity modules) and the pending-store resend replays against the clone's host, the six markers are removable; zh-pvp-server and research-and-development-games only read; temp clone deleted; 5180 never bound |
+
+### Device session (T069 + 015 T058, pending owner)
+
+One session covers both slices. The agent provides the APK
+(`samples/SampleGame/KestrelDemo/Build/KestrelDemo.apk`, 54 304 458 B, SHA-256
+`8106e59d94ca83cfd7efc64c1b03ff1763ab14cfef5e9cba568c0f601800b3cb`) and the host; the owner holds the device. PowerShell from the
+repository root; never `-Reset`, never port 5180.
+
+0. The APK's scene serializes `serverUrl = http://localhost:5080/`. Set the `SampleGameClient` object's `serverUrl` to
+   `http://<PC LAN IP>:5092/` in the Editor (or the scene file), save, rebuild with `powershell -File
+   sdk/unity/ci/smoke-build.ps1 -Unity "D:\DevTools\Unity\Unity 6000.3.22f1\Editor\Unity.exe" -ProjectPath
+   "<abs>\samples\SampleGame\KestrelDemo"`, then `git checkout` the scene and the three settings files T068 restored
+   (`PC_RPAsset.asset`, `UniversalRenderPipelineGlobalSettings.asset`, `ProjectSettings.asset`).
+1. Agent: `tools/local/run-local.ps1 -Port 5080 -Lan`; a forwarder on all interfaces, port 5092 → 5080, in pass mode. It
+   must drop battle-end responses only while a `drop.flag` file exists (the T068 scratch proxy `dropproxy.py 5092 5080
+   0.0.0.0 <folder>\drop.flag` did this; any logging proxy with that behaviour works) and, for 015 V8, log the request
+   `Accept-Encoding` and the response `Content-Encoding` of `/api/v1/config/get`. Allow port 5092 in the Windows firewall
+   for the private network.
+2. Owner, start 1 (fresh install: `adb install -r samples/SampleGame/KestrelDemo/Build/KestrelDemo.apk`, then open the app)
+   → `new player: True`, `config downloaded {v}`, `Gold: 90` (100 seed + 50 reward − 60), no crash.
+3. Owner, start 2 (close and reopen) → `new player: False`, `config from cache {v}` (no `config/get` at the forwarder), no
+   `pending …` line.
+4. Agent creates `drop.flag`; owner, start 3 → `EndBattle → pending {id}` (`File.Move` under IL2CPP).
+5. Agent deletes `drop.flag`; owner, start 4 → `pending {id} Resendable`, `resent {id}: replayed=True` (`EnumerateFiles`
+   under stripping High); `adb shell run-as com.gameserver.kestreldemo ls files/gameserver-pending/local` is empty.
+6. Agent stops SampleHost and restarts it with `$env:GameServer__ConfigPath = "<scratch copy of samples\SampleHost\config
+   with potion_pack price 60 → 50>"` (never edit `samples/SampleHost/config`); owner, start 5 → `New config {w} available.`,
+   `config downloaded {w}` (015 replace path), `Buy → OK` at the new price.
+
+Record per start: `Accept-Encoding` sent and the response compressed (015 V8), cache and pending folder behaviour, no
+crash. iOS: the owner builds on macOS (no iOS module on this machine) with the same `serverUrl` edit and runs the same five
+starts. Afterwards: stop SampleHost and the forwarder, `git checkout` the scene, record a Note per platform under 016 T069
+and copy the 015 results under 015 T058.
 
 ## Known before the tag
 
@@ -372,7 +518,8 @@ the docs describe the applied decision and name the fallback where one exists (B
   scheme's handler escapes `ExceptionMiddleware` and the request log (raw 500). Slice 016 makes the broken-profile path
   safe in the handler (T040); other handler exceptions (for example a store timeout in session validation) keep the
   pre-existing behaviour on such hosts. Hosts with Identity and GM, or with test authentication, are not affected.
-- 015 T058 (Android/iOS device run) is still open and gates the tag; it is combined with 016 T069 (five starts, owner).
+- **Device session open (gates the tag).** 015 T058 (Android/iOS device run) and 016 T069 are one owner session (five
+  starts, "Manual checks" above).
 - **`ReceiptMaxBytes` lower bound (T050).** The documented range 1024..65536 and the cross rule together make 1112 the
   smallest value that starts (with `ResultCompactMaxBytes` = 64); a value of 1024..1111 gets only the cross line. Both
   lines are contract texts and were kept; PCR platform §22 says so (T072).
@@ -390,3 +537,10 @@ the docs describe the applied decision and name the fallback where one exists (B
   directly (the script's own E2E command line plus the switch), because T067/T068 allow changes to the two KestrelDemo files
   only.
 - **PCR platform §8 still lacks codes 21 `CSRF_FAILED` and 22 `METHOD_NOT_ALLOWED`** (pre-existing; T072 added only 23–25).
+- **The creation's receipt line names the runner's rejection (found by T078, for the review).** For an account creation
+  whose receipt is over `ReceiptMaxBytes`, `CheckAccountCreation()` and the writer's `GameServer.Accounts` Error line use the
+  runner's text (errors-and-report-lines §5): `Command 'identity.create_account (initializer {name})' receipt would be {bytes}
+  bytes; ReceiptMaxBytes is {limit}: the runner rejects the command with COMMAND_OUTPUT_TOO_LARGE (part receipt) and nothing
+  commits. …`. For a creation the login answers 500 `INTERNAL` (D15), not `COMMAND_OUTPUT_TOO_LARGE`. The text is a contract
+  text and was kept; consumer guide §13.2 says what it means for a creation. The review decides whether the creation gets
+  its own wording.
