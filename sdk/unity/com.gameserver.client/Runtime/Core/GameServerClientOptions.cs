@@ -5,6 +5,10 @@ namespace GameServer.Client
 {
     public sealed class GameServerClientOptions
     {
+        private static readonly TimeSpan DefaultPendingCommandMaxAge = TimeSpan.FromHours(23);
+
+        private static readonly TimeSpan MaxPendingCommandMaxAge = TimeSpan.FromHours(168);
+
         public GameServerClientOptions(Uri baseUrl, string clientVersion, string platform, string buildId)
         {
             BaseUrl = baseUrl;
@@ -38,6 +42,19 @@ namespace GameServer.Client
         /// <summary>A server <c>retryAfterMs</c> above this ends the call instead of waiting (the game decides).</summary>
         public TimeSpan MaxRetryAfter { get; set; } = TimeSpan.FromSeconds(30);
 
+        /// <summary>
+        /// Opt-in store of commands whose outcome is unknown (FG-022): with a store, every command is recorded before it is sent and
+        /// removed once the server answered it; after an app restart the game lists <c>PendingCommands</c> and resends them. One
+        /// client per store. Null (default): nothing is written.
+        /// </summary>
+        public IPendingCommandStore? PendingCommands { get; set; }
+
+        /// <summary>
+        /// Entries older than this on the server clock are <c>Expired</c> (not resent); default 23 h, below the server's 24 h replay
+        /// window. Validate: (0, 168 h].
+        /// </summary>
+        public TimeSpan PendingCommandMaxAge { get; set; } = DefaultPendingCommandMaxAge;
+
         /// <summary>Throws <see cref="ArgumentException"/> for settings that would misroute or break retries.</summary>
         public void Validate()
         {
@@ -64,6 +81,11 @@ namespace GameServer.Client
             if (string.IsNullOrEmpty(ClientVersion) || string.IsNullOrEmpty(Platform) || string.IsNullOrEmpty(BuildId))
             {
                 throw new ArgumentException("ClientVersion, Platform and BuildId are required (GATE-02).");
+            }
+
+            if (PendingCommandMaxAge <= TimeSpan.Zero || PendingCommandMaxAge > MaxPendingCommandMaxAge)
+            {
+                throw new ArgumentException("PendingCommandMaxAge must be more than 0 and at most 168 hours.", nameof(PendingCommandMaxAge));
             }
         }
     }

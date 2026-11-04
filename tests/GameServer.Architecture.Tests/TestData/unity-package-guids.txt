@@ -33,3 +33,8 @@ bf7415ae02eb4819bcbd4c71c53c1c09 sdk/unity/com.gameserver.client/Runtime/Core/Ca
 6c6977f541934d66b0d8df4f353e1eb8 sdk/unity/com.gameserver.client/Runtime/Core/ConfigCacheFormat.cs.meta
 b40d338fb610404aaa389a71317a5e30 sdk/unity/com.gameserver.client/Runtime/Core/PersistentConfigCache.cs.meta
 861c6bc8a2c54ea788e6dd388633d9d8 sdk/unity/com.gameserver.client/Runtime/Unity/UnityConfigCache.cs.meta
+# Slice 016 (T056-T060): new package files with hand-written .meta files.
+0c6e8678d3614d828d8393f7f32610c9 sdk/unity/com.gameserver.client/Runtime/Core/GameServerClient.PendingCommands.cs.meta
+1f2a40e284254cc3bc868db9daab8cd4 sdk/unity/com.gameserver.client/Runtime/Core/PendingCommandFormat.cs.meta
+c1c7cbd0cc0e401fb41598af25205f66 sdk/unity/com.gameserver.client/Runtime/Core/PendingCommandStore.cs.meta
+b0a6215d4fb94d839544ead98f84b705 sdk/unity/com.gameserver.client/Runtime/Unity/UnityPendingCommandStore.cs.meta

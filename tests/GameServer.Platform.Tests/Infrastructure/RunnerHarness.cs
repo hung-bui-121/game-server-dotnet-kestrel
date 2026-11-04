@@ -89,8 +89,11 @@ public sealed class RunnerHarness : IDisposable
     public ConcurrentQueue<string> RunnerLogs { get; } = new();
 
     /// <summary>A runner with its own per-player limiter, as on a second instance sharing the store.</summary>
-    public CommandRunner CreateRunner() =>
-        new(Registry, TransactionalStore, Serializer, Config, Clock, Options, new PerPlayerCommandLimiter(Options), Relay, Metrics, Guards, Services, new QueueLogger(RunnerLogs));
+    public CommandRunner CreateRunner() => CreateRunner(TransactionalStore);
+
+    /// <summary>A runner on <paramref name="store"/> (e.g. a <see cref="RecordingStore"/> staging spy over the harness store).</summary>
+    public CommandRunner CreateRunner(ITransactionalDocumentStore store) =>
+        new(Registry, store, Serializer, Config, Clock, Options, new PerPlayerCommandLimiter(Options), Relay, Metrics, Guards, Services, new QueueLoggerFactory(RunnerLogs));
 
     /// <summary>Logs of the account writers made by <see cref="CreateAccountWriter"/>.</summary>
     public CapturingLoggerFactory Logs { get; } = new();
@@ -128,7 +131,21 @@ public sealed class RunnerHarness : IDisposable
         Metrics.Dispose();
     }
 
-    private sealed class QueueLogger(ConcurrentQueue<string> logs) : ILogger<CommandRunner>
+    /// <summary>Every category into one queue (the runner logs under its type and under <c>GameServer.Commands</c>).</summary>
+    private sealed class QueueLoggerFactory(ConcurrentQueue<string> logs) : ILoggerFactory
+    {
+        public ILogger CreateLogger(string categoryName) => new QueueLogger(logs);
+
+        public void AddProvider(ILoggerProvider provider)
+        {
+        }
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class QueueLogger(ConcurrentQueue<string> logs) : ILogger
     {
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull => null;

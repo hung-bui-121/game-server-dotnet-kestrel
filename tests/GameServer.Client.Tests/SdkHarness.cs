@@ -109,14 +109,15 @@ public sealed class SdkHarness : IAsyncDisposable
     }
 
     /// <param name="http">The client's HTTP stack (a test server client by default), e.g. one that asks for and decodes gzip.</param>
+    /// <param name="pending">The client's pending-command store (slice 016 FG-022); none by default.</param>
     public (GameServerClient Client, ScriptedTransport Transport, RecordingDelay Delay) NewClient(
-        ISessionStore? session = null, IClientClock? clock = null, IConfigCache? config = null, HttpClient? http = null)
+        ISessionStore? session = null, IClientClock? clock = null, IConfigCache? config = null, HttpClient? http = null, IPendingCommandStore? pending = null)
     {
         http ??= Host.Client();
         var transport = new ScriptedTransport(new HttpClientTransport(http));
         var delay = new RecordingDelay();
         var client = new GameServerClient(
-            new GameServerClientOptions(http.BaseAddress!, "1.2.3", "editor", "build-42"),
+            new GameServerClientOptions(http.BaseAddress!, "1.2.3", "editor", "build-42") { PendingCommands = pending },
             transport,
             clock: clock,
             delay: delay,

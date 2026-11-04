@@ -32,8 +32,14 @@ public sealed class CommandRunner(
     PlatformMetrics metrics,
     IEnumerable<ICommandGuard> guards,
     IServiceProvider services,
-    ILogger<CommandRunner> logger) : ICommandRunner
+    ILoggerFactory loggers) : ICommandRunner
 {
+    /// <summary>Log category of the output-limit line (errors-and-report-lines §2).</summary>
+    internal const string LogCategory = "GameServer.Commands";
+
+    private readonly ILogger _logger = loggers.CreateLogger<CommandRunner>();
+    private readonly ILogger _commandLog = loggers.CreateLogger(LogCategory);
+
     public async Task<CommandExecution> ExecuteAsync(CommandInvocation invocation, CancellationToken requestAborted)
     {
         try
@@ -210,7 +216,16 @@ public sealed class CommandRunner(
                 throw new GameServerException(rejected.Code, $"Command {descriptor.Operation} rejected with {rejected.Code.Name}.") { Details = rejected.Details };
             }
 
-            return new CommandExecution(rejected.Code, null, [], [], false, config.ConfigVersion);
+            if (rejected.Violation is { } violation)
+            {
+                // Once per request, outside the attempt: a re-run attempt must not log or count twice (research R8).
+                ReportOutputTooLarge(descriptor.Operation, violation);
+            }
+
+            return new CommandExecution(rejected.Code, null, [], [], false, config.ConfigVersion)
+            {
+                Details = rejected.Details ?? CommandExecution.EmptyDetails,
+            };
         }
         catch (TransactionCommitAmbiguousException ex)
         {
@@ -301,11 +316,13 @@ public sealed class CommandRunner(
             throw new CommandRejectedException(outcome.Error ?? CoreErrorCodes.Internal, outcome.Details);
         }
 
+        // Every commit rule runs before the first staged write, so a refusal never depends on the store's rollback of staged writes
+        // (research R8 "Order"): code, result size, aggregate sizes, audit, receipt size; only then stage.
         EnsureCommittableCode(registration, outcome.Error);
         var resultBytes = invocation.EncodeResult(outcome.Result!);
-        if (CommitRules.CheckResultSize(descriptor.Operation, resultBytes.Length, options.Commands) is { } oversized)
+        if (CommitRules.CheckResultSize(descriptor.Operation, resultBytes.Length, options.Commands) is { } resultTooLarge)
         {
-            throw new InvalidOperationException(oversized);
+            throw new CommandRejectedException(resultTooLarge);
         }
 
         var writes = new List<AggregateWrite>();
@@ -327,6 +344,16 @@ public sealed class CommandRunner(
             writes.Add(new AggregateWrite(before, document, size, newRev, newJson));
         }
 
+        EnsureAudit(descriptor, context);
+        var resultCode = outcome.Error ?? CoreErrorCodes.Ok;
+        var receipt = BuildReceipt(invocation, descriptor.Operation, playerId, receiptId, resultCode, resultBytes, loaded, writes, context, now);
+        var receiptJson = receipt.ToJson();
+        var receiptSize = ReceiptDocument.SizeOf(receiptJson);
+        if (CommitRules.CheckReceiptSize(descriptor.Operation, receiptSize, options.Commands) is { } receiptTooLarge)
+        {
+            throw new CommandRejectedException(receiptTooLarge);
+        }
+
         foreach (var write in writes)
         {
             if (write.Before.Document is null)
@@ -344,17 +371,6 @@ public sealed class CommandRunner(
             await tx.InsertAsync(claimKey, claim);
         }
 
-        EnsureAudit(descriptor, context);
-        var resultCode = outcome.Error ?? CoreErrorCodes.Ok;
-        var receipt = BuildReceipt(invocation, descriptor.Operation, playerId, receiptId, resultCode, resultBytes, loaded, writes, context, now);
-        var receiptJson = receipt.ToJson();
-        var receiptSize = ReceiptDocument.SizeOf(receiptJson);
-        if (receiptSize > options.Commands.ReceiptMaxBytes)
-        {
-            throw new InvalidOperationException(
-                $"Receipt of '{descriptor.Operation}' is {receiptSize} bytes; max is {options.Commands.ReceiptMaxBytes} (CMD-03).");
-        }
-
         if (receiptDocument is null)
         {
             await tx.InsertAsync(receiptKey, receiptJson);
@@ -366,6 +382,24 @@ public sealed class CommandRunner(
         }
 
         return AttemptResult.Commit(receipt, receiptSize, writes, resultBytes);
+    }
+
+    /// <summary>
+    /// The Error line and <c>command_output_too_large_total</c> of a result or receipt over its limit (errors-and-report-lines §2,
+    /// §3). The line carries sizes only, never the result or the receipt (API-04).
+    /// </summary>
+    private void ReportOutputTooLarge(string operation, CommitViolation violation)
+    {
+        var part = violation.Details[CommitViolation.PartDetail];
+        metrics.CommandOutputTooLarge(operation, part);
+        _commandLog.LogError(
+            "Command {Operation} refused with {Code}: {Part} is {Bytes} bytes, limit {Limit}. Fix: return less or raise GameServer:Commands:{SettingName} (PCR platform §22).",
+            operation,
+            violation.Code.Name,
+            part,
+            violation.Details[CommitViolation.BytesDetail],
+            violation.Details[CommitViolation.LimitDetail],
+            CommitRules.OutputLimitSetting(part));
     }
 
     /// <summary>SEC-14 (<see cref="CommitRules.CheckAudit"/>): a violation is a module bug (INTERNAL, nothing commits).</summary>
@@ -459,7 +493,7 @@ public sealed class CommandRunner(
         {
             // A receipt committed before the catalog check (or a code since removed from its module): the commit stands, so
             // the replay still answers, with OK as before.
-            logger.LogWarning(
+            _logger.LogWarning(
                 "Replay of {Operation} receipt {ReceiptId}: committed error code '{ResultCode}' is not in the error-code catalog; replying OK. " +
                 "Fix: keep the code in its module's ErrorCodeSet (API-11).",
                 receipt.Operation,
@@ -497,11 +531,29 @@ public sealed class CommandRunner(
             new() { Receipt = receipt, ReceiptSize = size, Writes = writes, ResultBytes = result };
     }
 
-    /// <summary>Business rejection: thrown inside the attempt so the transaction rolls back.</summary>
-    private sealed class CommandRejectedException(ErrorCode code, IReadOnlyDictionary<string, string>? details = null) : Exception(code.Name)
+    /// <summary>
+    /// Business rejection: thrown inside the attempt so the transaction rolls back (the stores rethrow it unchanged, VERIFY V2). A
+    /// result or receipt over its limit carries its <see cref="CommitViolation"/>, reported once in the runner's catch.
+    /// </summary>
+    private sealed class CommandRejectedException : Exception
     {
-        public ErrorCode Code { get; } = code;
+        public CommandRejectedException(ErrorCode code, IReadOnlyDictionary<string, string>? details = null)
+            : base(code.Name)
+        {
+            Code = code;
+            Details = details;
+        }
 
-        public IReadOnlyDictionary<string, string>? Details { get; } = details;
+        public CommandRejectedException(CommitViolation violation)
+            : this(violation.Code, violation.Details)
+        {
+            Violation = violation;
+        }
+
+        public ErrorCode Code { get; }
+
+        public IReadOnlyDictionary<string, string>? Details { get; }
+
+        public CommitViolation? Violation { get; }
     }
 }

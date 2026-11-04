@@ -28,8 +28,9 @@ public interface ICommandOutcome
     ErrorCode? Error { get; }
 
     /// <summary>
-    /// Details of a rejection whose code is not HTTP 200 (sent in the error envelope), e.g. IDENTITY_CONFLICT. Business
-    /// codes (HTTP 200) travel in the command response, which has no details: they are not sent.
+    /// Details of a rejection. A code that is not HTTP 200 sends them in the error envelope (e.g. IDENTITY_CONFLICT). A business
+    /// code (HTTP 200) sends them in <c>CommandResponse.details</c> (since 0.7.0, BC-11). They reach the client: keep them safe to
+    /// show (no secrets, no other player's data).
     /// </summary>
     IReadOnlyDictionary<string, string>? Details => null;
 }
@@ -62,7 +63,8 @@ public readonly record struct CommandOutcome<TResult> : ICommandOutcome
 
     /// <summary>
     /// Rejects the command: nothing is written and no receipt is created. A business code (HTTP 200) is returned in the
-    /// command response; any other code (e.g. 409 IDENTITY_CONFLICT) as an error envelope carrying <paramref name="details"/>.
+    /// command response with <paramref name="details"/> in <c>CommandResponse.details</c>; any other code (e.g. 409
+    /// IDENTITY_CONFLICT) as an error envelope carrying <paramref name="details"/>.
     /// </summary>
     public static CommandOutcome<TResult> Reject(ErrorCode error, IReadOnlyDictionary<string, string>? details = null) =>
         new(false, default, error, details);

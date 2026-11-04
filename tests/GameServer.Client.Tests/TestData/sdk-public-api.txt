@@ -1,4 +1,5 @@
   GameServer.Client.CommandResult`1 :: .ctor(GameServer.Protocol.Core.V1.CommandResponse response, TResult result, System.Boolean sectionsStale, System.Boolean resultUnreadable)
+  GameServer.Client.CommandResult`1 :: .ctor(GameServer.Protocol.Core.V1.CommandResponse response, TResult result, System.Boolean sectionsStale, System.Boolean resultUnreadable, System.String requestId)
   GameServer.Client.CommandResult`1 :: prop GameServer.Protocol.Core.V1.CommandResponse Response {get;}
   GameServer.Client.CommandResult`1 :: prop System.Boolean IsOk {get;}
   GameServer.Client.CommandResult`1 :: prop System.Boolean Replayed {get;}
@@ -6,6 +7,7 @@
   GameServer.Client.CommandResult`1 :: prop System.Boolean SectionsStale {get;}
   GameServer.Client.CommandResult`1 :: prop System.String Code {get;}
   GameServer.Client.CommandResult`1 :: prop System.String ReceiptId {get;}
+  GameServer.Client.CommandResult`1 :: prop System.String RequestId {get;}
   GameServer.Client.CommandResult`1 :: prop TResult Result {get;}
   GameServer.Client.ErrorCodes :: field static const System.String AccountDeleted = ACCOUNT_DELETED
   GameServer.Client.ErrorCodes :: field static const System.String AccountSuspended = ACCOUNT_SUSPENDED
@@ -61,15 +63,19 @@
   GameServer.Client.FrameworkSections :: field static const System.String ProfileId = profile
   GameServer.Client.FrameworkSections :: field static const System.String WalletId = wallet
   GameServer.Client.GameServerClient :: .ctor(GameServer.Client.GameServerClientOptions options, GameServer.Client.IHttpTransport transport, GameServer.Client.IClientClock clock, GameServer.Client.IDelay delay, GameServer.Client.ISessionStore session, GameServer.Client.IConfigCache config, System.Random random)
+  GameServer.Client.GameServerClient :: GameServer.Client.PendingCommandStatus StatusOf<>(GameServer.Client.PendingCommand command)
   GameServer.Client.GameServerClient :: System.Threading.Tasks.Task LogoutAsync<>(System.Threading.CancellationToken cancellationToken=)
   GameServer.Client.GameServerClient :: System.Threading.Tasks.Task`1[GameServer.Client.CommandResult`1[GameServer.Modules.Identity.Protocol.V1.LinkIdentityResult]] LinkProviderAsync<>(GameServer.Modules.Identity.Protocol.V1.ProviderCredential credential, System.Threading.CancellationToken cancellationToken=)
   GameServer.Client.GameServerClient :: System.Threading.Tasks.Task`1[GameServer.Client.CommandResult`1[GameServer.Modules.Identity.Protocol.V1.RequestAccountDeletionResult]] RequestAccountDeletionAsync<>(System.Threading.CancellationToken cancellationToken=)
+  GameServer.Client.GameServerClient :: System.Threading.Tasks.Task`1[GameServer.Client.CommandResult`1[TResult]] ResendPendingAsync<TResult>(GameServer.Client.PendingCommand command, Google.Protobuf.MessageParser`1[TResult] resultParser, System.Threading.CancellationToken cancellationToken=)
+  GameServer.Client.GameServerClient :: System.Threading.Tasks.Task`1[GameServer.Client.CommandResult`1[TResult]] SendCommandAsync<TResult>(System.String route, Google.Protobuf.IMessage request, Google.Protobuf.MessageParser`1[TResult] resultParser, System.String requestId, System.Threading.CancellationToken cancellationToken=)
   GameServer.Client.GameServerClient :: System.Threading.Tasks.Task`1[GameServer.Client.CommandResult`1[TResult]] SendCommandAsync<TResult>(System.String route, Google.Protobuf.IMessage request, Google.Protobuf.MessageParser`1[TResult] resultParser, System.Threading.CancellationToken cancellationToken=)
   GameServer.Client.GameServerClient :: System.Threading.Tasks.Task`1[GameServer.Modules.Identity.Protocol.V1.LoginResponse] LoginGuestAsync<>(System.String localId, System.Byte[] secret, System.Threading.CancellationToken cancellationToken=)
   GameServer.Client.GameServerClient :: System.Threading.Tasks.Task`1[GameServer.Modules.Identity.Protocol.V1.LoginResponse] LoginWithProviderAsync<>(GameServer.Modules.Identity.Protocol.V1.ProviderCredential credential, System.Boolean switchAccount=False, System.Threading.CancellationToken cancellationToken=)
   GameServer.Client.GameServerClient :: System.Threading.Tasks.Task`1[GameServer.Protocol.Core.V1.SnapshotResponse] RefreshSectionsAsync<>(System.Collections.Generic.IEnumerable`1[System.String] sections=, System.Threading.CancellationToken cancellationToken=)
   GameServer.Client.GameServerClient :: System.Threading.Tasks.Task`1[System.Boolean] RefreshConfigAsync<>(System.Threading.CancellationToken cancellationToken=)
   GameServer.Client.GameServerClient :: System.Threading.Tasks.Task`1[System.DateTimeOffset] SyncTimeAsync<>(System.Threading.CancellationToken cancellationToken=)
+  GameServer.Client.GameServerClient :: System.Void DiscardPendingCommand<>(System.String requestId)
   GameServer.Client.GameServerClient :: event System.Action`1[GameServer.Client.GameServerError] AccountBlocked
   GameServer.Client.GameServerClient :: event System.Action`1[GameServer.Client.GameServerError] Maintenance
   GameServer.Client.GameServerClient :: event System.Action`1[GameServer.Client.GameServerError] SessionReplaced
@@ -94,13 +100,16 @@
   GameServer.Client.GameServerClient :: prop GameServer.Client.SectionStore Sections {get;}
   GameServer.Client.GameServerClient :: prop System.Boolean ConfigOutdated {get;}
   GameServer.Client.GameServerClient :: prop System.Boolean HasSession {get;}
+  GameServer.Client.GameServerClient :: prop System.Collections.Generic.IReadOnlyList`1[GameServer.Client.PendingCommand] PendingCommands {get;}
   GameServer.Client.GameServerClient :: prop System.DateTimeOffset ServerNow {get;}
   GameServer.Client.GameServerClient :: prop System.String ClientConfigVersion {get;}
   GameServer.Client.GameServerClient :: prop System.String PlayerId {get;}
   GameServer.Client.GameServerClient :: prop System.String ServerConfigVersion {get;}
   GameServer.Client.GameServerClient :: prop System.TimeSpan ServerTimeOffset {get;}
+  GameServer.Client.GameServerClient :: static System.String NewRequestId<>()
   GameServer.Client.GameServerClientOptions :: .ctor(System.Uri baseUrl, System.String clientVersion, System.String platform, System.String buildId)
   GameServer.Client.GameServerClientOptions :: System.Void Validate<>()
+  GameServer.Client.GameServerClientOptions :: prop GameServer.Client.IPendingCommandStore PendingCommands {get;set;}
   GameServer.Client.GameServerClientOptions :: prop System.Double Jitter {get;set;}
   GameServer.Client.GameServerClientOptions :: prop System.Int32 MaxRetries {get;set;}
   GameServer.Client.GameServerClientOptions :: prop System.String BuildId {get;}
@@ -109,6 +118,7 @@
   GameServer.Client.GameServerClientOptions :: prop System.TimeSpan InitialBackoff {get;set;}
   GameServer.Client.GameServerClientOptions :: prop System.TimeSpan MaxBackoff {get;set;}
   GameServer.Client.GameServerClientOptions :: prop System.TimeSpan MaxRetryAfter {get;set;}
+  GameServer.Client.GameServerClientOptions :: prop System.TimeSpan PendingCommandMaxAge {get;set;}
   GameServer.Client.GameServerClientOptions :: prop System.Uri BaseUrl {get;}
   GameServer.Client.GameServerError :: .ctor(System.String code, System.Int32 codeNumber, System.Int32 httpStatus, System.String message, System.Boolean retryable, System.Int32 retryAfterMs, System.String requestId, System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.String] details)
   GameServer.Client.GameServerError :: System.String ToString<>()
@@ -120,6 +130,7 @@
   GameServer.Client.GameServerError :: prop System.String Code {get;}
   GameServer.Client.GameServerError :: prop System.String Message {get;}
   GameServer.Client.GameServerError :: prop System.String RequestId {get;}
+  GameServer.Client.GameServerError :: static GameServer.Client.GameServerError Client<>(System.String code, System.String message, System.Boolean retryable, System.String requestId)
   GameServer.Client.GameServerError :: static GameServer.Client.GameServerError Client<>(System.String code, System.String message, System.Boolean retryable=False)
   GameServer.Client.GameServerError :: static GameServer.Client.GameServerError FromEnvelope<>(GameServer.Protocol.Core.V1.ErrorEnvelope envelope, System.Int32 httpStatus)
   GameServer.Client.GameServerException :: .ctor(GameServer.Client.GameServerError error, System.Exception inner)
@@ -133,6 +144,11 @@
   GameServer.Client.IConfigCache :: prop System.String Version {get;}
   GameServer.Client.IDelay :: System.Threading.Tasks.Task DelayAsync<>(System.TimeSpan delay, System.Threading.CancellationToken cancellationToken)
   GameServer.Client.IHttpTransport :: System.Threading.Tasks.Task`1[GameServer.Client.TransportResponse] SendAsync<>(GameServer.Client.TransportRequest request, System.Threading.CancellationToken cancellationToken)
+  GameServer.Client.IPendingCommandStore :: System.Void Record<>(GameServer.Client.PendingCommand command)
+  GameServer.Client.IPendingCommandStore :: System.Void Remove<>(System.String requestId)
+  GameServer.Client.IPendingCommandStore :: prop System.Collections.Generic.IReadOnlyList`1[GameServer.Client.PendingCommand] Entries {get;}
+  GameServer.Client.IPendingCommandStore :: prop System.String LoadProblem {get;}
+  GameServer.Client.IPendingCommandStore :: prop System.String WriteProblem {get;}
   GameServer.Client.ISessionStore :: System.Void Clear<>()
   GameServer.Client.ISessionStore :: prop System.String PlayerId {get;set;}
   GameServer.Client.ISessionStore :: prop System.String Token {get;set;}
@@ -140,10 +156,26 @@
   GameServer.Client.InMemoryConfigCache :: System.Void Store<>(System.String version, System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.Byte[]] files)
   GameServer.Client.InMemoryConfigCache :: prop System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.Byte[]] Files {get;}
   GameServer.Client.InMemoryConfigCache :: prop System.String Version {get;}
+  GameServer.Client.InMemoryPendingCommandStore :: .ctor()
+  GameServer.Client.InMemoryPendingCommandStore :: System.Void Record<>(GameServer.Client.PendingCommand command)
+  GameServer.Client.InMemoryPendingCommandStore :: System.Void Remove<>(System.String requestId)
+  GameServer.Client.InMemoryPendingCommandStore :: prop System.Collections.Generic.IReadOnlyList`1[GameServer.Client.PendingCommand] Entries {get;}
+  GameServer.Client.InMemoryPendingCommandStore :: prop System.String LoadProblem {get;}
+  GameServer.Client.InMemoryPendingCommandStore :: prop System.String WriteProblem {get;}
   GameServer.Client.InMemorySessionStore :: .ctor()
   GameServer.Client.InMemorySessionStore :: System.Void Clear<>()
   GameServer.Client.InMemorySessionStore :: prop System.String PlayerId {get;set;}
   GameServer.Client.InMemorySessionStore :: prop System.String Token {get;set;}
+  GameServer.Client.PendingCommand :: .ctor(System.String requestId, System.String playerId, System.String route, System.Byte[] body, System.DateTimeOffset recordedAtServerUtc)
+  GameServer.Client.PendingCommand :: prop System.Byte[] Body {get;}
+  GameServer.Client.PendingCommand :: prop System.DateTimeOffset RecordedAtServerUtc {get;}
+  GameServer.Client.PendingCommand :: prop System.String PlayerId {get;}
+  GameServer.Client.PendingCommand :: prop System.String RequestId {get;}
+  GameServer.Client.PendingCommand :: prop System.String Route {get;}
+  GameServer.Client.PendingCommandStatus :: field System.Int32 value__
+  GameServer.Client.PendingCommandStatus :: field static const GameServer.Client.PendingCommandStatus Expired = 1
+  GameServer.Client.PendingCommandStatus :: field static const GameServer.Client.PendingCommandStatus OtherPlayer = 2
+  GameServer.Client.PendingCommandStatus :: field static const GameServer.Client.PendingCommandStatus Resendable = 0
   GameServer.Client.PersistentConfigCache :: .ctor(System.String folder)
   GameServer.Client.PersistentConfigCache :: System.Void Store<>(System.String version, System.Collections.Generic.IReadOnlyDictionary`2[System.String,System.Byte[]] files)
   GameServer.Client.PersistentConfigCache :: field static const System.String FileName = gameserver-config.bin
@@ -152,6 +184,13 @@
   GameServer.Client.PersistentConfigCache :: prop System.String LoadProblem {get;}
   GameServer.Client.PersistentConfigCache :: prop System.String Version {get;}
   GameServer.Client.PersistentConfigCache :: prop System.String WriteProblem {get;}
+  GameServer.Client.PersistentPendingCommandStore :: .ctor(System.String folder)
+  GameServer.Client.PersistentPendingCommandStore :: System.Void Record<>(GameServer.Client.PendingCommand command)
+  GameServer.Client.PersistentPendingCommandStore :: System.Void Remove<>(System.String requestId)
+  GameServer.Client.PersistentPendingCommandStore :: prop System.Collections.Generic.IReadOnlyList`1[GameServer.Client.PendingCommand] Entries {get;}
+  GameServer.Client.PersistentPendingCommandStore :: prop System.String Folder {get;}
+  GameServer.Client.PersistentPendingCommandStore :: prop System.String LoadProblem {get;}
+  GameServer.Client.PersistentPendingCommandStore :: prop System.String WriteProblem {get;}
   GameServer.Client.SectionKey :: prop Google.Protobuf.MessageParser Parser {get;}
   GameServer.Client.SectionKey :: prop System.String Id {get;}
   GameServer.Client.SectionKey`1 :: .ctor(System.String id, Google.Protobuf.MessageParser`1[T] parser)
@@ -929,10 +968,15 @@ type GameServer.Client.IClientClock :  []
 type GameServer.Client.IConfigCache :  []
 type GameServer.Client.IDelay :  []
 type GameServer.Client.IHttpTransport :  []
+type GameServer.Client.IPendingCommandStore :  []
 type GameServer.Client.ISessionStore :  []
 type GameServer.Client.InMemoryConfigCache : System.Object [GameServer.Client.IConfigCache]
+type GameServer.Client.InMemoryPendingCommandStore : System.Object [GameServer.Client.IPendingCommandStore]
 type GameServer.Client.InMemorySessionStore : System.Object [GameServer.Client.ISessionStore]
+type GameServer.Client.PendingCommand : System.Object []
+type GameServer.Client.PendingCommandStatus : System.Enum [System.IComparable,System.IConvertible,System.IFormattable,System.ISpanFormattable]
 type GameServer.Client.PersistentConfigCache : System.Object [GameServer.Client.IConfigCache]
+type GameServer.Client.PersistentPendingCommandStore : System.Object [GameServer.Client.IPendingCommandStore]
 type GameServer.Client.SectionKey : System.Object []
 type GameServer.Client.SectionKey`1 : GameServer.Client.SectionKey []
 type GameServer.Client.SectionRead : System.Enum [System.IComparable,System.IConvertible,System.IFormattable,System.ISpanFormattable]

@@ -42,6 +42,7 @@ public static class TestModules
             Command.Define<long, Unit>(GmAddHandler.Descriptor).HandledBy<GmAddHandler>(),
             Command.Define<Unit, Unit>(ForgeAuditHandler.Descriptor).HandledBy<ForgeAuditHandler>(),
             Command.Define<ErrorCode, Unit>(CommitCodeHandler.Descriptor).HandledBy<CommitCodeHandler>(),
+            Command.Define<string, Unit>(RejectDetailsHandler.Descriptor).HandledBy<RejectDetailsHandler>(),
         ],
         Permissions = [GmAddHandler.Permission],
         ErrorCodes = ProbeErrors.All,
@@ -235,6 +236,18 @@ public sealed class CommitCodeHandler : ICommandHandler<ErrorCode, Unit>
     {
         context.Set(ProbeAggregates.Probe, new ProbeState { Blob = "committed:" + request.Name });
         return ValueTask.FromResult(CommandOutcome<Unit>.Commit(Unit.Value, request));
+    }
+}
+
+/// <summary>Rejects with the business code PROBE_ALREADY_CLAIMED and the details <c>reason</c> = the request (BC-11).</summary>
+public sealed class RejectDetailsHandler : ICommandHandler<string, Unit>
+{
+    public static CommandDescriptor Descriptor { get; } = new("probe.reject_details", touches: [ProbeAggregates.Probe]);
+
+    public ValueTask<CommandOutcome<Unit>> HandleAsync(string request, ICommandContext context)
+    {
+        context.Set(ProbeAggregates.Probe, new ProbeState { Blob = "rejected" });
+        return ValueTask.FromResult(CommandOutcome<Unit>.Reject(ProbeErrors.AlreadyClaimed, new Dictionary<string, string> { ["reason"] = request }));
     }
 }
 

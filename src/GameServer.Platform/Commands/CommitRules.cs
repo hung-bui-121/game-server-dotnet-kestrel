@@ -12,8 +12,8 @@ namespace GameServer.Platform.Commands;
 /// <summary>
 /// Commit rules shared by <see cref="CommandRunner"/> and the consumer test kit (API-11, SEC-14, CMD-03, DAT-01). Each check
 /// returns the violation (a message, or a <see cref="CommitViolation"/> for the size rules of FG-016), or null when the outcome
-/// may commit; the runner turns a code, audit or size message into INTERNAL and an aggregate above its budget into the
-/// AGGREGATE_TOO_LARGE rejection (nothing commits either way).
+/// may commit; the runner turns a code or audit message into INTERNAL, an aggregate above its budget into the AGGREGATE_TOO_LARGE
+/// rejection and a result or receipt over its limit into the COMMAND_OUTPUT_TOO_LARGE rejection (nothing commits either way).
 /// </summary>
 internal static class CommitRules
 {
@@ -98,10 +98,19 @@ internal static class CommitRules
             : null;
     }
 
-    /// <summary>CMD-03: the encoded result is stored in the receipt as resultCompact and must fit its limit.</summary>
-    internal static string? CheckResultSize(string operation, int resultBytes, CommandSettings settings) =>
+    /// <summary>
+    /// CMD-03 (FG-016): the encoded result is stored in the receipt as resultCompact and must fit
+    /// <see cref="CommandSettings.ResultCompactMaxBytes"/>; exactly at the limit commits.
+    /// </summary>
+    internal static CommitViolation? CheckResultSize(string operation, int resultBytes, CommandSettings settings) =>
         resultBytes > settings.ResultCompactMaxBytes
-            ? $"Result of '{operation}' is {resultBytes} bytes; resultCompact max is {settings.ResultCompactMaxBytes} (CMD-03)."
+            ? CommitViolation.OutputTooLarge(
+                OutputPartResult,
+                resultBytes,
+                settings.ResultCompactMaxBytes,
+                $"Command '{operation}' result is {resultBytes} bytes; ResultCompactMaxBytes is {settings.ResultCompactMaxBytes}: the runner rejects the " +
+                $"command with {CoreErrorCodes.CommandOutputTooLarge.Name} (part {OutputPartResult}) and nothing commits. " +
+                "Fix: return less or raise GameServer:Commands:ResultCompactMaxBytes.")
             : null;
 
     /// <summary>
@@ -122,6 +131,13 @@ internal static class CommitRules
 
     /// <summary>Value of the <c>part</c> detail of <c>COMMAND_OUTPUT_TOO_LARGE</c> for the receipt.</summary>
     internal const string OutputPartReceipt = "receipt";
+
+    /// <summary>Value of the <c>part</c> detail of <c>COMMAND_OUTPUT_TOO_LARGE</c> for the encoded result.</summary>
+    internal const string OutputPartResult = "result";
+
+    /// <summary>The <c>GameServer:Commands</c> setting that limits <paramref name="part"/> (for the log line's fix).</summary>
+    internal static string OutputLimitSetting(string part) =>
+        string.Equals(part, OutputPartResult, StringComparison.Ordinal) ? nameof(CommandSettings.ResultCompactMaxBytes) : nameof(CommandSettings.ReceiptMaxBytes);
 
     /// <summary>Owning module of a command, and the replacing handler when <c>ReplaceHandler</c> swapped it (EXT-02).</summary>
     private static string DescribeOwner(CommandRegistration registration, ModuleRegistry registry)

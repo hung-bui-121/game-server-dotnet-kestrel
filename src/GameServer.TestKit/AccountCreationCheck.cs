@@ -8,11 +8,23 @@ using GameServer.Platform.Registry;
 
 namespace GameServer.TestKit;
 
-/// <summary>The double of an account initializer (FG-015, FR-017): the account writer's view and rules, without host or store.</summary>
+/// <summary>
+/// The double of an account initializer (FG-015, FR-017): the account writer's view and rules, without host or store; and the
+/// receipt measure of both doubles with the seeded revisions it depends on (FG-016, FR-034, research R14).
+/// </summary>
 public sealed partial class CommandContextDouble
 {
+    /// <summary>Revision of a state seeded without one.</summary>
+    private const long SeededRev = 1;
+
     /// <summary>Body hash of the creation receipt (SHA-256 of the empty body), exactly as the account writer stores it.</summary>
     private static readonly string EmptyBodyHash = ReceiptIds.BodyHash([]);
+
+    /// <summary>
+    /// Stand-in for the request body hash of a command receipt: the double has no request bytes, and the runner's hash is always
+    /// 64 lowercase hex characters, so the measure does not depend on its value.
+    /// </summary>
+    private static readonly string BodyHashPlaceholder = new('0', 64);
 
     private CommandContextDouble(
         ModuleRegistry registry,
@@ -72,6 +84,17 @@ public sealed partial class CommandContextDouble
     }
 
     /// <summary>
+    /// Existing state of an aggregate of Touches ∪ Reads stored at <paramref name="rev"/> (at least 1): a write of it gets revision
+    /// <paramref name="rev"/> + 1, as the receipt records it (research R14). The state must be of the aggregate's state type.
+    /// </summary>
+    public CommandContextDouble Seed<TState>(string aggregateId, TState state, long rev)
+        where TState : class
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(rev, SeededRev);
+        return Seed(aggregateId, state, rev, nameof(state));
+    }
+
+    /// <summary>
     /// What the account writer would refuse for the initializer's run so far, as its rule lines (errors-and-report-lines §5):
     /// undeclared reads and writes and claims over the limit were already thrown; aggregate sizes (Touches order), audit entries
     /// (0 expected), then the receipt size (<c>ReceiptMaxBytes</c>) measured with the writer's receipt builder from the creation's
@@ -100,29 +123,41 @@ public sealed partial class CommandContextDouble
         violations.Add(CommitRules.CheckAudit(new CommandDescriptor(operation, [], profile: SecurityProfile.Player), view.Outbox));
         if (writes.Count > 0 || inner.Claims.Count > 0 || inner.Outbox.Count > 0)
         {
-            var receipt = ReceiptBuilder.Build(new ReceiptInputs(
-                ReceiptId,
-                _actor.GameId,
-                _actor.EnvironmentId,
-                _actor.ActorId,
-                _actor.ActorType,
-                _actor.PlayerId ?? string.Empty,
-                AccountCreation.Operation,
-                _requestId,
-                EmptyBodyHash,
-                CoreErrorCodes.Ok,
-                [],
-                _config.ConfigVersion,
-                Descriptor.Touches.Select(id => _aggregates[id]),
-                writes,
-                inner.Claims.Keys,
-                inner.Outbox,
-                _actor.CorrelationId,
-                _now));
-            violations.Add(CommitRules.CheckReceiptSize(operation, ReceiptDocument.SizeOf(receipt.ToJson()), _commands)?.Line);
+            var receiptBytes = MeasureReceipt(AccountCreation.Operation, EmptyBodyHash, CoreErrorCodes.Ok, [], writes);
+            violations.Add(CommitRules.CheckReceiptSize(operation, receiptBytes, _commands)?.Line);
         }
 
         return violations.OfType<string>().ToArray();
+    }
+
+    /// <summary>
+    /// Size of the receipt the runner (or the account writer) would store for the run so far, built with its receipt builder from
+    /// the configured actor, request id, receipt id, config version and <c>At</c>, the declared aggregates (Touches ∪ Reads), the
+    /// written aggregates with their new revisions, the claims and the outbox.
+    /// </summary>
+    private int MeasureReceipt(string operation, string bodyHash, ErrorCode resultCode, byte[] resultBytes, IReadOnlyList<ReceiptAggregate> writes)
+    {
+        var inner = Inner;
+        var receipt = ReceiptBuilder.Build(new ReceiptInputs(
+            ReceiptId,
+            _actor.GameId,
+            _actor.EnvironmentId,
+            _actor.ActorId,
+            _actor.ActorType,
+            _actor.PlayerId ?? string.Empty,
+            operation,
+            _requestId,
+            bodyHash,
+            resultCode,
+            resultBytes,
+            _config.ConfigVersion,
+            Descriptor.Touches.Concat(Descriptor.Reads).Distinct(StringComparer.Ordinal).Select(id => _aggregates[id]),
+            writes,
+            inner.Claims.Keys,
+            inner.Outbox,
+            _actor.CorrelationId,
+            _now));
+        return ReceiptDocument.SizeOf(receipt.ToJson());
     }
 
     /// <summary>The account writer's view of an initializer double (created with the inner context); null for a command.</summary>

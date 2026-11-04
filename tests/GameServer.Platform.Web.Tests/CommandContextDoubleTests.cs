@@ -290,4 +290,64 @@ public sealed class CommandContextDoubleTests
         ex.Message.ShouldBe("Command 'kit.violate' exceeded MaxClaimMarkers = 1 (DAT-04).");
         context.Claims.Select(c => c.Key).ShouldBe(["a"]);
     }
+
+    /// <summary>Slice 016 T051 (FR-034, US4-6): the receipt line of the commit check, measured with the runner's builder.</summary>
+    [Fact]
+    public async Task A_receipt_over_the_limit_is_one_line_and_one_at_the_limit_is_none()
+    {
+        var measured = await ReceiptBytesAsync(Flood(), padding: 3000);
+
+        var over = await CheckFloodAsync(Flood().WithCommandSettings(new CommandSettings { ReceiptMaxBytes = measured - 1 }), padding: 3000);
+        var exact = await CheckFloodAsync(Flood().WithCommandSettings(new CommandSettings { ReceiptMaxBytes = measured }), padding: 3000);
+
+        over.ShouldBe(
+        [
+            $"Command 'output.flood' receipt would be {measured} bytes; ReceiptMaxBytes is {measured - 1}: the runner rejects the command with " +
+            "COMMAND_OUTPUT_TOO_LARGE (part receipt) and nothing commits. Fix: fewer ledger/outbox entries or raise GameServer:Commands:ReceiptMaxBytes.",
+        ]);
+        exact.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task The_receipt_measure_moves_by_the_digit_length_of_the_seeded_revision_only()
+    {
+        var state = new Sample.Counter.CounterState { Value = 4 };
+
+        var rev1 = await ReceiptBytesAsync(Flood().Seed(Sample.Counter.CounterAggregates.Counter, state), padding: 100);
+        var rev9 = await ReceiptBytesAsync(Flood().Seed(Sample.Counter.CounterAggregates.Counter, state, rev: 9), padding: 100);
+        var rev99 = await ReceiptBytesAsync(Flood().Seed(Sample.Counter.CounterAggregates.Counter, state, rev: 99), padding: 100);
+
+        // The receipt records newRev = seeded rev + 1: "2", "10" and "100".
+        rev9.ShouldBe(rev1 + 1);
+        rev99.ShouldBe(rev1 + 2);
+    }
+
+    [Fact]
+    public void A_seed_revision_below_one_is_refused()
+    {
+        Should.Throw<ArgumentOutOfRangeException>(() => Flood().Seed(Sample.Counter.CounterAggregates.Counter, new Sample.Counter.CounterState(), rev: 0));
+    }
+
+    [Fact]
+    public async Task Without_an_encoder_there_is_no_receipt_check()
+    {
+        var context = Flood().WithCommandSettings(new CommandSettings { ReceiptMaxBytes = 1 });
+
+        context.CheckCommit(await new OutputModule.FloodHandler().HandleAsync(new OutputRun(3000, string.Empty), context)).ShouldBeEmpty();
+    }
+
+    private static CommandContextDouble Flood() =>
+        CommandContextDouble.Create(OutputModule.FloodOperation, new Sample.Counter.Adapters.CounterModule(), new OutputModule());
+
+    private static async Task<IReadOnlyList<string>> CheckFloodAsync(CommandContextDouble context, int padding) =>
+        context.CheckCommit(await new OutputModule.FloodHandler().HandleAsync(new OutputRun(padding, string.Empty), context), _ => []);
+
+    /// <summary>The double's receipt size, read from its line with a limit of 1 byte.</summary>
+    private static async Task<int> ReceiptBytesAsync(CommandContextDouble context, int padding)
+    {
+        var line = (await CheckFloodAsync(context.WithCommandSettings(new CommandSettings { ReceiptMaxBytes = 1 }), padding)).ShouldHaveSingleItem();
+        var match = System.Text.RegularExpressions.Regex.Match(line, @"receipt would be (\d+) bytes");
+        match.Success.ShouldBeTrue(line);
+        return int.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+    }
 }

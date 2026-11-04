@@ -101,6 +101,10 @@ namespace GameServer.Client
         public static GameServerError Client(string code, string message, bool retryable = false) =>
             new GameServerError(code, -1, 0, message, retryable, 0, null, new Dictionary<string, string>());
 
+        /// <summary>An SDK-made error of a call that used <paramref name="requestId"/> (network, invalid response; FG-022).</summary>
+        public static GameServerError Client(string code, string message, bool retryable, string? requestId) =>
+            new GameServerError(code, -1, 0, message, retryable, 0, requestId, new Dictionary<string, string>());
+
         public override string ToString() => $"{Code} ({HttpStatus}): {Message}";
     }
 

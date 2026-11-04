@@ -113,6 +113,7 @@ public sealed partial class ModuleRegistry
         ValidateAggregates(options, errors);
         ValidateCommands(options, errors);
         ValidateAccountInitializers(errors);
+        errors.AddRange(options.Commands.Validate());
         ValidateErrorCodes(errors);
         ValidateOutbox(errors);
         ValidateDeletion(errors);
@@ -242,10 +243,12 @@ public sealed partial class ModuleRegistry
             }
         }
 
-        if (seen.Count > options.Commands.MaxAggregatesPerGame)
+        // An out-of-range MaxAggregatesPerGame gets only its range line (CommandSettings.Validate); the count uses the DAT-09 maximum.
+        var maxAggregates = options.Commands.EffectiveMaxAggregatesPerGame;
+        if (seen.Count > maxAggregates)
         {
             errors.Add(
-                $"[deployment] {seen.Count} player aggregates registered (max {options.Commands.MaxAggregatesPerGame}). " +
+                $"[deployment] {seen.Count} player aggregates registered (max {maxAggregates}). " +
                 "Fix: merge aggregates or remove modules (DAT-09).");
         }
 

@@ -1041,7 +1041,7 @@ checks of the five settings, the kit's receipt measure equal to the runner's.
 
 **Independent test**: SC-005 (T049, T052) and SC-006 (T050).
 
-- [ ] T047 [US4] Rules before staging in the runner (after T013, T014, T041, **T006** decision V2; research R8 "Order"):
+- [x] T047 [US4] Rules before staging in the runner (after T013, T014, T041, **T006** decision V2; research R8 "Order"):
   `src/GameServer.Platform/Commands/CommandRunner.cs` `RunAttemptAsync`: handler → code → result size → per touch change
   detection + document build + `AGGREGATE_TOO_LARGE` → audit → receipt build (`ReceiptBuilder`) → receipt size →
   **then** stage aggregates, claims, receipt (insert or replace of an expired one). Failure types and messages unchanged
@@ -1050,7 +1050,18 @@ checks of the five settings, the kit's receipt measure equal to the runner's.
   decorator in `RunnerHarness`) shows no insert/replace for a result over the limit, a receipt over the limit, an audit
   violation and an oversized aggregate; receipts of committing commands byte-identical to T013's golden receipts.
   Done when: green; existing tests unchanged. (FR-031, constitution I)
-- [ ] T048 [US4] Typed size rejection (after T047; research R8 "Rejection path", errors-and-report-lines §2/§3/§5):
+  Note: `RunAttemptAsync` now runs code → result size → per-touch change detection + document build + `AGGREGATE_TOO_LARGE` →
+  audit → receipt build → receipt size, and only then stages aggregates, claims and the receipt (insert, or replace of an
+  expired one). Receipt inputs are unchanged, so receipts are byte-identical (`ReceiptBuilderTests` green: stored JSON =
+  builder output for `probe.nochange`/`probe.claim`/`probe.outboxflood`). New `tests/GameServer.Platform.Tests/Commands/
+  CommandRunnerRulesBeforeStagingTests.cs` (the staging-spy tests live there to keep `CommandRunnerTests.cs` under ~450
+  lines): `RunnerHarness.CreateRunner(store)` over a `RecordingStore` shows only `read …` operations for a result over the
+  limit, a receipt over the limit, an audit violation and an oversized aggregate; a committing claim run stages
+  `insert pa_probe`, `insert probe_claims`, `insert receipts` in that order. **Deviation (DI signature):** `CommandRunner`'s
+  last constructor parameter is now `ILoggerFactory` (was `ILogger<CommandRunner>`) so the output-limit line uses the
+  contract category `GameServer.Commands` while the replay warning keeps `GameServer.Platform.Commands.CommandRunner`. The
+  runner is DI-created (`GameServerBuilder`) and built by hand only in `RunnerHarness` (`QueueLoggerFactory`).
+- [x] T048 [US4] Typed size rejection (after T047; research R8 "Rejection path", errors-and-report-lines §2/§3/§5):
   `src/GameServer.Platform/Commands/CommitRules.cs` `CheckResultSize` returns `CommitViolation` (§5 result line, details
   `part=result`, `bytes`, `limit`); the runner throws its private `CommandRejectedException(COMMAND_OUTPUT_TOO_LARGE,
   details)` for both parts; in the `catch (CommandRejectedException)` the Error line of §2 (operation, part, bytes,
@@ -1064,7 +1075,19 @@ checks of the five settings, the kit's receipt measure equal to the runner's.
   result rule; `tests/GameServer.Platform.Web.Tests/CommandContextConformanceTests.cs` `The_result_size_check_is_the_runners`
   compares the runner's rejection code and details with the kit's line (T009 inventory).
   Done when: green; nothing reaches the `INTERNAL` catch-all for a size violation. (FR-030, FR-031, US4-1..US4-3, BC-1)
-- [ ] T049 [US4] Details on the wire (after T042, T043, T048, **T008** decision V11; wire-changes §2/§4):
+  Note: `CommitRules.CheckResultSize` returns `CommitViolation` (part `result`, §5 result line);
+  `CommitRules.OutputPartResult` and `OutputLimitSetting(part)` added. The runner throws its private
+  `CommandRejectedException(violation)` for both parts; the catch reports once per request (Error line in
+  `GameServer.Commands` + `command_output_too_large_total{operation, part}`) and returns `CommandExecution(code, …) { Details }`.
+  `CommandExecution.Details` (init, default empty, internal `EmptyDetails`) carries every HTTP 200 rejection's details,
+  module codes included. Rewritten pins: `CommandRunnerTests.Oversized_receipt_is_command_output_too_large` and
+  `Oversized_result_compact_is_command_output_too_large` (code, details, 0 documents, no receipt, metric 1, exactly one Error
+  line asserted literally); `CommandContextConformanceTests.The_result_size_check_is_the_runners` compares the runner's code
+  and details with the kit's new line. New tests: a retry with the same request id executes again with the same code and
+  details (metric 2, 0 receipts); a raised `ReceiptMaxBytes` commits the same command; a module `Reject(code, details)` keeps
+  `{reason}` in `CommandExecution.Details` (new probe command `probe.reject_details` in `TestModules`); a rejection without
+  details and a commit have empty details. `CommitRulesSizeTests` +3 (result at/over the limit, setting names).
+- [x] T049 [US4] Details on the wire (after T042, T043, T048, **T008** decision V11; wire-changes §2/§4):
   `CommandEndpointFactory.cs` fills `CommandResponse.details` (11) from `execution.Details`; `GmCommandResponse` gains
   init property `Details` filled the same way; `src/GameServer.Core/Commands/ICommandHandler.cs` XML doc of
   `ICommandOutcome.Details` per public-api §1.4 (BC-11); `docs/api/gm-openapi.json` regenerated and reviewed (additive).
@@ -1075,7 +1098,18 @@ checks of the five settings, the kit's receipt measure equal to the runner's.
   GM response with the code and `details`; a module rejection with details → details in the response (BC-11); a
   creating login whose receipt is over the limit → `INTERNAL` and the creation rule line (T026).
   Done when: green; `OpenApiTests` green. (FR-030, FR-031, SC-005, US4-1, US4-2, US4-3, BC-11)
-- [ ] T050 [US4] Command settings ranges (after T023; research R9, errors-and-report-lines §4.2):
+  Note: `CommandEndpointFactory.BuildResponse` copies `execution.Details` into `CommandResponse.details`;
+  `GmCommandResponse.Details` (init, sorted copy, empty for a commit). `ICommandOutcome.Details` and
+  `CommandOutcome.Reject` XML docs per public-api §1.4. `docs/api/gm-openapi.json` regenerated with `UPDATE_OPENAPI=1`
+  (rewritten as LF): +6 lines, only `details` (`object`, string `additionalProperties`) on `GmCommandResponse`;
+  `OpenApiTests` green. New `tests/GameServer.Platform.Web.Tests/CommandOutputLimitTests.cs` (module `output` with
+  `output.result`, `output.flood`, GM `output.gm_flood`, `output.reject`): result 512 commits / 513 refused (HTTP 200, code
+  23, details, counter not written, 0 receipts, metric, literal Error line); receipt measured with a probe run, then exactly
+  4096 commits and 4097 is refused; `GameServer:Commands:ReceiptMaxBytes = 16384` commits the same command; the GM command
+  over the limit answers 200 JSON with `code`, `codeNumber` 23, `receiptId: null`, `details`; a module rejection's details
+  reach `CommandResponse.details` (BC-11); a creating login with `FloodOutbox(40)` answers 500 `INTERNAL` with the creation
+  rule line containing the §5 receipt text.
+- [x] T050 [US4] Command settings ranges (after T023; research R9, errors-and-report-lines §4.2):
   `src/GameServer.Platform/GameServerOptions.cs` `CommandSettings.Validate()` (one line per violation; the cross rule
   `4·⌈ResultCompactMaxBytes/3⌉ + 1024 ≤ ReceiptMaxBytes`); `ModuleRegistry.Validate` calls it after the initializer
   block (serve, provision, kit); when `MaxAggregatesPerGame` is out of range only its range line is written and the count
@@ -1085,7 +1119,20 @@ checks of the five settings, the kit's receipt measure equal to the runner's.
   `tests/GameServer.Platform.Web.Tests/CommandSettingsStartupTests.cs` (every settings line + one initializer line + one
   unrelated fault in one start → one report with all lines, exit 1; provision mode the same lines).
   Done when: green. (FR-032, SC-006, US4-4, BC-2)
-- [ ] T051 [US4] Kit receipt check (after T030, T048; research R14, public-api §6): `src/GameServer.TestKit/AccountCreationCheck.cs`
+  Note: `CommandSettings.Validate()` (range constants, cross rule `4·⌈r/3⌉ + 1024`) and `EffectiveMaxAggregatesPerGame`
+  (16 when out of range); `ModuleRegistry.Validate` adds the lines right after `ValidateAccountInitializers`, and the
+  aggregate count uses the effective maximum. **Finding:** the cross rule makes 1112 the smallest `ReceiptMaxBytes` that can
+  start (`ResultCompactMaxBytes` ≥ 64 needs 4·22 + 1024 = 1112), so a value in 1024..1111 is in its own range but always gets
+  the cross line; both texts are contracts and were kept (release notes "Known before the tag", for PCR §22 in T072).
+  Consequence: `AccountWriterCreationTests`' receipt-too-large fixture used `ReceiptMaxBytes = 1024` and asserts that the
+  registry validates, so it now uses 1112 with `ResultCompactMaxBytes = 64` (the expected rule line says 1112). New
+  `tests/GameServer.Platform.Tests/CommandSettingsValidationTests.cs` (defaults valid; each bound −1/+1 per setting with the
+  literal line; the receipt/result bounds with a matching other value; the cross rule at equality 1708 and one under; order
+  of the lines; registry placement; out-of-range maximum = only its range line; in-range maximum still limits the count) and
+  `tests/GameServer.Platform.Web.Tests/CommandSettingsStartupTests.cs` (every settings line + one initializer line + an
+  invalid GameId in one start: serve throws one `GameServerStartupException`, `ServeAsync` exits 1, provision exits 1 with
+  the same lines and the provisioner is never called; the initializer line comes before the settings lines).
+- [x] T051 [US4] Kit receipt check (after T030, T048; research R14, public-api §6): `src/GameServer.TestKit/AccountCreationCheck.cs`
   / `CommandContextDouble.cs`: `CheckCommit(outcome, encodeResult)` adds the §5 receipt line measured with `ReceiptBuilder`
   from the R14 inputs (64-character body-hash placeholder; configured actor, player, request id, config version, `At`);
   the result line is the §5 text; new `Seed<TState>(aggregateId, state, rev)` (receipt `newRev` = rev + 1; the existing
@@ -1096,20 +1143,49 @@ checks of the five settings, the kit's receipt measure equal to the runner's.
   `tests/SampleGame.Tests/BuyItemHandlerTests.cs` and the fixture `SaveNoteHandlerTests` green unchanged;
   `TestKitArchitectureTests` green.
   Done when: green. (FR-034, US4-6)
-- [ ] T052 [US4] Receipt parity (after T051; **[VERIFY] V7**): new `tests/GameServer.Platform.Web.Tests/ReceiptParityTests.cs`:
+  Note: the receipt measure lives in `AccountCreationCheck.cs` (Planning note 15): private `MeasureReceipt(operation,
+  bodyHash, resultCode, resultBytes, writes)` builds with `ReceiptBuilder` from the configured actor, request id, receipt id,
+  config version, `At`, Touches ∪ Reads, written aggregates (`newRev` = loaded rev + 1), claims and outbox; used by
+  `CheckCommit(outcome, encodeResult)` (64-character `'0'` body-hash placeholder, runner's order: code, result, aggregates,
+  audit, receipt) and by `CheckAccountCreation()` (empty-body hash). `Seed<TState>(id, state, rev)` (rev ≥ 1, else
+  `ArgumentOutOfRangeException`); `Seed(id, state)` delegates with rev 1; the seeded document stores the rev. XML docs list
+  the configured inputs and the placeholder; `CheckCommit(outcome)` documents "no encoder → neither size checked".
+  `CommandContextDoubleTests` +4: receipt one byte over → the literal line, at the limit → empty; `Seed(…, rev: 9)` and
+  `rev: 99` change the measure by +1/+2 bytes (newRev "2" → "10" → "100"); rev 0 refused; no encoder → no receipt line.
+  `BuyItemHandlerTests`, fixture `SaveNoteHandlerTests` and `TestKitArchitectureTests` green in the full suite.
+- [x] T052 [US4] Receipt parity (after T051; **[VERIFY] V7**): new `tests/GameServer.Platform.Web.Tests/ReceiptParityTests.cs`:
   for the sample `battle.end` and `shop.buy` (`GameHttp.FullGame`) and the `StartingStateModule` creation, the receipt
   bytes read from the store equal the double's `ReceiptBuilder` output for the same actor, player, request id, config
   version and time (0 bytes difference); a longer actor id or config label changes both by its length difference.
   The sample initializer row is added in T064, the fixture command in T065.
   Done when: green; a Note records the V7 result (or the input added to the double). (FR-034, SC-005)
-- [ ] T053 [P] [US4] Couchbase typed paths (after T048; **[VERIFY] V2** final): `tests/GameServer.Platform.Couchbase.IntegrationTests/CouchbaseRunnerTests.cs`
+  Note (V7 holds, no input added to the double): new `tests/GameServer.Platform.Web.Tests/ReceiptParityTests.cs` (inline
+  relay off so the stored receipt is the committed bytes): `shop.buy` and `battle.end` on `GameHttp.FullGame` and a
+  `StartingStateModule` creation with `Grant(250)` — the host's handler (or initializer) runs in the double seeded with the
+  state read before the command and configured with the stored receipt's actor ids, correlation id, request id, receipt
+  id, committed time and the host config, with a 1-byte limit so the line reports the measure: stored size = measured size
+  for all three (0 bytes difference). A config version longer by `-longer` changes the measure by 7 bytes. Finding: a
+  first try with `+longer` gave +12 — the JSON writer escapes `+` as `\u002B` (6 bytes); it applies to runner and double
+  alike (sample config versions contain `+`), so parity holds; recorded in the release notes.
+- [x] T053 [P] [US4] Couchbase typed paths (after T048; **[VERIFY] V2** final): `tests/GameServer.Platform.Couchbase.IntegrationTests/CouchbaseRunnerTests.cs`
   gains: result over the limit and receipt over the limit → `COMMAND_OUTPUT_TOO_LARGE`, 0 documents; exactly at the limit
   commits; a broken aggregate in `Touches` → typed code, 0 documents.
   Done when: green against local Couchbase; skips with a message otherwise. (FR-031, FR-092)
-- [ ] T054 [US4] US4 checkpoint (after T049–T053): release notes draft — FG-016 section (limits, rejection, kit check),
+  Note: `CouchbaseRunnerTests` +3, green against local Couchbase EE 7.6.12 (12/12 in the class): result 513 →
+  `COMMAND_OUTPUT_TOO_LARGE` with part `result` and no receipt, 512 commits; receipt probed, then limit + 1 refused (nothing
+  in `pa_probe`) and exactly at the limit commits with its receipt; a counter stored with `schemaVersion` = code + 1 →
+  `GameServerException(AGGREGATE_VERSION_AHEAD)` with `aggregate=counter` and the document unchanged (rev 3, value 7). **V2
+  final: holds** (the typed rejection from the attempt body reaches the runner's catch unchanged on Couchbase).
+- [x] T054 [US4] US4 checkpoint (after T049–T053): release notes draft — FG-016 section (limits, rejection, kit check),
   BC-1, BC-2, BC-11 rows (owner question 2 and its one-line fallback filter); `TelemetryTests` metric list gains
   `command_output_too_large_total`; full suite in memory and File.
   Done when: green. (FR-090)
+  Note: release notes FG-016 section, BC-1/BC-2/BC-11 "how it surfaces" filled with the asserted texts (BC-11 names its
+  one-line fallback filter), V7/V8 rows. `TelemetryTests.Obs01_metrics_are_recorded_without_player_or_request_labels`
+  records and expects `command_output_too_large_total`. Checkpoint (after T047–T053): Release 0 warnings; full suite in
+  memory 2587 total / 2477 passed / 110 skipped / 0 failed (baseline 2530/2423/107 + 57 new tests, +3 skips = the new
+  Couchbase tests without `COUCHBASE_CONNSTR`). The File-store run of the same code is part of the T062 checkpoint run
+  (US5 only adds SDK files and client tests).
 
 **Checkpoint**: an oversized result or receipt is a 200 rejection with details and nothing staged; settings out of
 range stop startup with one line each; the kit measures the runner's receipt byte for byte.
@@ -1125,7 +1201,7 @@ file (T056, T057).
 All files are under `sdk/unity/com.gameserver.client/`; tests under `tests/GameServer.Client.Tests/`. Every new package
 file gets a hand-written `.meta` (fresh GUID, the 015 shape) before any Unity run.
 
-- [ ] T055 [US5] Caller request ids (after T045, **T003** decision V1; research R10, public-api §7.1, data-model §4.1):
+- [x] T055 [US5] Caller request ids (after T045, **T003** decision V1; research R10, public-api §7.1, data-model §4.1):
   `Runtime/Core/GameServerClient.cs` — the overload of the T003 decision (`SendCommandAsync<TResult>(route, request,
   resultParser, string? requestId, CancellationToken cancellationToken = default)`, `requestId` required; null =
   generated; otherwise a UUID in format `D`, any case, normalized to lowercase; anything else → `ArgumentException`
@@ -1142,7 +1218,18 @@ file gets a hand-written `.meta` (fresh GUID, the 015 shape) before any Unity ru
   Unity compiler check is T003 and T068, Planning note 12).
   Done when: green; `SendCommandAsync(r, q, p, default)` still binds to the existing overload (no CS0121). (FR-040,
   FR-041, US5-1)
-- [ ] T056 [P] [US5] Entry types and container format (after T001; sdk-pending-store §2, public-api §7.2): new
+  Note: new overload exactly as public-api §7.1 (T003 decision) in the new partial
+  `Runtime/Core/GameServerClient.PendingCommands.cs` (`GameServerClient` is now `sealed partial`); the existing overload
+  delegates with `null`. `requestId` is validated (`Guid.TryParseExact(…, "D")`, 36 characters) and normalized before the
+  token check, the body, the store or the transport. `SendAsync` takes the id (fresh `NewRequestId()` for login, logout,
+  snapshot, config, time); `NETWORK_ERROR`, malformed-response and HTTP-shape `INVALID_RESPONSE` errors and "command
+  response without a code" carry it. `CommandResult` five-argument constructor + `RequestId` (old one → `""`);
+  `GameServerError.Client(code, message, retryable, requestId)`. New `RequestIdTests` (15: caller id on every retry with the
+  same bytes, generated id returned by both overloads, uppercase normalized, 5 invalid ids → `ArgumentException` with 0
+  transport calls and 0 records, request id on network and invalid-response errors, `NewRequestId()` format, the old
+  constructor and three-parameter `Client` keep their behaviour, replay of the same id and bytes against the sample host)
+  and `OverloadBindingTests` (the five V1 shapes, one request each; only the string shape sends the caller's id).
+- [x] T056 [P] [US5] Entry types and container format (after T001; sdk-pending-store §2, public-api §7.2): new
   `Runtime/Core/PendingCommandStore.cs` (`PendingCommand`, `PendingCommandStatus`, `IPendingCommandStore`,
   `InMemoryPendingCommandStore`) and internal `Runtime/Core/PendingCommandFormat.cs` (container v1: magic `GSPC`, version,
   reserved, payload length, payload, SHA-256; every refusal of §2), each with its `.meta`.
@@ -1150,7 +1237,16 @@ file gets a hand-written `.meta` (fresh GUID, the 015 shape) before any Unity ru
   bad UTF-8; id not a lowercase UUID; id ≠ file name; lengths past their bounds; trailing bytes; hash flip → refused with
   its reason, 0 exceptions; a body of 1 MiB at the bound.
   Done when: green; `UnityPackageMetaTests` green; existing `.meta` GUIDs equal T001 (b). (FR-045, FR-046)
-- [ ] T057 [US5] Persistent store (after T056, **T007** decision V8/V9; sdk-pending-store §1, §3):
+  Note: `Runtime/Core/PendingCommandStore.cs` (`PendingCommand` validates a lowercase UUID id, non-empty player and route,
+  copies the body; `PendingCommandStatus`; `IPendingCommandStore`; `InMemoryPendingCommandStore`; internal
+  `PendingCommandList` keeps the recorded-time-then-id order) and internal `Runtime/Core/PendingCommandFormat.cs` (container
+  v1 per sdk-pending-store §2, reader with bounded lengths, strict UTF-8, `IsLowercaseUuid`). Hand-written `.meta` files with
+  fresh GUIDs (`PendingCommandStore.cs.meta` c1c7cbd0…, `PendingCommandFormat.cs.meta` 1f2a40e2…), added to
+  `unity-package-guids.txt`; the 35 recorded GUIDs unchanged. `PendingCommandFormatTests` (21): round trip, 1 MiB body
+  bound (and 1 MiB + 1 not serialized), empty body, truncated header/payload/hash, wrong magic, version 2, trailing bytes,
+  hash flip, invalid UTF-8, uppercase and non-UUID ids, id ≠ file name, id/player/route past their bounds, a length beyond
+  the payload, empty player/route, constructor rules, body copy — each refusal with its reason and no exception.
+- [x] T057 [US5] Persistent store (after T056, **T007** decision V8/V9; sdk-pending-store §1, §3):
   `Runtime/Core/CacheFileOps.cs` gains virtual `EnumerateFiles(folder, pattern)`; `PersistentPendingCommandStore(folder)`
   in `Runtime/Core/PendingCommandStore.cs`: load in the constructor (create folder, delete `*.pending.tmp`, read and
   validate each `*.pending`, order by recorded time then id; a damaged entry skipped, deleted and named in
@@ -1162,7 +1258,21 @@ file gets a hand-written `.meta` (fresh GUID, the 015 shape) before any Unity ru
   exception; leftover temp deleted at load; read-only folder (`ReadOnlyFolder` helper of 015); two valid entries and one
   damaged → two loaded and the reason; the session token never appears in any file (byte scan).
   Done when: green. (FR-045, SC-007)
-- [ ] T058 [US5] Client send flow with a store (after T055, T057; sdk-pending-store §4): `Runtime/Core/GameServerClientOptions.cs`
+  Note: `CacheFileOps` gains virtual `EnumerateFiles(folder, pattern)` and the shared `IsFileProblem` (the config cache now
+  calls it). `PersistentPendingCommandStore(folder)`: load creates the folder, deletes exact `{uuid}.pending.tmp` leftovers,
+  reads each `*.pending` whose name is an exact lowercase entry name (V9: anything else, e.g. `X.PENDING`, uppercase ids or
+  `notes.pending`, is named in `LoadProblem` as `not an entry file name` and **left on disk**, since it is not a file the
+  store wrote — a deliberate narrowing of "skipped, deleted"), deletes and names damaged entries, and turns an enumeration
+  failure into an empty store with `unreadable: {Type}`. `Record`: memory first, then temp + write + `Flush(true)` (V8) +
+  `Move`, or `Replace` when the entry file exists; `WriteProblem = "not saved: …"`, temp deleted. `Remove`: memory first,
+  `Delete` without flush, `WriteProblem = "not removed: …"` on failure. `PersistentPendingCommandStoreTests` (23, with
+  `FaultyPendingOps` in the new `PendingCommandTestSupport.cs`): faults at open/write/flush/move (new entry: kept in memory,
+  no file) and open/write/flush/replace (same id again: old file kept), delete (file stays, next store lists it), a later
+  success clears the problem, leftover temp deleted, two valid + one damaged, a copied entry under another id, three
+  not-our-name files left alone, enumeration failure, read-only folder (`ReadOnlyFolder`), an entry too large to store; no
+  exception anywhere. The session-token byte scan is in `PendingCommandClientTests` (the store never sees the token; the
+  client is what could leak it).
+- [x] T058 [US5] Client send flow with a store (after T055, T057; sdk-pending-store §4): `Runtime/Core/GameServerClientOptions.cs`
   gains `PendingCommands` (default null) and `PendingCommandMaxAge` (default 23 h; `Validate()` requires (0, 168 h]); the
   store logic lives in a new partial `Runtime/Core/GameServerClient.PendingCommands.cs` (+ `.meta`; `GameServerClient`
   becomes `partial`, Planning note 15): with a store, `SendCommandAsync` records `(id, session player, route, exact
@@ -1175,7 +1285,17 @@ file gets a hand-written `.meta` (fresh GUID, the 015 shape) before any Unity ru
   entry and throws; a disk failure still sends the command and exposes `WriteProblem`; without a store the transport
   sees exactly today's requests.
   Done when: green. (FR-042, FR-044, FR-045, US5-2, US5-3, US5-6)
-- [ ] T059 [US5] Listing and resend (after T058; public-api §7.1, data-model §4.2): `PendingCommands`, `StatusOf`
+  Note: `GameServerClientOptions.PendingCommands` (null) and `PendingCommandMaxAge` (23 h; `Validate()` requires (0, 168 h]).
+  With a store, the overload records `(id, session player, route, body bytes, ServerNow)` before the first attempt (only when
+  the session has a player id; without one the entry could never be resent, `StatusOf` = `OtherPlayer`), removes on any
+  `CommandResponse` and on a final envelope (`CodeNumber ≥ 0` and not retryable: SDK-made errors use -1), keeps otherwise.
+  `PendingCommandClientTests`: final answers (OK, business code, non-retryable envelope, `IDEMPOTENCY_PAYLOAD_MISMATCH`)
+  remove; network, invalid response, `COMMIT_UNKNOWN_RETRY` and `AGGREGATE_VERSION_AHEAD` as last answers and cancellation
+  keep (entry with id, player, route and exact body); the record is visible at the first transport call; the entry records
+  the server clock (not the device's); guest login, snapshot, config, time and logout make 0 store calls;
+  a flush failure still sends (3 attempts) and shows `WriteProblem`; without a store the request is the same (method, URL,
+  body, headers); the session token never appears in an entry file.
+- [x] T059 [US5] Listing and resend (after T058; public-api §7.1, data-model §4.2): `PendingCommands`, `StatusOf`
   (`OtherPlayer` for another player or no session, `Expired` at `ServerNow − RecordedAtServerUtc ≥ PendingCommandMaxAge`,
   else `Resendable`), `ResendPendingAsync<TResult>(command, parser, ct)` (stored bytes, stored id, stored route; the same
   remove/keep rules; `InvalidOperationException` when not `Resendable`), `DiscardPendingCommand(requestId)` (unknown ids
@@ -1183,14 +1303,28 @@ file gets a hand-written `.meta` (fresh GUID, the 015 shape) before any Unity ru
   Tests in `PendingCommandClientTests`: each status, the expiry on the server clock (a device clock change does not move
   it), resend refused for each non-resendable status, resend sends byte-identical bodies, discard.
   Done when: green. (FR-043, US5-3, US5-4)
-- [ ] T060 [P] [US5] Unity helper (after T057; public-api §7.4): new `Runtime/Unity/UnityPendingCommandStore.cs` (+ `.meta`)
+  Note: `PendingCommands`, `StatusOf`, `ResendPendingAsync` (status must be `Resendable` **and** the entry must be in the
+  store, else `InvalidOperationException`; same remove/keep rules), `DiscardPendingCommand` (only ids in the store reach
+  `Remove`). Tests: Resendable/OtherPlayer/Expired with the device clock moved 30 days (no effect) and the monotonic clock
+  moved to 23 h − 1 s (Resendable) and 23 h (Expired), no session → OtherPlayer; max-age validation; resend sends the
+  stored bytes, id and route and removes on the answer; a resend that is lost again keeps the entry; resend refused for
+  another player's, an expired and an unknown entry with 0 transport calls; discard of unknown and known ids.
+- [x] T060 [P] [US5] Unity helper (after T057; public-api §7.4): new `Runtime/Unity/UnityPendingCommandStore.cs` (+ `.meta`)
   under `#if UNITY_5_3_OR_NEWER`: `Create(environmentName)` → `persistentDataPath/gameserver-pending/{name}` with the 015
   name rule (`PersistentConfigCache.FolderNameProblem`), the iOS no-backup flag on the folder under `#if UNITY_IOS &&
   !UNITY_EDITOR`, XML doc of the threading rule (one client per folder, Unity main thread).
   Done when: a scratch C# 9 project compiling the package `Runtime` against Unity 6000.3.22f1's `UnityEngine.CoreModule`
   with and without `UNITY_IOS` builds with 0 warnings (the 015 m8 procedure; Note); `UnityPackageMetaTests` green.
   (FR-046, FR-047, US5-7)
-- [ ] T061 [US5] End to end and cost (after T059; SC-007, SC-008, **[VERIFY] V8** final): new
+  Note: `Runtime/Unity/UnityPendingCommandStore.cs` (+ `.meta` b0a6215d…; `GameServerClient.PendingCommands.cs.meta`
+  0c6e8678…), `Create(environmentName)` → `persistentDataPath/gameserver-pending/{name}` with
+  `PersistentConfigCache.FolderNameProblem(name, "pending command store")` (new overload naming the store kind; the
+  one-argument form keeps the config-cache message), iOS no-backup flag on the folder under `#if UNITY_IOS && !UNITY_EDITOR`,
+  XML doc of the threading rule. The 015 m8 check (scratch `unitycheck` project: netstandard2.1, C# 9, warnings as errors,
+  `UNITY_5_3_OR_NEWER`, references Unity 6000.3.22f1 `UnityEngine.CoreModule` and `UnityEngine.UnityWebRequestModule`)
+  builds the package `Runtime` with 0 warnings / 0 errors both without and with `UNITY_IOS`. `UnityPackageMetaTests` green
+  (full suite).
+- [x] T061 [US5] End to end and cost (after T059; SC-007, SC-008, **[VERIFY] V8** final): new
   `PendingCommandEndToEndTests.cs` (sample host through `SdkHarness`, a persistent store in a temp folder): the five rows
   of the sdk-pending-store §5 crash table (temp only; record then the request dropped; committed then the response
   dropped; response then a failing delete; after remove) each followed by a new client on the same folder, login and
@@ -1198,12 +1332,31 @@ file gets a hand-written `.meta` (fresh GUID, the 015 shape) before any Unity ru
   of another player is refused. New opt-in `PendingCommandStorePerformanceTests.cs` (`GAMESERVER_PERF=1`): record and
   remove of a 4 KiB body, 200 iterations after warm-up, on the T007 reference drive → p95 ≤ 10 ms each.
   Done when: green; a Note records the p95 values. (FR-042, FR-043, FR-047, SC-007, SC-008, US5-3, US5-5)
-- [ ] T062 [US5] SDK guards and US5 checkpoint (after T055–T061): `SdkPublicApiTests` against the T001 baseline → 0
+  Note: new `PendingCommandEndToEndTests` (6, sample host through `SdkHarness`; `SdkHarness.NewClient` gains an optional
+  `pending` store; purchases = `shop.buy` receipts of the player, gold = ledger sum): temp only (record never reached its
+  rename, then a leftover temp) → nothing listed, folder empty, 0 purchases; request dropped before the server → resend
+  executes once (`Replayed = false`, gold debited once); response dropped after the commit → resend `Replayed = true` with the
+  original receipt id, 1 purchase; response received but the delete failed → the next client lists it and the resend
+  replays the first receipt; after a remove → nothing listed; another player's entry → `OtherPlayer` and resend refused.
+  New opt-in `PendingCommandStorePerformanceTests` (`GAMESERVER_PERF=1`, 20 warm-up + 200 iterations, 4 KiB, `%TEMP%` on C:):
+  record p50 2.29 / **p95 5.56 ms**, remove p50 0.20 / **p95 0.26 ms** (≤ 10 ms; V8 final holds, `Flush(true)` kept).
+- [x] T062 [US5] SDK guards and US5 checkpoint (after T055–T061): `SdkPublicApiTests` against the T001 baseline → 0
   removed or changed lines, the added lines listed in a Note; `sdk/GameServer.Client` C# 9 / netstandard2.1 0 warnings;
   `UnityPackageMetaTests` covers the four new files; the package version stays `0.7.0`; release notes draft — FG-022
   section with the client snippet (`NewRequestId`, `Options.PendingCommands`, listing and resend after login); full
   suite in memory and File.
   Done when: green. (FR-046, FR-047, SC-009, FR-090)
+  Note: `SdkPublicApiTests` green; `sdk-public-api.txt` re-recorded from the Release SDK (LF): 0 removed or changed lines,
+  +44 added — `CommandResult` five-argument constructor and `RequestId`; `GameServerClient.NewRequestId`, the
+  `SendCommandAsync(…, string requestId, …)` overload, `PendingCommands`, `StatusOf`, `ResendPendingAsync`,
+  `DiscardPendingCommand`; `GameServerClientOptions.PendingCommands`/`PendingCommandMaxAge`; `GameServerError.Client(…,
+  requestId)`; types `PendingCommand` (constructor + 5 properties), `PendingCommandStatus` (3 values), `IPendingCommandStore`
+  (5 members), `InMemoryPendingCommandStore` and `PersistentPendingCommandStore` (constructor, members, `Folder`).
+  `EntrySuffix` was made internal so the surface is exactly public-api §7. `sdk/GameServer.Client` (C# 9, netstandard2.1)
+  0 warnings; `UnityPackageMetaTests` covers the four new `.meta` files (GUID list +4 lines); package version stays
+  `0.7.0`. Release notes FG-022 section with the client snippet. Checkpoint: Debug and Release 0 warnings; full suite in
+  memory 2680 total / 2569 passed / 111 skipped / 0 failed and with `GAMESERVER_TEST_STORE=File` the same 2680 / 2569 / 111 /
+  0 (`COUCHBASE_*` unset; +150 tests and +4 skips over the 2530/2423/107 baseline: 3 Couchbase tests, 1 opt-in perf test).
 
 **Checkpoint**: a command whose outcome is unknown survives a restart and replays (or executes once); every save fault
 and corrupt file leaves loadable entries; a client without a store behaves exactly as before.

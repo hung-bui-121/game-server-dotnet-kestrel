@@ -48,6 +48,12 @@ public sealed record GmCommandResponse(
 {
     /// <summary>Aggregates this response cannot carry (a replay whose aggregate cannot be read now, FG-029); empty normally.</summary>
     public IReadOnlyList<GmUnavailableAggregate> Unavailable { get; init; } = [];
+
+    /// <summary>
+    /// Details of a business rejection (HTTP 200, BC-11), e.g. <c>part</c>/<c>bytes</c>/<c>limit</c> of <c>COMMAND_OUTPUT_TOO_LARGE</c>;
+    /// empty for a commit.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> Details { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
 }
 
 public sealed record GmAggregateUpdate(string Id, long BaseRev, long NewRev, JsonNode? State);
@@ -210,6 +216,7 @@ public static class GmCommandEndpointFactory
                 .ToArray())
         {
             Unavailable = execution.Unavailable.Select(f => new GmUnavailableAggregate(f.AggregateId, f.Code.Name)).ToArray(),
+            Details = new SortedDictionary<string, string>(execution.Details.ToDictionary(), StringComparer.Ordinal),
         };
 
     private static TBody Deserialize<TBody>(byte[] body)

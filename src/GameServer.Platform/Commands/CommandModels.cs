@@ -37,11 +37,19 @@ public sealed record CommandExecution(
     bool Replayed,
     string ConfigVersion)
 {
+    internal static readonly IReadOnlyDictionary<string, string> EmptyDetails = new Dictionary<string, string>(StringComparer.Ordinal);
+
     /// <summary>
     /// Client-visible aggregates this response cannot carry (FG-029): a replay whose aggregate cannot be read now. Never in
     /// <see cref="Updates"/>; ordered by aggregate id.
     /// </summary>
     public IReadOnlyList<AggregateReadFailure> Unavailable { get; init; } = [];
+
+    /// <summary>
+    /// Details of a business rejection (HTTP 200), sent in <c>CommandResponse.details</c> (BC-11): <c>part</c>/<c>bytes</c>/<c>limit</c>
+    /// for <c>COMMAND_OUTPUT_TOO_LARGE</c>, what <c>CommandOutcome.Reject(code, details)</c> passed for a module code; empty otherwise.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> Details { get; init; } = EmptyDetails;
 }
 
 /// <summary>Single entry point for state-changing commands (DAT-04, CMD-01..09).</summary>

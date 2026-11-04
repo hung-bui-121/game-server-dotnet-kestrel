@@ -183,7 +183,7 @@ public sealed class AccountWriterCreationTests
     [InlineData(Failure.ReceiptTooLarge)]
     public async Task A_failing_initializer_creates_nothing_is_reported_once_and_the_next_login_creates(Failure failure)
     {
-        using var f = new Fixture(receiptMaxBytes: failure == Failure.ReceiptTooLarge ? 1024 : null);
+        using var f = new Fixture(receiptMaxBytes: failure == Failure.ReceiptTooLarge ? 1112 : null);
         var (initializer, result, line) = Arrange(f, failure);
 
         var ex = await Should.ThrowAsync<GameServerException>(f.LoginAsync);
@@ -293,7 +293,7 @@ public sealed class AccountWriterCreationTests
                 };
                 return ("*", "rule", actual => Prefix +
                     $"Command 'identity.create_account (initializer seed.first, seed.second)' receipt would be {Between(actual, "receipt would be ", " bytes")} bytes; " +
-                    "ReceiptMaxBytes is 1024: the runner rejects the command with COMMAND_OUTPUT_TOO_LARGE (part receipt) and nothing commits. " +
+                    "ReceiptMaxBytes is 1112: the runner rejects the command with COMMAND_OUTPUT_TOO_LARGE (part receipt) and nothing commits. " +
                     "Fix: fewer ledger/outbox entries or raise GameServer:Commands:ReceiptMaxBytes." + Suffix);
         }
     }
@@ -316,6 +316,8 @@ public sealed class AccountWriterCreationTests
                 {
                     if (receiptMaxBytes is { } max)
                     {
+                        // The smallest receipt limit the settings rule allows (T050): 4 * ceil(64 / 3) + 1024 = 1112.
+                        o.Commands.ResultCompactMaxBytes = 64;
                         o.Commands.ReceiptMaxBytes = max;
                     }
                 },

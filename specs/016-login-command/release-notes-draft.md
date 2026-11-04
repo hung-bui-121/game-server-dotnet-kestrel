@@ -111,11 +111,98 @@ members; no existing field changes meaning (API-03); the Unity package stays `0.
 
 ## FG-016 — command limits and `COMMAND_OUTPUT_TOO_LARGE`
 
-_Filled at the US4 checkpoint (T054)._
+- **Every commit rule runs before the first staged write** (runner and account writer): handler → code → result size →
+  per-touch change detection, document build and `AGGREGATE_TOO_LARGE` → audit → receipt build → receipt size → only then the
+  aggregates, claims and receipt are staged. A refused run never depends on the store's rollback (VERIFY V2: the stores
+  rethrow the body's exception unchanged; confirmed again on Couchbase by `CouchbaseRunnerTests`, T053).
+- **Typed rejection:** a result over `ResultCompactMaxBytes` or a receipt over `ReceiptMaxBytes` is the business code
+  `COMMAND_OUTPUT_TOO_LARGE` (23, HTTP 200, not retryable) with details `part` (`result` | `receipt`), `bytes`, `limit`;
+  exactly at the limit commits ("greater than" rule). Nothing commits and no receipt is written, so a retry with the same
+  request id executes again and gets the same code. Player, Dev and GM commands alike (GM: 200 JSON with `code`,
+  `codeNumber` 23 and `details`). One Error line per request in category `GameServer.Commands`, written outside the
+  transaction attempt: `Command {Operation} refused with COMMAND_OUTPUT_TOO_LARGE: {Part} is {Bytes} bytes, limit {Limit}.
+  Fix: return less or raise GameServer:Commands:{SettingName} (PCR platform §22).` — and one
+  `command_output_too_large_total{operation, part}`; `command_results_total{code}` counts the code. A creating login over a
+  limit stays `INTERNAL` with the creation rule line (D15, T026).
+- **Details on the wire (BC-11):** `CommandResponse.details` (field 11) and the GM command response's `details` (object of
+  strings, empty for a commit; `docs/api/gm-openapi.json` gains only this member) carry the details of every HTTP 200
+  rejection, module codes included (`CommandOutcome.Reject(code, details)`); `CommandExecution.Details` is the new init
+  property behind them.
+- **Settings ranges (BC-2):** `CommandSettings.Validate()` joins the startup report (serve, `--provision` and the kit) after
+  the account-initializer block, one line per value: `ReplayWindowHours` 1..168, `PerPlayerQueueLimit` 0..16,
+  `ReceiptMaxBytes` 1024..65536, `ResultCompactMaxBytes` 64..16384, `MaxAggregatesPerGame` 1..16, plus the cross rule
+  `4·⌈ResultCompactMaxBytes/3⌉ + 1024 ≤ ReceiptMaxBytes` (the largest result must fit its own receipt). An out-of-range
+  `MaxAggregatesPerGame` gets only its range line and the aggregate count is checked against 16. Defaults (24, 2, 4096,
+  512, 16) are valid. Because of the cross rule the smallest accepted `ReceiptMaxBytes` is 1112 (with
+  `ResultCompactMaxBytes` = 64); 1024 is inside its own range but always fails the cross rule.
+- **TestKit receipt check (FR-034):** `CommandContextDouble.CheckCommit(outcome, encodeResult)` now also returns the receipt
+  line (`Command '{operation}' receipt would be {bytes} bytes; ReceiptMaxBytes is {limit}: …`), measured with the runner's
+  own receipt builder from the configured actor, player, request id, receipt id, config version, `At`, seeded revisions,
+  claims and outbox; the request body hash is a 64-character placeholder (the runner's SHA-256 hex has the same length).
+  The result line is the new text `Command '{operation}' result is {bytes} bytes; ResultCompactMaxBytes is {limit}: the
+  runner rejects the command with COMMAND_OUTPUT_TOO_LARGE (part result) and nothing commits. …`. `CheckCommit(outcome)`
+  without an encoder checks neither size (no result, no receipt). New `Seed<TState>(aggregateId, state, rev)` (rev ≥ 1; the
+  receipt's `newRev` is rev + 1); `Seed(aggregateId, state)` keeps rev 1. Parity (VERIFY V7, T052): for the sample
+  `shop.buy`, `battle.end` and a seeding account creation, the stored receipt and the double's measure have the same size
+  (0 bytes difference); a longer configured value changes the measure by its JSON length (a `+`, which the JSON writer
+  escapes as `\u002B`, counts six bytes on both sides).
 
 ## FG-022 — caller request ids and the pending-command store
 
-_Filled at the US5 checkpoint (T062)._
+- **Caller request ids:** `SendCommandAsync(route, request, parser, string? requestId, ct = default)` — the fourth parameter
+  is required (`null` = generated), so every existing call keeps its overload (VERIFY V1). A UUID in format D in any case is
+  normalized to lowercase; anything else (empty, `N` format, braces, 37 characters) throws `ArgumentException` before any
+  network call or disk write. Every attempt sends the id with the same bytes; the same id and bytes later (also after an
+  app restart) replay the committed command. `GameServerClient.NewRequestId()`, `CommandResult.RequestId` (the
+  four-argument constructor sets `""`), and `GameServerError.Client(code, message, retryable, requestId)`: SDK-made errors
+  of a call (`NETWORK_ERROR`, `INVALID_RESPONSE`) now carry the call's request id.
+- **Opt-in pending store** (`GameServerClientOptions.PendingCommands`, default null = nothing written;
+  `PendingCommandMaxAge` default 23 h, validated in (0, 168 h]): with a store, a command is recorded `(id, session player,
+  route, exact body bytes, ServerNow)` before its first attempt; removed on a command response with any code or an error
+  envelope that is not retryable (e.g. `IDEMPOTENCY_PAYLOAD_MISMATCH`); kept when the outcome is unknown (no response,
+  `INVALID_RESPONSE`, a retryable last answer such as `COMMIT_UNKNOWN_RETRY` or `AGGREGATE_VERSION_AHEAD`, cancellation).
+  Login, logout, snapshot, config and time calls never touch it. A disk failure never stops the command: the store keeps
+  the entry in memory and reports `WriteProblem`.
+- **After a restart:** `client.PendingCommands` lists the entries; `StatusOf(entry)` is `OtherPlayer` (another player or no
+  session), `Expired` (at least `PendingCommandMaxAge` old on the server clock, so a device clock change does not move it)
+  or `Resendable`; `ResendPendingAsync(entry, parser)` sends the stored bytes with the stored id to the stored route (a
+  committed command answers `Replayed` with its original receipt) and throws `InvalidOperationException` for an entry that
+  is not resendable or not in the store; `DiscardPendingCommand(id)` removes one (unknown ids ignored). The SDK never
+  resends by itself.
+- **`PersistentPendingCommandStore(folder)`**: one file `{requestId}.pending` per entry (container v1 `GSPC`, SHA-256),
+  written to `{id}.pending.tmp`, flushed to the device and renamed (`Replace` when the same id is recorded again); removed
+  with an unflushed delete. Load deletes leftover temp files, skips, deletes and names damaged entries in `LoadProblem`
+  (`"{file}: {reason}"`), leaves files whose names are not exact lowercase entry names alone (Windows matches patterns
+  case-insensitively, VERIFY V9), and never throws for the disk. File names come only from validated ids; the session
+  token is never written. Unity: `UnityPendingCommandStore.Create(environmentName)` →
+  `persistentDataPath/gameserver-pending/{name}` (the config-cache name rule, iOS no-backup flag on the folder); one client
+  per folder, Unity main thread.
+- **Measured (SC-008, T061):** record of a 4 KiB entry p50 2.29 / p95 5.56 ms, remove p95 0.26 ms on C: (`%TEMP%`, opt-in
+  `GAMESERVER_PERF=1`); `Flush(true)` kept.
+- Client snippet:
+
+  ```csharp
+  var options = new GameServerClientOptions(baseUrl, clientVersion, platform, buildId)
+  {
+      PendingCommands = UnityPendingCommandStore.Create("live"),
+  };
+  var client = new GameServerClient(options, new UnityWebRequestTransport());
+  await client.LoginGuestAsync(localId, secret);
+  foreach (var pending in client.PendingCommands)
+  {
+      if (client.StatusOf(pending) == PendingCommandStatus.Resendable)
+      {
+          await client.ResendPendingAsync(pending, BattleEndResult.Parser);   // replays a committed command
+      }
+      else
+      {
+          client.DiscardPendingCommand(pending.RequestId);                   // decide from the player's state
+      }
+  }
+
+  var requestId = GameServerClient.NewRequestId();                            // optional: keep it in game state first
+  var result = await client.SendCommandAsync(GameRoutes.BattleEnd, request, BattleEndResult.Parser, requestId);
+  ```
 
 ## Breaking changes
 
@@ -124,8 +211,8 @@ tests, or measured where noted).
 
 | Id | Change | Who is affected | How it surfaces | Fix |
 | --- | --- | --- | --- | --- |
-| BC-1 | A result or receipt over its limit is the business rejection `COMMAND_OUTPUT_TOO_LARGE` (HTTP 200, nothing commits) instead of a 500 `INTERNAL` (FR-030, FR-031) | Clients and tests that expect 500 for an oversized command; dashboards counting `command_results_total{code="INTERNAL"}` for it | Command response with the new code and details `part`/`bytes`/`limit`; metric `command_output_too_large_total{operation, part}`; Error log line (pending T054) | Treat the code as a design bug of the command; raise the limit (FR-032) or return less |
-| BC-2 | `GameServer:Commands:*` values are validated at startup (FR-032); `MaxAggregatesPerGame` above 16 is refused | Deployments with out-of-range values (silently accepted before) | Startup exit 1, one line per setting naming the range (pending T054) | Use a value in range |
+| BC-1 | A result or receipt over its limit is the business rejection `COMMAND_OUTPUT_TOO_LARGE` (HTTP 200, nothing commits) instead of a 500 `INTERNAL` (FR-030, FR-031) | Clients and tests that expect 500 for an oversized command; dashboards counting `command_results_total{code="INTERNAL"}` for it | HTTP 200 command response `COMMAND_OUTPUT_TOO_LARGE` (23) with details `part`/`bytes`/`limit`, e.g. `{part: "result", bytes: "513", limit: "512"}`; nothing written, no receipt; `command_output_too_large_total{operation, part}`; Error line `Command {Operation} refused with COMMAND_OUTPUT_TOO_LARGE: {Part} is {Bytes} bytes, limit {Limit}. Fix: return less or raise GameServer:Commands:{SettingName} (PCR platform §22).` (category `GameServer.Commands`); TestKit lines `Command '{op}' result is …` / `… receipt would be …` (errors-and-report-lines §5) | Treat the code as a design bug of the command; raise the limit (FR-032) or return less |
+| BC-2 | `GameServer:Commands:*` values are validated at startup (FR-032); `MaxAggregatesPerGame` above 16 is refused | Deployments with out-of-range values (silently accepted before) | Startup exit 1 (serve and provision), one line per value after the account-initializer lines, e.g. `[deployment] GameServer:Commands:ReplayWindowHours is 0; allowed 1..168 (CMD-07).` and `[deployment] GameServer:Commands:ResultCompactMaxBytes 512 needs 1708 receipt bytes (base64 + 1024) but ReceiptMaxBytes is 1024. Fix: raise ReceiptMaxBytes or lower ResultCompactMaxBytes.` | Use a value in range |
 | BC-3 | **Snapshot and login semantics (PCR platform §4, API-10):** a snapshot or login no longer always holds every client-visible section; an unreadable one is absent and listed in the new unavailable field (FR-022, FR-023) | Client code that assumes every section is present after login or snapshot (old SDKs see the section missing, where the whole call used to fail) | `unavailable_sections` entry `{id, code, code_number}` (`AGGREGATE_VERSION_AHEAD` 24 / `AGGREGATE_UNREADABLE` 25), HTTP 200; the section absent from `sections` (old SDKs see only that) | Check the unavailable list (or a missing section) and show a recoverable state |
 | BC-4 | A command or replay that touches or reads an unreadable aggregate answers `AGGREGATE_VERSION_AHEAD` (503, retryable) or `AGGREGATE_UNREADABLE` (500) instead of 500 `INTERNAL`; a broken `profile` fails login and authenticated requests with these codes (FR-020, FR-023, FR-024). PCR §6 "newer than code → 500 `INTERNAL`" changes | Clients and tests that match `INTERNAL`; SDKs now retry the version-ahead case (retryable) | Error envelope 503 `AGGREGATE_VERSION_AHEAD` (`retryable`, `Retry-After: 1`, `retry_after_ms = 1000`) or 500 `AGGREGATE_UNREADABLE`, details `{"aggregate": id}`; `http_errors_total{code}` and `command_results_total{code}` with the new codes; nothing written; the replay of a command committed before the damage stays 200 and lists the aggregate | Match the new codes; keep the deploy rule of PCR §6 |
 | BC-5 | `AggregateDocumentSerializer.Load` and `PlayerSnapshotReader.ReadAsync/ReadAllAsync/ReadOneAsync` throw a `GameServerException` with `AGGREGATE_VERSION_AHEAD` or `AGGREGATE_UNREADABLE` (details `aggregate`) instead of `GameServerException(INTERNAL)`, `JsonException`, `InvalidOperationException`, `FormatException`, `OverflowException` or an upgrader's own exception. Signatures are unchanged; the additive `TryLoad`, `ReadAvailableAsync` and `ReadAllAvailableAsync` return the failures instead of throwing (FR-021; plan N1). A stored `state` that is missing, `null` or not a JSON object was silently read as the default state; it is now `AGGREGATE_UNREADABLE` (T004) | Game or test code that calls these readers directly and catches the old exception types | Different exception type and code at run time (no compile error) | Catch `GameServerException` (or use the degrading members) |
@@ -134,7 +221,7 @@ tests, or measured where noted).
 | BC-8 | **SDK semantics (PCR unity-sdk):** an unavailable section keeps its last good copy and is marked; `AGGREGATE_VERSION_AHEAD` is retried by the SDK (retryable) (FR-027) | Game code that reads every section after login without checking | `Sections.IsUnavailable(id)` and `Sections.Unavailable[id].Code`, event `AvailabilityChanged(id)`; the last good copy stays in the store; the version-ahead code is retried (1000 ms delay) before a `GameServerException` | Read the unavailable set; handle the codes |
 | BC-9 | Account initializer declarations are validated at startup (FR-015) | Modules that register an initializer with a bad declaration (new API, so only new code) | Startup exit 1 (serve and provision), one line per fault in the aggregated report after the command lines, e.g. `[module m] account initializer 'm.x' touches 'profile'. Fix: remove it; the framework writes the profile of a new account.` and `[deployment] account creation touches 5 aggregates (profile + …); max is 4. …` (errors-and-report-lines §4.1) | Fix the declaration |
 | BC-10 | A login whose transaction ends ambiguous, expires or loses every race round answers `COMMIT_UNKNOWN_RETRY` (503) or `CONCURRENT_UPDATE` (409, retryable) instead of a 500 `INTERNAL` (FR-014; plan N11, architect decision) | Clients and dashboards that count login 500s | Error envelope instead of the raw 500: an ambiguous commit answers 503 `COMMIT_UNKNOWN_RETRY` (`retryable`, `retry_after_ms = 1000`); an expired transaction or three lost insert races answer 409 `CONCURRENT_UPDATE` (`retryable`, `retry_after_ms = 200`); a failed transaction stays 500 `INTERNAL`, now logged as `Request failed with INTERNAL: Login transaction failed for player {id}.` instead of `Unhandled exception.`. Nothing is written in any of these cases (`AccountWriterTests`, T017) | Handle them like any retryable code; the SDK still never retries a login after an unknown outcome |
-| BC-11 | `CommandResponse.details` (new field 11) and the GM command response's `details` carry the details of every HTTP 200 rejection, module codes included; the XML doc of `ICommandOutcome.Details` changes from "not sent" to "sent" (FR-030; plan N5, architect decision) | Modules that pass details to `CommandOutcome.Reject` with an HTTP 200 code | Details visible to the client (pending T054) | Keep rejection details safe to show (they already must be, as for non-200 codes) |
+| BC-11 | `CommandResponse.details` (new field 11) and the GM command response's `details` carry the details of every HTTP 200 rejection, module codes included; the XML doc of `ICommandOutcome.Details` changes from "not sent" to "sent" (FR-030; plan N5, architect decision) | Modules that pass details to `CommandOutcome.Reject` with an HTTP 200 code | `CommandResponse.details` / GM `details` hold the `Reject(code, details)` map for HTTP 200 codes (e.g. `{reason: "sold_out"}`); empty for commits. Fallback if the owner overrides: send framework codes' details only (a one-line filter in `CommandEndpointFactory.BuildResponse` and `GmCommandEndpointFactory.BuildResponse`) | Keep rejection details safe to show (they already must be, as for non-200 codes) |
 
 ## zh-pvp-server migration checklist (in this order)
 
@@ -227,6 +314,8 @@ Each was applied as an architect decision; owner confirmation pending.
 | V6 (T004) | the loader raises `JsonException` (some wrapping `InvalidOperationException`/`FormatException`), `InvalidOperationException` (`GetValue<string>`, a missing upgrader step, null state), `FormatException`/`OverflowException` (`JsonNumbers` on absurd or non-numeric envelope fields) and whatever an upgrader throws; `NotSupportedException` was not observed. A missing, `null`, array or string `state` is **not** an error today (read as the default state) | explicit list for the envelope and the deserialize block, catch-all except `OperationCanceledException`/`OutOfMemoryException` for the upgrade chain, plus an explicit "state is not a JSON object → `unreadable`" check (BC-5 row) |
 | V8 (T007) | 4 KiB record (temp + `Flush(true)` + `File.Move`) p95: C: `%TEMP%` 6.09 ms, D: 32.24 ms; remove p95 1.52 ms / 0.46 ms; with `Flush(false)` record p95 1.69 ms / 0.37 ms | `Flush(true)` kept; SC-008 reference drive C: (where `persistentDataPath` lives on Windows); D: recorded only |
 | V9 (T007, .NET 10) | `File.Move` with the destination absent is a rename; onto an existing file `IOException` (0x800700B7); `EnumerateFiles(folder, "*.pending")` returns neither `*.pending.tmp` nor `x.pendingx` but does return `y.PENDING` (Windows names are case-insensitive); a process killed between flush and move leaves a complete temp file and no entry | per-entry files kept; the loader validates the file name (lowercase UUID + `.pending`). Unity Mono: T068; devices: T069 |
+| V7 (T052) | runner and double give the same receipt size for `shop.buy`, `battle.end` and a seeding creation with the same actor, player, request id, receipt id, config version and time (0 bytes difference); no input missing from the double | none (no `WithCorrelationId` needed: `WithActor` carries the correlation id) |
+| V8 final (T061) | `PendingCommandStorePerformanceTests`: 4 KiB record p95 5.56 ms, remove p95 0.26 ms on C: | `Flush(true)` kept |
 | V11 (T008) | the GM OpenAPI generator emits `unreadable` (array of `$ref`), `details` (object, string `additionalProperties`) and `unavailable` (array of `$ref`) — but only for endpoints that declare `.Produces<T>()`; today the GM player view and the GM command endpoints declare none, so neither response has a schema in `docs/api/gm-openapi.json` | generator output as is, with `.Produces<GmPlayerView>()` and `.Produces<GmCommandResponse>()` added (T043/T049); no hand-written fragment |
 | V12 (T009) | `LoginPerLocalIdPerMinute` = 10 (guest login, per local id) is below SC-002's 25 logins of one credential; `FailedLoginPerIpPerMinute` = 60 counts failures only; `LoginPerIpWarnPerMinute` = 600 only logs | the SC-002 tests raise `Identity:LoginPerLocalIdPerMinute` in test settings; production defaults unchanged |
 
@@ -235,6 +324,7 @@ Each was applied as an architect decision; owner confirmation pending.
 | Check | What | Status |
 | --- | --- | --- |
 | T003 | V1 overload binding with a stub in the KestrelDemo Editor (Unity 6000.3.22f1) | done 2026-11-04 (agent-run, see V1) |
+| T060 | package `Runtime` compiled outside Unity (C# 9, netstandard2.1) against Unity 6000.3.22f1 `UnityEngine.CoreModule` + `UnityWebRequestModule`, with and without `UNITY_IOS` | done 2026-11-04: 0 warnings, 0 errors both ways |
 | T064 | the real SampleHost config tests after `account.json` lands | pending |
 | T068 | Editor compile, Windows player and Android IL2CPP build of KestrelDemo with the real package; pending store in the Editor and the Windows player | pending |
 | T069 | Android device and iOS build + device run (with the pending 015 T058 session) | pending (owner) |
@@ -250,6 +340,9 @@ Each was applied as an architect decision; owner confirmation pending.
   safe in the handler (T040); other handler exceptions (for example a store timeout in session validation) keep the
   pre-existing behaviour on such hosts. Hosts with Identity and GM, or with test authentication, are not affected.
 - 015 T058 (Android/iOS device run) is still open and gates the tag.
+- **`ReceiptMaxBytes` lower bound (T050).** The documented range 1024..65536 and the cross rule together make 1112 the
+  smallest value that starts (with `ResultCompactMaxBytes` = 64); a value of 1024..1111 gets only the cross line. Both
+  lines are contract texts and were kept; PCR platform §22 should say so (T072).
 - **Creation failure logging (T026).** A failing initializer writes its one `GameServer.Accounts` line; the 500 `INTERNAL` the
   login answers is also logged by the error middleware as `Request failed with INTERNAL: Account creation of player {id}
   failed ({result}, initializer {name}).` (no exception message, no inner exception). Ops see two lines for one failed

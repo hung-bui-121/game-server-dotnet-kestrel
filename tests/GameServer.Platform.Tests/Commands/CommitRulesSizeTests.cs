@@ -5,8 +5,8 @@ using Shouldly;
 namespace GameServer.Platform.Tests.Commands;
 
 /// <summary>
-/// Slice 016 T014 (FR-031, FR-034, research R8, errors-and-report-lines §5): the receipt-size rule is "greater than" its limit and
-/// names the part, the size and the limit in its details and its line.
+/// Slice 016 T014 (FR-031, FR-034, research R8, errors-and-report-lines §5): the result- and receipt-size rules are "greater than" their
+/// limit (T014, T048) and name the part, the size and the limit in its details and its line.
 /// </summary>
 public sealed class CommitRulesSizeTests
 {
@@ -47,5 +47,32 @@ public sealed class CommitRulesSizeTests
 
         CommitRules.CheckReceiptSize("sample.battle_end", 16384, raised).ShouldBeNull();
         CommitRules.CheckReceiptSize("sample.battle_end", 16385, raised)!.Details["limit"].ShouldBe("16384");
+    }
+
+    [Fact]
+    public void A_result_exactly_at_the_limit_commits()
+    {
+        CommitRules.CheckResultSize("sample.battle_end", 512, Settings).ShouldBeNull();
+        CommitRules.CheckResultSize("sample.battle_end", 0, Settings).ShouldBeNull();
+    }
+
+    [Fact]
+    public void A_result_one_byte_over_the_limit_is_the_typed_rejection_with_part_result()
+    {
+        var violation = CommitRules.CheckResultSize("sample.battle_end", 513, Settings).ShouldNotBeNull();
+
+        violation.Code.ShouldBe(CoreErrorCodes.CommandOutputTooLarge);
+        violation.Details.ShouldBe(new Dictionary<string, string> { ["part"] = "result", ["bytes"] = "513", ["limit"] = "512" });
+        violation.Line.ShouldBe(
+            "Command 'sample.battle_end' result is 513 bytes; ResultCompactMaxBytes is 512: the runner rejects the command with " +
+            "COMMAND_OUTPUT_TOO_LARGE (part result) and nothing commits. Fix: return less or raise " +
+            "GameServer:Commands:ResultCompactMaxBytes.");
+    }
+
+    [Fact]
+    public void Each_part_names_its_setting()
+    {
+        CommitRules.OutputLimitSetting(CommitRules.OutputPartResult).ShouldBe("ResultCompactMaxBytes");
+        CommitRules.OutputLimitSetting(CommitRules.OutputPartReceipt).ShouldBe("ReceiptMaxBytes");
     }
 }

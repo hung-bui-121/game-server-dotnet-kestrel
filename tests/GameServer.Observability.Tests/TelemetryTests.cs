@@ -44,9 +44,10 @@ public sealed class TelemetryTests
         platform.ConfigCompressionSkipped("busy");
 
         // Slice 016: the login above created the account (account_creations_total); a failing initializer and a broken stored
-        // aggregate need their own hosts, so these two counters are recorded directly.
+        // aggregate need their own hosts, and an oversized command its own module, so these counters are recorded directly.
         platform.AccountInitializerFailed("test.initializer", "rejected");
         platform.AggregateReadFailed("wallet", "unreadable");
+        platform.CommandOutputTooLarge("test.command", "result");
 
         observed.Host.Services.GetRequiredService<MeterProvider>().ForceFlush().ShouldBeTrue();
         var names = observed.Metrics.Select(m => m.Name).ToHashSet(StringComparer.Ordinal);
@@ -56,6 +57,7 @@ public sealed class TelemetryTests
                      "command_results_total", "http_errors_total", "config_version_info", "client_config_version_info",
                      "config_compression_skipped_total", "login_total",
                      "account_creations_total", "account_initializer_failures_total", "aggregate_read_failures_total",
+                     "command_output_too_large_total",
                      "http.server.request.duration", "log_sink_errors_total", "log_dropped_total",
                  })
         {

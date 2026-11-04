@@ -171,4 +171,70 @@ public sealed class CouchbaseRunnerTests(CouchbaseFixture fixture) : IClassFixtu
         receipt!.Content["outboxPending"]!.GetValue<bool>().ShouldBeFalse();
         (await fixture.Store.GetAsync(new DocumentKey("counter_log", $"counter_log::{execution.ReceiptId}:0"), CancellationToken.None)).ShouldNotBeNull();
     }
+
+    /// <summary>Slice 016 T053 (FR-031, VERIFY V2 final): a result over its limit is the typed rejection; nothing reaches Couchbase.</summary>
+    [Fact]
+    public async Task A_result_over_the_limit_is_command_output_too_large_and_writes_nothing()
+    {
+        using var h = Harness();
+        var player = NewPlayer();
+
+        var refused = await h.RunAsync("probe.bigresult", 513, player, encode: _ => new byte[513]);
+        var exact = await h.RunAsync("probe.bigresult", 512, NewPlayer(), encode: _ => new byte[512]);
+
+        refused.Code.ShouldBe(CoreErrorCodes.CommandOutputTooLarge);
+        refused.Details["part"].ShouldBe("result");
+        refused.ReceiptId.ShouldBeNull();
+        (await fixture.Store.GetAsync(new DocumentKey("pa_probe", player), CancellationToken.None)).ShouldBeNull();
+        exact.Code.ShouldBe(CoreErrorCodes.Ok);
+        (await fixture.Store.GetAsync(ReceiptDocument.KeyFor(exact.ReceiptId!), CancellationToken.None)).ShouldNotBeNull();
+    }
+
+    /// <summary>Slice 016 T053: a receipt one byte over its limit is refused with nothing written; exactly at the limit commits.</summary>
+    [Fact]
+    public async Task A_receipt_over_the_limit_is_command_output_too_large_and_one_at_the_limit_commits()
+    {
+        using var h = Harness();
+        const int Probe = 5000;
+        var probe = await h.RunAsync("probe.outboxflood", Probe, NewPlayer());
+        probe.Code.ShouldBe(CoreErrorCodes.CommandOutputTooLarge);
+        var atLimit = Probe - (int.Parse(probe.Details["bytes"], System.Globalization.CultureInfo.InvariantCulture) - h.Options.Commands.ReceiptMaxBytes);
+        var over = NewPlayer();
+        var exact = NewPlayer();
+
+        var refused = await h.RunAsync("probe.outboxflood", atLimit + 1, over);
+        var committed = await h.RunAsync("probe.outboxflood", atLimit, exact);
+
+        refused.Code.ShouldBe(CoreErrorCodes.CommandOutputTooLarge);
+        refused.Details["bytes"].ShouldBe((h.Options.Commands.ReceiptMaxBytes + 1).ToString(System.Globalization.CultureInfo.InvariantCulture));
+        (await fixture.Store.GetAsync(new DocumentKey("pa_probe", over), CancellationToken.None)).ShouldBeNull();
+        committed.Code.ShouldBe(CoreErrorCodes.Ok);
+        (await fixture.Store.GetAsync(new DocumentKey("pa_probe", exact), CancellationToken.None)).ShouldNotBeNull();
+        (await fixture.Store.GetAsync(ReceiptDocument.KeyFor(committed.ReceiptId!), CancellationToken.None)).ShouldNotBeNull();
+    }
+
+    /// <summary>Slice 016 T053 (FG-029): a touched aggregate written by a newer schema is the typed envelope code; nothing is written.</summary>
+    [Fact]
+    public async Task A_broken_aggregate_in_touches_is_the_typed_code_and_writes_nothing()
+    {
+        using var h = Harness();
+        var player = NewPlayer();
+        var key = new DocumentKey("pa_counter", player);
+        var broken = new System.Text.Json.Nodes.JsonObject
+        {
+            ["schemaVersion"] = h.Registry.GetAggregate(CounterAggregates.Counter).SchemaVersion + 1,
+            ["rev"] = 3,
+            ["createdAtUtc"] = "2026-01-01T00:00:00.000Z",
+            ["state"] = new System.Text.Json.Nodes.JsonObject { ["value"] = 7 },
+        };
+        (await fixture.Store.InsertIfAbsentAsync(key, broken, CancellationToken.None)).ShouldBeTrue();
+
+        var ex = await Should.ThrowAsync<GameServerException>(() => h.RunAsync(IncrementHandler.Operation, new IncrementCommand(1, null), player));
+
+        ex.Code.ShouldBe(CoreErrorCodes.AggregateVersionAhead);
+        ex.Details!["aggregate"].ShouldBe(CounterAggregates.Counter);
+        var stored = await fixture.Store.GetAsync(key, CancellationToken.None);
+        stored!.Content["rev"]!.GetValue<long>().ShouldBe(3);
+        stored.Content["state"]!["value"]!.GetValue<long>().ShouldBe(7);
+    }
 }

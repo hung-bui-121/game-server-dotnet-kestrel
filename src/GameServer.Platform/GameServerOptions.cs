@@ -145,6 +145,21 @@ public sealed class TransactionSettings
 
 public sealed class CommandSettings
 {
+    /// <summary>The documented ranges (FR-032, research R9); every default is inside them.</summary>
+    internal const int MinReplayWindowHours = 1;
+    internal const int MaxReplayWindowHours = 168;
+    internal const int MinPerPlayerQueueLimit = 0;
+    internal const int MaxPerPlayerQueueLimit = 16;
+    internal const int MinReceiptMaxBytes = 1024;
+    internal const int MaxReceiptMaxBytes = 64 * 1024;
+    internal const int MinResultCompactMaxBytes = 64;
+    internal const int MaxResultCompactMaxBytes = 16 * 1024;
+    internal const int MinMaxAggregatesPerGame = 1;
+    internal const int MaxMaxAggregatesPerGame = 16;
+
+    /// <summary>Receipt bytes besides the base64 result that the largest allowed result must leave room for.</summary>
+    internal const int ReceiptOverheadBytes = 1024;
+
     /// <summary>Replay window (CMD-07).</summary>
     public int ReplayWindowHours { get; set; } = 24;
 
@@ -156,6 +171,46 @@ public sealed class CommandSettings
     public int ResultCompactMaxBytes { get; set; } = 512;
 
     public int MaxAggregatesPerGame { get; set; } = 16;
+
+    /// <summary>
+    /// <see cref="MaxAggregatesPerGame"/> when it is in range, else the DAT-09 maximum: an out-of-range value is reported by
+    /// <see cref="Validate"/> once and never used for the count check.
+    /// </summary>
+    internal int EffectiveMaxAggregatesPerGame => IsInRange(MaxAggregatesPerGame, MinMaxAggregatesPerGame, MaxMaxAggregatesPerGame)
+        ? MaxAggregatesPerGame
+        : MaxMaxAggregatesPerGame;
+
+    /// <summary>One line per value outside its documented range (FR-032); empty when valid.</summary>
+    public IEnumerable<string> Validate()
+    {
+        var lines = new List<string>();
+        AddRange(lines, nameof(ReplayWindowHours), ReplayWindowHours, MinReplayWindowHours, MaxReplayWindowHours, "CMD-07");
+        AddRange(lines, nameof(PerPlayerQueueLimit), PerPlayerQueueLimit, MinPerPlayerQueueLimit, MaxPerPlayerQueueLimit, "CMD-06");
+        AddRange(lines, nameof(ReceiptMaxBytes), ReceiptMaxBytes, MinReceiptMaxBytes, MaxReceiptMaxBytes, "CMD-03");
+        AddRange(lines, nameof(ResultCompactMaxBytes), ResultCompactMaxBytes, MinResultCompactMaxBytes, MaxResultCompactMaxBytes, "CMD-03");
+
+        // The largest allowed result must fit its own receipt (stored as base64).
+        var needed = (4L * ((ResultCompactMaxBytes + 2L) / 3)) + ReceiptOverheadBytes;
+        if (needed > ReceiptMaxBytes)
+        {
+            lines.Add(
+                $"[deployment] GameServer:Commands:ResultCompactMaxBytes {ResultCompactMaxBytes} needs {needed} receipt bytes (base64 + {ReceiptOverheadBytes}) " +
+                $"but ReceiptMaxBytes is {ReceiptMaxBytes}. Fix: raise ReceiptMaxBytes or lower ResultCompactMaxBytes.");
+        }
+
+        AddRange(lines, nameof(MaxAggregatesPerGame), MaxAggregatesPerGame, MinMaxAggregatesPerGame, MaxMaxAggregatesPerGame, "DAT-09");
+        return lines;
+    }
+
+    private static bool IsInRange(int value, int min, int max) => value >= min && value <= max;
+
+    private static void AddRange(List<string> lines, string name, int value, int min, int max, string rule)
+    {
+        if (!IsInRange(value, min, max))
+        {
+            lines.Add($"[deployment] GameServer:Commands:{name} is {value}; allowed {min}..{max} ({rule}).");
+        }
+    }
 }
 
 public sealed class OutboxSettings

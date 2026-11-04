@@ -235,6 +235,13 @@ public static class CommandEndpointFactory
             ServerTimeUtcMs = clock.UtcNow.ToUnixTimeMilliseconds(),
             Replayed = execution.Replayed,
         };
+
+        // Details of a business rejection, framework or module code alike (BC-11); empty for a commit.
+        foreach (var (key, value) in execution.Details)
+        {
+            response.Details.Add(key, value);
+        }
+
         sections.WriteUpdates(playerId, execution.Updates, execution.Unavailable, response.Updates, response.UnavailableSections);
         return response;
     }

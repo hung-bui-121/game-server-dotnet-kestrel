@@ -280,21 +280,51 @@ public sealed class CommandRunnerTests : IDisposable
     }
 
     [Fact]
-    public async Task Oversized_receipt_is_a_programming_error_and_rolls_back()
+    public async Task Oversized_receipt_is_command_output_too_large()
     {
-        await Should.ThrowAsync<InvalidOperationException>(() => _h.RunAsync("probe.outboxflood", 5000));
+        using var metrics = new MetricCollector(_h.Metrics);
 
+        var execution = await _h.RunAsync("probe.outboxflood", 5000);
+
+        execution.Code.ShouldBe(CoreErrorCodes.CommandOutputTooLarge);
+        execution.ReceiptId.ShouldBeNull();
+        execution.Updates.ShouldBeEmpty();
+        execution.Result.ShouldBeEmpty();
+        execution.Details.Keys.Order(StringComparer.Ordinal).ShouldBe(["bytes", "limit", "part"]);
+        execution.Details["part"].ShouldBe("receipt");
+        execution.Details["limit"].ShouldBe("4096");
+        var bytes = int.Parse(execution.Details["bytes"], System.Globalization.CultureInfo.InvariantCulture);
+        bytes.ShouldBeGreaterThan(5000);
         _h.Store.Count("pa_probe").ShouldBe(0);
         _h.Store.Count("receipts").ShouldBe(0);
+        metrics.SumTagged("command_output_too_large_total", ("operation", "probe.outboxflood"), ("part", "receipt")).ShouldBe(1);
+        _h.RunnerLogs.Where(l => l.StartsWith("Error: ", StringComparison.Ordinal)).ShouldBe(
+        [
+            $"Error: Command probe.outboxflood refused with COMMAND_OUTPUT_TOO_LARGE: receipt is {bytes} bytes, limit 4096. " +
+            "Fix: return less or raise GameServer:Commands:ReceiptMaxBytes (PCR platform §22).",
+        ]);
     }
 
     [Fact]
-    public async Task Oversized_result_compact_is_a_programming_error()
+    public async Task Oversized_result_compact_is_command_output_too_large()
     {
-        var ex = await Should.ThrowAsync<InvalidOperationException>(() =>
-            _h.RunAsync("probe.bigresult", 513, encode: _ => new byte[513]));
+        using var metrics = new MetricCollector(_h.Metrics);
 
-        ex.Message.ShouldContain("resultCompact");
+        var execution = await _h.RunAsync("probe.bigresult", 513, encode: _ => new byte[513]);
+
+        execution.Code.ShouldBe(CoreErrorCodes.CommandOutputTooLarge);
+        execution.ReceiptId.ShouldBeNull();
+        execution.Details["part"].ShouldBe("result");
+        execution.Details["bytes"].ShouldBe("513");
+        execution.Details["limit"].ShouldBe("512");
+        _h.Store.Count("pa_probe").ShouldBe(0);
+        _h.Store.Count("receipts").ShouldBe(0);
+        metrics.SumTagged("command_output_too_large_total", ("operation", "probe.bigresult"), ("part", "result")).ShouldBe(1);
+        _h.RunnerLogs.Where(l => l.StartsWith("Error: ", StringComparison.Ordinal)).ShouldBe(
+        [
+            "Error: Command probe.bigresult refused with COMMAND_OUTPUT_TOO_LARGE: result is 513 bytes, limit 512. " +
+            "Fix: return less or raise GameServer:Commands:ResultCompactMaxBytes (PCR platform §22).",
+        ]);
     }
 
     [Fact]

@@ -3,7 +3,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Security;
 
 namespace GameServer.Client
 {
@@ -100,8 +99,7 @@ namespace GameServer.Client
             Save();
         }
 
-        private static bool IsFileProblem(Exception ex) =>
-            ex is IOException || ex is UnauthorizedAccessException || ex is NotSupportedException || ex is SecurityException;
+        private static bool IsFileProblem(Exception ex) => CacheFileOps.IsFileProblem(ex);
 
         private void Load()
         {
@@ -203,7 +201,10 @@ namespace GameServer.Client
         /// file systems give the same folders. Never consults the running platform's invalid file-name characters.
         /// </summary>
         /// <returns>Null when <paramref name="name"/> is valid, otherwise the message of the <see cref="ArgumentException"/>.</returns>
-        internal static string? FolderNameProblem(string name)
+        internal static string? FolderNameProblem(string name) => FolderNameProblem(name, "config cache");
+
+        /// <summary><see cref="FolderNameProblem(string)"/> with the message naming <paramref name="kind"/> (e.g. <c>pending command store</c>).</summary>
+        internal static string? FolderNameProblem(string name, string kind)
         {
             if (name == null)
             {
@@ -212,7 +213,7 @@ namespace GameServer.Client
 
             return IsValidFolderName(name)
                 ? null
-                : $"'{name}' is not a valid config cache name. Fix: use 1 to {MaxFolderNameLength} lowercase letters, digits, '.', '_' or '-', " +
+                : $"'{name}' is not a valid {kind} name. Fix: use 1 to {MaxFolderNameLength} lowercase letters, digits, '.', '_' or '-', " +
                   "not starting or ending with '.' and not a Windows device name (con, nul, com1, …), for example 'local', 'live' or 'localhost-5080'.";
         }
 

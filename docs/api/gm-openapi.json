@@ -1340,6 +1340,12 @@
             "items": {
               "$ref": "#/components/schemas/GmUnavailableAggregate"
             }
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
           }
         }
       },

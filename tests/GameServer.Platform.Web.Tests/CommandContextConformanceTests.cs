@@ -112,7 +112,10 @@ public sealed class CommandContextConformanceTests
             .ShouldBe(Observed.Returned("AGGREGATE_TOO_LARGE"));
     }
 
-    /// <summary>Review m6: the resultCompact limit, with the same encoder on both sides, refuses the same lengths with the same message.</summary>
+    /// <summary>
+    /// Review m6, slice 016 T048: the resultCompact limit, with the same encoder on both sides, refuses the same lengths; the runner
+    /// answers COMMAND_OUTPUT_TOO_LARGE with the part, size and limit the kit's line names.
+    /// </summary>
     [Theory]
     [InlineData(512)]
     [InlineData(513)]
@@ -121,20 +124,28 @@ public sealed class CommandContextConformanceTests
         await using var host = await StartSizeAsync();
         var playerId = NewPlayerId();
         var request = new KitSize(ResultLength: resultLength);
+        var actor = new ActorContext(playerId, ActorType.Player, playerId, "test", "test", new HashSet<string>(StringComparer.Ordinal), "corr");
 
-        var throughRunner = await RunAsync(host, KitSizeModule.Operation, request, playerId, Guid.NewGuid().ToString("D"));
+        var execution = await host.Services.GetRequiredService<ICommandRunner>().ExecuteAsync(
+            new CommandInvocation(KitSizeModule.Operation, actor, Guid.NewGuid().ToString("D"), "body", request, result => Encoding.UTF8.GetBytes((string)result)),
+            CancellationToken.None);
         var context = SizeDouble(playerId);
         var violations = context.CheckCommit(await new KitSizeHandler().HandleAsync(request, context), result => Encoding.UTF8.GetBytes((string)result));
 
         if (resultLength <= 512)
         {
-            throughRunner.Threw.ShouldBeFalse(throughRunner.Value);
+            execution.Code.Name.ShouldBe("OK");
             violations.ShouldBeEmpty();
         }
         else
         {
-            throughRunner.ShouldBe(new Observed(true, nameof(InvalidOperationException), "Result of 'kit.size' is 513 bytes; resultCompact max is 512 (CMD-03)."));
-            violations.ShouldBe([throughRunner.Value]);
+            execution.Code.Name.ShouldBe("COMMAND_OUTPUT_TOO_LARGE");
+            execution.Details.ShouldBe(new Dictionary<string, string> { ["part"] = "result", ["bytes"] = "513", ["limit"] = "512" });
+            violations.ShouldBe(
+            [
+                "Command 'kit.size' result is 513 bytes; ResultCompactMaxBytes is 512: the runner rejects the command with COMMAND_OUTPUT_TOO_LARGE " +
+                "(part result) and nothing commits. Fix: return less or raise GameServer:Commands:ResultCompactMaxBytes.",
+            ]);
         }
     }
 

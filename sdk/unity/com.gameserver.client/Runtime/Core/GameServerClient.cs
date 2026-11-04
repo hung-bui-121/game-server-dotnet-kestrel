@@ -19,12 +19,21 @@ namespace GameServer.Client
         where TResult : class, IMessage<TResult>
     {
         public CommandResult(CommandResponse response, TResult? result, bool sectionsStale, bool resultUnreadable)
+            : this(response, result, sectionsStale, resultUnreadable, string.Empty)
+        {
+        }
+
+        public CommandResult(CommandResponse response, TResult? result, bool sectionsStale, bool resultUnreadable, string requestId)
         {
             Response = response;
             Result = result;
             SectionsStale = sectionsStale;
             ResultUnreadable = resultUnreadable;
+            RequestId = requestId ?? throw new ArgumentNullException(nameof(requestId));
         }
+
+        /// <summary>The request id this command used (empty when the result was built with the four-argument constructor).</summary>
+        public string RequestId { get; }
 
         public CommandResponse Response { get; }
 
@@ -52,7 +61,7 @@ namespace GameServer.Client
     /// retries that resend the exact cached bytes, error mapping with account/session events, per-section revisions, server
     /// time and config version tracking. It holds no game rules: state comes only from server responses.
     /// </summary>
-    public sealed class GameServerClient
+    public sealed partial class GameServerClient
     {
         public const string ProtobufContentType = "application/x-protobuf";
 
@@ -183,7 +192,7 @@ namespace GameServer.Client
         public async Task<LoginResponse> LoginGuestAsync(string localId, byte[] secret, CancellationToken cancellationToken = default)
         {
             var request = new GuestLoginRequest { LocalId = localId, Secret = ByteString.CopyFrom(secret) };
-            var response = await SendAsync("POST", LoginRoute, request.ToByteArray(), null, RetryMode.RejectedOnly, LoginResponse.Parser, r => r.ServerTimeUtcMs, cancellationToken);
+            var response = await SendAsync("POST", LoginRoute, request.ToByteArray(), null, RetryMode.RejectedOnly, LoginResponse.Parser, r => r.ServerTimeUtcMs, NewRequestId(), cancellationToken);
             return ApplyLogin(response);
         }
 
@@ -198,7 +207,7 @@ namespace GameServer.Client
         {
             var request = new ProviderLoginRequest { Credential = credential, SwitchAccount = switchAccount };
             var current = string.IsNullOrEmpty(_session.Token) ? null : _session.Token;
-            var response = await SendAsync("POST", ProviderLoginRoute, request.ToByteArray(), current, RetryMode.RejectedOnly, LoginResponse.Parser, r => r.ServerTimeUtcMs, cancellationToken);
+            var response = await SendAsync("POST", ProviderLoginRoute, request.ToByteArray(), current, RetryMode.RejectedOnly, LoginResponse.Parser, r => r.ServerTimeUtcMs, NewRequestId(), cancellationToken);
             return ApplyLogin(response);
         }
 
@@ -295,7 +304,7 @@ namespace GameServer.Client
         {
             try
             {
-                await SendAsync("POST", LogoutRoute, new LogoutRequest().ToByteArray(), RequireToken(), RetryMode.Idempotent, LogoutResponse.Parser, r => r.ServerTimeUtcMs, cancellationToken);
+                await SendAsync("POST", LogoutRoute, new LogoutRequest().ToByteArray(), RequireToken(), RetryMode.Idempotent, LogoutResponse.Parser, r => r.ServerTimeUtcMs, NewRequestId(), cancellationToken);
             }
             finally
             {
@@ -313,7 +322,7 @@ namespace GameServer.Client
                 request.Sections.AddRange(sections);
             }
 
-            var response = await SendAsync("POST", SnapshotRoute, request.ToByteArray(), RequireToken(), RetryMode.Idempotent, SnapshotResponse.Parser, r => r.ServerTimeUtcMs, cancellationToken);
+            var response = await SendAsync("POST", SnapshotRoute, request.ToByteArray(), RequireToken(), RetryMode.Idempotent, SnapshotResponse.Parser, r => r.ServerTimeUtcMs, NewRequestId(), cancellationToken);
             foreach (var section in response.Sections)
             {
                 Sections.Set(section);
@@ -329,56 +338,15 @@ namespace GameServer.Client
         /// Sends a state-changing command. The body is serialized once and resent unchanged with the same
         /// <c>X-Request-Id</c> (and the same session token) on every retry, so the server replays instead of applying twice
         /// (SDK-02, CMD-02). Once the server has answered, this method does not throw: local follow-up problems are reported
-        /// in the result.
+        /// in the result. The request id is generated; pass one with the overload that takes <c>requestId</c> to own it.
         /// </summary>
-        public async Task<CommandResult<TResult>> SendCommandAsync<TResult>(
+        public Task<CommandResult<TResult>> SendCommandAsync<TResult>(
             string route,
             IMessage request,
             MessageParser<TResult> resultParser,
             CancellationToken cancellationToken = default)
-            where TResult : class, IMessage<TResult>
-        {
-            var body = request.ToByteArray();
-            var response = await SendAsync("POST", route, body, RequireToken(), RetryMode.Idempotent, CommandResponse.Parser, r => r.ServerTimeUtcMs, cancellationToken);
-            if (string.IsNullOrEmpty(response.Code))
-            {
-                throw new GameServerException(GameServerError.Client(ErrorCodes.InvalidResponse, "Command response without a code."));
-            }
-
-            // From here on the command is known to the server: report problems, never throw (a caller retrying with a new
-            // request id would apply it twice).
-            TrackConfig(response.ConfigVersion, response.ClientConfigVersion);
-            var stale = response.Updates.Where(u => !Sections.Apply(u)).Select(u => u.Id).ToList();
-            Sections.MarkUnavailable(response.UnavailableSections);
-            var sectionsStale = false;
-            if (stale.Count > 0)
-            {
-                try
-                {
-                    await RefreshSectionsAsync(stale, cancellationToken);
-                }
-                catch (Exception ex) when (ex is GameServerException || ex is OperationCanceledException)
-                {
-                    sectionsStale = true;
-                }
-            }
-
-            TResult? result = null;
-            var unreadable = false;
-            if (response.Code == ErrorCodes.Ok)
-            {
-                try
-                {
-                    result = resultParser.ParseFrom(response.Result);
-                }
-                catch (InvalidProtocolBufferException)
-                {
-                    unreadable = true;
-                }
-            }
-
-            return new CommandResult<TResult>(response, result, sectionsStale, unreadable);
-        }
+            where TResult : class, IMessage<TResult> =>
+            SendCommandAsync(route, request, resultParser, null, cancellationToken);
 
         /// <summary>
         /// Downloads the client-visible config files when the cache does not hold the server's current ones (CFG-03): sends
@@ -388,7 +356,7 @@ namespace GameServer.Client
         public async Task<bool> RefreshConfigAsync(CancellationToken cancellationToken = default)
         {
             var request = new GetConfigRequest { ConfigVersion = _config.Version ?? string.Empty };
-            var response = await SendAsync("POST", ConfigRoute, request.ToByteArray(), RequireToken(), RetryMode.Idempotent, GetConfigResponse.Parser, r => r.ServerTimeUtcMs, cancellationToken);
+            var response = await SendAsync("POST", ConfigRoute, request.ToByteArray(), RequireToken(), RetryMode.Idempotent, GetConfigResponse.Parser, r => r.ServerTimeUtcMs, NewRequestId(), cancellationToken);
             var version = EffectiveVersion(response.ConfigVersion, response.ClientConfigVersion);
             ServerConfigVersion = response.ConfigVersion;
             ClientConfigVersion = version;
@@ -412,7 +380,7 @@ namespace GameServer.Client
         /// <summary>Measures the server time without a session (TIME-01).</summary>
         public async Task<DateTimeOffset> SyncTimeAsync(CancellationToken cancellationToken = default)
         {
-            await SendAsync("GET", TimeRoute, null, null, RetryMode.Idempotent, TimeResponse.Parser, r => r.ServerTimeUtcMs, cancellationToken);
+            await SendAsync("GET", TimeRoute, null, null, RetryMode.Idempotent, TimeResponse.Parser, r => r.ServerTimeUtcMs, NewRequestId(), cancellationToken);
             return ServerNow;
         }
 
@@ -435,6 +403,7 @@ namespace GameServer.Client
             RetryMode mode,
             MessageParser<T> parser,
             Func<T, long> serverTime,
+            string requestId,
             CancellationToken cancellationToken)
             where T : IMessage<T>
         {
@@ -443,7 +412,7 @@ namespace GameServer.Client
             // Built once: every attempt sends the same request id, token and body bytes.
             var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
-                [RequestIdHeader] = Guid.NewGuid().ToString("D"),
+                [RequestIdHeader] = requestId,
                 [ClientVersionHeader] = _options.ClientVersion,
                 [PlatformHeader] = _options.Platform,
                 [BuildIdHeader] = _options.BuildId,
@@ -472,7 +441,7 @@ namespace GameServer.Client
                         continue;
                     }
 
-                    throw new GameServerException(GameServerError.Client(ErrorCodes.NetworkError, "No response from the server.", retryable: true), ex);
+                    throw new GameServerException(GameServerError.Client(ErrorCodes.NetworkError, "No response from the server.", true, requestId), ex);
                 }
 
                 var receivedAt = _clock.Monotonic;
@@ -486,14 +455,14 @@ namespace GameServer.Client
                     }
                     catch (InvalidProtocolBufferException ex)
                     {
-                        throw new GameServerException(GameServerError.Client(ErrorCodes.InvalidResponse, "Malformed response."), ex);
+                        throw new GameServerException(GameServerError.Client(ErrorCodes.InvalidResponse, "Malformed response.", false, requestId), ex);
                     }
 
                     UpdateTime(serverTime(message), sentAt, receivedAt);
                     return message;
                 }
 
-                var (error, envelope) = ParseError(response, protobuf);
+                var (error, envelope) = ParseError(response, protobuf, requestId);
                 if (envelope != null)
                 {
                     UpdateTime(envelope.ServerTimeUtcMs, sentAt, receivedAt);
@@ -584,7 +553,7 @@ namespace GameServer.Client
             }
         }
 
-        private static (GameServerError Error, ErrorEnvelope? Envelope) ParseError(TransportResponse response, bool protobuf)
+        private static (GameServerError Error, ErrorEnvelope? Envelope) ParseError(TransportResponse response, bool protobuf, string requestId)
         {
             if (protobuf && response.Status != 200)
             {
@@ -604,7 +573,7 @@ namespace GameServer.Client
             // Not our server's answer (proxy, WAF, captive portal, HTML 200): 200/502/503/504 are worth retrying for
             // idempotent requests, everything else is not.
             var retryable = response.Status == 200 || response.Status == 502 || response.Status == 503 || response.Status == 504;
-            return (new GameServerError(ErrorCodes.InvalidResponse, -1, response.Status, "Unexpected HTTP " + response.Status + " response", retryable, 0, null, new Dictionary<string, string>()), null);
+            return (new GameServerError(ErrorCodes.InvalidResponse, -1, response.Status, "Unexpected HTTP " + response.Status + " response", retryable, 0, requestId, new Dictionary<string, string>()), null);
         }
 
         private TimeSpan Backoff(int attempt)
