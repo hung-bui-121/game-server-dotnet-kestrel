@@ -79,13 +79,63 @@ public sealed class InitializerContextTests : IDisposable
             view.Now.ShouldBe(context.Now);
             view.ConfigVersion.ShouldBe(context.ConfigVersion);
             view.Config.ShouldBeSameAs(context.Config);
-            view.NewId("x").ShouldBe(context.NewId("x"));
-            view.NewSeed("y").ShouldBe(context.NewSeed("y"));
-
             view.AddOutbox(SeedModules.OutboxKind, new { n = 1 });
             context.Outbox.Count.ShouldBe(1);
             view.Outbox.ShouldBe([context.Outbox[0]]);
             return Task.CompletedTask;
+        });
+    }
+
+    /// <summary>T082 m3: ids and seeds are the shared context's, with the purpose prefixed by the initializer's name.</summary>
+    [Fact]
+    public async Task Ids_and_seeds_are_scoped_to_the_initializer()
+    {
+        await InAttemptAsync((context, tx) =>
+        {
+            var first = View(context, SeedModules.FirstOf([SeedAggregates.A]));
+            var second = View(context, SeedModules.SecondOf([SeedAggregates.A]));
+
+            first.NewId("x").ShouldBe(context.NewId("seed.first|x"));
+            first.NewSeed("y").ShouldBe(context.NewSeed("seed.first|y"));
+            first.NewId("x").ShouldNotBe(second.NewId("x"));
+            first.NewSeed("y").ShouldNotBe(second.NewSeed("y"));
+            first.NewId("x").ShouldNotBe(context.NewId("x"));
+            return Task.CompletedTask;
+        });
+    }
+
+    /// <summary>T082 m4: a key the creation already holds answers false without counting against the initializer's limit.</summary>
+    [Fact]
+    public async Task A_claim_key_already_held_answers_false_before_the_limit_check()
+    {
+        await InAttemptAsync(async (context, tx) =>
+        {
+            var first = View(context, SeedModules.FirstOf([SeedAggregates.A], maxClaimMarkers: 1));
+            var second = View(context, SeedModules.SecondOf([SeedAggregates.A], maxClaimMarkers: 1));
+
+            (await first.TryClaimAsync(SeedModules.ClaimCollection, "one")).ShouldBeTrue();
+            (await first.TryClaimAsync(SeedModules.ClaimCollection, "one")).ShouldBeFalse();
+            (await second.TryClaimAsync(SeedModules.ClaimCollection, "one")).ShouldBeFalse();
+            (await second.TryClaimAsync(SeedModules.ClaimCollection, "two")).ShouldBeTrue();
+            context.Claims.Count.ShouldBe(2);
+        });
+    }
+
+    /// <summary>T082 m4: the context's own claim rule (a forbidden collection) is a creation rule, not an initializer throw.</summary>
+    [Theory]
+    [InlineData("receipts")]
+    [InlineData("pa_seed_a")]
+    public async Task A_claim_in_a_forbidden_collection_is_a_creation_rule(string collection)
+    {
+        await InAttemptAsync(async (context, tx) =>
+        {
+            var view = View(context, SeedModules.FirstOf([SeedAggregates.A], maxClaimMarkers: 1));
+
+            var ex = await Should.ThrowAsync<InvalidOperationException>(async () => await view.TryClaimAsync(collection, "k"));
+
+            ex.ShouldBeOfType<AccountCreationRuleException>();
+            ex.Message.ShouldBe($"Claim markers cannot live in collection '{collection}'.");
+            context.Claims.ShouldBeEmpty();
         });
     }
 

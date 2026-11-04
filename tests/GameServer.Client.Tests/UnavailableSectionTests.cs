@@ -98,6 +98,48 @@ public sealed class UnavailableSectionTests : IAsyncLifetime
         client.Sections.IsUnavailable(Wallet).ShouldBeTrue("that login listed the wallet too");
     }
 
+    /// <summary>
+    /// T082 M2: a same-player login computes the change of the marks: a section still unavailable raises nothing, a recovered one
+    /// raises once and is available again.
+    /// </summary>
+    [Fact]
+    public async Task A_same_player_login_raises_availability_only_for_a_change()
+    {
+        var (client, transport, _) = _harness.NewClient();
+        var (localId, secret) = SdkHarness.NewDevice();
+        await client.LoginGuestAsync(localId, secret);
+        var withoutWallet = true;
+        transport.After = (request, _, response) =>
+        {
+            if (!withoutWallet || request.Url.AbsolutePath.TrimStart('/') != GameServerClient.LoginRoute)
+            {
+                return response;
+            }
+
+            var login = SdkIdentity.LoginResponse.Parser.ParseFrom(response.Body);
+            var kept = login.Sections.Where(s => s.Id != Wallet).ToArray();
+            login.Sections.Clear();
+            login.Sections.Add(kept);
+            login.UnavailableSections.Add(WalletAhead);
+            return new TransportResponse(response.Status, response.ContentType, login.ToByteArray());
+        };
+        await client.LoginGuestAsync(localId, secret);
+        var events = new List<string>();
+        client.Sections.AvailabilityChanged += events.Add;
+
+        await client.LoginGuestAsync(localId, secret);
+
+        events.ShouldBeEmpty("the wallet is still unavailable with the same code");
+        client.Sections.IsUnavailable(Wallet).ShouldBeTrue();
+
+        withoutWallet = false;
+        await client.LoginGuestAsync(localId, secret);
+
+        events.ShouldBe([Wallet], "the wallet recovered: one event");
+        client.Sections.IsUnavailable(Wallet).ShouldBeFalse();
+        client.Sections.TryGet(Wallet, out _).ShouldBeTrue();
+    }
+
     [Fact]
     public async Task Snapshot_and_command_answers_mark_their_unavailable_sections()
     {

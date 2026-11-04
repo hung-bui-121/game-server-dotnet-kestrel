@@ -17,7 +17,7 @@ public sealed class CommandSettingsValidationTests
         { "ReplayWindowHours", 169, "[deployment] GameServer:Commands:ReplayWindowHours is 169; allowed 1..168 (CMD-07)." },
         { "PerPlayerQueueLimit", -1, "[deployment] GameServer:Commands:PerPlayerQueueLimit is -1; allowed 0..16 (CMD-06)." },
         { "PerPlayerQueueLimit", 17, "[deployment] GameServer:Commands:PerPlayerQueueLimit is 17; allowed 0..16 (CMD-06)." },
-        { "ReceiptMaxBytes", 65537, "[deployment] GameServer:Commands:ReceiptMaxBytes is 65537; allowed 1024..65536 (CMD-03)." },
+        { "ReceiptMaxBytes", 65537, "[deployment] GameServer:Commands:ReceiptMaxBytes is 65537; allowed 1112..65536 (CMD-03)." },
         { "ResultCompactMaxBytes", 63, "[deployment] GameServer:Commands:ResultCompactMaxBytes is 63; allowed 64..16384 (CMD-03)." },
         { "MaxAggregatesPerGame", 0, "[deployment] GameServer:Commands:MaxAggregatesPerGame is 0; allowed 1..16 (DAT-09)." },
         { "MaxAggregatesPerGame", 17, "[deployment] GameServer:Commands:MaxAggregatesPerGame is 17; allowed 1..16 (DAT-09)." },
@@ -59,18 +59,33 @@ public sealed class CommandSettingsValidationTests
     [Fact]
     public void The_receipt_and_result_bounds_are_valid_with_a_matching_other_value()
     {
-        // At its lower bound the receipt is in range, but even the smallest result (64 bytes) needs 1112 receipt bytes.
-        new CommandSettings { ReceiptMaxBytes = 1024, ResultCompactMaxBytes = 64 }.Validate().ShouldBe(
+        // T082 m2: the receipt's lower bound is what the smallest result (64 bytes) needs under the cross rule, 1112.
+        new CommandSettings { ReceiptMaxBytes = 1112, ResultCompactMaxBytes = 64 }.Validate().ShouldBeEmpty();
+        new CommandSettings { ReceiptMaxBytes = 1111, ResultCompactMaxBytes = 64 }.Validate().ShouldBe(
         [
-            "[deployment] GameServer:Commands:ResultCompactMaxBytes 64 needs 1112 receipt bytes (base64 + 1024) but ReceiptMaxBytes is 1024. " +
+            "[deployment] GameServer:Commands:ReceiptMaxBytes is 1111; allowed 1112..65536 (CMD-03).",
+            "[deployment] GameServer:Commands:ResultCompactMaxBytes 64 needs 1112 receipt bytes (base64 + 1024) but ReceiptMaxBytes is 1111. " +
             "Fix: raise ReceiptMaxBytes or lower ResultCompactMaxBytes.",
         ]);
-        new CommandSettings { ReceiptMaxBytes = 1112, ResultCompactMaxBytes = 64 }.Validate().ShouldBeEmpty();
-        new CommandSettings { ReceiptMaxBytes = 1023, ResultCompactMaxBytes = 64 }.Validate().First()
-            .ShouldBe("[deployment] GameServer:Commands:ReceiptMaxBytes is 1023; allowed 1024..65536 (CMD-03).");
+        new CommandSettings { ReceiptMaxBytes = 1024, ResultCompactMaxBytes = 64 }.Validate().First()
+            .ShouldBe("[deployment] GameServer:Commands:ReceiptMaxBytes is 1024; allowed 1112..65536 (CMD-03).");
         new CommandSettings { ResultCompactMaxBytes = 16384, ReceiptMaxBytes = 65536 }.Validate().ShouldBeEmpty();
         new CommandSettings { ResultCompactMaxBytes = 16385, ReceiptMaxBytes = 65536 }.Validate()
             .ShouldBe(["[deployment] GameServer:Commands:ResultCompactMaxBytes is 16385; allowed 64..16384 (CMD-03)."]);
+    }
+
+    /// <summary>T082 m2: the lower bound is derived from the cross rule itself: it accepts the bound and refuses one byte less.</summary>
+    [Fact]
+    public void The_receipt_lower_bound_is_the_cross_rule_for_the_smallest_result()
+    {
+        CommandSettings.MinReceiptMaxBytes.ShouldBe(1112);
+        static IEnumerable<string> CrossLines(int receipt) =>
+            new CommandSettings { ResultCompactMaxBytes = CommandSettings.MinResultCompactMaxBytes, ReceiptMaxBytes = receipt }
+                .Validate()
+                .Where(l => l.Contains(" needs ", StringComparison.Ordinal));
+
+        CrossLines(CommandSettings.MinReceiptMaxBytes).ShouldBeEmpty();
+        CrossLines(CommandSettings.MinReceiptMaxBytes - 1).ShouldHaveSingleItem();
     }
 
     /// <summary>4·⌈512/3⌉ + 1024 = 1708: equality commits, one byte less is the cross line.</summary>

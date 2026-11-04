@@ -264,9 +264,11 @@ public sealed partial class CommandContextDouble : ICommandContext
 
     public void AddOutbox(string kind, object payload) => Surface.AddOutbox(kind, payload);
 
-    public string NewId(string purpose) => Inner.NewId(purpose);
+    /// <summary>The runner's value; for an account initializer the writer's, scoped to the initializer's name.</summary>
+    public string NewId(string purpose) => Surface.NewId(purpose);
 
-    public long NewSeed(string purpose) => Inner.NewSeed(purpose);
+    /// <summary>The runner's value; for an account initializer the writer's, scoped to the initializer's name.</summary>
+    public long NewSeed(string purpose) => Surface.NewSeed(purpose);
 
     /// <summary>
     /// What the runner would refuse at commit (FR-026), checked with the runner's rules: uncatalogued or non-200 commit code; a

@@ -25,21 +25,47 @@ public sealed class AccountInitializerValidationTests
         Validate(Seed(SeedModules.FirstOf([SeedAggregates.A, SeedAggregates.B], 1), SeedModules.SecondOf([SeedAggregates.A], 1))).ShouldBeEmpty();
     }
 
+    /// <summary>T082 m10: segments separated by single dots, each starting with a letter, and the module's first segment first.</summary>
     [Theory]
     [InlineData("Seed.first")]
     [InlineData("seed")]
     [InlineData("seed.")]
     [InlineData("seed.first-x")]
+    [InlineData("seed..first")]
+    [InlineData("seed.first.")]
+    [InlineData("seed.1st")]
+    [InlineData("seed.first._x")]
+    [InlineData("other.first")]
+    [InlineData("seedy.first")]
     public void An_invalid_name_is_one_line(string name)
     {
         Validate(Seed(AccountInitializerRegistration.Of<FirstSeedInitializer>(name, [SeedAggregates.A])))
-            .ShouldBe([$"[module seed] account initializer '{name}' has an invalid name. Fix: use '<module>.<name>' in lowercase."]);
+            .ShouldBe([$"[module seed] account initializer '{name}' has an invalid name. Fix: use 'seed.<name>' in lowercase."]);
     }
 
-    [Fact]
-    public void A_dotted_name_after_the_module_segment_is_valid()
+    [Theory]
+    [InlineData("seed.starting.gold")]
+    [InlineData("seed.starting_gold2")]
+    public void A_dotted_name_after_the_module_segment_is_valid(string name)
     {
-        Validate(Seed(AccountInitializerRegistration.Of<FirstSeedInitializer>("seed.starting.gold", [SeedAggregates.A]))).ShouldBeEmpty();
+        Validate(Seed(AccountInitializerRegistration.Of<FirstSeedInitializer>(name, [SeedAggregates.A]))).ShouldBeEmpty();
+    }
+
+    /// <summary>T082 m10: a dotted module name contributes its first segment (sample.game → sample.starting_gold).</summary>
+    [Fact]
+    public void A_dotted_module_name_contributes_its_first_segment()
+    {
+        static DescriptorModule Module(string module, string name) => new(new ModuleDescriptor
+        {
+            Name = module,
+            Aggregates = [SeedAggregates.ADescriptor],
+            AccountInitializers = [AccountInitializerRegistration.Of<FirstSeedInitializer>(name, [SeedAggregates.A])],
+        });
+
+        Validate(Module("seed.game", "seed.starting_gold")).ShouldBeEmpty();
+        Validate(Module("seed.game", "seed.game.starting_gold")).ShouldBeEmpty();
+        Validate(Module("seed.game", "game.starting_gold")).ShouldBe(
+            ["[module seed.game] account initializer 'game.starting_gold' has an invalid name. Fix: use 'seed.<name>' in lowercase."]);
     }
 
     [Fact]
@@ -47,12 +73,12 @@ public sealed class AccountInitializerValidationTests
     {
         var other = new DescriptorModule(new ModuleDescriptor
         {
-            Name = "other",
+            Name = "seed.other",
             AccountInitializers = [AccountInitializerRegistration.Of<SecondSeedInitializer>(SeedModules.First, [SeedAggregates.B])],
         });
 
         Validate(Seed(SeedModules.FirstOf([SeedAggregates.A])), other).ShouldBe([
-            "[module other] account initializer 'seed.first' is already registered by module 'seed'. Fix: initializer names must be unique per game.",
+            "[module seed.other] account initializer 'seed.first' is already registered by module 'seed'. Fix: initializer names must be unique per game.",
         ]);
     }
 
@@ -162,11 +188,12 @@ public sealed class AccountInitializerValidationTests
 
         errors.ShouldBe([
             "[module faulty] aggregate id 'Bad-Id' is invalid. Fix: use [a-z][a-z0-9_]{1,31}.",
-            "[module faulty] account initializer 'Bad' has an invalid name. Fix: use '<module>.<name>' in lowercase.",
+            "[module faulty] account initializer 'Bad' has an invalid name. Fix: use 'faulty.<name>' in lowercase.",
             "[module faulty] account initializer 'Bad' touches 'profile'. Fix: remove it; the framework writes the profile of a new account.",
             "[module faulty] account initializer 'Bad' touches unknown aggregate 'nope'. Fix: register the aggregate or fix Touches.",
             "[module faulty] account initializer 'Bad' declares aggregate 'nope' twice. Fix: list each aggregate once in Touches.",
             "[module faulty] account initializer 'Bad' allows 3 claim markers. Fix: use 0..2 (DAT-04).",
+            "[module faulty] account initializer 'seed.first' has an invalid name. Fix: use 'faulty.<name>' in lowercase.",
             "[module faulty] account initializer 'seed.first' is already registered by module 'seed'. Fix: initializer names must be unique per game.",
             "[deployment] account creation touches 6 aggregates (profile + seed_a, nope, seed_b, probe, probe_hidden from initializers seed.first, Bad, seed.first); " +
             "max is 4. Fix: move state into fewer aggregates or seed it in a later command (DAT-09).",

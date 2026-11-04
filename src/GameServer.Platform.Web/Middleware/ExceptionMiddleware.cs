@@ -1,5 +1,5 @@
 using GameServer.Errors;
-using GameServer.Platform.Aggregates;
+using GameServer.Platform.Diagnostics;
 using GameServer.Platform.Web.Errors;
 using Google.Protobuf;
 using Microsoft.AspNetCore.Http;
@@ -9,8 +9,8 @@ namespace GameServer.Platform.Web.Middleware;
 
 /// <summary>
 /// Outermost error middleware (inside the request event's middleware): maps exceptions to catalog codes (API-04, API-05) and turns unmatched
-/// routes into catalog 404s. Unknown exceptions become 500 <c>INTERNAL</c> without details. A reported read failure (FG-029) gets its
-/// envelope but no second log line.
+/// routes into catalog 404s. Unknown exceptions become 500 <c>INTERNAL</c> without details. A reported failure (a read failure, FG-029, or
+/// a failed account creation, <see cref="ReportedFailure"/>) gets its envelope but no second log line.
 /// </summary>
 public sealed class ExceptionMiddleware(RequestDelegate next, ErrorResponseWriter writer, ILogger<ExceptionMiddleware> logger)
 {
@@ -26,8 +26,8 @@ public sealed class ExceptionMiddleware(RequestDelegate next, ErrorResponseWrite
         }
         catch (GameServerException ex)
         {
-            // A read failure was already logged once, with aggregate, player, reason and exception type, where it happened (FR-026).
-            var reported = AggregateReadFailure.TryGet(ex, out _);
+            // A read failure or a failed account creation was already logged once where it happened (FR-026, T082 m1).
+            var reported = ReportedFailure.IsReported(ex);
             if (!reported && ex.Code.HttpStatus >= 500)
             {
                 logger.LogError(ex, "Request failed with {Code}: {Detail}", ex.Code.Name, ex.Detail);

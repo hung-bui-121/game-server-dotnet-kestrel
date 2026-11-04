@@ -62,18 +62,23 @@ namespace GameServer.Client
             problem = null;
             try
             {
+                // The stored bytes without a copy: Record runs on the Unity main thread (T082 M3).
+                var commandBody = command.BodyBytes;
                 var player = Utf8.GetBytes(command.PlayerId);
                 var route = Utf8.GetBytes(command.Route);
-                if (player.Length == 0 || player.Length > MaxPlayerIdBytes || route.Length == 0 || route.Length > MaxRouteBytes || command.Body.Length > MaxBodyBytes)
+                if (player.Length == 0 || player.Length > MaxPlayerIdBytes || route.Length == 0 || route.Length > MaxRouteBytes || commandBody.Length > MaxBodyBytes)
                 {
                     problem = $"not saved: the player id must be 1 to {MaxPlayerIdBytes} bytes, the route 1 to {MaxRouteBytes} bytes and the body at most {MaxBodyBytes} bytes";
                     return null;
                 }
 
-                using var payload = new MemoryStream();
+                var id = Utf8.GetBytes(command.RequestId);
+
+                // Four length prefixes and the recorded time: the payload's exact size, so the stream never grows.
+                var payloadLength = (4 * sizeof(uint)) + sizeof(long) + id.Length + player.Length + route.Length + commandBody.Length;
+                using var payload = new MemoryStream(payloadLength);
                 using (var writer = new BinaryWriter(payload, Utf8, leaveOpen: true))
                 {
-                    var id = Utf8.GetBytes(command.RequestId);
                     writer.Write((uint)id.Length);
                     writer.Write(id);
                     writer.Write((uint)player.Length);
@@ -81,8 +86,8 @@ namespace GameServer.Client
                     writer.Write((uint)route.Length);
                     writer.Write(route);
                     writer.Write(command.RecordedAtServerUtc.ToUnixTimeMilliseconds());
-                    writer.Write((uint)command.Body.Length);
-                    writer.Write(command.Body);
+                    writer.Write((uint)commandBody.Length);
+                    writer.Write(commandBody);
                 }
 
                 var body = payload.ToArray();

@@ -124,7 +124,7 @@ public sealed partial class CommandContextDouble
         if (writes.Count > 0 || inner.Claims.Count > 0 || inner.Outbox.Count > 0)
         {
             var receiptBytes = MeasureReceipt(AccountCreation.Operation, EmptyBodyHash, CoreErrorCodes.Ok, [], writes);
-            violations.Add(CommitRules.CheckReceiptSize(operation, receiptBytes, _commands)?.Line);
+            violations.Add(CommitRules.CheckCreationReceiptSize(operation, receiptBytes, _commands)?.Line);
         }
 
         return violations.OfType<string>().ToArray();

@@ -27,7 +27,12 @@ SDK `ErrorCodes` gains the three names.
 Rules:
 - No line carries state content or an exception message from game code (API-04, constitution VII).
 - The request id comes from the correlation scope.
-- `ExceptionMiddleware` writes no second line for a read failure (marker, research R5).
+- `ExceptionMiddleware` writes no second line for a read failure or a failed account creation (the reported-failure
+  marker, research R5; T082 m1). The request log still records the code (`INTERNAL` for a failed creation). A store failure
+  of the creation transaction is not marked: it keeps the middleware line `Request failed with INTERNAL: Login transaction
+  failed for player {id}.`
+- `account_creations_total{result="failed"}` also counts a creation that lost its anchor or met an unreadable initializer
+  aggregate (T082 m5).
 - Log volume: one line per failed read. For a hot player polling the snapshot, that is one line per poll (spec edge
   case); ops watch the metric.
 
@@ -52,7 +57,7 @@ existing later blocks.
 ### 4.1 Account initializers (FR-015, BC-9)
 
 ```text
-[module {m}] account initializer '{name}' has an invalid name. Fix: use '<module>.<name>' in lowercase.
+[module {m}] account initializer '{name}' has an invalid name. Fix: use '{prefix}<name>' in lowercase.
 [module {m}] account initializer '{name}' is already registered by module '{other}'. Fix: initializer names must be unique per game.
 [module {m}] account initializer '{name}' touches unknown aggregate '{id}'. Fix: register the aggregate or fix Touches.
 [module {m}] account initializer '{name}' declares aggregate '{id}' twice. Fix: list each aggregate once in Touches.
@@ -63,18 +68,22 @@ existing later blocks.
 [module {m}] command 'identity.create_account' uses the operation reserved for account creation. Fix: rename the command.
 ```
 
+A valid name matches `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$` and starts with `{prefix}` = the first segment of the module name
+and a dot (`sample.game` → `sample.`, `fixture` → `fixture.`; T082 m10).
+
 ### 4.2 Command settings (FR-032, BC-2)
 
 ```text
 [deployment] GameServer:Commands:ReplayWindowHours is {v}; allowed 1..168 (CMD-07).
 [deployment] GameServer:Commands:PerPlayerQueueLimit is {v}; allowed 0..16 (CMD-06).
-[deployment] GameServer:Commands:ReceiptMaxBytes is {v}; allowed 1024..65536 (CMD-03).
+[deployment] GameServer:Commands:ReceiptMaxBytes is {v}; allowed 1112..65536 (CMD-03).
 [deployment] GameServer:Commands:ResultCompactMaxBytes is {v}; allowed 64..16384 (CMD-03).
 [deployment] GameServer:Commands:ResultCompactMaxBytes {r} needs {need} receipt bytes (base64 + 1024) but ReceiptMaxBytes is {v}. Fix: raise ReceiptMaxBytes or lower ResultCompactMaxBytes.
 [deployment] GameServer:Commands:MaxAggregatesPerGame is {v}; allowed 1..16 (DAT-09).
 ```
 
-The existing line `[deployment] {n} player aggregates registered (max {MaxAggregatesPerGame})` stays. When
+The lower bound 1112 is the cross rule for the smallest result: `4·⌈64/3⌉ + 1024` (T082 m2); a value below it gets the range
+line and the cross line. The existing line `[deployment] {n} player aggregates registered (max {MaxAggregatesPerGame})` stays. When
 `MaxAggregatesPerGame` is out of range, only the range line is written: the count check uses 16.
 
 ### 4.3 Sample game rule (FR-050)
@@ -85,11 +94,21 @@ The existing line `[deployment] {n} player aggregates registered (max {MaxAggreg
 
 ## 5. TestKit lines
 
-`CommandContextDouble.CheckCommit(outcome, encodeResult)` and `CheckAccountCreation()` return the runner's texts:
+`CommandContextDouble.CheckCommit(outcome, encodeResult)` returns the runner's texts:
 
 ```text
 Command '{operation}' result is {bytes} bytes; ResultCompactMaxBytes is {limit}: the runner rejects the command with COMMAND_OUTPUT_TOO_LARGE (part result) and nothing commits. Fix: return less or raise GameServer:Commands:ResultCompactMaxBytes.
 Command '{operation}' receipt would be {bytes} bytes; ReceiptMaxBytes is {limit}: the runner rejects the command with COMMAND_OUTPUT_TOO_LARGE (part receipt) and nothing commits. Fix: fewer ledger/outbox entries or raise GameServer:Commands:ReceiptMaxBytes.
 ```
 
-For an initializer, `'{operation}'` is `identity.create_account (initializer {name})`.
+`CheckAccountCreation()` returns the account writer's texts. A creation is no command rejection (D15), so its receipt line
+names what the login answers (T082, the T078 finding); the writer logs the same text as `{RuleLine}` of "creation rule
+violated" (§2):
+
+```text
+Command 'identity.create_account (initializer {names})' receipt would be {bytes} bytes; ReceiptMaxBytes is {limit}: the account writer refuses the creation and the login answers INTERNAL. Fix: fewer ledger/outbox entries or raise GameServer:Commands:ReceiptMaxBytes.
+```
+
+For an initializer, `'{operation}'` is `identity.create_account (initializer {name})` (the writer's receipt line names every
+initializer, comma-separated). The aggregate-size line of a creation still reads "the runner rejects the command with
+AGGREGATE_TOO_LARGE" (not part of T082; follow-up in the release notes).

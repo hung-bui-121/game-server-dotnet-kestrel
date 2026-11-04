@@ -233,10 +233,11 @@ và config của consumer fixture trong mọi build framework, nên gói và cli
 - Có store: command được ghi `(id, player của session, route, bytes chính xác, ServerNow)` **trước** lần thử đầu; xoá khi server
   trả command response với mã bất kỳ, hoặc error envelope không retryable (ví dụ `IDEMPOTENCY_PAYLOAD_MISMATCH`); **giữ** khi không
   rõ kết quả (không response, `INVALID_RESPONSE`, mã retryable ở lần cuối như `COMMIT_UNKNOWN_RETRY` hoặc `AGGREGATE_VERSION_AHEAD`,
-  huỷ). Login, logout, snapshot, config và time không đụng store. Lỗi đĩa không bao giờ chặn command: entry giữ trong bộ nhớ,
-  `WriteProblem` nói lý do.
-- Sau khi khởi động lại: `client.PendingCommands` (danh sách **sống** của store: duyệt một bản sao khi gửi lại hoặc bỏ entry trong
-  vòng lặp), `StatusOf(entry)` = `OtherPlayer` (player khác hoặc chưa có session), `Expired` (≥ `PendingCommandMaxAge` theo **đồng
+  huỷ) và khi server từ chối xác thực (`UNAUTHENTICATED`, `SESSION_REPLACED`, `ACCOUNT_*`: request bị chặn trước khi command chạy,
+  entry chờ được gửi lại sau lần login kế tiếp; slice 016 T082). Login, logout, snapshot, config và time không đụng store. Lỗi đĩa
+  không bao giờ chặn command: entry giữ trong bộ nhớ, `WriteProblem` nói lý do.
+- Sau khi khởi động lại: `client.PendingCommands` (một **snapshot**: gửi lại hoặc bỏ entry ngay trong `foreach` trên nó là an toàn;
+  đọc lại để có danh sách hiện tại), `StatusOf(entry)` = `OtherPlayer` (player khác hoặc chưa có session), `Expired` (≥ `PendingCommandMaxAge` theo **đồng
   hồ server**, đổi giờ máy không làm thay đổi) hoặc `Resendable`; `ResendPendingAsync(entry, parser)` gửi bytes đã lưu với id đã
   lưu tới route đã lưu (command đã commit trả `Replayed` với receipt gốc), ném `InvalidOperationException` cho entry không
   resendable hoặc không còn trong store; `DiscardPendingCommand(id)` bỏ một entry (id lạ bị bỏ qua). SDK **không bao giờ** tự gửi
@@ -264,7 +265,9 @@ và config của consumer fixture trong mọi build framework, nên gói và cli
 Số đo (VERIFY V8, entry 4 KiB, 200 lần sau warm-up): T007 (.NET 10, `Flush(true)`): ghi p50 3,08 / p95 6,09 ms, xoá p95 1,52 ms trên
 C: (`%TEMP%`, ổ của `persistentDataPath` trên Windows — ổ tham chiếu của SC-008); D: (ổ repository) ghi p95 32,24 ms, xoá p95
 0,46 ms (chỉ ghi lại). T061 (`PendingCommandStorePerformanceTests`, `GAMESERVER_PERF=1`, C:): ghi p50 2,29 / p95 5,56 ms, xoá p95
-0,26 ms. `Flush(true)` được giữ (không fallback).
+0,26 ms. `Flush(true)` được giữ (không fallback). Ghi không copy body thêm lần nào ngoài payload (T082). Số đo trên thiết bị là
+T069 (owner): nếu p95 của ghi trên thiết bị mục tiêu chậm nhất vượt khoảng 8 ms thì chuyển sang `Flush(false)` và sửa bảng crash
+(mất điện ngay sau `Record` khi đó có thể mất entry).
 
 ### Section không đọc được
 
@@ -273,7 +276,8 @@ C: (`%TEMP%`, ổ của `persistentDataPath` trên Windows — ổ tham chiếu 
   `UnavailableSectionState` (`Id`, `Code`, `CodeNumber`), event `AvailabilityChanged(id)`; section bị đánh dấu **giữ bản tốt cuối**;
   `Set`/`Apply` kế tiếp của nó xoá dấu, `Clear()` xoá mọi dấu.
 - **Luật cùng player**: login của **cùng** player giữ bản của các section nó liệt kê là unavailable; login của player khác bắt đầu
-  từ store rỗng.
+  từ store rỗng. Login cùng player chỉ phát `AvailabilityChanged` khi có thay đổi: section vẫn unavailable cùng mã thì không phát,
+  section đã đọc lại được thì phát một lần (slice 016 T082).
 - Ba mã (`ErrorCodes`): `COMMAND_OUTPUT_TOO_LARGE` (23, mã nghiệp vụ trong `CommandResult.Code`, `Response.Details` có `part`/
   `bytes`/`limit`), `AGGREGATE_VERSION_AHEAD` (24, 503, retryable: SDK retry cùng bytes và id với delay 1000 ms rồi mới ném
   `GameServerException`), `AGGREGATE_UNREADABLE` (25, 500, không retry). `CommandResponse.details` (field 11) mang details của mọi

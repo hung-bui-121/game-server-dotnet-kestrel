@@ -209,18 +209,24 @@ namespace SampleGame.Client
 
         /// <summary>
         /// After login: resends every Resendable entry of the pending store with its stored id and bytes (a committed command answers
-        /// Replayed with its original receipt) and discards the others (another player's, or expired).
+        /// Replayed with its original receipt) and discards the Expired ones. Another player's entries stay for that player's next
+        /// login on this device.
         /// </summary>
         private static async Task ResendPendingAsync(GameServerClient client, Action<string> log)
         {
-            // A copy: PendingCommands is the store's live list, and a resend or a discard removes the entry from it.
-            foreach (var pending in new List<PendingCommand>(client.PendingCommands))
+            // PendingCommands is a snapshot: a resend or a discard inside the loop does not change it.
+            foreach (var pending in client.PendingCommands)
             {
                 var status = client.StatusOf(pending);
                 log($"pending {pending.RequestId} {status}");
-                if (status != PendingCommandStatus.Resendable)
+                if (status == PendingCommandStatus.Expired)
                 {
                     client.DiscardPendingCommand(pending.RequestId);
+                    continue;
+                }
+
+                if (status != PendingCommandStatus.Resendable)
+                {
                     continue;
                 }
 

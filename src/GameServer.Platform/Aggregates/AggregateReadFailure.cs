@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using GameServer.Errors;
+using GameServer.Platform.Diagnostics;
 
 namespace GameServer.Platform.Aggregates;
 
@@ -40,7 +41,10 @@ public sealed record AggregateReadFailure(
     /// <summary>The <c>details</c> key naming the aggregate.</summary>
     public const string AggregateDetail = "aggregate";
 
-    /// <summary><see cref="Exception.Data"/> key of the reported marker (the error middleware writes no second line, research R5).</summary>
+    /// <summary>
+    /// <see cref="Exception.Data"/> key of the failure (<see cref="TryGet"/>); the exception is also marked with
+    /// <see cref="ReportedFailure"/>, so the error middleware writes no second line (research R5).
+    /// </summary>
     private const string MarkerKey = "GameServer.AggregateReadFailure";
 
     /// <summary><c>AGGREGATE_VERSION_AHEAD</c> for <see cref="AggregateReadFailureReason.VersionAhead"/>, else <c>AGGREGATE_UNREADABLE</c>.</summary>
@@ -68,7 +72,7 @@ public sealed record AggregateReadFailure(
             RetryAfterMs = Reason == AggregateReadFailureReason.VersionAhead ? VersionAheadRetryAfterMs : null,
         };
         exception.Data[MarkerKey] = this;
-        return exception;
+        return ReportedFailure.Mark(exception);
     }
 
     /// <summary>The failure carried by an exception from <see cref="ToException"/>; false for any other exception.</summary>

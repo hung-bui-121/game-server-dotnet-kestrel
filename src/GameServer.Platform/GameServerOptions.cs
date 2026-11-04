@@ -150,7 +150,6 @@ public sealed class CommandSettings
     internal const int MaxReplayWindowHours = 168;
     internal const int MinPerPlayerQueueLimit = 0;
     internal const int MaxPerPlayerQueueLimit = 16;
-    internal const int MinReceiptMaxBytes = 1024;
     internal const int MaxReceiptMaxBytes = 64 * 1024;
     internal const int MinResultCompactMaxBytes = 64;
     internal const int MaxResultCompactMaxBytes = 16 * 1024;
@@ -159,6 +158,12 @@ public sealed class CommandSettings
 
     /// <summary>Receipt bytes besides the base64 result that the largest allowed result must leave room for.</summary>
     internal const int ReceiptOverheadBytes = 1024;
+
+    /// <summary>
+    /// The smallest receipt the cross rule of <see cref="Validate"/> accepts: the smallest allowed result (64 bytes) as base64 plus
+    /// the overhead, 4·⌈64/3⌉ + 1024 = 1112 (T082 m2). A lower value could never start.
+    /// </summary>
+    internal const int MinReceiptMaxBytes = (4 * ((MinResultCompactMaxBytes + 2) / 3)) + ReceiptOverheadBytes;
 
     /// <summary>Replay window (CMD-07).</summary>
     public int ReplayWindowHours { get; set; } = 24;

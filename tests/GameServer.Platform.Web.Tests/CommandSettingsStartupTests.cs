@@ -21,7 +21,7 @@ public sealed class CommandSettingsStartupTests
     [
         "[deployment] GameServer:Commands:ReplayWindowHours is 0; allowed 1..168 (CMD-07).",
         "[deployment] GameServer:Commands:PerPlayerQueueLimit is 17; allowed 0..16 (CMD-06).",
-        "[deployment] GameServer:Commands:ReceiptMaxBytes is 1000; allowed 1024..65536 (CMD-03).",
+        "[deployment] GameServer:Commands:ReceiptMaxBytes is 1000; allowed 1112..65536 (CMD-03).",
         "[deployment] GameServer:Commands:ResultCompactMaxBytes is 20000; allowed 64..16384 (CMD-03).",
         "[deployment] GameServer:Commands:ResultCompactMaxBytes 20000 needs 27692 receipt bytes (base64 + 1024) but ReceiptMaxBytes is 1000. " +
         "Fix: raise ReceiptMaxBytes or lower ResultCompactMaxBytes.",

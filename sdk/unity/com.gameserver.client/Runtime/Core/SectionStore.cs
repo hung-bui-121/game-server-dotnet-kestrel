@@ -209,7 +209,9 @@ namespace GameServer.Client
 
         /// <summary>
         /// A same-player login (FG-029, research R12): removes every section except <paramref name="keep"/>, whose last good copies
-        /// stay because the login lists them as unavailable; marks are cleared (the login marks again).
+        /// stay because the login lists them as unavailable. Their marks stay too, so the login's <see cref="MarkUnavailable"/>
+        /// raises only for a changed code; every other mark is dropped with <see cref="AvailabilityChanged"/> (a recovered section,
+        /// T082 M2).
         /// </summary>
         internal void ClearExcept(ICollection<string> keep)
         {
@@ -221,7 +223,13 @@ namespace GameServer.Client
                 }
             }
 
-            _unavailable.Clear();
+            foreach (var id in new List<string>(_unavailable.Keys))
+            {
+                if (!keep.Contains(id))
+                {
+                    MarkAvailable(id);
+                }
+            }
         }
 
         /// <summary>Marks the sections an answer lists in <c>unavailable_sections</c>; the last good copy of each stays.</summary>

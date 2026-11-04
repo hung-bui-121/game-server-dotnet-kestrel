@@ -304,7 +304,9 @@ public sealed partial class FixtureCodegenTests(FixtureCodegenTests.Export expor
     {
         public static Task<ChildResult> RunAsync(params string[] args)
         {
-            File.Exists(Paths.ToolDll).ShouldBeTrue($"{Paths.ToolDll} is missing. Build the solution ({Paths.Configuration}) first.");
+            File.Exists(Paths.ToolDll).ShouldBeTrue(
+                $"{Paths.ToolDll} is missing. Build the tool with the configuration of this test run first: " +
+                $"dotnet build tools/GameServer.WireGen -c {Paths.Configuration} (from the framework root; the solution build does it too).");
             return Child.RunAsync(Paths.Dotnet, [Paths.ToolDll, .. args], Paths.Fixture, TimeSpan.FromMinutes(5));
         }
     }

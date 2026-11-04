@@ -5,6 +5,8 @@ using GameServer.Modules.Identity.Protocol.V1;
 using GameServer.Platform.Commands;
 using GameServer.Platform.Persistence;
 using GameServer.Platform.Testing;
+using GameServer.Platform.Web.Middleware;
+using GameServer.Platform.Web.Requests;
 using GameServer.Protocol.Core.V1;
 using GameServer.Tests.Shared;
 using Microsoft.Extensions.DependencyInjection;
@@ -215,6 +217,10 @@ public sealed class AccountCreationTests
         failures[0].Message.ShouldEndWith(" Nothing was created; the next login retries.");
         failures[0].Exception.ShouldBeNull();
         host.LogEntries.ShouldNotContain(e => e.Message.Contains("must never be logged", StringComparison.Ordinal));
+
+        // T082 m1: the writer's line is the only one (no "Request failed with INTERNAL" line); the request log still says INTERNAL.
+        host.LogEntries.Lines(typeof(ExceptionMiddleware).FullName!).ShouldBeEmpty();
+        host.LogEntries.Where(e => e.Category == RequestLog.Category).ShouldHaveSingleItem().Properties["ResultCode"].ShouldBe("INTERNAL");
 
         behaviour.Become(StartingStateBehaviour.Grant(StartingGold));
         await NextLoginCreatesEverythingAsync(host, localId, secret, before);

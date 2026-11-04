@@ -15,7 +15,7 @@ ordinary receipt and ordinary claim markers.
 
 | Field | Rule |
 | --- | --- |
-| `Name` | `^[a-z][a-z0-9_]*\.[a-z][a-z0-9_.]*$` (the operation pattern), unique across modules |
+| `Name` | `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`, starting with the first segment of the module name and a dot (T082 m10; was `^[a-z][a-z0-9_]*\.[a-z][a-z0-9_.]*$`), unique across modules |
 | `InitializerType` | implements `IAccountInitializer` (enforced by `Of<T>`); created per attempt with `ActivatorUtilities` |
 | `Touches` | distinct registered aggregate ids, never `profile`; may be empty (an initializer that only adds outbox entries) |
 | `MaxClaimMarkers` | 0..2; sum over all initializers ≤ 2 |

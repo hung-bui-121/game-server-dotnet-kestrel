@@ -54,6 +54,9 @@ enumerate `*.pending` → read and validate each → keep valid entries ordered 
 File problems while enumerating give an empty store with `LoadProblem = "unreadable: {ExceptionType}"`. The constructor
 never throws for the disk.
 
+`Entries` (and `GameServerClient.PendingCommands`) is a snapshot array, replaced after a `Record`, a successful `Remove` and a
+load failure: a resend or a discard inside a `foreach` over it never changes the array being enumerated (T082 B1).
+
 **Record(entry).**
 1. Memory first: add or replace the entry in `Entries`.
 2. Serialize. When not representable (lengths), set `WriteProblem` and return.
@@ -78,9 +81,11 @@ SendCommandAsync(route, req, parser, requestId?)            (store configured)
   try   response = SendAsync(… body, id …)                  (existing retries, same id + bytes)
         store.Remove(id)                                    ← CommandResponse with any code
   catch GameServerException e when e is an envelope error and !e.Error.Retryable
+                              and e.Error.Code is not UNAUTHENTICATED, SESSION_REPLACED or ACCOUNT_*
         store.Remove(id); throw                             ← final answer
-  catch anything else (network, invalid response, retryable last answer, cancellation)
-        keep; throw                                         ← outcome unknown
+  catch anything else (network, invalid response, retryable last answer, cancellation,
+                       an authentication answer: refused before the command ran, T082 m6)
+        keep; throw                                         ← outcome unknown or not run
 
 ResendPendingAsync(entry, parser)
   StatusOf(entry) must be Resendable, else InvalidOperationException
@@ -108,6 +113,9 @@ Without a store, nothing is written. With a caller id but no store, the id is us
 
 - Record: one small file write + one device flush + one rename. Remove: one delete.
 - SC-008 target: ≤ 10 ms p95 each for a 4 KiB body outside Unity **[VERIFY V8]**; fallback `Flush(false)`.
+- Serialize copies the body once into an exact-size payload (the stored bytes are read without the cloning `Body`, T082 M3).
+  `Flush(true)` stays; the device measurement is T069: if the record p95 on the slowest target device is above about 8 ms,
+  switch to `Flush(false)` and update the crash table (§5: a power cut after `Record` may then lose the entry).
 - Load: one directory enumeration + one read per pending entry (normally 0-3).
 - Synchronous on the calling thread (the Unity main thread). Not thread-safe. One client per folder.
 

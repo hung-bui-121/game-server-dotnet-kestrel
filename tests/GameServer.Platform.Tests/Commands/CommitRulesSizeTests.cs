@@ -32,12 +32,18 @@ public sealed class CommitRulesSizeTests
             "GameServer:Commands:ReceiptMaxBytes.");
     }
 
+    /// <summary>T082 (T078 finding): a creation's receipt line says what happens to a creation — the login answers INTERNAL (D15).</summary>
     [Fact]
-    public void The_initializer_form_of_the_operation_label_is_kept_verbatim()
+    public void The_creation_line_keeps_the_initializer_label_and_names_the_logins_answer()
     {
-        var violation = CommitRules.CheckReceiptSize("identity.create_account (initializer sample.starting_gold)", 5000, Settings).ShouldNotBeNull();
+        CommitRules.CheckCreationReceiptSize("identity.create_account (initializer sample.starting_gold)", 4096, Settings).ShouldBeNull();
+        var violation = CommitRules.CheckCreationReceiptSize("identity.create_account (initializer sample.starting_gold)", 5000, Settings).ShouldNotBeNull();
 
-        violation.Line.ShouldStartWith("Command 'identity.create_account (initializer sample.starting_gold)' receipt would be 5000 bytes; ReceiptMaxBytes is 4096:");
+        violation.Details.ShouldBe(new Dictionary<string, string> { ["part"] = "receipt", ["bytes"] = "5000", ["limit"] = "4096" });
+        violation.Line.ShouldBe(
+            "Command 'identity.create_account (initializer sample.starting_gold)' receipt would be 5000 bytes; ReceiptMaxBytes is 4096: " +
+            "the account writer refuses the creation and the login answers INTERNAL. Fix: fewer ledger/outbox entries or raise " +
+            "GameServer:Commands:ReceiptMaxBytes.");
     }
 
     [Fact]

@@ -19,6 +19,12 @@ namespace GameServer.Platform.Commands;
 /// </summary>
 internal sealed class CommandContext : ICommandContext
 {
+    /// <summary>
+    /// <see cref="Exception.Data"/> key set on an exception of a transaction call this context made on behalf of the handler or
+    /// initializer: it is the store's failure, so a catch around module code lets it reach the store unchanged (T082 M1).
+    /// </summary>
+    internal const string StoreFailureKey = "GameServer.StoreFailure";
+
     private readonly IReadOnlyDictionary<string, LoadedAggregate> _loaded;
     private readonly CommandDescriptor _descriptor;
     private readonly ITransactionContext _transaction;
@@ -99,7 +105,17 @@ internal sealed class CommandContext : ICommandContext
                 $"Command '{_descriptor.Operation}' exceeded MaxClaimMarkers = {_descriptor.MaxClaimMarkers} (DAT-04).");
         }
 
-        var existing = await _transaction.GetManyAsync([key]);
+        IReadOnlyList<StoredDocument?> existing;
+        try
+        {
+            existing = await _transaction.GetManyAsync([key]);
+        }
+        catch (Exception ex)
+        {
+            ex.Data[StoreFailureKey] = true;
+            throw;
+        }
+
         if (existing[0] is not null)
         {
             return false;
@@ -143,6 +159,9 @@ internal sealed class CommandContext : ICommandContext
     public long NewSeed(string purpose) => BinaryPrimitives.ReadInt64LittleEndian(Hash("seed|" + purpose));
 
     private byte[] Hash(string purpose) => SHA256.HashData(Encoding.UTF8.GetBytes(_receiptId + "|" + purpose));
+
+    /// <summary>True for an exception of a transaction call made through a context (<see cref="StoreFailureKey"/>).</summary>
+    internal static bool IsStoreFailure(Exception exception) => exception.Data[StoreFailureKey] is true;
 
     /// <summary>New serialized state of an aggregate if the handler called <see cref="Set{TState}"/>.</summary>
     public bool TryGetNewState(string aggregateId, out byte[] json) => _newStates.TryGetValue(aggregateId, out json!);

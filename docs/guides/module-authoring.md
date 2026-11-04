@@ -109,6 +109,16 @@ public ModuleDescriptor Describe() => new()
   (slice 010 — `docs/pcr/platform.md` mục 16).
 - Kind outbox `analytics` do framework giữ chỗ (slice 012): projection/consumer cùng kind → startup fail. Event analytics
   từ command: `ctx.AddAnalyticsEvent(...)` (`docs/guides/analytics.md`).
+- **`OutboxProjection(kind, collection)` lưu gì**: sau khi command commit, relay (inline, hoặc sweeper sau đó) chép mỗi entry
+  `ctx.AddOutbox(kind, payload)` của kind đó thành **một document** trong `collection`, key `{kind}::{entryId}` (entry id =
+  `{receiptId}:{n}`), ghi bằng insert-if-absent nên relay lại không tạo bản thứ hai. Document có `entryId`, `kind`, `gameId`,
+  `environmentId`, `receiptId`, `playerId` (player của command), `actorId`, `operation`, `committedAtUtc` và `payload` (JSON của
+  object truyền vào `AddOutbox`, camelCase). Module không tự ghi collection này.
+- **`Anonymize` tìm player id thế nào**: khi xoá tài khoản, purge tìm các document của collection có field `PlayerField` (mặc
+  định `playerId`, đường dẫn có dấu chấm, ví dụ `CollectionSpec(..., PlayerField: "owner.id")`) bằng player bị xoá, rồi thay
+  **mọi** chuỗi JSON đúng bằng player id ở bất kỳ đâu trong document (kể cả trong `payload`) bằng id ẩn danh; tên property và
+  chuỗi chỉ chứa một phần id không bị đổi. Document projection ở trên có sẵn `playerId` ở gốc, nên `Anonymize` với
+  `PlayerField` mặc định là đủ; payload nhắc tới một player khác thì giữ nguyên.
 
 Host: `builder.AddGameServer().AddModule<IdentityModule>().AddModule<MyModule>();` — host đầy đủ (chạy bằng
 `app.RunGameServerAsync(mode)`, slice 011) xem `samples/SampleHost/Program.cs`.
@@ -200,20 +210,25 @@ public sealed class MyStartingState : IAccountInitializer
 AccountInitializers = [AccountInitializerRegistration.Of<MyStartingState>("my.starting_state", ["mything"])],
 ```
 
-- **Đăng ký**: `ModuleDescriptor.AccountInitializers`; tên `<area>.<name>` chữ thường, duy nhất trong deployment. Initializer
-  được tạo mỗi attempt từ DI (constructor injection, như handler). Chạy theo thứ tự đăng ký module rồi thứ tự trong danh sách,
-  trên một context chung; chỉ chạy ở lần login đầu tiên không thấy profile.
+- **Đăng ký**: chỉ cần `ModuleDescriptor.AccountInitializers`, **không** đăng ký DI. Tên gồm các đoạn chữ thường nối bằng dấu
+  chấm (`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`), bắt đầu bằng đoạn đầu của tên module và dấu chấm (module `my.module` →
+  `my.starting_state`, module `fixture` → `fixture.welcome`), duy nhất trong deployment. Initializer được tạo mỗi attempt từ
+  root provider (`ActivatorUtilities`, constructor injection như handler), nên chỉ dependency của constructor phải có trong DI.
+  Chạy theo thứ tự đăng ký module rồi thứ tự trong danh sách, trên một context chung; chỉ chạy ở lần login đầu tiên không thấy
+  profile.
 - **Ngân sách touches**: `Touches` là các aggregate được đọc và ghi, **không bao giờ** `profile`. `profile` + hợp touches của mọi
   initializer ≤ 4 aggregate (`CommandDescriptor.MaxTouches`); tổng claim marker của mọi initializer ≤ 2. `Get`/`Set` ngoài
   touches ném thông báo của runner có tên initializer (`Command 'identity.create_account (initializer my.starting_state)' wrote
   aggregate '…' which is not declared in Touches (DAT-09).`). Sai khai báo → startup fail, một dòng mỗi lỗi (016/BC-9).
 - **Luật thuần**: như handler — transaction có thể chạy lại nhiều lần; chỉ đọc context (`Config`, `Now`, `NewId`, `NewSeed`) và
-  catalog từ DI; không I/O, không clock, không random riêng.
+  catalog từ DI; không I/O, không clock, không random riêng. `NewId`/`NewSeed` gắn với tên initializer: hai initializer cùng
+  `purpose` nhận giá trị khác nhau; mọi attempt của một lần login nhận cùng giá trị.
 - **Khi lỗi**: trả mã, ném exception hoặc vi phạm luật commit (kích thước aggregate, audit entry, kích thước receipt) → không
   ghi gì (không profile, aggregate, claim, receipt), login trả 500 `INTERNAL`, một dòng Error category `GameServer.Accounts`
   (`Account creation of player {id} failed: … Nothing was created; the next login retries.`, không bao giờ có message của
-  exception), metric `account_initializer_failures_total{initializer, result}` và `account_creations_total{result="failed"}`.
-  Login kế tiếp của cùng credential tạo lại từ đầu.
+  exception; error middleware không ghi thêm dòng nào), metric `account_initializer_failures_total{initializer, result}` và
+  `account_creations_total{result="failed"}`. Login kế tiếp của cùng credential tạo lại từ đầu. Lỗi store trong lời gọi
+  context (ví dụ đọc claim) không tính là initializer ném: nó là lỗi store của transaction login (016/BC-10).
 - **Receipt**: chỉ khi initializer có hiệu ứng (đổi aggregate, giữ claim, thêm outbox) thì có một receipt
   `identity.create_account` (actor `system`, actor id = player); outbox của nó (ledger của grant) được relay như command.
 - Tài khoản tạo trước khi đăng ký initializer **không** được seed về sau (không backfill): giữ command "init" cũ cho chúng, hoặc
@@ -359,7 +374,9 @@ public async Task Save_replaces_the_note_and_the_runner_would_commit_it()
   cho `profile`). Cấu hình (`AsPlayer`, `AsGm`, `At`, `WithConfig`, `Seed`, `SeedClaim`) trước lần gọi handler đầu tiên.
 - `CheckCommit(outcome)` trả các lỗi mà runner sẽ báo khi commit (code không có trong catalog, code commit ≠ HTTP 200,
   aggregate vượt `HardBytes`, thiếu audit GM); rỗng = runner sẽ commit. `CheckCommit(outcome, encodeResult)` kiểm thêm
-  giới hạn resultCompact; kích thước receipt không được kiểm (consumer guide §5.1). `Writes` bỏ qua `Set` không đổi state.
+  giới hạn resultCompact **và kích thước receipt** (`ReceiptMaxBytes`, đo bằng receipt builder của runner từ actor, request id,
+  receipt id, config, `At`, revision đã seed, claim và outbox; chỉnh giới hạn bằng `WithCommandSettings`): consumer guide
+  §13.4. `Writes` bỏ qua `Set` không đổi state.
 - Host test: `TestHost.StartAsync(modules: b => b.AddModule<IdentityModule>().AddModule<MyModule>())` (mặc định chỉ
   Identity, config rỗng; tham số `config:` nhận một `IGameConfig`, ví dụ `TestGameConfig.FromJson(...)`, thay cho config trên
   đĩa); flavor thật của host game: `new LocalFlavorFactory<Program>()` (thư mục tạm riêng, xoá khi dispose). Startup lỗi →
@@ -435,8 +452,11 @@ nào của framework, không cần item MSBuild nào: file sinh ra được comm
   framework/tools/GameServer.WireGen -c Release -- generate --config <file>`, `verify --no-build` trong CI.
 
 Thêm route vào module là đổi file client: chạy lại `generate` (không thì `verify` và test codegen của game fail). Test codegen
-của fixture (`FixtureCodegenTests`) chạy tool đã build: build nó trước bằng `dotnet build tools/GameServer.WireGen` (build cả
-solution cũng được).
+của fixture (`FixtureCodegenTests`) chạy tool đã build **cùng configuration với lần chạy test**
+(`tools/GameServer.WireGen/bin/<configuration>/net10.0/`): build nó trước, từ gốc framework, bằng `dotnet build
+tools/GameServer.WireGen -c Release` khi chạy test với `-c Release` như consumer guide §5 (build cả solution với cùng `-c` cũng
+được). Thiếu tool thì test fail với dòng `… GameServer.WireGen.dll is missing. Build the tool with the configuration of this
+test run first: dotnet build tools/GameServer.WireGen -c Release …`.
 
 Client dùng hằng sinh ra thay vì chuỗi copy: `client.SendCommandAsync(SampleGameRoutes.CounterIncrement, …)`,
 `client.Sections.Register(SampleGameSections.Table)` một lần, `client.Sections.Get(SampleGameSections.Counter)`.

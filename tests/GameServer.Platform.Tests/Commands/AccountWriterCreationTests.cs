@@ -3,6 +3,7 @@ using GameServer.Accounts;
 using GameServer.Commands;
 using GameServer.Errors;
 using GameServer.Modules.Identity;
+using GameServer.Platform.Aggregates;
 using GameServer.Platform.Commands;
 using GameServer.Platform.Persistence;
 using GameServer.Platform.Testing;
@@ -220,6 +221,72 @@ public sealed class AccountWriterCreationTests
         f.H.Store.Count(ReceiptDocument.Collection).ShouldBe(1);
     }
 
+    /// <summary>
+    /// T082 M1: a store failure of a transaction call the context made for an initializer (here the claim read) is the store's,
+    /// not "initializer threw": it reaches the store unchanged and the login answers the store's code.
+    /// </summary>
+    [Fact]
+    public async Task A_store_failure_inside_an_initializers_claim_reaches_the_store_unchanged()
+    {
+        using var f = new Fixture();
+        var failure = new TransactionFailedException("injected claim read failure");
+        f.Store.AfterRead = keys => keys.Any(k => k.Collection == SeedModules.ClaimCollection) ? throw failure : Task.CompletedTask;
+        f.Script.Steps[SeedModules.First] = async ctx =>
+        {
+            await ctx.TryClaimAsync(SeedModules.ClaimCollection, PlayerId);
+            return null;
+        };
+
+        var ex = await Should.ThrowAsync<GameServerException>(f.LoginAsync);
+
+        ex.Code.ShouldBe(CoreErrorCodes.Internal);
+        ex.Message.ShouldBe($"Login transaction failed for player {PlayerId}.");
+        ex.InnerException.ShouldBeSameAs(failure);
+        f.Logs(LogLevel.Error).ShouldBeEmpty();
+        f.Metrics.Sum("account_initializer_failures_total").ShouldBe(0);
+        f.Metrics.SumTagged("account_creations_total", ("result", "failed")).ShouldBe(1);
+        f.H.Store.Count("pa_profile").ShouldBe(0);
+    }
+
+    /// <summary>T082 m5: a creation that loses its anchor or meets an unreadable initializer aggregate counts as a failed creation.</summary>
+    [Theory]
+    [InlineData("anchor")]
+    [InlineData("read failure")]
+    public async Task A_creation_without_its_anchor_or_with_an_unreadable_initializer_aggregate_counts_as_failed(string cause)
+    {
+        using var f = new Fixture();
+        if (cause == "anchor")
+        {
+            f.H.Store.Seed(Anchor, new JsonObject { ["playerId"] = "p_someone_else" });
+            await Should.ThrowAsync<AggregateAnchorMissingException>(f.LoginAsync);
+        }
+        else
+        {
+            f.H.Store.Seed(
+                new DocumentKey("pa_" + SeedAggregates.A, PlayerId),
+                new JsonObject { ["schemaVersion"] = 99, ["rev"] = 1, ["createdAtUtc"] = "2026-01-01T00:00:00.000Z", ["state"] = new JsonObject() });
+            (await Should.ThrowAsync<GameServerException>(f.LoginAsync)).Code.ShouldBe(CoreErrorCodes.AggregateVersionAhead);
+        }
+
+        f.H.Store.Count("pa_profile").ShouldBe(0);
+        f.Metrics.SumTagged("account_creations_total", ("result", "failed")).ShouldBe(1);
+        f.Metrics.Sum("account_initializer_failures_total").ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task A_returning_login_with_an_unreadable_profile_is_no_failed_creation()
+    {
+        using var f = new Fixture();
+        await f.LoginAsync();
+        f.H.Store.Seed(
+            new DocumentKey("pa_profile", PlayerId),
+            new JsonObject { ["schemaVersion"] = 99, ["rev"] = 1, ["createdAtUtc"] = "2026-01-01T00:00:00.000Z", ["state"] = new JsonObject() });
+
+        (await Should.ThrowAsync<GameServerException>(f.LoginAsync)).Code.ShouldBe(CoreErrorCodes.AggregateVersionAhead);
+
+        f.Metrics.SumTagged("account_creations_total", ("result", "failed")).ShouldBe(0);
+    }
+
     private static (string Initializer, string Result, Func<string, string> Line) Arrange(Fixture f, Failure failure)
     {
         const string Prefix = $"Account creation of player {PlayerId} failed: ";
@@ -293,7 +360,7 @@ public sealed class AccountWriterCreationTests
                 };
                 return ("*", "rule", actual => Prefix +
                     $"Command 'identity.create_account (initializer seed.first, seed.second)' receipt would be {Between(actual, "receipt would be ", " bytes")} bytes; " +
-                    "ReceiptMaxBytes is 1112: the runner rejects the command with COMMAND_OUTPUT_TOO_LARGE (part receipt) and nothing commits. " +
+                    "ReceiptMaxBytes is 1112: the account writer refuses the creation and the login answers INTERNAL. " +
                     "Fix: fewer ledger/outbox entries or raise GameServer:Commands:ReceiptMaxBytes." + Suffix);
         }
     }

@@ -3,6 +3,7 @@ using GameServer.Actors;
 using GameServer.Commands;
 using GameServer.Config;
 using GameServer.Platform.Outbox;
+using GameServer.Platform.Persistence;
 
 namespace GameServer.Platform.Commands;
 
@@ -74,12 +75,24 @@ internal sealed class InitializerContext : ICommandContext
 
     public async ValueTask<bool> TryClaimAsync(string collection, string claimKey, IReadOnlyDictionary<string, string>? attributes)
     {
-        if (_claims >= _registration.MaxClaimMarkers)
+        // A key this creation already holds reserves nothing new: the shared context answers false, as the runner's does, and
+        // it never counts against the limit (T082 m4).
+        if (!_inner.Claims.ContainsKey(new DocumentKey(collection, claimKey)) && _claims >= _registration.MaxClaimMarkers)
         {
             throw new AccountCreationRuleException($"Command '{Operation}' exceeded MaxClaimMarkers = {_registration.MaxClaimMarkers} (DAT-04).");
         }
 
-        var claimed = await _inner.TryClaimAsync(collection, claimKey, attributes);
+        bool claimed;
+        try
+        {
+            claimed = await _inner.TryClaimAsync(collection, claimKey, attributes);
+        }
+        catch (InvalidOperationException ex) when (!CommandContext.IsStoreFailure(ex))
+        {
+            // The context's own rules (a forbidden collection): a module bug, reported as a creation rule, not as a throw.
+            throw new AccountCreationRuleException(ex.Message);
+        }
+
         if (claimed)
         {
             _claims++;
@@ -94,9 +107,13 @@ internal sealed class InitializerContext : ICommandContext
         _outbox.Add(_inner.Outbox[^1]);
     }
 
-    public string NewId(string purpose) => _inner.NewId(purpose);
+    /// <summary>Scoped to this initializer: two initializers that use the same purpose draw different ids (T082 m3).</summary>
+    public string NewId(string purpose) => _inner.NewId(Scoped(purpose));
 
-    public long NewSeed(string purpose) => _inner.NewSeed(purpose);
+    /// <summary>Scoped to this initializer, like <see cref="NewId"/>.</summary>
+    public long NewSeed(string purpose) => _inner.NewSeed(Scoped(purpose));
+
+    private string Scoped(string purpose) => _registration.Name + "|" + purpose;
 
     private bool Declares(string aggregateId) => _registration.Touches.Contains(aggregateId, StringComparer.Ordinal);
 }

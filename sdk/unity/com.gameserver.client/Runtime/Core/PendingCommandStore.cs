@@ -81,7 +81,10 @@ namespace GameServer.Client
     /// </summary>
     public interface IPendingCommandStore
     {
-        /// <summary>The entries, ordered by recorded time, then request id.</summary>
+        /// <summary>
+        /// The entries, ordered by recorded time, then request id. A snapshot: <see cref="Record"/> and <see cref="Remove"/> do not
+        /// change a list already returned (the two SDK stores return a new array after each change).
+        /// </summary>
         IReadOnlyList<PendingCommand> Entries { get; }
 
         /// <summary>Adds the entry, or replaces the entry with the same request id.</summary>
@@ -326,12 +329,17 @@ namespace GameServer.Client
     internal sealed class PendingCommandList
     {
         private readonly List<PendingCommand> _items = new List<PendingCommand>();
+        private PendingCommand[] _snapshot = Array.Empty<PendingCommand>();
 
-        public IReadOnlyList<PendingCommand> Items => _items;
+        /// <summary>
+        /// A snapshot taken after the last change: a Record, Remove or Discard during a <c>foreach</c> over it (e.g. a resend loop)
+        /// never changes the array being enumerated. Read it again for the current entries.
+        /// </summary>
+        public IReadOnlyList<PendingCommand> Items => _snapshot;
 
         public void Put(PendingCommand command)
         {
-            Remove(command.RequestId);
+            RemoveItem(command.RequestId);
             var index = 0;
             while (index < _items.Count && Compare(_items[index], command) <= 0)
             {
@@ -339,10 +347,28 @@ namespace GameServer.Client
             }
 
             _items.Insert(index, command);
+            _snapshot = _items.ToArray();
         }
 
         /// <summary>True when an entry with <paramref name="requestId"/> was removed.</summary>
         public bool Remove(string? requestId)
+        {
+            if (!RemoveItem(requestId))
+            {
+                return false;
+            }
+
+            _snapshot = _items.ToArray();
+            return true;
+        }
+
+        public void Clear()
+        {
+            _items.Clear();
+            _snapshot = Array.Empty<PendingCommand>();
+        }
+
+        private bool RemoveItem(string? requestId)
         {
             for (var i = 0; i < _items.Count; i++)
             {
@@ -355,8 +381,6 @@ namespace GameServer.Client
 
             return false;
         }
-
-        public void Clear() => _items.Clear();
 
         private static int Compare(PendingCommand a, PendingCommand b)
         {

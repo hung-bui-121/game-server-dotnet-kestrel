@@ -139,6 +139,13 @@ internal sealed partial class AccountWriter : IAccountWriter
                 // Thrown before anything was staged and rethrown unchanged by the store (VERIFY V2): reported once per login.
                 throw Report(failure, write.PlayerId);
             }
+            catch (Exception ex) when (run.Creating && (ex is AggregateAnchorMissingException || AggregateReadFailure.TryGet(ex, out _)))
+            {
+                // The creation lost its anchor, or an initializer's aggregate is unreadable (FG-029): a failed creation too (T082 m5).
+                // Passed through unchanged; the read failure was already logged where it happened.
+                CountFailedCreation(run);
+                throw;
+            }
             catch (Exception ex) when (ex is DocumentExistsException or StaleReadException)
             {
                 // Two first logins raced on the missing profile (Couchbase reports "exists"), or a stale bundle read: the
@@ -326,10 +333,11 @@ internal sealed partial class AccountWriter : IAccountWriter
             _metrics.CommandOutputTooLarge(AccountCreation.Operation, part);
         }
 
-        // No inner exception: the initializer's exception message may carry state content (API-04).
-        return new GameServerException(
+        // No inner exception: the initializer's exception message may carry state content (API-04). Marked as reported: the line
+        // above is the only one, the error middleware adds none (T082 m1).
+        return ReportedFailure.Mark(new GameServerException(
             CoreErrorCodes.Internal,
-            $"Account creation of player {playerId} failed ({failure.ResultName}, initializer {failure.Initializer}).");
+            $"Account creation of player {playerId} failed ({failure.ResultName}, initializer {failure.Initializer})."));
     }
 
     private void CountFailedCreation(CreationRun run)

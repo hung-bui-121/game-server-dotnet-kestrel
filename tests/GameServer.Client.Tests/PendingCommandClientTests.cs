@@ -72,6 +72,28 @@ public sealed class PendingCommandClientTests : IDisposable
         store.Entries.ShouldBeEmpty();
     }
 
+    public static TheoryData<string, int, int> AuthenticationAnswers() => new()
+    {
+        { "UNAUTHENTICATED", 2, 401 },
+        { "SESSION_REPLACED", 18, 401 },
+        { "ACCOUNT_SUSPENDED", 16, 403 },
+        { "ACCOUNT_DELETED", 17, 401 },
+    };
+
+    /// <summary>T082 m6: an authentication answer refused the request before the command ran, so the entry stays for a resend.</summary>
+    [Theory]
+    [MemberData(nameof(AuthenticationAnswers))]
+    public async Task An_authentication_answer_keeps_the_entry(string code, int codeNumber, int status)
+    {
+        var store = new InMemoryPendingCommandStore();
+        var (client, transport, _, _) = PendingClients.Create(store);
+        transport.ThenAnswer(FakeTransport.Envelope(status, code, retryable: false, codeNumber: codeNumber));
+
+        (await Should.ThrowAsync<GameServerException>(() => SendAsync(client))).Error.Code.ShouldBe(code);
+
+        store.Entries.ShouldHaveSingleItem().RequestId.ShouldBe(CallerId);
+    }
+
     public static TheoryData<string> UnknownOutcomes() => new("network", "invalid response", "COMMIT_UNKNOWN_RETRY", "AGGREGATE_VERSION_AHEAD");
 
     [Theory]
@@ -111,6 +133,28 @@ public sealed class PendingCommandClientTests : IDisposable
         await Should.ThrowAsync<OperationCanceledException>(() => SendAsync(client, cancellationToken: cts.Token));
 
         store.Entries.ShouldHaveSingleItem().RequestId.ShouldBe(CallerId);
+    }
+
+    /// <summary>
+    /// T082 (T077 item 4, consumer guide §13.5): a token cancelled before the call still records the entry; nothing reached the
+    /// server, so its resend runs the command for the first time (not a replay).
+    /// </summary>
+    [Fact]
+    public async Task A_token_cancelled_before_the_call_records_the_entry_and_its_resend_runs_first_time()
+    {
+        var store = new InMemoryPendingCommandStore();
+        var (client, transport, _, _) = PendingClients.Create(store);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await Should.ThrowAsync<OperationCanceledException>(() => SendAsync(client, cancellationToken: cts.Token));
+
+        transport.Requests.ShouldBeEmpty();
+        var entry = store.Entries.ShouldHaveSingleItem();
+        var resent = await client.ResendPendingAsync(entry, SdkCore.SnapshotResponse.Parser);
+        resent.Replayed.ShouldBeFalse();
+        transport.Requests.ShouldHaveSingleItem();
+        store.Entries.ShouldBeEmpty();
     }
 
     [Fact]
@@ -318,6 +362,51 @@ public sealed class PendingCommandClientTests : IDisposable
 
         client.PendingCommands.ShouldBeEmpty();
         transport.Requests.Count.ShouldBe(1);
+    }
+
+    public static TheoryData<string> StoreKinds() => new("memory", "folder");
+
+    /// <summary>T082 B1: the list is a snapshot, so a resend inside the foreach never throws "Collection was modified".</summary>
+    [Theory]
+    [MemberData(nameof(StoreKinds))]
+    public async Task A_foreach_over_the_entries_can_resend_each_of_them(string kind)
+    {
+        IPendingCommandStore store = kind == "memory" ? new InMemoryPendingCommandStore() : new PersistentPendingCommandStore(_folder);
+        var (client, transport, _, _) = PendingClients.Create(store, maxRetries: 0);
+        var secondId = GameServerClient.NewRequestId();
+        transport.ThenDrop().ThenDrop();
+        await Should.ThrowAsync<GameServerException>(() => SendAsync(client));
+        await Should.ThrowAsync<GameServerException>(() => SendAsync(client, requestId: secondId));
+        var listed = client.PendingCommands;
+        listed.Count.ShouldBe(2);
+
+        var resent = new List<string>();
+        foreach (var pending in client.PendingCommands)
+        {
+            resent.Add((await client.ResendPendingAsync(pending, SdkCore.SnapshotResponse.Parser)).RequestId);
+        }
+
+        resent.ShouldBe(listed.Select(e => e.RequestId));
+        client.PendingCommands.ShouldBeEmpty();
+        listed.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task A_foreach_over_the_entries_can_discard_each_of_them()
+    {
+        var store = new InMemoryPendingCommandStore();
+        var (client, transport, _, _) = PendingClients.Create(store, maxRetries: 0);
+        transport.ThenDrop().ThenDrop();
+        await Should.ThrowAsync<GameServerException>(() => SendAsync(client));
+        await Should.ThrowAsync<GameServerException>(() => SendAsync(client, requestId: GameServerClient.NewRequestId()));
+
+        foreach (var pending in client.PendingCommands)
+        {
+            client.DiscardPendingCommand(pending.RequestId);
+        }
+
+        client.PendingCommands.ShouldBeEmpty();
+        store.Entries.ShouldBeEmpty();
     }
 
     [Fact]

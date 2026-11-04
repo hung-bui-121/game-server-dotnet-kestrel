@@ -21,6 +21,24 @@ public sealed class PendingCommandFormatTests
     private static PendingCommand Entry(byte[]? body = null, string playerId = "p_1", string route = "api/v1/shop/buy") =>
         new(Id, playerId, route, body ?? [1, 2, 3, 0, 255], Recorded);
 
+    /// <summary>
+    /// T082 M3: Record runs on the main thread, so serializing an entry copies its body once into the exact-size payload and once
+    /// into the payload array — never through the cloning <see cref="PendingCommand.Body"/> (three more copies) or a growing stream.
+    /// </summary>
+    [Fact]
+    public void Serializing_copies_the_body_only_into_the_payload()
+    {
+        var entry = Entry(new byte[PendingCommandFormat.MaxBodyBytes]);
+        PendingCommandFormat.Serialize(entry, out _).ShouldNotBeNull();
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        var parts = PendingCommandFormat.Serialize(entry, out var problem);
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        parts.ShouldNotBeNull(problem);
+        allocated.ShouldBeLessThan((long)(2.5 * PendingCommandFormat.MaxBodyBytes));
+    }
+
     private static byte[] Bytes(PendingCommand entry) =>
         PendingCommandFormat.Serialize(entry, out var problem).ShouldNotBeNull(problem).SelectMany(p => p).ToArray();
 

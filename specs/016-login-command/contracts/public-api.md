@@ -1,7 +1,8 @@
 # Public API — 016 login-command
 
-Signatures only (no bodies). Everything here is additive. The behaviour changes are BC-1..BC-11 in the plan. Internal
-types are named where a reviewer needs them; they are not consumer API.
+Signatures only (no bodies). Everything here is additive except the `CommandRunner` constructor (§2.2, BC-12). The behaviour
+changes are BC-1..BC-11 in the plan; BC-12 was added by the review (T081 m8). Internal types are named where a reviewer needs
+them; they are not consumer API.
 
 ## 1. Core (`GameServer.Core`, business layer, ARC-01)
 
@@ -128,6 +129,22 @@ public sealed record CommandExecution(/* existing positional members unchanged *
     /// <summary>Client-visible aggregates this response cannot carry (replay of a broken aggregate).</summary>
     public IReadOnlyList<GameServer.Platform.Aggregates.AggregateReadFailure> Unavailable { get; init; } = [];
 }
+
+// Changed (BC-12): the last constructor parameter was ILogger<CommandRunner> logger. The runner logs in two categories
+// (its own and GameServer.Commands for the output-limit line), so it takes the factory. DI-created runners are unaffected.
+public sealed class CommandRunner(
+    ModuleRegistry registry,
+    ITransactionalDocumentStore store,
+    AggregateDocumentSerializer serializer,
+    IGameConfig config,
+    IClock clock,
+    GameServerOptions options,
+    PerPlayerCommandLimiter limiter,
+    IOutboxRelay relay,
+    PlatformMetrics metrics,
+    IEnumerable<ICommandGuard> guards,
+    IServiceProvider services,
+    ILoggerFactory loggers) : ICommandRunner;
 ```
 
 ### 2.3 Read failures (`GameServer.Platform.Aggregates`)
@@ -170,7 +187,10 @@ public sealed record AggregateReadFailure(
 /// <summary>Logs (once) and counts each read failure (FR-026).</summary>
 public sealed class AggregateReadFailures
 {
-    public AggregateReadFailures(GameServer.Platform.Diagnostics.PlatformMetrics metrics, ILogger<AggregateReadFailures> logger);
+    /// <summary>Logs in category GameServer.Aggregates (LogCategory), so it takes the factory (corrected in T082 m8).</summary>
+    public AggregateReadFailures(GameServer.Platform.Diagnostics.PlatformMetrics metrics, ILoggerFactory loggers);
+
+    public const string LogCategory = "GameServer.Aggregates";
 
     public void Report(AggregateReadFailure failure);
 }
@@ -413,6 +433,7 @@ namespace GameServer.Client
     /// <summary>Not thread-safe: use it from the client's thread. Never throws for disk problems.</summary>
     public interface IPendingCommandStore
     {
+        /// <summary>A snapshot: Record and Remove do not change a list already returned (T082 B1).</summary>
         IReadOnlyList<PendingCommand> Entries { get; }
 
         void Record(PendingCommand command);

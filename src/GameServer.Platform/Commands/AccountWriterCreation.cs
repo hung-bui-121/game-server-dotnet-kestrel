@@ -127,8 +127,10 @@ internal sealed partial class AccountWriter
             {
                 throw AccountInitializerFailedException.Rule(initializer.Registration.Name, ex.Message);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (ex is not OperationCanceledException && !CommandContext.IsStoreFailure(ex))
             {
+                // A store failure of a context call (marked by CommandContext) is not the initializer's: it reaches the store
+                // unchanged, which maps it to the login's store codes (T082 M1).
                 throw AccountInitializerFailedException.Threw(initializer, ex);
             }
 
@@ -220,7 +222,7 @@ internal sealed partial class AccountWriter
             now));
         var json = receipt.ToJson();
         var size = ReceiptDocument.SizeOf(json);
-        if (CommitRules.CheckReceiptSize(plan.ReceiptOperation, size, _options.Commands) is { } violation)
+        if (CommitRules.CheckCreationReceiptSize(plan.ReceiptOperation, size, _options.Commands) is { } violation)
         {
             throw AccountInitializerFailedException.ReceiptTooLarge(violation.Line);
         }

@@ -162,7 +162,7 @@ public sealed class CommandOutputLimitTests
         (await refused.ReadErrorAsync()).Code.ShouldBe("INTERNAL");
         var line = host.LogEntries.Where(e => e.Category == AccountWriter.LogCategory && e.Level == LogLevel.Error).ShouldHaveSingleItem().Message;
         line.ShouldContain($"Command 'identity.create_account (initializer {StartingStateModule.InitializerName})' receipt would be ");
-        line.ShouldContain($"ReceiptMaxBytes is {ReceiptLimit}: the runner rejects the command with COMMAND_OUTPUT_TOO_LARGE (part receipt) and nothing commits.");
+        line.ShouldContain($"ReceiptMaxBytes is {ReceiptLimit}: the account writer refuses the creation and the login answers INTERNAL.");
     }
 
     private static void ShouldBeOutputTooLarge(CommandResponse response, string part, int bytes, int limit)

@@ -51,6 +51,8 @@ public sealed class FixtureHostSmokeTests
             Named(factory.LogFolder, instanceId).ShouldNotBeEmpty();
         }
 
+        // .local is the folder of a host run by hand (consumer guide §13.6, git-ignored): it may exist, but nothing of this
+        // factory's instance or player is in it.
         var fixtureRoot = Path.GetFullPath(Path.Combine(contentRoot, "..", ".."));
         foreach (var folder in new[] { contentRoot, Path.Combine(fixtureRoot, ".local"), AppContext.BaseDirectory })
         {
@@ -58,7 +60,6 @@ public sealed class FixtureHostSmokeTests
             Named(folder, playerId).ShouldBeEmpty();
         }
 
-        Directory.Exists(Path.Combine(fixtureRoot, ".local")).ShouldBeFalse();
         foreach (var name in new[] { "data", "analytics", "logs" })
         {
             Directory.Exists(Path.Combine(AppContext.BaseDirectory, name)).ShouldBeFalse();

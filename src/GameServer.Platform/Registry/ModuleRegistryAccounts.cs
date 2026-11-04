@@ -23,9 +23,10 @@ public sealed partial class ModuleRegistry
         foreach (var (module, registration) in AccountInitializers)
         {
             var name = registration.Name;
-            if (!InitializerNamePattern().IsMatch(name))
+            var prefix = ModulePrefix(module);
+            if (!InitializerNamePattern().IsMatch(name) || !name.StartsWith(prefix, StringComparison.Ordinal))
             {
-                errors.Add($"[module {module}] account initializer '{name}' has an invalid name. Fix: use '<module>.<name>' in lowercase.");
+                errors.Add($"[module {module}] account initializer '{name}' has an invalid name. Fix: use '{prefix}<name>' in lowercase.");
             }
 
             if (!names.TryAdd(name, module))
@@ -113,7 +114,17 @@ public sealed partial class ModuleRegistry
             .Distinct(StringComparer.Ordinal)
             .ToArray();
 
-    /// <summary>The operation pattern, with dots allowed after the first segment (data-model §1.1).</summary>
-    [GeneratedRegex("^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_.]*$")]
+    /// <summary>
+    /// The first segment of the module name and a dot (<c>sample.game</c> → <c>sample.</c>): an initializer name starts with it, so
+    /// the name says which module's code runs in every creation (T082 m10).
+    /// </summary>
+    private static string ModulePrefix(string module)
+    {
+        var dot = module.IndexOf('.', StringComparison.Ordinal);
+        return (dot < 0 ? module : module[..dot]) + ".";
+    }
+
+    /// <summary>Two or more dot-separated segments, each a lowercase letter then letters, digits or <c>_</c> (data-model §1.1).</summary>
+    [GeneratedRegex("^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$")]
     private static partial Regex InitializerNamePattern();
 }

@@ -1559,7 +1559,7 @@ giá trị mặc định đều hợp lệ.
 | --- | --- | --- | --- | --- | --- |
 | `GameServer:Commands:ReplayWindowHours` | 24 | setting | 1..168 | receipt giữ lâu hơn (dung lượng `receipts`); retry muộn hơn vẫn replay | ngoài window: command chạy như mới, receipt cũ bị thay (mục 3) |
 | `GameServer:Commands:PerPlayerQueueLimit` | 2 | setting | 0..16 | nhiều request chờ hơn mỗi player mỗi instance (bộ nhớ, latency) | 429 `RATE_LIMITED` |
-| `GameServer:Commands:ReceiptMaxBytes` | 4096 | setting | 1024..65536, và luật chéo bên dưới | receipt lớn hơn: lưu suốt replay window, đọc ở mỗi replay | `COMMAND_OUTPUT_TOO_LARGE` part `receipt` (HTTP 200, không commit); tạo tài khoản: `INTERNAL` |
+| `GameServer:Commands:ReceiptMaxBytes` | 4096 | setting | 1112..65536, và luật chéo bên dưới | receipt lớn hơn: lưu suốt replay window, đọc ở mỗi replay | `COMMAND_OUTPUT_TOO_LARGE` part `receipt` (HTTP 200, không commit); tạo tài khoản: `INTERNAL` |
 | `GameServer:Commands:ResultCompactMaxBytes` | 512 | setting | 64..16384 | result lưu base64 trong receipt và replay byte-identical; cần `ReceiptMaxBytes` lớn hơn | `COMMAND_OUTPUT_TOO_LARGE` part `result` |
 | `GameServer:Commands:MaxAggregatesPerGame` | 16 | setting | 1..16 | — (DAT-09 chặn trên 16) | startup fail `[deployment] {n} player aggregates registered (max …)` |
 | `CommandDescriptor.MaxTouches` | 4 | hằng số (DAT-09) | — | — | startup fail (command, và `profile` + touches của account initializer) |
@@ -1567,10 +1567,10 @@ giá trị mặc định đều hợp lệ.
 | Ngân sách document aggregate (`HardBytes`) | 64 KiB (cảnh báo 32 KiB) | khai theo aggregate | — | document lớn hơn mỗi lần đọc/ghi | `AGGREGATE_TOO_LARGE` (HTTP 200, không commit) |
 | Body request player | 64 KiB | `GameServer:Limits:PlayerBodyBytes` (mục 1) | — | request lớn hơn | 413 `PAYLOAD_TOO_LARGE` |
 
-**Luật chéo:** `4·⌈ResultCompactMaxBytes/3⌉ + 1024 ≤ ReceiptMaxBytes` (result lớn nhất phải vừa receipt của chính nó). Vì luật
-này, giá trị **nhỏ nhất của `ReceiptMaxBytes` mà host chịu start là 1112** (với `ResultCompactMaxBytes` = 64): 1024..1111 nằm
-trong khoảng của chính nó nhưng luôn fail luật chéo và chỉ nhận dòng luật chéo. Cả hai dòng là văn bản hợp đồng, giữ nguyên.
-`MaxAggregatesPerGame` ngoài khoảng chỉ nhận dòng khoảng; số aggregate khi đó được so với 16.
+**Luật chéo:** `4·⌈ResultCompactMaxBytes/3⌉ + 1024 ≤ ReceiptMaxBytes` (result lớn nhất phải vừa receipt của chính nó). Cận dưới
+của `ReceiptMaxBytes` suy ra từ luật này với result nhỏ nhất (64): `4·⌈64/3⌉ + 1024 = 1112` (hằng
+`CommandSettings.MinReceiptMaxBytes`, slice 016 T082). Giá trị dưới 1112 nhận dòng khoảng (`allowed 1112..65536`) và dòng luật
+chéo. `MaxAggregatesPerGame` ngoài khoảng chỉ nhận dòng khoảng; số aggregate khi đó được so với 16.
 
 Quy tắc so sánh là "lớn hơn": đúng bằng giới hạn thì commit. Không commit thì không có receipt, nên retry cùng request id chạy lại
 và nhận cùng mã.
@@ -1620,9 +1620,20 @@ Aggregate {AggregateId} of player {PlayerId} is unavailable: {Reason} ({Exceptio
 ```
 
 Category lần lượt `GameServer.Commands` (Error), `GameServer.Accounts` (Information / Error), `GameServer.Aggregates` (Warning /
-Error). Không dòng nào chứa nội dung state hay message exception của code game. Tạo tài khoản lỗi thì error middleware còn ghi
-`Request failed with INTERNAL: Account creation of player {id} failed ({result}, initializer {name}).` (hai dòng cho một lần lỗi;
-dòng `GameServer.Accounts` mang nguyên nhân).
+Error). Không dòng nào chứa nội dung state hay message exception của code game. Tạo tài khoản lỗi chỉ có **một** dòng (dòng
+`GameServer.Accounts`, mang nguyên nhân): exception được đánh dấu "đã báo" như read failure, nên error middleware không ghi thêm
+`Request failed with …`; request log vẫn ghi `INTERNAL` (slice 016 T082). Lỗi store của transaction tạo tài khoản (mơ hồ, hết
+hạn, thất bại) vẫn đi đường cũ: không có dòng `GameServer.Accounts`, error middleware ghi
+`Request failed with INTERNAL: Login transaction failed for player {id}.` (hoặc trả mã retryable, BC-10).
+
+`{RuleLine}` của receipt quá lớn khi tạo tài khoản (cũng là dòng `CheckAccountCreation()` của kit):
+
+```text
+Command 'identity.create_account (initializer {names})' receipt would be {Bytes} bytes; ReceiptMaxBytes is {Limit}: the account writer refuses the creation and the login answers INTERNAL. Fix: fewer ledger/outbox entries or raise GameServer:Commands:ReceiptMaxBytes.
+```
+
+`account_creations_total{result="failed"}` đếm mọi lần tạo tài khoản không thành: initializer lỗi, lỗi store của transaction tạo,
+anchor đã mất (`AggregateAnchorMissingException`) và aggregate của initializer không đọc được (FG-029).
 
 ### Dòng startup (semantic — văn bản dòng)
 
@@ -1634,13 +1645,15 @@ Sau dòng command, theo thứ tự: khối account initializer, rồi khối com
 [deployment] account initializers reserve {sum} claim markers ({name}: {n}, …); max is 2. Fix: reserve fewer claims (DAT-04).
 [deployment] GameServer:Commands:ReplayWindowHours is {v}; allowed 1..168 (CMD-07).
 [deployment] GameServer:Commands:PerPlayerQueueLimit is {v}; allowed 0..16 (CMD-06).
-[deployment] GameServer:Commands:ReceiptMaxBytes is {v}; allowed 1024..65536 (CMD-03).
+[deployment] GameServer:Commands:ReceiptMaxBytes is {v}; allowed 1112..65536 (CMD-03).
 [deployment] GameServer:Commands:ResultCompactMaxBytes is {v}; allowed 64..16384 (CMD-03).
 [deployment] GameServer:Commands:ResultCompactMaxBytes {r} needs {need} receipt bytes (base64 + 1024) but ReceiptMaxBytes is {v}. Fix: raise ReceiptMaxBytes or lower ResultCompactMaxBytes.
 [deployment] GameServer:Commands:MaxAggregatesPerGame is {v}; allowed 1..16 (DAT-09).
 ```
 
-Các dòng initializer khác (tên sai, trùng, aggregate lạ, khai hai lần, claim ngoài 0..2, command trùng operation
+Tên initializer: các đoạn chữ thường nối bằng dấu chấm (`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`), bắt đầu bằng đoạn đầu của tên
+module và dấu chấm (`sample.game` → `sample.starting_gold`); sai thì dòng `[module {m}] account initializer '{name}' has an
+invalid name. Fix: use '{prefix}<name>' in lowercase.` (slice 016 T082). Các dòng initializer khác (tên sai, trùng, aggregate lạ, khai hai lần, claim ngoài 0..2, command trùng operation
 `identity.create_account`): `specs/016-login-command/contracts/errors-and-report-lines.md` §4.1.
 
 ### Breaking (slice 016 — so với `v0.6.0`)
@@ -1658,5 +1671,6 @@ Các dòng initializer khác (tên sai, trùng, aggregate lạ, khai hai lần, 
 | BC-9 | Khai báo account initializer được kiểm khi khởi động | exit 1, dòng `[module …] account initializer …` / `[deployment] account creation …` | sửa khai báo |
 | BC-10 | Login có transaction mơ hồ, hết hạn hoặc thua mọi vòng race trả `COMMIT_UNKNOWN_RETRY` (503) / `CONCURRENT_UPDATE` (409) thay vì 500 | error envelope retryable | xử lý như mã retryable |
 | BC-11 | `CommandResponse.details` (field 11) và `details` của GM command mang `details` của mọi từ chối HTTP 200, kể cả mã module | `details` có giá trị của `Reject(code, details)` | giữ details an toàn để hiện |
+| BC-12 | Constructor public của `CommandRunner` nhận `ILoggerFactory loggers` thay cho `ILogger<CommandRunner> logger` (tham số cuối) | code tự `new CommandRunner(…)` (test, host riêng): `CS1503` ở tham số cuối; tạo qua DI thì không đổi gì | truyền `ILoggerFactory` (ví dụ `NullLoggerFactory.Instance` hoặc factory của host) |
 
 Bước chuyển đầy đủ: release notes `v0.7.0` (bản nháp `specs/016-login-command/release-notes-draft.md`).

@@ -4,6 +4,7 @@ using GameServer.Config;
 using GameServer.Modules.Economy;
 using GameServer.Modules.Identity;
 using GameServer.Modules.Identity.Protocol.V1;
+using GameServer.Platform.Aggregates;
 using GameServer.Platform.Commands;
 using GameServer.Platform.Persistence;
 using GameServer.Tests.Shared;
@@ -96,6 +97,40 @@ public sealed class AccountInitializerDoubleTests
 
         var line = ctx.CheckAccountCreation().ShouldHaveSingleItem();
         logged.ShouldBe($"Account creation of player {playerId} failed: {line} Nothing was created; the next login retries.");
+    }
+
+    /// <summary>T082 (T078 finding): the kit's receipt line for a creation says what the login answers, not the runner's rejection.</summary>
+    [Fact]
+    public async Task The_kits_creation_receipt_line_names_the_logins_answer()
+    {
+        var ctx = Double().WithCommandSettings(new CommandSettings { ReceiptMaxBytes = 1112, ResultCompactMaxBytes = 64 });
+
+        (await new StartingStateInitializer(StartingStateBehaviour.FloodOutbox(40), Resources).InitializeAsync(ctx)).ShouldBeNull();
+
+        var line = ctx.CheckAccountCreation().ShouldHaveSingleItem();
+        line.ShouldStartWith("Command 'identity.create_account (initializer test.starting_state)' receipt would be ");
+        line.ShouldEndWith(
+            " bytes; ReceiptMaxBytes is 1112: the account writer refuses the creation and the login answers INTERNAL. " +
+            "Fix: fewer ledger/outbox entries or raise GameServer:Commands:ReceiptMaxBytes.");
+    }
+
+    /// <summary>T082 m3: the double scopes ids and seeds to the initializer, as the account writer's view does.</summary>
+    [Fact]
+    public void The_double_scopes_ids_and_seeds_to_the_initializer_like_the_writer()
+    {
+        var ctx = Double();
+        var shared = new CommandContext(
+            ctx.Actor,
+            ctx.Now,
+            ctx.Config,
+            new Dictionary<string, LoadedAggregate>(StringComparer.Ordinal),
+            ctx.Descriptor,
+            transaction: null!,
+            ctx.ReceiptId);
+
+        ctx.NewId("gift").ShouldBe(shared.NewId(StartingStateModule.InitializerName + "|gift"));
+        ctx.NewSeed("roll").ShouldBe(shared.NewSeed(StartingStateModule.InitializerName + "|roll"));
+        ctx.NewId("gift").ShouldNotBe(shared.NewId("gift"));
     }
 
     private static StartingStateBehaviour Behaviour(StartingStateMode mode) => mode switch

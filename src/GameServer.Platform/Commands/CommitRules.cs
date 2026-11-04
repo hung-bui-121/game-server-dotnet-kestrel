@@ -119,13 +119,26 @@ internal static class CommitRules
     /// account initializer.
     /// </summary>
     internal static CommitViolation? CheckReceiptSize(string operation, int receiptBytes, CommandSettings settings) =>
+        CheckReceiptSize(
+            operation,
+            receiptBytes,
+            settings,
+            $"the runner rejects the command with {CoreErrorCodes.CommandOutputTooLarge.Name} (part {OutputPartReceipt}) and nothing commits");
+
+    /// <summary>
+    /// <see cref="CheckReceiptSize(string, int, CommandSettings)"/> for the receipt of an account creation, which is no command
+    /// rejection: the account writer refuses the creation and the login answers <c>INTERNAL</c> (D15, T082).
+    /// </summary>
+    internal static CommitViolation? CheckCreationReceiptSize(string operation, int receiptBytes, CommandSettings settings) =>
+        CheckReceiptSize(operation, receiptBytes, settings, $"the account writer refuses the creation and the login answers {CoreErrorCodes.Internal.Name}");
+
+    private static CommitViolation? CheckReceiptSize(string operation, int receiptBytes, CommandSettings settings, string consequence) =>
         receiptBytes > settings.ReceiptMaxBytes
             ? CommitViolation.OutputTooLarge(
                 OutputPartReceipt,
                 receiptBytes,
                 settings.ReceiptMaxBytes,
-                $"Command '{operation}' receipt would be {receiptBytes} bytes; ReceiptMaxBytes is {settings.ReceiptMaxBytes}: the runner rejects the " +
-                $"command with {CoreErrorCodes.CommandOutputTooLarge.Name} (part {OutputPartReceipt}) and nothing commits. " +
+                $"Command '{operation}' receipt would be {receiptBytes} bytes; ReceiptMaxBytes is {settings.ReceiptMaxBytes}: {consequence}. " +
                 "Fix: fewer ledger/outbox entries or raise GameServer:Commands:ReceiptMaxBytes.")
             : null;
 

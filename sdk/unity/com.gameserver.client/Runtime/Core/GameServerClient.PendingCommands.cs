@@ -14,7 +14,10 @@ namespace GameServer.Client
     {
         private static readonly IReadOnlyList<PendingCommand> NoPendingCommands = Array.Empty<PendingCommand>();
 
-        /// <summary>Entries of the pending-command store (<c>Options.PendingCommands</c>); empty without a store.</summary>
+        /// <summary>
+        /// Entries of the pending-command store (<c>Options.PendingCommands</c>); empty without a store. A snapshot: resending or
+        /// discarding inside a <c>foreach</c> over it is safe; read it again for the current entries.
+        /// </summary>
         public IReadOnlyList<PendingCommand> PendingCommands => _options.PendingCommands?.Entries ?? NoPendingCommands;
 
         /// <summary>A fresh request id (lowercase UUID, format D), e.g. to record in the game's own state before sending.</summary>
@@ -120,9 +123,17 @@ namespace GameServer.Client
 
         /// <summary>
         /// A final answer removes the pending entry: an error envelope (the server answered; its codes have numbers) that is not
-        /// retryable. SDK-made errors (no response, unreadable response) and retryable answers leave the outcome unknown.
+        /// retryable. SDK-made errors (no response, unreadable response) and retryable answers leave the outcome unknown. An
+        /// authentication answer is not final either: the request was refused before the command ran, so the entry stays for a
+        /// resend after the next login (T082 m6).
         /// </summary>
-        private static bool IsFinalAnswer(GameServerError error) => error.CodeNumber >= 0 && !error.Retryable;
+        private static bool IsFinalAnswer(GameServerError error) => error.CodeNumber >= 0 && !error.Retryable && !IsAuthenticationAnswer(error.Code);
+
+        /// <summary><c>UNAUTHENTICATED</c>, <c>SESSION_REPLACED</c> and every <c>ACCOUNT_*</c> code (suspended, deleted).</summary>
+        private static bool IsAuthenticationAnswer(string code) =>
+            code == ErrorCodes.Unauthenticated
+            || code == ErrorCodes.SessionReplaced
+            || code.StartsWith("ACCOUNT_", StringComparison.Ordinal);
 
         private async Task<CommandResult<TResult>> SendCommandCoreAsync<TResult>(
             string route,
