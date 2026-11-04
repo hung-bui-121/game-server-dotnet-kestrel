@@ -1,6 +1,6 @@
 # Module template
 
-> Đúng với framework v0.7.0 (chưa phát hành).
+> Đúng với framework v0.7.0 (phát hành 2026-11-04).
 
 Khung 2 project của một module (mục 4.2 tài liệu yêu cầu). Template được build cùng `GameServer.slnx` để
 luôn khớp API hiện hành.

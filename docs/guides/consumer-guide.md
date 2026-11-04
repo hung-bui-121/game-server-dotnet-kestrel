@@ -1,6 +1,6 @@
 # Consumer guide — building a game on the framework
 
-> Matches framework 0.7.0 (unreleased). Once tagged: `v0.7.0`.
+> Matches framework v0.7.0 (released 2026-11-04, tag `v0.7.0`).
 
 This guide is for a **game repository** that uses this framework as a git submodule (the first consumer is
 `zh-pvp-server`). Every code sample below is taken from `tests/ConsumerFixture`, a consumer-shaped repository inside the

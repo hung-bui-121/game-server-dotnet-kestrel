@@ -2,7 +2,7 @@
 
 Module game mẫu (slice 003). Nguồn: SMP-01..05, 8.4, PLY-04/05, G7.
 
-Đúng với framework v0.7.0 (chưa phát hành).
+Đúng với framework v0.7.0 (phát hành 2026-11-04).
 
 ## Aggregate
 

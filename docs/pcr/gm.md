@@ -4,7 +4,7 @@ Module framework `gm` (slice 004 + 007, version 0.8.0 sau slice 010). Nguồn: G
 OPS-04, ACC-09/10/11/24/27/45/49. Ban (GM-07), maintenance toggle: slice 008. GM frontend đầy đủ (GM-01, TBD-21): dev
 khác làm dựa trên OpenAPI `docs/api/gm-openapi.json` (owner 2026-10-27); trang tĩnh `/gm/v1/ui` chỉ còn mức P0.
 
-Đúng với framework v0.7.0 (chưa phát hành).
+Đúng với framework v0.7.0 (phát hành 2026-11-04).
 
 ## Permission catalog (semantic — SEC-07)
 

@@ -2,7 +2,7 @@
 
 Module mẫu của framework (ACC-13, EXT-05). Version 0.1.0.
 
-Đúng với framework v0.7.0 (chưa phát hành).
+Đúng với framework v0.7.0 (phát hành 2026-11-04).
 
 ## Aggregate
 

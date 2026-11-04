@@ -1,6 +1,6 @@
 # Môi trường (flavor) và chạy local
 
-> Đúng với framework v0.7.0 (chưa phát hành).
+> Đúng với framework v0.7.0 (phát hành 2026-11-04).
 
 Một bản build chạy ở mọi môi trường; môi trường được chọn bằng **flavor** = tên môi trường của host. Hướng dẫn này gồm:
 chọn flavor, biến môi trường bắt buộc, chạy local một lệnh, file store, cấu hình Couchbase, TLS, quyền RBAC và lệnh

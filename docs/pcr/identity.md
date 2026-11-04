@@ -2,7 +2,7 @@
 
 Module framework `identity` (slice 002; version 0.10.0 sau slice 010; slice 012: event analytics `login`). Nguồn: IDN-01..12, BAN-01, SEC-02, SEC-13, PRIV-01.
 
-Đúng với framework v0.7.0 (chưa phát hành).
+Đúng với framework v0.7.0 (phát hành 2026-11-04).
 
 ## Aggregate
 

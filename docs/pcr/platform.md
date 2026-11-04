@@ -9,7 +9,7 @@ slice 010 lease job và xoá tài khoản, 2026-10-30 — mục 16; slice 011 m�
 readiness, 2026-11-03 — mục 19; slice 014 wire contract, 2026-11-03 — mục 20 và `RouteName` ở mục 13; slice 015 game config,
 2026-11-04 — mục 21, nén `GetConfig` ở mục 1 và 9, metric/readiness ở mục 13, `IStartupCheck` ở mục 17; slice 016 login và
 độ bền command, 2026-11-04 — mục 22, transaction tạo tài khoản ở mục 2, giới hạn ở mục 3 và 5, đọc suy giảm ở mục 4 và 6, ba mã ở
-mục 8, kit ở mục 19). Đúng với framework v0.7.0 (chưa phát hành / unreleased).
+mục 8, kit ở mục 19). Đúng với framework v0.7.0 (phát hành / released 2026-11-04).
 
 ## 1. Limits và timeout theo nhóm endpoint (vận hành — API-06, PERF-04)
 
@@ -1065,7 +1065,7 @@ token Google, payload/JWS receipt, IP client, body request (kiểm bằng test q
 ## 19. Consumer readiness (slice 013 — FG-001/002/003/004/006/007/010/011/012/025, ARC-08, API-05, LOG-04)
 
 Dùng framework từ repo game (submodule pin vào annotated tag): `docs/guides/consumer-guide.md`. Mọi API trong mục này là
-API cho consumer; xoá hoặc đổi chữ ký sau `v0.7.0` là breaking (ARC-08). Đúng với framework v0.7.0 (chưa phát hành).
+API cho consumer; xoá hoặc đổi chữ ký sau `v0.7.0` là breaking (ARC-08). Đúng với framework v0.7.0 (phát hành 2026-11-04).
 
 ### API công khai mới (semantic với code consumer)
 
@@ -1163,7 +1163,7 @@ Bước chuyển đầy đủ: release notes `v0.7.0` (bản nháp `specs/013-co
 
 Mỗi route HTTP được khai **một lần** dưới dạng dữ liệu (`RouteDeclaration`); mapping, check khi khởi động, request log
 (`RouteName`, mục 13) và code sinh cho Unity (`tools/GameServer.WireGen`, PCR unity-sdk) đều đọc cùng khai báo đó. Không có
-setting nào tắt check (FR-013). Đúng với framework v0.7.0 (chưa phát hành / unreleased).
+setting nào tắt check (FR-013). Đúng với framework v0.7.0 (phát hành / released 2026-11-04).
 
 ### Catalog entry (semantic với code consumer và generator)
 
@@ -1340,7 +1340,7 @@ KestrelDemo): PCR unity-sdk. Bước chuyển đầy đủ: release notes `v0.7.
 ## 21. Game config: kiểm nội dung khi khởi động, catalog, config status, hai version, nén và bundle (slice 015 — FG-018, FG-019, FG-023, FG-024, CFG-01..03, API-03, API-06, ARC-06, ARC-08)
 
 Module khai file config nó đọc, luật nội dung và catalog có kiểu trong `ModuleDescriptor`; framework kiểm mọi thứ ở **khối đầu
-tiên** của `UseGameServer` và báo một dòng mỗi lỗi, trước mọi traffic. Đúng với framework v0.7.0 (chưa phát hành / unreleased).
+tiên** của `UseGameServer` và báo một dòng mỗi lỗi, trước mọi traffic. Đúng với framework v0.7.0 (phát hành / released 2026-11-04).
 
 ### Thứ tự một lần start ở chế độ serve (semantic)
 

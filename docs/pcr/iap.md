@@ -2,7 +2,7 @@
 
 Module framework `iap` (slice 003, version 0.1.0; slice 012: event analytics `payment`). Nguồn: IAP-01, IAP-02, ECO-08, SMP-04, ANA-01.
 
-Đúng với framework v0.7.0 (chưa phát hành).
+Đúng với framework v0.7.0 (phát hành 2026-11-04).
 
 ## Luồng
 

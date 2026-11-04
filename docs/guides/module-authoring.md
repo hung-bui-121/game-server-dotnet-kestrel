@@ -1,6 +1,6 @@
 # Viết module cho Game Server Framework
 
-> Đúng với framework v0.7.0 (chưa phát hành).
+> Đúng với framework v0.7.0 (phát hành 2026-11-04).
 
 Hướng dẫn này dùng `modules/Sample.Counter` làm ví dụ đầy đủ. Template rỗng ở `templates/module/`. Module viết trong repo
 game (framework là submodule): xem thêm [consumer-guide.md](consumer-guide.md).

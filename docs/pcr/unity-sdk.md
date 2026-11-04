@@ -4,7 +4,7 @@ Gói UPM `com.gameserver.client` (slice 006, version 0.7.0 — lockstep với co
 `GameServerFrameworkVersion`, slice 013; `VersionTests` kiểm hai giá trị bằng nhau). Nguồn: SDK-01..04,
 API-09/10, IDN-10, GATE-02, TIME-01, CFG-03; slice 014 (FG-021, FG-026, FG-028): code sinh từ catalog của server, typed
 accessor của section; slice 015 (FG-019, FG-024): version config client, cache config bền, nén `GetConfig`; slice 016 (FG-013, FG-022, FG-029): cờ người
-chơi mới, request id của caller, pending store, section không đọc được. Đúng với framework v0.7.0 (chưa phát hành / unreleased).
+chơi mới, request id của caller, pending store, section không đọc được. Đúng với framework v0.7.0 (phát hành / released 2026-11-04).
 
 ## Gói (semantic với client)
 
