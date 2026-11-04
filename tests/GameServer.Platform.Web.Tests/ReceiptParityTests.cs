@@ -25,7 +25,8 @@ namespace GameServer.Platform.Web.Tests;
 /// <summary>
 /// Slice 016 T052 (FR-034, SC-005, research R14, VERIFY V7): for the same actor, player, request id, receipt id, config version and
 /// time, the receipt the host stores and the receipt the kit double measures with the runner's builder have the same size (0 bytes
-/// difference): the sample <c>shop.buy</c> and <c>battle.end</c> (full game) and a seeding account creation.
+/// difference): the sample <c>shop.buy</c> and <c>battle.end</c> (full game), a seeding account creation and the sample
+/// initializer's creation (T064).
 /// </summary>
 public sealed partial class ReceiptParityTests
 {
@@ -76,6 +77,36 @@ public sealed partial class ReceiptParityTests
         var context = CommandContextDouble.ForAccountInitializer(StartingStateModule.InitializerName, new StartingStateModule(), new EconomyModule());
         Configure(context, host, receipt, new ActorContext(login.PlayerId, ActorType.System, login.PlayerId, Text(receipt, "gameId"), Text(receipt, "environmentId"), new HashSet<string>(), Text(receipt, "correlationId")));
         var initializer = ActivatorUtilities.CreateInstance<StartingStateInitializer>(host.Services);
+        (await initializer.InitializeAsync(context)).ShouldBeNull();
+
+        MeasuredBytes(context.CheckAccountCreation()).ShouldBe(stored);
+    }
+
+    /// <summary>Slice 016 T064: the sample initializer <c>sample.starting_gold</c> on a config with <c>account.json</c> (SC-005 sample row).</summary>
+    [Fact]
+    public async Task The_sample_starting_gold_creation_receipt_measures_the_same_in_the_host_and_the_double()
+    {
+        using var seeded = new SeededConfig()
+            .With(SampleAccountInitializer.ConfigFile, """{"startingGold": 100}""")
+            .Manifest(m =>
+            {
+                m["files"]!.AsArray().Add(SampleAccountInitializer.ConfigFile);
+                return m;
+            });
+        await using var host = await GameHttp.StartGameAsync(settings: s =>
+        {
+            NoInlineRelay(s);
+            seeded.Apply(s);
+        });
+        var login = await host.Client().LoginAsync(IdentityHttp.NewLocalId(), IdentityHttp.NewSecret());
+        login.IsNewPlayer.ShouldBeTrue();
+        var receipt = host.Store.All(ReceiptDocument.Collection).Select(d => d.Content)
+            .Single(r => r["playerId"]!.GetValue<string>() == login.PlayerId && r["operation"]!.GetValue<string>() == AccountCreation.Operation);
+        var stored = ReceiptDocument.SizeOf(receipt);
+
+        var context = CommandContextDouble.ForAccountInitializer(SampleAccountInitializer.Name, new EconomyModule(), new SampleGameModule());
+        Configure(context, host, receipt, new ActorContext(login.PlayerId, ActorType.System, login.PlayerId, Text(receipt, "gameId"), Text(receipt, "environmentId"), new HashSet<string>(), Text(receipt, "correlationId")));
+        var initializer = ActivatorUtilities.CreateInstance<SampleAccountInitializer>(host.Services);
         (await initializer.InitializeAsync(context)).ShouldBeNull();
 
         MeasuredBytes(context.CheckAccountCreation()).ShouldBe(stored);

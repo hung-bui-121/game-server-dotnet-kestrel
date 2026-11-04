@@ -3,7 +3,8 @@
 Gói UPM `com.gameserver.client` (slice 006, version 0.7.0 — lockstep với contract `.proto` của server và với version framework
 `GameServerFrameworkVersion`, slice 013; `VersionTests` kiểm hai giá trị bằng nhau). Nguồn: SDK-01..04,
 API-09/10, IDN-10, GATE-02, TIME-01, CFG-03; slice 014 (FG-021, FG-026, FG-028): code sinh từ catalog của server, typed
-accessor của section; slice 015 (FG-019, FG-024): version config client, cache config bền, nén `GetConfig`. Đúng với framework v0.7.0 (chưa phát hành / unreleased).
+accessor của section; slice 015 (FG-019, FG-024): version config client, cache config bền, nén `GetConfig`; slice 016 (FG-013, FG-022, FG-029): cờ người
+chơi mới, request id của caller, pending store, section không đọc được. Đúng với framework v0.7.0 (chưa phát hành / unreleased).
 
 ## Gói (semantic với client)
 
@@ -204,6 +205,82 @@ dotnet run --project tools/GameServer.WireGen -- generate --config samples/Sampl
 `verify` thay `generate` thì không ghi gì, exit 2 khi file commit lệch; `CommittedOutputTests` chạy `verify` cho hai config này
 và config của consumer fixture trong mọi build framework, nên gói và client mẫu không thể lệch catalog.
 
+## Login, request id, pending store và section không đọc được (semantic với client — slice 016, FG-013, FG-022, FG-029)
+
+### Login
+
+- `LoginResponse.IsNewPlayer` (field 8, member sinh): `true` chỉ khi login này tạo player; retry của login đầu bị mất response trả
+  `false` (server đã commit). Với server trước 016 luôn `false`. Chỉ để hiển thị.
+- **Login sections là một snapshot đầy đủ**: mọi section client-visible kèm `rev`; client boot trên đó, không cần gọi snapshot
+  thứ hai (FG-013). Section server không đọc được bị bỏ và liệt kê (dưới).
+
+### Request id
+
+- `GameServerClient.NewRequestId()` → UUID chữ thường dạng D.
+- Overload `SendCommandAsync(route, request, parser, string? requestId, ct = default)`: tham số thứ tư **bắt buộc** (`null` = SDK
+  sinh), nên mọi lời gọi ba/bốn tham số cũ giữ overload cũ (VERIFY V1: Unity 6000.3.22f1 `-langversion:9.0` và Roslyn C# 9:
+  `(r, q, p)`, `(r, q, p, default)`, `(r, q, p, ct)` → overload cũ; `(r, q, p, "id")`, `(r, q, p, null)` → overload mới, không
+  CS0121). UUID dạng D mọi hoa thường được chuẩn hoá về chữ thường; giá trị khác (rỗng, dạng `N`, có ngoặc, 37 ký tự) →
+  `ArgumentException` trước mọi lời gọi mạng và ghi đĩa. Mọi lần thử gửi cùng id và cùng bytes; cùng id + bytes sau đó (kể cả sau
+  khi app khởi động lại) replay command đã commit trong replay window.
+- `CommandResult.RequestId` (constructor bốn tham số cũ đặt `""`); `GameServerError.RequestId` có cả trên lỗi do SDK dựng của lời
+  gọi (`NETWORK_ERROR`, `INVALID_RESPONSE`); overload `GameServerError.Client(code, message, retryable, requestId)`.
+
+### Pending store
+
+- Opt-in `GameServerClientOptions.PendingCommands` (mặc định null = không ghi gì); `PendingCommandMaxAge` mặc định 23 h, hợp lệ
+  trong (0, 168 h]; giữ dưới `GameServer:Commands:ReplayWindowHours` của server (24 h) — quá window, gửi lại sẽ chạy như mới.
+- Có store: command được ghi `(id, player của session, route, bytes chính xác, ServerNow)` **trước** lần thử đầu; xoá khi server
+  trả command response với mã bất kỳ, hoặc error envelope không retryable (ví dụ `IDEMPOTENCY_PAYLOAD_MISMATCH`); **giữ** khi không
+  rõ kết quả (không response, `INVALID_RESPONSE`, mã retryable ở lần cuối như `COMMIT_UNKNOWN_RETRY` hoặc `AGGREGATE_VERSION_AHEAD`,
+  huỷ). Login, logout, snapshot, config và time không đụng store. Lỗi đĩa không bao giờ chặn command: entry giữ trong bộ nhớ,
+  `WriteProblem` nói lý do.
+- Sau khi khởi động lại: `client.PendingCommands` (danh sách **sống** của store: duyệt một bản sao khi gửi lại hoặc bỏ entry trong
+  vòng lặp), `StatusOf(entry)` = `OtherPlayer` (player khác hoặc chưa có session), `Expired` (≥ `PendingCommandMaxAge` theo **đồng
+  hồ server**, đổi giờ máy không làm thay đổi) hoặc `Resendable`; `ResendPendingAsync(entry, parser)` gửi bytes đã lưu với id đã
+  lưu tới route đã lưu (command đã commit trả `Replayed` với receipt gốc), ném `InvalidOperationException` cho entry không
+  resendable hoặc không còn trong store; `DiscardPendingCommand(id)` bỏ một entry (id lạ bị bỏ qua). SDK **không bao giờ** tự gửi
+  lại.
+- **`PersistentPendingCommandStore(folder)`**: một file `{requestId}.pending` mỗi entry. Container v1: magic `GSPC`, version `1`
+  (u16), reserved, độ dài payload (u32), payload (requestId 36 byte = tên file, playerId 1..128, route 1..512,
+  `recordedAtServerUtcMs` i64, body 0..1 MiB, các chuỗi có tiền tố độ dài u32), rồi SHA-256 của payload; little-endian. **Luật
+  version**: format là semantic với client; thay đổi = version mới, file version lạ bị bỏ qua (xoá và nêu trong `LoadProblem`).
+  Ghi `{id}.pending.tmp` → `Flush(true)` → `File.Move` sang `{id}.pending` (`File.Replace` khi cùng id ghi lại); xoá bằng
+  `File.Delete` không flush. Load xoá file tạm còn sót, bỏ qua, xoá và nêu file hỏng trong `LoadProblem` (`"{file}: {reason}"`), để
+  nguyên file có tên không đúng dạng entry chữ thường (Windows khớp pattern không phân biệt hoa thường, VERIFY V9), không bao giờ
+  ném vì đĩa. Tên file chỉ từ id đã kiểm, không bao giờ từ dữ liệu server; session token không bao giờ được ghi.
+- Unity: `UnityPendingCommandStore.Create(environmentName)` → `persistentDataPath/gameserver-pending/{environmentName}` (luật tên
+  của `UnityConfigCache`, cờ no-backup của iOS trên thư mục).
+- **Luồng**: đồng bộ trên thread gọi (main thread của Unity), không thread-safe, **một client mỗi thư mục**.
+
+| Process chết… | Lần khởi động sau liệt kê | Gửi lại cho |
+| --- | --- | --- |
+| trước khi `Record` xong (chỉ file tạm hoặc chưa có gì) | không có (file tạm bị xoá) | — (request chưa đi: không có gì chạy) |
+| sau `Record`, trước khi request tới server | entry | chạy một lần |
+| sau khi server commit, trước response | entry | `replayed = true`, receipt id gốc |
+| sau response, trước khi `Remove` xong | entry | replay (commit) hoặc lại đúng từ chối đó (từ chối không có receipt) |
+| sau `Remove` | không có | — |
+
+Số đo (VERIFY V8, entry 4 KiB, 200 lần sau warm-up): T007 (.NET 10, `Flush(true)`): ghi p50 3,08 / p95 6,09 ms, xoá p95 1,52 ms trên
+C: (`%TEMP%`, ổ của `persistentDataPath` trên Windows — ổ tham chiếu của SC-008); D: (ổ repository) ghi p95 32,24 ms, xoá p95
+0,46 ms (chỉ ghi lại). T061 (`PendingCommandStorePerformanceTests`, `GAMESERVER_PERF=1`, C:): ghi p50 2,29 / p95 5,56 ms, xoá p95
+0,26 ms. `Flush(true)` được giữ (không fallback).
+
+### Section không đọc được
+
+- `LoginResponse.unavailable_sections` (field 9), `SnapshotResponse.unavailable_sections` (5), `CommandResponse.unavailable_sections`
+  (10): `{id, code, code_number}`. SDK đánh dấu section: `Sections.Unavailable` / `IsUnavailable(id)`, kiểu
+  `UnavailableSectionState` (`Id`, `Code`, `CodeNumber`), event `AvailabilityChanged(id)`; section bị đánh dấu **giữ bản tốt cuối**;
+  `Set`/`Apply` kế tiếp của nó xoá dấu, `Clear()` xoá mọi dấu.
+- **Luật cùng player**: login của **cùng** player giữ bản của các section nó liệt kê là unavailable; login của player khác bắt đầu
+  từ store rỗng.
+- Ba mã (`ErrorCodes`): `COMMAND_OUTPUT_TOO_LARGE` (23, mã nghiệp vụ trong `CommandResult.Code`, `Response.Details` có `part`/
+  `bytes`/`limit`), `AGGREGATE_VERSION_AHEAD` (24, 503, retryable: SDK retry cùng bytes và id với delay 1000 ms rồi mới ném
+  `GameServerException`), `AGGREGATE_UNREADABLE` (25, 500, không retry). `CommandResponse.details` (field 11) mang details của mọi
+  từ chối HTTP 200.
+- Tương thích: SDK trước 016 với server này bỏ qua field mới (section hỏng chỉ đơn giản vắng mặt); SDK này với server trước 016:
+  `IsNewPlayer = false`, danh sách unavailable và `details` rỗng.
+
 ## Nghiệm thu
 
 | Mục | Trạng thái |
@@ -214,6 +291,10 @@ và config của consumer fixture trong mọi build framework, nên gói và cli
 | CI-02 IL2CPP smoke build Android arm64, stripping High — Unity 6000.3.22f1 (KestrelDemo) | **đạt** 26/10/2026 (APK development 39 MB, 0 lỗi). E2E trong Unity 6 batch mode qua UnityWebRequest với SampleHost thật (`smoke-build.ps1 -E2E`): login, GetConfig, StartBattle/EndBattle OK, Buy trả mã nghiệp vụ, wallet rev 1 — **đạt** |
 | KestrelDemo sinh bằng WireGen (slice 014) — Unity 6000.3.22f1 | **đạt** 03/11/2026: `smoke-build.ps1 -CompileOnly` exit 0; `-E2E` với SampleHost thật exit 0 (login, config, StartBattle/EndBattle OK, Buy trả mã nghiệp vụ, wallet rev 1); không `.meta` nào được tạo hay đổi dưới `sdk/unity` |
 | KestrelDemo với cache bền và nén (slice 015) — Unity 6000.3.22f1 Editor | **đạt** 04/11/2026: `-CompileOnly` 0 lỗi/cảnh báo; `-E2E` ba lần exit 0: lần 1 `config downloaded sample-1+9b25b8b6bc0b` (gzip), lần 2 `config from cache sample-1+9b25b8b6bc0b` (không gọi `GetConfig`), lần 3 sau khi sửa `shop.json` `config downloaded sample-1+523717009cea` (đường `File.Replace`); thư mục cache chỉ có `gameserver-config.bin` |
+| KestrelDemo với request id và pending store (slice 016 T068) — Unity 6000.3.22f1 Editor (Mono) | **đạt** 04/11/2026: `-CompileOnly` 0 `error CS`/`warning CS` với overload thật (V1); run A qua proxy cắt response battle end (`-e2eDevice t068`): `new player: True`, `EndBattle → pending {id}` sau 5 lần thử, thư mục `gameserver-pending/local` có đúng một `{id}.pending` (173 B); run B thẳng SampleHost: `new player: False`, `pending {id} Resendable`, `resent {id}: replayed=True`, thư mục rỗng, một phần thưởng battle trong ledger cho command đó (V9 Editor) |
+| Pending store trong Windows player (slice 016 T068, V9) | **đạt** 04/11/2026: probe tạm Win64 (Mono, development) ghi ba entry 4 KiB (3 file `.pending` 4227 B), nạp lại 3 entry bằng store mới, xoá cả ba → thư mục rỗng, `LoadProblem`/`WriteProblem` null; probe đã xoá |
+| Android IL2CPP arm64, stripping High với gói 016 (T068) | **đạt** 04/11/2026: `smoke-build.ps1` exit 0, `[smoke] result=Succeeded errors=0`, APK development 54 MB (`Build/KestrelDemo.apk`) |
+| Thiết bị thật Android + iOS với slice 015 + 016 (T069, cùng 015 T058) | **chưa** — owner: năm lần khởi động (cài mới, khởi động lại, response battle end bị cắt, gửi lại, config mới), bước trong `specs/016-login-command/tasks.md` T069 |
 | Thiết bị thật Android + iOS (ACC-18) | **chưa** — thủ công: chạy SampleHost, mở KestrelDemo, đặt `serverUrl` trên object `SampleGameClient`, cài APK (`Build/KestrelDemo.apk`) lên máy cùng mạng, kiểm login/battle/shop/retry/config |
 | iOS IL2CPP build | **chưa** — Unity 6 trên máy chưa cài module iOS; cần macOS + Xcode |
 

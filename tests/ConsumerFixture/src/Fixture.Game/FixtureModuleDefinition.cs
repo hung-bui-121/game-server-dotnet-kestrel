@@ -119,6 +119,9 @@ public static class FixtureModuleDefinition
         ConfigFiles = [ConfigFileDeclaration.Required(RulesFile, FixtureConfigRules.Notes)],
         Aggregates = [Aggregate, Card],
         Commands = [Command.Define<SaveNote, SaveNoteResult>(SaveNoteHandler.Descriptor).HandledBy<SaveNoteHandler>()],
+
+        // Runs once per account, in the transaction that creates it (FG-015): the welcome note.
+        AccountInitializers = [FixtureWelcomeInitializer.Registration],
         ErrorCodes = FixtureErrors.All,
         Routes = [FixtureRoutes.Save, FixtureRoutes.Card],
     };

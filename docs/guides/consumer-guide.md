@@ -343,8 +343,8 @@ the runner commits:
 | commit code catalogued and HTTP 200 (API-11) | yes | |
 | GM command exactly one audit, others none (SEC-14) | yes | |
 | written aggregate within its `HardBytes` (runner: `AGGREGATE_TOO_LARGE`, nothing commits) | yes | envelope measured with the actor's GameId/EnvironmentId (`test`/`test` by default); other ids change the size by their length |
-| result within `ResultCompactMaxBytes` (CMD-03, runner: INTERNAL) | only `CheckCommit(outcome, encodeResult)` | pass the endpoint's encoding, e.g. `r => ToWire((MyResult)r).ToByteArray()`; limits = framework defaults or `WithCommandSettings(...)` |
-| receipt within `ReceiptMaxBytes` (CMD-03, runner: INTERNAL) | **no** | the receipt holds the request body hash, the config version and the encoded result as the host builds them; cover large outbox/claim payloads with a `TestHost` or `LocalFlavorFactory` test |
+| result within `ResultCompactMaxBytes` (CMD-03, runner: `COMMAND_OUTPUT_TOO_LARGE`, part `result`, nothing commits) | only `CheckCommit(outcome, encodeResult)` | pass the endpoint's encoding, e.g. `r => ToWire((MyResult)r).ToByteArray()`; limits = framework defaults or `WithCommandSettings(...)` |
+| receipt within `ReceiptMaxBytes` (CMD-03, runner: `COMMAND_OUTPUT_TOO_LARGE`, part `receipt`, nothing commits) | only `CheckCommit(outcome, encodeResult)` (0.7.0, FG-016) | measured with the runner's own receipt builder from the configured actor, request id, receipt id, config, `At`, seeded revisions (`Seed(id, state, rev)`), claims and outbox; the request body hash is a 64-character placeholder (same length as the runner's); section 13.4 |
 | Touches/Reads, state type, claim limits | while the handler runs | the shared context throws, before any commit check |
 
 From `tests/ConsumerFixture/tests/Fixture.Tests/SaveNoteHandlerTests.cs`:
@@ -401,6 +401,9 @@ Time: `ICommandContext.Now` is a `DateTimeOffset`, the server time fixed for the
 
 `TestGameConfig`: `Empty`, `FromJson(files, label)` and `FromDirectory(configRoot, deploymentEnvironment)` (the host
 loader itself, same `ConfigVersion`).
+
+An account initializer has its own double, `CommandContextDouble.ForAccountInitializer(name, modules…)` with
+`CheckAccountCreation()` (section 13.2).
 
 ### 5.2 The game host on its real local flavor — `LocalFlavorFactory<Program>`
 
@@ -678,7 +681,8 @@ Config versions (0.7.0, 015/BC-4): `client.ClientConfigVersion` is the version o
 `client_config_version`, or `config_version` from a server before 0.7.0); `client.ServerConfigVersion` stays the server
 version, for correlating receipts only. `ConfigOutdated`, `ConfigVersionChanged(version)` and the config cache key follow the
 client version, so a server-only config edit no longer raises `ConfigVersionChanged` or triggers a download. Compare a cache
-with `ClientConfigVersion`. Keep the bundle across app starts with the persistent cache (section 12.8).
+with `ClientConfigVersion`. Keep the bundle across app starts with the persistent cache (section 12.8). Boot on the login
+answer, pass request ids and keep unanswered commands across app restarts with the pending store: section 13 (13.1, 13.5).
 
 ### 10.1 Declare every route
 
@@ -958,6 +962,15 @@ client.Sections.SectionChanged += id =>
    (`[module zhpvp.game] config ConfigGunChest.json row 2: …` instead of `[zhpvp.game] config ConfigGunChest.json: row 2: …`).
    A game test helper with the name of a kit type (a game `TestGameConfig`) is ambiguous (CS0104) in a file that also has
    `using GameServer.TestKit;`: add a `using` alias for the game type or rename it.
+   Login and commands (slice 016, section 13): move a "first login" game command into an `IAccountInitializer` (13.2,
+   016/BC-6, 016/BC-9) and reset dev data created before the bump (accounts are never seeded later); read
+   `LoginResponse.IsNewPlayer` and boot on the login sections instead of a second snapshot (13.1); handle
+   `unavailable_sections` and the codes `AGGREGATE_VERSION_AHEAD`/`AGGREGATE_UNREADABLE` where the game matched `INTERNAL`
+   (13.3, 016/BC-3, 016/BC-4, 016/BC-8); expect `COMMAND_OUTPUT_TOO_LARGE` instead of a 500 for an oversized result or receipt,
+   keep every `GameServer:Commands:*` value inside its range and replace file-store size measurements with the kit check (13.4,
+   016/BC-1, 016/BC-2); match the typed login store failures `COMMIT_UNKNOWN_RETRY`/`CONCURRENT_UPDATE` (016/BC-10); keep
+   module rejection details safe to show, they now reach the client (016/BC-11); pass request ids and set the pending store for
+   commands that must not run twice (13.5).
 6. Regenerate the client files (`generate`, section 10.4), commit them and the `.meta` files Unity creates in the client
    repository, and check that `verify --no-build` passes (the framework's protoc, messages or generator may have changed).
 7. Build Debug and Release (0 warnings) and run the full game test suite; run the host once with `run-local`.
@@ -1377,3 +1390,292 @@ files downloaded).
 A damaged or unknown-format file reads as an empty cache (`LoadProblem` says why); a failed save keeps the new files in memory
 (`WriteProblem`); it never throws for file problems. It is not thread-safe (use it from the main thread, like the client) and
 not encrypted. Format and rules: PCR unity-sdk.
+
+## 13. Login, account creation and command robustness
+
+Slice 016 (FG-013, FG-015, FG-029, FG-016, FG-022). The breaking changes are listed as `016/BC-1` … `016/BC-11` in the release
+notes; PCR platform §22 has the limits table and PCR unity-sdk the client rules.
+
+### 13.1 The login flow
+
+`LoginResponse.is_new_player` (SDK `LoginResponse.IsNewPlayer`) is `true` only for the login whose transaction created the
+player. It is `false` for a returning player, for the loser of two racing first logins of one credential, for a second
+device, for an unconfirmed `switch_account` and — the case to design for — **for the retry of a first login whose response
+was lost**: the server committed the creation, so the retry is a normal login. Use the flag for presentation only (a welcome
+screen); keep onboarding progress that must survive a lost response in the game's own state (an aggregate the game writes,
+for example a `tutorialStep` that an account initializer seeds, section 13.2). The analytics login record's `isNewUser`
+comes from the same value.
+
+The login answer holds every client-visible section with its `rev`: **the login sections are the boot read**. Apply them and
+mark the client ready; no second snapshot call is needed. From
+`samples/SampleGame/KestrelDemo/Assets/SampleGame/SampleGameClient.cs`:
+
+```csharp
+var login = await client.LoginGuestAsync(localId, secret);
+log($"Player {login.PlayerId}, server time {client.ServerNow:O}");
+
+// The login answer holds every client-visible section with its rev: it is the boot read, no snapshot call (FG-013).
+log($"new player: {login.IsNewPlayer}");
+```
+
+A section the server cannot read is left out and listed (section 13.3). Login store failures answer typed codes instead of
+500 (016/BC-10): an ambiguous commit `COMMIT_UNKNOWN_RETRY` (503, retryable), an expired transaction or three lost insert races
+`CONCURRENT_UPDATE` (409, retryable). The SDK never retries a login after an unknown outcome; the game shows a retry.
+
+### 13.2 Account initializers
+
+An `IAccountInitializer` (namespace `GameServer.Accounts`) writes the starting state of a new account **in the transaction
+that creates it**: either the profile and every initializer's writes commit together, or nothing does. Register it in the
+module's `ModuleDescriptor.AccountInitializers`. From `tests/ConsumerFixture/src/Fixture.Game/FixtureWelcomeInitializer.cs`
+and `FixtureModuleDefinition.cs`:
+
+```csharp
+public sealed class FixtureWelcomeInitializer : IAccountInitializer
+{
+    public const string Name = "fixture.welcome";
+    public const string WelcomeText = "Welcome! Write your first note here.";
+
+    public static AccountInitializerRegistration Registration { get; } =
+        AccountInitializerRegistration.Of<FixtureWelcomeInitializer>(Name, [FixtureModuleDefinition.NotesAggregate]);
+
+    public ValueTask<ErrorCode?> InitializeAsync(ICommandContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        var maxLength = context.Config.GetFile<NotesRules>(FixtureModuleDefinition.RulesFile).MaxLength;
+        var text = WelcomeText.Length <= maxLength ? WelcomeText : WelcomeText[..maxLength];
+        context.Set(FixtureModuleDefinition.NotesAggregate, new NotesState { Text = text, Saves = 0 });
+        return ValueTask.FromResult<ErrorCode?>(null);
+    }
+}
+
+// FixtureModuleDefinition.Describe():
+// Runs once per account, in the transaction that creates it (FG-015): the welcome note.
+AccountInitializers = [FixtureWelcomeInitializer.Registration],
+```
+
+Rules (checked at startup; one report line per fault, 016/BC-9):
+
+- **Name** `<area>.<name>` in lowercase, unique per deployment (no "module name" prefix rule).
+- **Touches**: the aggregates it may read and write, never `profile`. `profile` plus the union of every initializer's touches
+  is at most 4 aggregates (`CommandDescriptor.MaxTouches`); the claim markers of all initializers together are at most 2. A
+  `Get`/`Set` outside the touches throws the runner's message naming the initializer
+  (`Command 'identity.create_account (initializer fixture.welcome)' wrote aggregate 'inventory' which is not declared in Touches (DAT-09).`).
+- **Purity**: like a command handler. The transaction may run it more than once (a conflict re-runs the attempt), so read
+  only the context (`Config`, `Now`, `NewId`, `NewSeed`) and DI-injected catalogs; no I/O, clock or random of its own. It is
+  created per attempt from DI (constructor injection).
+- **Order**: module registration order, then list order, over one shared context.
+- **Receipt**: when an initializer changed an aggregate, reserved a claim or added an outbox entry, the creation writes one
+  receipt `identity.create_account` (actor type `system`, actor id = the player); its outbox (ledger entries of grants) is
+  relayed like a command's. Without effects, only the profile is written.
+- **Failure**: a returned code, a throw or a broken rule (aggregate size, an audit entry, receipt size) fails the creation:
+  nothing is written, the login answers 500 `INTERNAL`, one Error line in category `GameServer.Accounts`
+  (`Account creation of player {id} failed: … Nothing was created; the next login retries.`, never an exception message)
+  and `account_initializer_failures_total{initializer, result}` plus `account_creations_total{result="failed"}`. The next
+  login of the same credential retries the creation.
+- **Legacy accounts** (created before the initializer was registered) are never seeded later (no backfill). Two ways out:
+  keep the old "init" game command for them (guarded by a state flag, as before), or — before launch — reset the dev and
+  test data so every account is created with the initializer.
+
+Test it host-free with the kit: `ForAccountInitializer(name, modules…)` runs it behind the account writer's view (system
+actor for `p_test`, touches at their default state, operation `identity.create_account`), and `CheckAccountCreation()`
+returns the writer's rule lines (empty = the creation commits). From
+`tests/ConsumerFixture/tests/Fixture.Tests/FixtureInitializerTests.cs`:
+
+```csharp
+private static CommandContextDouble Creation(int maxLength) =>
+    CommandContextDouble.ForAccountInitializer(FixtureWelcomeInitializer.Name, new IdentityModule(), new FixtureModule())
+        .WithConfig(TestGameConfig.FromJson(
+            new Dictionary<string, string> { [FixtureModuleDefinition.RulesFile] = $"{{\"maxLength\":{maxLength}}}" },
+            "fixture-test"));
+
+[Fact]
+public async Task A_new_account_starts_with_the_welcome_note_and_the_creation_would_commit()
+{
+    var context = Creation(maxLength: 40);
+
+    (await new FixtureWelcomeInitializer().InitializeAsync(context)).ShouldBeNull();
+
+    context.Written<NotesState>(FixtureModuleDefinition.NotesAggregate)
+        .ShouldBe(new NotesState { Text = FixtureWelcomeInitializer.WelcomeText, Saves = 0 });
+    context.Outbox.ShouldBeEmpty();
+    context.CheckAccountCreation().ShouldBeEmpty();
+}
+```
+
+Every new player of a host with an initializer that has effects gets one creation receipt; a test that counts a new
+player's receipts or asserts `rev = 0` on a seeded section changes (016/BC-6).
+
+### 13.3 Degraded reads
+
+One broken aggregate no longer takes down the snapshot or the login (FG-029). Two codes:
+
+| Code | Number | HTTP | Retryable | Cause |
+| --- | --- | --- | --- | --- |
+| `AGGREGATE_VERSION_AHEAD` | 24 | 503 | yes (`retry_after_ms = 1000`) | the stored `schemaVersion` is newer than the code's (a rolling deploy) |
+| `AGGREGATE_UNREADABLE` | 25 | 500 | no | an upgrader is missing or threw, an envelope field has the wrong type, the state is missing, `null`, not a JSON object or does not deserialize, or the wire mapper threw |
+
+- The snapshot, the login, a command replay, the command response after a mapper failure and the GM player view answer 200
+  **without** the broken section and list it in `unavailable_sections` (`{id, code, code_number}`, ordered by id). A section is
+  never sent with an empty payload; every other section is byte-identical (016/BC-3).
+- A command that touches or reads a broken aggregate answers the typed error envelope before its handler and writes
+  nothing (016/BC-4). A broken `profile` fails the login and every authenticated request with the code.
+- The SDK marks the section and keeps its last good copy: `client.Sections.IsUnavailable(id)`,
+  `client.Sections.Unavailable[id].Code`, event `AvailabilityChanged(id)`; the next `Set`/`Apply` of it clears the mark. A login
+  of the **same** player keeps the copies it lists as unavailable; another player's login starts empty (016/BC-8).
+  `AGGREGATE_VERSION_AHEAD` is retried by the SDK's retryable rule with the same bytes and request id.
+- Show a recoverable state for a marked section (for example "this part of your account is being updated, try again"),
+  and never treat a missing section as "default state": a write from that state would overwrite the real data.
+- **Deploy order** (PCR platform §6, unchanged): deploy code that reads a new `schemaVersion` everywhere before any instance
+  writes it. The degradation only keeps the other sections and the login working during the window; alert on
+  `aggregate_read_failures_total{reason="version_ahead"}` during a deploy.
+
+### 13.4 Command limits
+
+The five `GameServer:Commands:*` settings are validated at startup, one line per value out of range (016/BC-2):
+`GameServer:Commands:ReplayWindowHours` 1..168 (default 24), `GameServer:Commands:PerPlayerQueueLimit` 0..16 (2),
+`GameServer:Commands:ReceiptMaxBytes` 1024..65536 (4096), `GameServer:Commands:ResultCompactMaxBytes` 64..16384 (512),
+`GameServer:Commands:MaxAggregatesPerGame` 1..16 (16), plus the cross rule `4·⌈ResultCompactMaxBytes/3⌉ + 1024 ≤
+ReceiptMaxBytes` (the largest result must fit its own receipt). Because of the cross rule the smallest `ReceiptMaxBytes`
+that starts is 1112 (with `ResultCompactMaxBytes` = 64). PCR platform §22 has every limit with its cost.
+
+Which to raise: `ReceiptMaxBytes` when a command adds many outbox entries (each ledger entry of a grant is about 278 bytes in
+the receipt; at 4096 about 11 entries fit, at 16384 about 55); `ResultCompactMaxBytes` when a result is large (prefer returning
+less: the result is stored base64 in the receipt and replayed byte-identical). Cost: every receipt is stored for the replay
+window (`ReplayWindowHours`) and read on every replay, so a larger limit means larger receipt documents and more bytes per
+replay; the maximum (65536) keeps a receipt within the 64 KiB document budget.
+
+Going over a limit is the business rejection `COMMAND_OUTPUT_TOO_LARGE` (23, HTTP 200, not retryable, 016/BC-1) with details
+`part` (`result` or `receipt`), `bytes` and `limit`; exactly at the limit commits. Nothing commits and no receipt is written,
+so a retry with the same request id runs again and gets the same code. The server logs one Error line (`Command {Operation}
+refused with COMMAND_OUTPUT_TOO_LARGE: {Part} is {Bytes} bytes, limit {Limit}. Fix: return less or raise
+GameServer:Commands:{SettingName} (PCR platform §22).`) and counts `command_output_too_large_total{operation, part}`. Treat it as
+a design bug of the command. Rejection details of every HTTP 200 code reach the client in `CommandResponse.details`
+(module codes too, 016/BC-11): keep them safe to show.
+
+Check it in a unit test instead of measuring on a file store: `CheckCommit(outcome, encodeResult)` measures the receipt with
+the runner's own builder (section 5.1). From `tests/ConsumerFixture/tests/Fixture.Tests/FixtureReceiptSizeTests.cs`:
+
+```csharp
+/// <summary>The endpoint's result mapping (<c>FixtureModule.MapPlayerApi</c>): the receipt stores these bytes.</summary>
+private static byte[] Encode(object result) => new StringValue { Value = ((SaveNoteResult)result).Text }.ToByteArray();
+
+[Fact]
+public async Task A_save_fits_the_default_limits()
+{
+    var context = CommandContextDouble.Create(SaveNoteHandler.Operation, new IdentityModule(), new FixtureModule()).AsPlayer("p_1").WithConfig(Rules);
+
+    var outcome = await new SaveNoteHandler().HandleAsync(new SaveNote(new string('n', 40)), context);
+
+    outcome.IsOk.ShouldBeTrue();
+    context.CheckCommit(outcome, Encode).ShouldBeEmpty();
+}
+```
+
+With `WithCommandSettings(new CommandSettings { ReceiptMaxBytes = … })` set to the game's value, a command whose receipt
+would exceed it returns the runner's line (same file, the host and the kit measure the same bytes):
+
+```text
+Command 'fixture.save' receipt would be {bytes} bytes; ReceiptMaxBytes is {limit}: the runner rejects the command with COMMAND_OUTPUT_TOO_LARGE (part receipt) and nothing commits. Fix: fewer ledger/outbox entries or raise GameServer:Commands:ReceiptMaxBytes.
+```
+
+The double applies the limit as given (the ranges are checked by the host at startup). Seed the aggregates the command
+writes at the revision the host has (`Seed(id, state, rev)`): the receipt records the new revisions.
+
+### 13.5 Request ids and the pending store
+
+A command whose answer is lost (app killed, network gone after the server committed) has an unknown outcome. Resending it
+with the **same request id and the same bytes** replays the committed command instead of running it twice (CMD-02, within
+`GameServer:Commands:ReplayWindowHours`, default 24 h).
+
+- `GameServerClient.NewRequestId()` returns a lowercase UUID; pass it (or `null` = generated) as the fourth argument:
+  `SendCommandAsync(route, request, parser, requestId)`. Every retry of the call sends it; `CommandResult.RequestId` and
+  `GameServerError.RequestId` carry it. An id that is not a UUID in format D throws `ArgumentException` before any network
+  call. The three-argument call is unchanged.
+- `GameServerClientOptions.PendingCommands` (opt-in, default null): with a store, every command is recorded before its first
+  attempt and removed once the server answered it (a command response with any code, or an error that is not retryable). It
+  stays when the outcome is unknown (no response, an unreadable response, a retryable last answer, cancellation). Login,
+  logout, snapshot, config and time calls never touch it. The SDK never resends by itself.
+- Unity: `UnityPendingCommandStore.Create(environmentName)` →
+  `Application.persistentDataPath/gameserver-pending/{environmentName}` (the config-cache name rule, section 12.8; iOS no
+  backup). **One client per folder**, used from the Unity main thread. From
+  `samples/SampleGame/KestrelDemo/Assets/SampleGame/SampleGameClient.cs`:
+
+```csharp
+var client = new GameServerClient(
+    new GameServerClientOptions(serverUrl, Application.version, platform, Application.buildGUID)
+    {
+        // A command whose answer was lost (app killed, network gone) stays on disk until the next start (FG-022).
+        PendingCommands = UnityPendingCommandStore.Create("local"),
+    },
+    new UnityWebRequestTransport(),
+    config: UnityConfigCache.Create("local"));
+```
+
+- After login, list `client.PendingCommands`: `StatusOf(entry)` is `Resendable`, `OtherPlayer` (another player's, or no
+  session) or `Expired`; resend the `Resendable` ones with `ResendPendingAsync(entry, parser)` (a committed command answers
+  `Replayed` with its original receipt) and discard the others with `DiscardPendingCommand(id)` after deciding from the
+  player's state. **Iterate a copy**: `PendingCommands` is the store's live list and a resend or a discard removes the entry
+  from it. Same file:
+
+```csharp
+// A copy: PendingCommands is the store's live list, and a resend or a discard removes the entry from it.
+foreach (var pending in new List<PendingCommand>(client.PendingCommands))
+{
+    var status = client.StatusOf(pending);
+    log($"pending {pending.RequestId} {status}");
+    if (status != PendingCommandStatus.Resendable)
+    {
+        client.DiscardPendingCommand(pending.RequestId);
+        continue;
+    }
+
+    bool replayed;
+    switch (pending.Route)
+    {
+        case SampleGameRoutes.BattleStart:
+            replayed = (await client.ResendPendingAsync(pending, StartBattleResult.Parser)).Replayed;
+            break;
+        case SampleGameRoutes.BattleEnd:
+            replayed = (await client.ResendPendingAsync(pending, EndBattleResult.Parser)).Replayed;
+            break;
+        case SampleGameRoutes.ShopBuy:
+            replayed = (await client.ResendPendingAsync(pending, BuyItemResult.Parser)).Replayed;
+            break;
+        default:
+            // A route this build no longer sends: nothing to parse its result with.
+            client.DiscardPendingCommand(pending.RequestId);
+            continue;
+    }
+
+    log($"resent {pending.RequestId}: replayed={replayed}");
+}
+```
+
+and for a command whose outcome is unknown after the SDK's retries:
+
+```csharp
+var endRequestId = GameServerClient.NewRequestId();
+try
+{
+    var end = await client.SendCommandAsync(
+        SampleGameRoutes.BattleEnd,
+        new EndBattleRequest { BattleId = start.Result!.BattleId, Won = true },
+        EndBattleResult.Parser,
+        endRequestId);
+    endCode = end.Code;
+    log($"EndBattle → {end.Code}");
+}
+catch (GameServerException) when (IsPending(client, endRequestId))
+{
+    // Unknown outcome (no answer after the retries): the store keeps it and the next start resends it.
+    endPendingId = endRequestId;
+    log($"EndBattle → pending {endRequestId}");
+}
+```
+
+- **Max age vs replay window**: `GameServerClientOptions.PendingCommandMaxAge` (default 23 h, at most 168 h) marks entries
+  `Expired` on the server clock, so a device clock change does not move it. Keep it below the server's `ReplayWindowHours`:
+  after the window a resend would run the command again instead of replaying it. Raise both together if the game must
+  survive longer offline periods.
+- A disk failure never stops a command: the store keeps the entry in memory and reports `WriteProblem`; damaged files are
+  skipped and named in `LoadProblem`. File format and the crash table: PCR unity-sdk.

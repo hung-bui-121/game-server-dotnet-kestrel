@@ -79,6 +79,7 @@ public static class SampleGameModuleDefinition
         [
             ConfigFileDeclaration.Required(BattleCatalog.ConfigFile, SampleGameConfigRules.Battle),
             ConfigFileDeclaration.Required(ShopCatalog.ConfigFile, SampleGameConfigRules.Shop),
+            ConfigFileDeclaration.Optional(SampleAccountInitializer.ConfigFile, SampleGameConfigRules.Account),
         ],
         ConfigCatalogs =
         [
@@ -93,6 +94,7 @@ public static class SampleGameModuleDefinition
             Command.Define<BuyItemCommand, BuyItemResult>(BuyItemHandler.Descriptor).HandledBy<BuyItemHandler>(),
             Command.Define<SetProgressionCommand, SetProgressionResult>(SetProgressionHandler.Descriptor).HandledBy<SetProgressionHandler>(),
         ],
+        AccountInitializers = [SampleAccountInitializer.Registration],
         ErrorCodes = SampleGameErrors.All,
         Routes = SampleGameRoutes.All,
     };

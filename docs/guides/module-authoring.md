@@ -54,6 +54,10 @@ trong `Touches`; dùng `ctx.Now` (không `DateTime.UtcNow`, `DateTime.Today`, `T
 mục 4). Reject → không ghi gì, không receipt. `CommandOutcome.Commit(result, code)` commit và trả `code`: `code` phải có
 trong catalog (mã core hoặc `ErrorCodeSet` của một module đã `AddModule`, đúng instance đã khai), HTTP 200; nếu không,
 command trả `INTERNAL` và không commit gì (receipt lưu code theo tên). Mã HTTP ≠ 200 thì dùng `Reject`.
+Result (đã encode) lớn hơn `GameServer:Commands:ResultCompactMaxBytes` hoặc receipt lớn hơn
+`GameServer:Commands:ReceiptMaxBytes` → runner từ chối bằng `COMMAND_OUTPUT_TOO_LARGE` (HTTP 200, `details` `part`/`bytes`/`limit`),
+không commit gì (slice 016, FG-016; giới hạn và chi phí: PCR platform §22). Kiểm trong unit test bằng
+`CheckCommit(outcome, encodeResult)` (mục 8).
 
 ## 4. Descriptor và đăng ký
 
@@ -174,6 +178,50 @@ public static class TemplateConfigRules
   của báo cáo, in nguyên văn: viết theo định dạng `[{check hoặc module}] {problem}. Fix: {fix}.` Ví dụ:
   `tests/ConsumerFixture/src/Fixture.Game/NotesResultSizeCheck.cs`.
 - Định dạng dòng và thứ tự: PCR platform §21.
+
+### Trạng thái khởi đầu của tài khoản: account initializer (slice 016 — FG-015)
+
+`IAccountInitializer` (namespace `GameServer.Accounts`) ghi trạng thái khởi đầu của tài khoản mới **trong chính transaction
+tạo tài khoản**: profile và mọi thứ initializer ghi cùng commit, hoặc không có gì. Ví dụ đầy đủ (comment) ở
+`templates/module/Template.Module/TemplateModuleDefinition.cs`; ví dụ chạy được ở
+`tests/ConsumerFixture/src/Fixture.Game/FixtureWelcomeInitializer.cs` và `samples/SampleGame/SampleGame/SampleAccountInitializer.cs`.
+
+```csharp
+public sealed class MyStartingState : IAccountInitializer
+{
+    public ValueTask<ErrorCode?> InitializeAsync(ICommandContext context)
+    {
+        context.Set("mything", new MyState { Points = 10 });
+        return ValueTask.FromResult<ErrorCode?>(null);   // null = OK
+    }
+}
+
+// ModuleDescriptor:
+AccountInitializers = [AccountInitializerRegistration.Of<MyStartingState>("my.starting_state", ["mything"])],
+```
+
+- **Đăng ký**: `ModuleDescriptor.AccountInitializers`; tên `<area>.<name>` chữ thường, duy nhất trong deployment. Initializer
+  được tạo mỗi attempt từ DI (constructor injection, như handler). Chạy theo thứ tự đăng ký module rồi thứ tự trong danh sách,
+  trên một context chung; chỉ chạy ở lần login đầu tiên không thấy profile.
+- **Ngân sách touches**: `Touches` là các aggregate được đọc và ghi, **không bao giờ** `profile`. `profile` + hợp touches của mọi
+  initializer ≤ 4 aggregate (`CommandDescriptor.MaxTouches`); tổng claim marker của mọi initializer ≤ 2. `Get`/`Set` ngoài
+  touches ném thông báo của runner có tên initializer (`Command 'identity.create_account (initializer my.starting_state)' wrote
+  aggregate '…' which is not declared in Touches (DAT-09).`). Sai khai báo → startup fail, một dòng mỗi lỗi (016/BC-9).
+- **Luật thuần**: như handler — transaction có thể chạy lại nhiều lần; chỉ đọc context (`Config`, `Now`, `NewId`, `NewSeed`) và
+  catalog từ DI; không I/O, không clock, không random riêng.
+- **Khi lỗi**: trả mã, ném exception hoặc vi phạm luật commit (kích thước aggregate, audit entry, kích thước receipt) → không
+  ghi gì (không profile, aggregate, claim, receipt), login trả 500 `INTERNAL`, một dòng Error category `GameServer.Accounts`
+  (`Account creation of player {id} failed: … Nothing was created; the next login retries.`, không bao giờ có message của
+  exception), metric `account_initializer_failures_total{initializer, result}` và `account_creations_total{result="failed"}`.
+  Login kế tiếp của cùng credential tạo lại từ đầu.
+- **Receipt**: chỉ khi initializer có hiệu ứng (đổi aggregate, giữ claim, thêm outbox) thì có một receipt
+  `identity.create_account` (actor `system`, actor id = player); outbox của nó (ledger của grant) được relay như command.
+- Tài khoản tạo trước khi đăng ký initializer **không** được seed về sau (không backfill): giữ command "init" cũ cho chúng, hoặc
+  xoá dữ liệu dev/test trước khi ra mắt.
+- **Test bằng kit** (không host): `CommandContextDouble.ForAccountInitializer(name, modules…)` chạy initializer sau view của
+  account writer (actor system cho `p_test`, touches ở state mặc định, operation `identity.create_account`);
+  `CheckAccountCreation()` trả các dòng luật của writer, rỗng = creation commit (ví dụ: consumer guide §13.2,
+  `tests/ConsumerFixture/tests/Fixture.Tests/FixtureInitializerTests.cs`).
 
 ## 5. Route và endpoint
 

@@ -4,7 +4,10 @@ using Shouldly;
 
 namespace SampleGame.Tests;
 
-/// <summary>FR-070, US1-3, US6-1 (slice 015 T024): rules <c>sample.battle</c> and <c>sample.shop</c> with the economy module.</summary>
+/// <summary>
+/// FR-070, US1-3, US6-1 (slice 015 T024): rules <c>sample.battle</c> and <c>sample.shop</c> with the economy module; rule
+/// <c>sample.account</c> of the optional <c>account.json</c> (slice 016 T063, errors-and-report-lines §4.3).
+/// </summary>
 public sealed class SampleConfigRulesTests
 {
     private const string Resources = """
@@ -18,6 +21,7 @@ public sealed class SampleConfigRulesTests
 
     private const string Battle = "[module sample.game] config battle.json";
     private const string ShopLine = "[module sample.game] config shop.json";
+    private const string AccountLine = "[module sample.game] config account.json";
 
     [Theory]
     [InlineData("\"maxStage\": 0,", ": 'maxStage' must be an integer from 1 to 2147483647, found 0. Fix: set the highest stage, at least 1.")]
@@ -89,6 +93,49 @@ public sealed class SampleConfigRulesTests
     }
 
     [Theory]
+    [InlineData("""{"startingGold": -1}""", "-1")]
+    [InlineData("""{"startingGold": "100"}""", "\"100\"")]
+    [InlineData("""{"startingGold": 1000000001}""", "1000000001")]
+    [InlineData("""{"startingGold": 1.5}""", "1.5")]
+    [InlineData("""{"startingGold": null}""", "null")]
+    [InlineData("""{"gold": 100}""", "nothing")]
+    public void Starting_gold_is_an_integer_from_0_to_the_gold_max_quantity(string account, string found)
+    {
+        Errors(account: account).ShouldBe(
+        [
+            AccountLine + $": startingGold must be an integer from 0 to 1000000000 (the maxQuantity of gold in resources.json); found {found}. " +
+            "Fix: set the gold a new account starts with.",
+        ]);
+    }
+
+    [Theory]
+    [InlineData("""{"startingGold": 0}""")]
+    [InlineData("""{"startingGold": 1000000000}""")]
+    public void Starting_gold_at_both_ends_of_the_range_passes(string account)
+    {
+        Errors(account: account).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void An_account_file_that_is_not_an_object_or_grants_an_undefined_gold_is_reported()
+    {
+        Errors(account: "[100]").ShouldBe([AccountLine + ": the file must be an object, found array. Fix: write {\"startingGold\": …}."]);
+        Errors(account: """{"startingGold": 100}""", resources: """{"resources": [{"id": "potion", "kind": "item", "maxQuantity": 999, "displayName": "Potion"}]}""")
+            .ShouldContain(AccountLine + ": startingGold grants 'gold', which is not defined in resources.json. Fix: add it to resources.json or remove account.json.");
+    }
+
+    [Fact]
+    public void A_gold_row_without_a_valid_max_quantity_is_reported_once_by_the_economy_rule()
+    {
+        var errors = Errors(
+            account: """{"startingGold": -5}""",
+            resources: """{"resources": [{"id": "gold", "kind": "currency", "maxQuantity": 0, "displayName": "Gold"}, {"id": "potion", "kind": "item", "maxQuantity": 999, "displayName": "Potion"}]}""");
+
+        errors.ShouldNotContain(e => e.StartsWith(AccountLine, StringComparison.Ordinal));
+        errors.ShouldContain(e => e.StartsWith("[module economy] config resources.json row 1:", StringComparison.Ordinal));
+    }
+
+    [Theory]
     [InlineData("samples/SampleHost/config")]
     [InlineData("tests/Shared/config")]
     public void The_committed_sample_and_test_configs_pass(string folder)
@@ -101,16 +148,21 @@ public sealed class SampleConfigRulesTests
         report.Catalog<ShopCatalog>().Items.ShouldNotBeEmpty();
     }
 
-    private static IReadOnlyList<string> Errors(string? battle = null, string? shop = null) =>
-        ConfigDeclarationCheck.Check(
-            TestGameConfig.FromJson(new Dictionary<string, string>
-            {
-                [ResourceCatalog.ConfigFile] = Resources,
-                [BattleCatalog.ConfigFile] = battle ?? """{"maxStage": 1, "stages": [{"stage": 1, "xp": 0, "rewards": [], "drops": []}]}""",
-                [ShopCatalog.ConfigFile] = shop ?? Shop,
-            }),
-            new EconomyModule(),
-            new SampleGameModule()).Errors;
+    private static IReadOnlyList<string> Errors(string? battle = null, string? shop = null, string? account = null, string? resources = null)
+    {
+        var files = new Dictionary<string, string>
+        {
+            [ResourceCatalog.ConfigFile] = resources ?? Resources,
+            [BattleCatalog.ConfigFile] = battle ?? """{"maxStage": 1, "stages": [{"stage": 1, "xp": 0, "rewards": [], "drops": []}]}""",
+            [ShopCatalog.ConfigFile] = shop ?? Shop,
+        };
+        if (account is not null)
+        {
+            files[SampleAccountInitializer.ConfigFile] = account;
+        }
+
+        return ConfigDeclarationCheck.Check(TestGameConfig.FromJson(files), new EconomyModule(), new SampleGameModule()).Errors;
+    }
 
     private static string RepositoryRoot()
     {

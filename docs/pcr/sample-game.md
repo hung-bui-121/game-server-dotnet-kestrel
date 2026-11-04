@@ -88,3 +88,25 @@ Wire.BattleState>` trong `SampleGameModule.cs`; Unity `SampleGameSections.Progre
 
 `WireConformance` (TestKit) kiểm mapper mang mọi member không hidden lên wire và set mọi field proto
 (`tests/GameServer.Platform.Web.Tests/WireConformanceTests.cs`).
+
+## Account initializer và `account.json` (slice 016 — FG-015, FR-050)
+
+- Initializer `sample.starting_gold` (`SampleAccountInitializer`, touches `wallet`, `ResourceCatalog` qua constructor) cấp
+  `startingGold` gold bằng `EconomyOperations.Grant` với ledger source `account_init`, trong transaction tạo tài khoản.
+- Đọc file **tuỳ chọn, chỉ server** `account.json` (`{ "startingGold": 100 }`) chỉ khi `Config.HasFile("account.json")`;
+  không có file, hoặc `startingGold = 0` → không thay đổi gì, không receipt tạo tài khoản. `samples/SampleHost/config/base` có
+  file (liệt kê trong `files`, không trong `clientVisible`, nên version client `sample-1+9b25b8b6bc0b` không đổi; version server
+  đổi một lần: `sample-1+8a37f29ee2dc` → `sample-1+53ca1d498d7a`); `tests/Shared/config` không có, nên test full game giữ
+  nguyên kỳ vọng.
+- Luật `sample.account` (khai `ConfigFileDeclaration.Optional("account.json", …)`): `startingGold` là số nguyên từ 0 đến
+  `maxQuantity` của gold trong `resources.json`:
+
+```text
+[module sample.game] config account.json: startingGold must be an integer from 0 to {maxQuantity} (the maxQuantity of gold in resources.json); found {value}. Fix: set the gold a new account starts with.
+[module sample.game] config account.json: the file must be an object, found {kind}. Fix: write {"startingGold": …}.
+[module sample.game] config account.json: startingGold grants 'gold', which is not defined in resources.json. Fix: add it to resources.json or remove account.json.
+```
+
+  Hàng gold không có `maxQuantity` hợp lệ thì luật bỏ qua giới hạn (lỗi đó do luật economy báo một lần).
+- Người chơi mới trên SampleHost: login đầu tiên `is_new_player = true`, `wallet` ở `rev = 1` với 100 gold, một ledger entry
+  `account_init`, một receipt `identity.create_account` (receipt 1068 byte, PCR platform §22).

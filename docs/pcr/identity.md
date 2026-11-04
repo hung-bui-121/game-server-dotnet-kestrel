@@ -185,3 +185,17 @@ Section (mapper typed `AddAggregateWireMapper<ProfileState, Wire.ProfileState>` 
 
 `WireConformance` (TestKit) kiểm mapper mang mọi member không hidden lên wire và set mọi field proto
 (`tests/GameServer.Platform.Web.Tests/WireConformanceTests.cs`).
+
+## Login: người chơi mới, tạo tài khoản và lỗi đọc (slice 016 — FG-013, FG-015, FG-029, BC-3, BC-6, BC-7, BC-10)
+
+| Mục | Giá trị (semantic) |
+| --- | --- |
+| `LoginResponse.is_new_player` (field 8) | `true` **chỉ** khi transaction của chính lần login này đã tạo player (attempt đã commit quyết định "tạo"). `false` cho player quay lại, kẻ thua của hai login đầu đua nhau cùng credential, takeover từ thiết bị thứ hai, `switch_account` chưa xác nhận (trả `SWITCH_ACCOUNT`, không tạo gì). `switch_account` đã xác nhận vào identity chưa có tài khoản tạo tài khoản đó và trả `true` |
+| Response bị mất | login đầu đã commit nhưng response mất → lần retry là login bình thường (`false`, epoch + 1). Cờ chỉ để hiển thị; tiến độ onboarding phải nằm trong state của game |
+| Analytics `isNewUser` | lấy từ cùng giá trị (trước đây hai login đầu đua nhau đều báo `true`) |
+| Ghi profile | mọi login ghi profile qua `IAccountWriter` (Platform); mỗi attempt tự quyết "tạo hay cập nhật" từ cái nó đọc; login quay lại = cùng transaction như trước (một đọc, một replace) |
+| Account initializer | chỉ chạy ở attempt tạo tài khoản, trong cùng transaction với profile (PCR platform §2, §22); lỗi → không tạo gì, login 500 `INTERNAL`, login sau thử lại; receipt `identity.create_account` chỉ khi có hiệu ứng (actor `system`, actor id = player, id receipt ở dòng log `Account {PlayerId} created: …` và danh sách receipt GM, không có trên wire) |
+| Login sections | mọi section client-visible kèm `rev` = lần đọc boot của client (không cần snapshot thứ hai). Section không đọc được bị bỏ và liệt kê trong `LoginResponse.unavailable_sections` (field 9) |
+| `profile` hỏng | login (guest và provider) và mọi request xác thực bearer trả `AGGREGATE_VERSION_AHEAD` (503, `retry_after_ms = 1000`) hoặc `AGGREGATE_UNREADABLE` (500), `details.aggregate = profile`; profile hỏng không bao giờ được cache, document sửa xong phục vụ ngay request sau. Profile chỉ có *mapper* ném thì chỉ bị liệt kê (server vẫn giữ state) |
+| Lỗi store của login (BC-10) | commit mơ hồ → 503 `COMMIT_UNKNOWN_RETRY` (retryable, `retry_after_ms = 1000`); transaction hết hạn hoặc thua 3 vòng race insert → 409 `CONCURRENT_UPDATE` (retryable, `retry_after_ms = 200`); transaction fail → 500 `INTERNAL` (log `Request failed with INTERNAL: Login transaction failed for player {id}.`). Không ghi gì trong mọi trường hợp. SDK không tự retry login sau kết quả không rõ |
+| `LoginResult` (BC-7) | thêm init property `IsNewPlayer`, `Unavailable`; `LoginCompletion.CompleteAsync`, `GuestLoginService.LoginAsync`, `ProviderLoginService.LoginAsync` thêm tham số tuỳ chọn cuối `string? correlationId = null` (request id của request, ghi vào receipt tạo tài khoản) |

@@ -249,3 +249,17 @@ route `platform.gm_openapi` của platform (PCR platform mục 20). Route GM c�
 | `gm.ui` | GET | `/gm/v1/ui` | Public | — | — | — |
 
 Module không có aggregate client-visible.
+
+## Aggregate hỏng và details của từ chối (slice 016 — FG-029, FG-016, BC-3, BC-11)
+
+- **GM player view** (`GET /gm/v1/players/{playerId}`, schema `GmPlayerView` trong `docs/api/gm-openapi.json`): thêm
+  `unreadable[]` (luôn có, rỗng khi mọi aggregate đọc được, theo thứ tự id), mỗi phần tử `{id, code, reason,
+  storedSchemaVersion, codeSchemaVersion}` (`code` = `AGGREGATE_VERSION_AHEAD` | `AGGREGATE_UNREADABLE`). Aggregate hỏng không có
+  trong `aggregates`. `profile` hỏng được liệt kê và `deletion = null`; player vẫn tồn tại.
+- **GM command response** (schema `GmCommandResponse`, mọi route `MapGmCommand`): thêm `details` (object chuỗi → chuỗi; rỗng khi
+  commit) mang `details` của mọi từ chối HTTP 200, kể cả mã module (ví dụ `part`/`bytes`/`limit` của
+  `COMMAND_OUTPUT_TOO_LARGE`), và `unavailable[]` `{id, code}` (replay có aggregate không đọc được lúc này; bình thường rỗng).
+- GM command chạm aggregate hỏng và target validator GM trả lỗi JSON GM có `code`/`codeNumber` 24 hoặc 25, `details.aggregate`;
+  không ghi gì.
+- Chỉ thêm member JSON (frontend GM không phải sửa); lần sinh lại đầu tiên của OpenAPI thêm schema đầy đủ của hai response này
+  (trước đây các operation chỉ có `200: OK`).

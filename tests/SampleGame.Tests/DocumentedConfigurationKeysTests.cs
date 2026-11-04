@@ -10,7 +10,7 @@ namespace SampleGame.Tests;
 
 /// <summary>
 /// Slice 011 SC-008: every configuration key the operator docs name exists. The back-ticked keys of the environments guide,
-/// PCR platform §13, §17, §18, §19 and §21, the analytics guide, the consumer guide and the README that start with <c>GameServer:</c>, <c>Couchbase:</c> or
+/// PCR platform §13, §17, §18, §19, §21 and §22, the analytics guide, the consumer guide and the README that start with <c>GameServer:</c>, <c>Couchbase:</c> or
 /// <c>FileStore:</c> must each resolve, by reflection, to a bound (publicly settable) property of <see cref="GameServerOptions"/>,
 /// <see cref="CouchbaseOptions"/>, <see cref="FileStoreOptions"/> or (slice 012, its own section bound separately)
 /// <see cref="AnalyticsOptions"/>; a key resolves against the <b>longest</b> matching section. A key of a <c>GameServer</c> subsection written without its <c>GameServer:</c> prefix
@@ -25,6 +25,7 @@ public sealed partial class DocumentedConfigurationKeysTests
     private const string AnalyticsPcrSection = "## 18.";
     private const string ConsumerPcrSection = "## 19.";
     private const string ConfigPcrSection = "## 21.";
+    private const string LimitsPcrSection = "## 22.";
     private const string ConsumerGuide = "docs/guides/consumer-guide.md";
     private const string AnalyticsGuide = "docs/guides/analytics.md";
     private const string Readme = "README.md";
@@ -55,7 +56,7 @@ public sealed partial class DocumentedConfigurationKeysTests
     private static readonly string Root = RepositoryRoot();
 
     public static TheoryData<string> Documents() =>
-        new(Guide, Pcr + " " + PcrSection, Pcr + " " + AnalyticsPcrSection, Pcr + " " + ObservabilityPcrSection, Pcr + " " + ConsumerPcrSection, Pcr + " " + ConfigPcrSection, AnalyticsGuide, ConsumerGuide, Readme);
+        new(Guide, Pcr + " " + PcrSection, Pcr + " " + AnalyticsPcrSection, Pcr + " " + ObservabilityPcrSection, Pcr + " " + ConsumerPcrSection, Pcr + " " + ConfigPcrSection, Pcr + " " + LimitsPcrSection, AnalyticsGuide, ConsumerGuide, Readme);
 
     [Theory]
     [MemberData(nameof(Documents))]
@@ -134,6 +135,21 @@ public sealed partial class DocumentedConfigurationKeysTests
 
         missing.Count.ShouldBe(0, $"{document} does not document: {string.Join(", ", missing)} (data-model §3.1).");
         Bound(typeof(RequestLogSettings)).Count().ShouldBe(2);
+    }
+
+    /// <summary>Slice 016 T072 (FR-032, US4-5): the limits table of PCR platform §22 names every <c>GameServer:Commands</c> setting.</summary>
+    [Fact]
+    public void The_limits_section_names_every_command_setting()
+    {
+        var documented = DocumentedKeys(Pcr + " " + LimitsPcrSection).ToHashSet(StringComparer.Ordinal);
+
+        var settings = Bound(typeof(CommandSettings))
+            .Select(p => GameServerOptions.SectionName + ":" + nameof(GameServerOptions.Commands) + ":" + p.Name)
+            .ToList();
+        var missing = settings.Where(key => !documented.Contains(key)).ToList();
+
+        settings.Count.ShouldBe(5);
+        missing.ShouldBeEmpty($"PCR platform §22 does not document: {string.Join(", ", missing)}.");
     }
 
     [Fact]

@@ -25,10 +25,16 @@ luôn khớp API hiện hành.
    comment trong `TemplateModuleDefinition`); **không** đăng ký catalog trong `ConfigureServices` (catalog không khai báo vẫn lazy).
    Dùng `Required(...)` cho file bắt buộc. Test luật bằng `ConfigDeclarationCheck.Check(config, modules)`
    (`docs/guides/module-authoring.md` mục 4 và 8).
-6. Đăng ký ở host: `gameServer.AddModule<YourModule>()`.
-7. Sinh code Unity cho route, section và `.proto` của module bằng `tools/GameServer.WireGen` (`docs/guides/module-authoring.md`
+6. Trạng thái khởi đầu của tài khoản mới (FG-015): ví dụ comment `AccountInitializers` trong `TemplateModuleDefinition` —
+   `IAccountInitializer` chạy một lần mỗi tài khoản, trong transaction tạo tài khoản; `Touches` không có `profile`, `profile` +
+   touches của mọi initializer ≤ 4 aggregate, claim marker cộng lại ≤ 2 (kiểm khi startup); thuần như handler (có thể chạy lại);
+   trả mã hoặc ném → không tạo gì, login trả `INTERNAL`, login sau thử lại. Test bằng
+   `CommandContextDouble.ForAccountInitializer(name, modules)` + `CheckAccountCreation()` (`docs/guides/module-authoring.md`
+   mục 4, consumer guide §13.2). Template không đăng ký initializer nào.
+7. Đăng ký ở host: `gameServer.AddModule<YourModule>()`.
+8. Sinh code Unity cho route, section và `.proto` của module bằng `tools/GameServer.WireGen` (`docs/guides/module-authoring.md`
    mục 9; repo game: `docs/guides/consumer-guide.md` mục 10).
-8. Viết PCR `docs/pcr/<your-module>.md` (aggregate, command → Touches/Reads, error codes, capability thay được, route và
-   section, file config và luật).
+9. Viết PCR `docs/pcr/<your-module>.md` (aggregate, command → Touches/Reads, error codes, capability thay được, route và
+   section, file config và luật, account initializer).
 
 Chi tiết: `docs/guides/module-authoring.md`; repo game: `docs/guides/consumer-guide.md`.

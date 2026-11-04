@@ -1368,7 +1368,7 @@ describe them.
 
 ### Dogfood
 
-- [ ] T063 [US6] Sample initializer (after T025, T030; research R13, errors-and-report-lines §4.3): new
+- [x] T063 [US6] Sample initializer (after T025, T030; research R13, errors-and-report-lines §4.3): new
   `samples/SampleGame/SampleGame/SampleAccountInitializer.cs` (`sample.starting_gold`, touches `wallet`, `ResourceCatalog`
   by constructor; reads `account.json` only when `context.Config.HasFile` is true; grants `startingGold` gold through
   `EconomyOperations.Grant` with ledger source `account_init`; changes nothing when the file is absent);
@@ -1383,14 +1383,40 @@ describe them.
   `maxQuantity`; the kit run through `ForAccountInitializer`); `tests/SampleGame.Tests/ConfigDeclarationParityTests.cs`
   covers `account.json` (host vs kit same lines); `SampleConfigRulesTests.cs` gains the rule cases.
   Done when: green; the full-game suites on `tests/Shared/config` pass unchanged. (FR-050, US6-1)
-- [ ] T064 [US6] Hosts on the real SampleHost config (after T052, T063; T009 inventory): run the T009-listed `LocalFlavorFactory`
+  Note: new `SampleAccountInitializer.cs` (`SampleAccountSettings` record + initializer `sample.starting_gold`, touches
+  `wallet`, `ResourceCatalog` by constructor; `Config.HasFile("account.json")` gate; `startingGold = 0` changes nothing too;
+  constants `Name`, `ConfigFile`, `LedgerSourceType`, `Resource`, static `Registration`). Rule `SampleGameConfigRules.Account`
+  (`sample.account`): the §4.3 problem text, through `ConfigProblems`, so the line ends with the framework's mandatory
+  `. Fix: set the gold a new account starts with.` (deviation: the contract line has no Fix part; every 015 rule line does).
+  Two extra lines the contract does not list: `the file must be an object, found {kind}` and `startingGold grants 'gold',
+  which is not defined in resources.json` (every first login would otherwise fail with `INTERNAL`); a gold row without a valid
+  `maxQuantity` skips the cap (the economy rule reports it once, as `ResourceReferences` reads leniently). `ShopHandler.cs`
+  descriptor: `ConfigFileDeclaration.Optional("account.json", Account)` and `AccountInitializers = [Registration]`.
+  `samples/SampleHost/config/base/account.json` (`{ "startingGold": 100 }`, LF) in manifest `files` only. Tests:
+  `SampleAccountInitializerTests` (6: seeded login — `rev 1`, 100 gold, one ledger `account_init` with operation
+  `identity.create_account`, one creation receipt actor `system`, the `Account … created: 1 initializers, receipt {id}.` line;
+  10 racing first logins → one `IsNewPlayer`, one ledger entry, one receipt; without the file and with 0 gold → no wallet
+  document, no ledger, no receipt, `receipt none`; kit `ForAccountInitializer` with and without the file); the rule lines
+  for a negative value, a string and a value over `maxQuantity` are three new `SeededFaults` (so `ConfigStartupReportTests`
+  asserts the host line and `ConfigDeclarationParityTests` host = kit for each); `SampleConfigRulesTests` +10 (−1, `"100"`,
+  1000000001, 1.5, null, missing, 0 and 1000000000 pass, not an object, gold undefined, bad gold row). The full-game suites
+  on `tests/Shared/config` pass unchanged.
+- [x] T064 [US6] Hosts on the real SampleHost config (after T052, T063; T009 inventory): run the T009-listed `LocalFlavorFactory`
   suites (`Sample.Counter.Tests`, `SampleGame.Tests/CatalogCompositionTests`, the Platform.Web, Architecture and Client
   tests, Couchbase `SampleHostFlavorTests`); update only assertions on a new player's gold, ledger rows, receipts or
   revisions, each with a comment naming `account.json`; record the new SampleHost server `config_version` (changed once
   vs T001 (d)) and the unchanged client version. `ReceiptParityTests` gains the sample initializer row.
   Done when: green; a Note lists every changed assertion (expected few or none, Planning note 5). (FR-050, FR-034,
   SC-005)
-- [ ] T065 [P] [US6] Consumer fixture (after T030, T051; Planning note 9): new
+  Note: `Sample.Counter.Tests` 20/20, `SampleGame.Tests` (incl. `CatalogCompositionTests`) 272 + 6 skip, Architecture 61 + 8
+  skip, Client 217 + 2 skip, Platform.Web 863 + 3 skip — all green **with no assertion changed** (Planning note 5: none of
+  them asserts a new player's gold, ledger rows or receipt counts). Couchbase `SampleHostFlavorTests` skip without
+  `COUCHBASE_CONNSTR` (they log in no player, T009; rerun in T080). SampleHost config (computed with
+  `TestGameConfig.FromDirectory`, = the host loader): server `sample-1+8a37f29ee2dc` → **`sample-1+53ca1d498d7a`** (changed
+  once vs T001 (d)), client `sample-1+9b25b8b6bc0b` **unchanged**; startup line `6 files (4 client-visible, bundle 1747 B, …),
+  5 rules, 4 catalogs`. `ReceiptParityTests` gains `The_sample_starting_gold_creation_receipt_measures_the_same_in_the_host_and_the_double`
+  (SampleHost-shaped seeded config with `account.json`; 0 bytes difference).
+- [x] T065 [P] [US6] Consumer fixture (after T030, T051; Planning note 9): new
   `tests/ConsumerFixture/src/Fixture.Game/FixtureWelcomeInitializer.cs` (`fixture.welcome`, touches the hidden `notes`
   aggregate, sets `NotesState { Text = welcome text cut to notes.json maxLength, Saves = 0 }`) registered in
   `FixtureModuleDefinition.cs`; new `tests/ConsumerFixture/tests/Fixture.Tests/FixtureInitializerTests.cs` (kit
@@ -1400,11 +1426,22 @@ describe them.
   equal the kit measure, the fixture row of SC-005).
   Done when: the fixture suites green (`FixtureCatalogTests` card title still empty, `FixtureHostSmokeTests` unchanged).
   (FR-051, SC-005)
-- [ ] T066 [P] [US6] Template (after T011): `templates/module/Template.Module/TemplateModuleDefinition.cs` gains a
+  Note: `FixtureWelcomeInitializer.cs` (`fixture.welcome`, touches `notes`, `NotesState { Text = "Welcome! Write your first
+  note here." cut to maxLength, Saves = 0 }`, static `Registration`) registered in `FixtureModuleDefinition.Describe()`.
+  `FixtureInitializerTests` (2: written note + empty `CheckAccountCreation`; `maxLength` 1 → `"W"`). `FixtureReceiptSizeTests`
+  (2: a 40-character save at the defaults → no line; a `TestHost` with the fixture modules and the committed config stores the
+  `fixture.save` receipt, the double configured with that receipt's actor, ids, config, time and the welcome note at rev 1
+  measures the same bytes: `ReceiptMaxBytes` = stored → empty ("greater than" rule), stored − 1 → exactly the §5 receipt line).
+  The double applies the limit as given (no startup ranges), stated in the test's XML doc. Fixture suite 37/37
+  (`FixtureCatalogTests` card title still empty, `FixtureHostSmokeTests` unchanged).
+- [x] T066 [P] [US6] Template (after T011): `templates/module/Template.Module/TemplateModuleDefinition.cs` gains a
   commented initializer example (registration, touches, purity, the budget) next to the existing commented
   declarations; nothing registered.
   Done when: template-based tests (`WireMapperRegistrationTests`, `WireConformanceTests`) green unchanged. (FR-061)
-- [ ] T067 [US6] KestrelDemo (after T059, T060; FR-052): edit only
+  Note: commented `AccountInitializers` example after the `ConfigCatalogs` comment (a `MyStartingState` initializer body,
+  touches budget and "never profile", purity, failure mode, no backfill, kit test); nothing registered. Template-based
+  tests green in the full suite.
+- [x] T067 [US6] KestrelDemo (after T059, T060; FR-052): edit only
   `samples/SampleGame/KestrelDemo/Assets/SampleGame/SampleGameClient.cs` and
   `samples/SampleGame/KestrelDemo/Assets/Editor/SmokeBuild.cs` (opened by exact path): `CreateClient` sets
   `Options.PendingCommands = UnityPendingCommandStore.Create("local")`; `RunAsync` logs `new player: {IsNewPlayer}`
@@ -1415,7 +1452,18 @@ describe them.
   `PlayerPrefs` (the scene client's rule; Planning note 18).
   Done when: `git diff` of those two files shows only these changes; `tests/GameServer.Client.Tests/SdkRouteTests.cs`
   (literal scan) green. The MonoBehaviour compiles only in Unity (T068). (FR-052)
-- [ ] T068 [US6] **Agent-run Unity** (after T067; **[VERIFY] V1** final, **V9** Editor and Windows player; FR-092 manual
+  Note: `SampleGameClient.cs`: `CreateClient` sets `PendingCommands = UnityPendingCommandStore.Create("local")`; `RunAsync`
+  logs `new player: {IsNewPlayer}` after login (comment: the login sections are the boot read; still no snapshot call), then
+  `ResendPendingAsync` over **a copy** of `PendingCommands` (`pending {id} {status}`; `Resendable` → resend with the parser of
+  its route, `resent {id}: replayed={Replayed}`; other statuses and unknown routes → `DiscardPendingCommand`), then battle end
+  with `GameServerClient.NewRequestId()` (`GameServerException` while the id is still pending → `EndBattle → pending {id}`).
+  `SampleGameRun` gains `IsNewPlayer` and `EndPendingId`; the scene client's PlayerPrefs device moved into
+  `SampleGameFlow.StoredDevice(keyPrefix)` (keys unchanged: `gs.localId`, `gs.secret`). `SmokeBuild.cs`: `-e2eDevice <name>`
+  (`gs.e2e.{name}.*` PlayerPrefs; a switch without a value exits 1), a pending battle end counts as ended, the result line
+  adds `new=` and `pending=`. **Finding:** `PendingCommands` is the store's live list; iterating it while resending throws
+  `Collection was modified` (scratch check with `InMemoryPendingCommandStore`), hence the copy (release notes "Known before
+  the tag"). `git diff` of the two files shows only these changes; `SdkRouteTests` green (no route or section literal).
+- [x] T068 [US6] **Agent-run Unity** (after T067; **[VERIFY] V1** final, **V9** Editor and Windows player; FR-092 manual
   check): no Editor holds KestrelDemo.
   1. `smoke-build.ps1 -Unity "<path>" -CompileOnly` → 0 `error CS`/`warning CS` (V1 with the real overload).
   2. SampleHost on 5080 (`run-local.ps1 -Port 5080`); a scratch dropping proxy on 127.0.0.1:5092 (session scratch,
@@ -1435,6 +1483,33 @@ describe them.
   the two T067 files (Unity created no package `.meta`); SampleHost and the proxy stopped, 5080 and 5092 free. If the
   agent cannot start Unity, the task stays open with these commands for the owner and the release notes mark it
   pending. (FR-052, FR-092, V1, V9)
+  Note (2026-11-04, agent-run; no Editor had KestrelDemo open: no `Temp/UnityLockfile`, no `Unity.exe`): (1)
+  `powershell -File sdk/unity/ci/smoke-build.ps1 -Unity "…6000.3.22f1\Editor\Unity.exe" -ProjectPath <abs KestrelDemo> -LogDir
+  <scratch>/t068 -CompileOnly` exit 0 (32 s), 0 `error CS`/`warning CS` (`SampleGame.Client`, `Assembly-CSharp`,
+  `Assembly-CSharp-Editor` recompiled) — V1 final with the real overload. (2) SampleHost `tools/local/run-local.ps1 -Port 5080`
+  (startup line `version sample-1+53ca1d498d7a, client version sample-1+9b25b8b6bc0b, 6 files … 5 rules`); scratch proxy
+  `dropproxy.py` (session scratch `t068proxy/`, never committed) on 127.0.0.1:5092 forwarding to 5080 and resetting the client
+  connection after forwarding any `api/v1/battle/end`. The E2E runs call Unity directly with the script's E2E command line plus
+  the switch (`smoke-build.ps1` has no pass-through for it; T067 allows only the two KestrelDemo files):
+  `GS_SERVER_URL=… Unity.exe -batchmode -nographics -projectPath <KestrelDemo> -executeMethod KestrelDemoBuild.EndToEnd
+  -e2eDevice t068 -logFile …`. **Run A** (5092, exit 0, 21 s): `new player: True`, `config downloaded sample-1+9b25b8b6bc0b`,
+  `StartBattle → OK`, `EndBattle → pending 71dc9251-6dfe-43e6-9091-da3fa556ef43` (proxy: 5 battle-end requests forwarded and
+  dropped; host: 1 commit + 4 `replayed`), `Buy → OK`, `Gold: 90 (rev 3)` (100 seed + 50 reward − 60), `pending=1`; folder
+  `%USERPROFILE%\AppData\LocalLow\DefaultCompany\KestrelDemo\gameserver-pending\local` = one
+  `71dc9251-….pending` (173 B). **Run B** (5080, exit 0, 18 s): `new player: False`, `config from cache …`, `pending
+  71dc9251-… Resendable`, `resent 71dc9251-…: replayed=True` (host `replayed 0.6 ms`), a new battle and buy OK, `Gold: 80 (rev 5)`,
+  `pending=0`; the folder is empty. Local store ledger of player `p_awbp6a0y6q41g3pev4mez7b3vg`: `identity.create_account`
+  `account_init` +100 gold ×1, `battle.end` +50 gold ×2 (run A's pending command and run B's new battle: the resend granted
+  nothing), `shop.buy` −60 ×2. (3) V9 Windows player: temporary `Assets/Probe016/{Probe016Runtime.cs, Editor/Probe016Build.cs}`
+  built with `-buildTarget Win64 -executeMethod Probe016Build.BuildWindows` (Mono, development, exit 0, 78 s) into the scratch
+  folder; the player (`-batchmode -nographics`, exit 0) recorded three 4 KiB entries (`[… 3 × {id}.pending 4227 B]`, write
+  problem none), reloaded 3 with a new store (load problem none), removed them (`[]`), `result=OK`. Probe folder and `.meta`
+  files deleted; `PC_RPAsset.asset`, `UniversalRenderPipelineGlobalSettings.asset`, `ProjectSettings.asset` restored with
+  `git checkout`; reopened with `-buildTarget Android -quit` (exit 0, `Targeting platform: Android`), no tracked file changed.
+  (4) default `smoke-build.ps1 … -ProjectPath …` exit 0 (464 s): `[smoke] result=Succeeded size=774120964 errors=0`,
+  `samples/SampleGame/KestrelDemo/Build/KestrelDemo.apk` 54 304 458 B, SHA-256 `8106e59d94ca83cf…`. `git status sdk/unity
+  samples` shows only the T063/T067 files (no `.meta` created: no new asset kept). SampleHost and proxy stopped; 5080 and 5092
+  refuse connections.
 - [ ] T069 [US6] **Manual / owner** device session, combined with 015 T058 (after T068; V9 on devices, plus 015's V8,
   V10, V11): one session covers both slices. Android — the agent provides the T068 APK and starts SampleHost with
   `tools/local/run-local.ps1 -Port 5080 -Lan` plus the 015 T051 forwarder; the **owner** installs the APK on a device on
@@ -1452,10 +1527,35 @@ describe them.
   Done when: a Note per platform here and the 015 results copied under 015 T058; or the release notes (016 and
   `docs/releases/v0.7.0.md`) list the session as pending with these exact steps (the tag waits for it). (FR-052,
   FR-092, V9)
+  Note (2026-11-04): **not done — owner session, combined with 015 T058; the tag waits for it.** The agent built the APK in T068
+  (`samples/SampleGame/KestrelDemo/Build/KestrelDemo.apk`, 54 304 458 B, SHA-256 `8106e59d94ca83cfd7efc64c1b03ff1763ab14cfef5e9cba568c0f601800b3cb`)
+  and left nothing running. Exact steps (PowerShell from the repository root; never `-Reset`, never port 5180):
+  0. The APK's scene serializes `serverUrl = http://localhost:5080/`. Set the `SampleGameClient` object's `serverUrl` to
+     `http://<PC LAN IP>:5092/` in the Editor (or the scene file), save, rebuild with `powershell -File
+     sdk/unity/ci/smoke-build.ps1 -Unity "D:\DevTools\Unity\Unity 6000.3.22f1\Editor\Unity.exe" -ProjectPath
+     "<abs>\samples\SampleGame\KestrelDemo"`, then `git checkout` the scene and the three settings files of T068 step 3.
+  1. Agent: `tools/local/run-local.ps1 -Port 5080 -Lan`; forwarder on all interfaces, port 5092 → 5080, pass mode: the T068
+     proxy `py -3 C:\Users\CPU12432-local\AppData\Local\Temp\claude\89c3b1457009b599\37a82586-bda6-4849-96d3-fe5091807bc6\scratchpad\t068proxy\dropproxy.py 5092 5080 0.0.0.0 <folder>\drop.flag` (session scratch, may be gone; recreate from this description) (drops battle-end responses only while `drop.flag`
+     exists; any logging proxy with that behaviour works; for 015 V8 log the request `Accept-Encoding` and the response
+     `Content-Encoding` of `/api/v1/config/get`). Allow port 5092 in the Windows firewall for the private network.
+  2. Owner, start 1 (fresh install: `adb install -r samples/SampleGame/KestrelDemo/Build/KestrelDemo.apk`, then open the app)
+     → `new player: True`, `config downloaded {v}`, `Gold: 90` (100 seed + 50 reward − 60), no crash.
+  3. Owner, start 2 (close and reopen) → `new player: False`, `config from cache {v}` (no `config/get` at the forwarder),
+     no `pending …` line.
+  4. Agent creates `drop.flag`; owner, start 3 → `EndBattle → pending {id}` (`File.Move` under IL2CPP).
+  5. Agent deletes `drop.flag`; owner, start 4 → `pending {id} Resendable`, `resent {id}: replayed=True`
+     (`EnumerateFiles` under stripping High); `adb shell run-as com.gameserver.kestreldemo ls files/gameserver-pending/local`
+     is empty.
+  6. Agent stops SampleHost and restarts it with `$env:GameServer__ConfigPath = "<scratch copy of samples\SampleHost\config
+     with potion_pack price 60 → 50>"` (never edit `samples/SampleHost/config`); owner, start 5 → `New config {w} available.`,
+     `config downloaded {w}` (015 replace path), `Buy → OK` at the new price.
+  Record per start: `Accept-Encoding` sent and the response compressed (015 V8), cache and pending folder behaviour, no
+  crash. iOS: the owner builds on macOS (no iOS module on this machine) with the same `serverUrl` edit and runs the same five
+  starts. Afterwards: stop SampleHost and the forwarder, `git checkout` the scene, copy the 015 results under 015 T058.
 
 ### Documentation (Vietnamese except the consumer guide; pages state "framework v0.7.0, chưa phát hành / unreleased")
 
-- [ ] T070 [US6] Consumer guide `docs/guides/consumer-guide.md` (after T022, T032, T046, T054, T062): new
+- [x] T070 [US6] Consumer guide `docs/guides/consumer-guide.md` (after T022, T032, T046, T054, T062): new
   `## 13. Login, account creation and command robustness` with one subsection per FR-060 bullet: 13.1 the login flow
   (flag, "the login sections are the boot read", lost response = `false`, durable onboarding in game state); 13.2
   account initializers (registration, the 4-aggregate budget, purity, failure = `INTERNAL` with log and metric, legacy
@@ -1467,10 +1567,27 @@ describe them.
   cross-slice BC ids written `016/BC-n`.
   Done when: every FR-060 bullet has a subsection; the examples compile (copied from tests); the stamp is present.
   (FR-004, FR-060, FR-062)
-- [ ] T071 [P] [US6] `docs/guides/module-authoring.md` and `templates/module/README.md` (after T066): initializer
+  Note: consumer guide (English): new `## 13. Login, account creation and command robustness` — 13.1 login flow (flag
+  rules incl. the lost response = `false`, onboarding in game state, "the login sections are the boot read" with the KestrelDemo
+  lines, typed login store failures), 13.2 account initializers (fixture code, registration, the 4-aggregate/2-claim budget,
+  purity, order, receipt only with effects, failure = `INTERNAL` with line and metrics, legacy accounts and the two ways out,
+  the kit call copied from `FixtureInitializerTests`), 13.3 degraded reads (codes table, the unavailable list, SDK marks and
+  the same-player rule, deploy order), 13.4 command limits (five keys with ranges and defaults, the cross rule and 1112, which
+  to raise and what it costs, the rejection and its line, the kit receipt check from `FixtureReceiptSizeTests`), 13.5 request
+  ids and the pending store (`NewRequestId`, `Options.PendingCommands`, Unity setup, resend after login over a copy, one
+  client per folder, max age vs `ReplayWindowHours`; snippets copied from KestrelDemo). §5.1 table: the former line 347 rows
+  now say `COMMAND_OUTPUT_TOO_LARGE` and the double checks the receipt; §5.1 points to 13.2; §10 points to 13.1/13.5; §11 step 5
+  gains the 016 steps with `016/BC-n` ids. Stamp "Matches framework 0.7.0 (unreleased)" kept. Examples are copied from the
+  fixture tests and KestrelDemo (compiled by the suite and the Unity runs). `DocumentedConfigurationKeysTests` green.
+- [x] T071 [P] [US6] `docs/guides/module-authoring.md` and `templates/module/README.md` (after T066): initializer
   registration, touches budget, purity rule, failure mode, the kit test.
   Done when: both describe the T066 example; stamp present. (FR-061, FR-062)
-- [ ] T072 [P] [US6] PCR platform `docs/pcr/platform.md` (after T054): §2 (creation transaction, rules before staging),
+  Note: `docs/guides/module-authoring.md`: §3 gains the size rule (`COMMAND_OUTPUT_TOO_LARGE`, kit check) and §4 a new
+  `### Trạng thái khởi đầu của tài khoản: account initializer` (registration, touches budget, purity, failure mode, receipt,
+  no backfill, kit test; names the template example, the fixture and the sample). `templates/module/README.md`: new step 6
+  (the template's commented example), later steps renumbered, the PCR step mentions initializers. Both keep the
+  "v0.7.0 (chưa phát hành)" stamp.
+- [x] T072 [P] [US6] PCR platform `docs/pcr/platform.md` (after T054): §2 (creation transaction, rules before staging),
   §3 (the size rejection replaces "vượt = lỗi lập trình (500)"), §4 (snapshot degradation, the API-10 exception, BC-3),
   §5 (the creation counts against the budget), §6 (version ahead → typed codes and degradation; deploy rule kept), §8 (the
   three codes), line 1061 (the kit now checks the receipt); new `## 22.` (limits table: five settings, two constants, the
@@ -1480,25 +1597,68 @@ describe them.
   reads `## 22.` too and asserts the five `GameServer:Commands:*` keys there.
   Done when: green; no section still says a newer document or an oversized receipt is a 500. (FR-028, FR-033, FR-061,
   US4-5)
-- [ ] T073 [P] [US6] PCR `docs/pcr/identity.md`, `economy.md`, `sample-game.md`, `gm.md` (after T046, T063): identity —
+  Note: `docs/pcr/platform.md`: header lists slice 016; §2 (creation transaction through `IAccountWriter`, "every commit rule
+  before the first staged write", `IAccountWriter` in the writers list), §3 (the size row: settings, `COMMAND_OUTPUT_TOO_LARGE`,
+  "exactly at the limit commits"), §4 (the API-10 exception, BC-3, login sections = boot read), §5 (the creation counts
+  against the budget), §6 (version ahead → 24/503, unreadable → 25/500, log line and metric; deploy rule kept), §8 (rows 23–25
+  and the details rule), §19 (the double now checks the receipt; `ForAccountInitializer`). New `## 22.`: limits table (five
+  settings, `MaxTouches`, `MaxClaimMarkersLimit`, the 64 KiB document budget, the player body limit — default, setting or
+  constant, range, cost, failure mode), the cross rule with **1112 = smallest `ReceiptMaxBytes` that starts**, the measured
+  example (scratch console over `ForAccountInitializer` + `CheckAccountCreation` with a 1-byte limit, real-length ids,
+  SampleHost config: 1 entry 1068 B, 2 → 1345, 11 → 3841, 12 → 4120, 55 → 16117, 56 → 16396; 277–279 B per entry; 11 fit 4096
+  and 55 fit 16384), the four metrics, the log lines (incl. the double line of a failed creation), the startup lines and
+  BC-1..BC-11. `DocumentedConfigurationKeysTests` reads `## 22.` (both theories) and the new
+  `The_limits_section_names_every_command_setting` asserts the five `GameServer:Commands:*` keys; green. No section still
+  says a newer document or an oversized receipt is a 500 (grep in T075).
+- [x] T073 [P] [US6] PCR `docs/pcr/identity.md`, `economy.md`, `sample-game.md`, `gm.md` (after T046, T063): identity —
   the flag definition, lost response, relation to `isNewUser`, creation through `IAccountWriter`, initializers, broken
   profile, login error mapping (BC-10); economy — grants from an initializer (source type, System actor in the ledger
   row); sample-game — the initializer, `account.json`, its rule; gm — `unreadable[]`, `details` and `unavailable` of the
   GM command response.
   Done when: each file has its section and stamp. (FR-005, FR-061, FR-062)
-- [ ] T074 [P] [US6] PCR `docs/pcr/unity-sdk.md` (after T062, T068): request ids (`NewRequestId`, the overload,
+  Note: `identity.md` new section (flag definition, lost response, `isNewUser`, creation through `IAccountWriter`,
+  initializers, login sections, broken profile, BC-10 mapping, BC-7 members); `economy.md` "Grant từ account initializer"
+  (operation, receipt id, System actor with `ActorId` = player in the ledger row, source type, ~278 B per entry);
+  `sample-game.md` (initializer, `account.json`, versions, the three rule lines, a new SampleHost player's state);
+  `gm.md` (`unreadable[]`, GM command `details` and `unavailable[]`, typed GM errors, additive only). Each file already
+  carries "Đúng với framework v0.7.0 (chưa phát hành)".
+- [x] T074 [P] [US6] PCR `docs/pcr/unity-sdk.md` (after T062, T068): request ids (`NewRequestId`, the overload,
   `CommandResult.RequestId`, `GameServerError.RequestId`); the pending store (container v1 and its version rule, one file
   per entry, the crash table, threading rule, the V8 numbers with their drive, the 23 h max age); unavailable sections
   (marks, the same-player rule); the three codes; "the login sections are a full snapshot"; manual check rows (T068,
   T069).
   Done when: every item present; stamp present. (FR-004, FR-045, FR-047, FR-061, FR-062)
-- [ ] T075 [US6] HTML pages, stamps and the US6 release-notes pass (after T070–T074): `docs/html/01-gioi-thieu.html`
+  Note: `docs/pcr/unity-sdk.md` header lists slice 016; new section before "Nghiệm thu": login (`IsNewPlayer`, "the login
+  sections are a full snapshot"), request ids (`NewRequestId`, the overload with the V1 binding facts, `CommandResult.RequestId`,
+  `GameServerError.RequestId` and `Client(…, requestId)`), the pending store (opt-in, record/remove/keep rules, statuses on the
+  server clock, the live-list note, container v1 fields and its version rule, one file per entry, temp/flush/move/replace,
+  load rules, Unity helper, threading rule, the crash table, the V8 numbers with their drives from T007 and T061, the 23 h max
+  age vs the 24 h window), unavailable sections (fields, marks, the same-player rule), the three codes, compatibility.
+  "Nghiệm thu" gains rows for T068 (Editor, Windows player, Android build: done) and T069 (devices: pending, owner). Stamp kept.
+- [x] T075 [US6] HTML pages, stamps and the US6 release-notes pass (after T070–T074): `docs/html/01-gioi-thieu.html`
   (login, starting state, limits), `docs/html/02-them-command.html` §6b (schema version: typed codes and degradation,
   not 500) and its limits text, `docs/html/03-deploy.html` where it lists `GameServer:Commands` settings, startup lines or
   metrics (Planning note 10); stamp "0.7.0 (chưa phát hành)" on every page and guide this slice touched; release notes
   draft — manual checks table and migration checklist updated.
   Done when: `grep` over `docs/` finds no touched page that still says a newer document or an oversized receipt answers
   500 (Note with the grep); every touched page carries the stamp. (FR-028, FR-061, FR-062, US6-2, FR-090)
+  Note: `docs/html/01-gioi-thieu.html` (§4.4 read failures and size limits, a "Login và trạng thái khởi đầu" paragraph, §4.11
+  request ids and the pending store, §6 design limits), `02-them-command.html` (step 9 inner list: typed read failures, the
+  size rejection, "every commit rule before the first write", receipt size; codes table rows for `COMMAND_OUTPUT_TOO_LARGE` and
+  24/25; §6b (b) version ahead → typed code and degradation, deploy rule kept; troubleshooting rows `:1113-1114` rewritten and a
+  version-ahead row), `03-deploy.html` (§9 metrics table: the four new metrics and the new codes; settings validation bullet
+  with the 1112 rule). The three pages' meta line now names branch `016-login-command` and keeps "v0.7.0 (chưa phát hành)";
+  tag balance checked with a parser (0 mismatches). Grep `(mới hơn code|newer than code).{0,80}(500|INTERNAL)|(vượt|over|
+  exceed|>).{0,40}(receipt|result|resultCompact|4 KiB|512 B).{0,60}(500|lỗi lập trình|INTERNAL)|lỗi lập trình \(500\)|Result of
+  '|Receipt of '` over `docs/`, `README.md`, `templates/` (without `docs/releases/`) → one hit, `02-them-command.html:1001`
+  (an uncatalogued *commit code* is still 500 `INTERNAL`: correct, unrelated). Release notes draft: new "Samples, fixture and
+  docs (US6)" section, the client snippet iterates a copy, migration steps 4 and 6 updated, manual checks T064/T068 done and
+  T069 pending (owner), owner confirmations unchanged, "Known before the tag" + the double log line (review), the live
+  `PendingCommands` list, the missing `smoke-build.ps1` pass-through and the PCR §8 gap (codes 21/22). Checkpoint: Debug and
+  Release 0 warnings; full suite in memory 2710 total / 2599 passed / 111 skipped / 0 failed and with
+  `GAMESERVER_TEST_STORE=File` the same 2710 / 2599 / 111 / 0 (`COUCHBASE_*` unset; +30 tests over the T062 checkpoint: 6
+  `SampleAccountInitializerTests`, 10 `SampleConfigRulesTests`, 3 × 2 seeded faults, 1 `ReceiptParityTests`, 3
+  `DocumentedConfigurationKeysTests`, 4 fixture). WireGen verify: all three configs exit 0.
 
 **Checkpoint**: the sample seeds from `account.json`, the fixture tests an initializer with the kit, KestrelDemo logs
 the flag and resends a pending command; the guides and PCRs describe the shipped behaviour.

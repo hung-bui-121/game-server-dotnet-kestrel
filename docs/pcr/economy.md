@@ -126,3 +126,12 @@ trong `EconomyModule.cs`, không member hidden; Unity `FrameworkSections.Wallet`
 
 `WireConformance` (TestKit) kiểm mapper mang mọi member không hidden lên wire và set mọi field proto
 (`tests/GameServer.Platform.Web.Tests/WireConformanceTests.cs`).
+
+## Grant từ account initializer (slice 016 — FG-015)
+
+`EconomyOperations.Grant`/`Debit` dùng được trong `IAccountInitializer` như trong command (initializer phải khai `wallet`/
+`inventory` trong `Touches`). Ledger entry đi theo receipt tạo tài khoản `identity.create_account` và được relay như outbox
+của command: `operation = identity.create_account`, `receiptId` = id receipt tạo tài khoản, `actorId` = id của player (actor
+`system` với `ActorId` = player id, nên row ledger và payload `actorId` đều là player), `sourceType` do initializer đặt (sample và
+game đầu tiên: `account_init`). Grant vượt `maxQuantity` hoặc id lạ làm hỏng việc tạo tài khoản (không tạo gì, login
+`INTERNAL`). Mỗi entry khoảng 278 byte trong receipt: ở `ReceiptMaxBytes` mặc định 4096 vừa khoảng 11 entry (PCR platform §22).

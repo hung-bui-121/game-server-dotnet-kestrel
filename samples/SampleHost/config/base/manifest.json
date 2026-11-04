@@ -5,7 +5,8 @@
     "resources.json",
     "shop.json",
     "battle.json",
-    "iap.json"
+    "iap.json",
+    "account.json"
   ],
   "clientVisible": [
     "counter.json",

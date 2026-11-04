@@ -246,6 +246,9 @@ internal static class SeededFaults
             Edit(s, "battle.json", r => r["stages"]![1]!["xp"] = "70");
             return "[module sample.game] config battle.json row 2: 'xp' must be an integer of at least 0, found \"70\". Fix: give every stage an integer xp of at least 0.";
         },
+        ["account negative"] = s => Account(s, "-1"),
+        ["account string"] = s => Account(s, "\"100\""),
+        ["account over maxQuantity"] = s => Account(s, "1000000001"),
         [GameRule] = s =>
         {
             Edit(s, "resources.json", r => r["resources"]![0]!["kind"] = "item");
@@ -315,6 +318,18 @@ internal static class SeededFaults
             GameHttp.FullGame(builder);
             builder.AddModule(module);
         };
+
+    /// <summary>Adds <c>account.json</c> with the raw JSON value <paramref name="startingGold"/> (slice 016 T063) and returns the rule line of §4.3.</summary>
+    private static string Account(SeededConfig seeded, string startingGold)
+    {
+        seeded.With(SampleAccountInitializer.ConfigFile, $"{{\"startingGold\": {startingGold}}}").Manifest(m =>
+        {
+            m["files"]!.AsArray().Add(SampleAccountInitializer.ConfigFile);
+            return m;
+        });
+        return "[module sample.game] config account.json: startingGold must be an integer from 0 to 1000000000 (the maxQuantity of gold in " +
+            $"resources.json); found {startingGold}. Fix: set the gold a new account starts with.";
+    }
 
     public static void Edit(SeededConfig seeded, string file, Action<JsonNode> edit)
     {

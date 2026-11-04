@@ -1,10 +1,14 @@
+using System.Globalization;
 using System.Text.Json;
 using GameServer.Config;
 using GameServer.Modules.Economy;
 
 namespace SampleGame;
 
-/// <summary>Content rules of <c>battle.json</c> and <c>shop.json</c> (FR-070, data-model §2.2), checked at every start (FG-018).</summary>
+/// <summary>
+/// Content rules of <c>battle.json</c>, <c>shop.json</c> (FR-070, data-model §2.2) and the optional <c>account.json</c> (slice 016
+/// FR-050), checked at every start (FG-018).
+/// </summary>
 public static class SampleGameConfigRules
 {
     /// <summary>Longest battle a stage may declare (one week).</summary>
@@ -21,6 +25,9 @@ public static class SampleGameConfigRules
 
     /// <summary>Rule <c>sample.shop</c>: every item has a price and a grant naming resources of <c>resources.json</c>.</summary>
     public static ConfigRule Shop { get; } = new("sample.shop", CheckShop);
+
+    /// <summary>Rule <c>sample.account</c>: <c>startingGold</c> is an integer from 0 to the gold maxQuantity of <c>resources.json</c>.</summary>
+    public static ConfigRule Account { get; } = new("sample.account", CheckAccount);
 
     private static void CheckBattle(ConfigContext context)
     {
@@ -110,6 +117,59 @@ public static class SampleGameConfigRules
         }
     }
 
+    /// <summary>
+    /// The line of errors-and-report-lines §4.3. The cap is checked only against a well-formed gold row: a fault of
+    /// <c>resources.json</c> itself is reported once, by the economy rule (as <see cref="ResourceReferences"/> reads it).
+    /// </summary>
+    private static void CheckAccount(ConfigContext context)
+    {
+        const string fix = "set the gold a new account starts with";
+        var problems = context.Problems;
+        var root = context.Json(SampleAccountInitializer.ConfigFile);
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            problems.Error(ConfigLocation.WholeFile, $"the file must be an object, found {Quote(root)}", "write {\"startingGold\": …}");
+            return;
+        }
+
+        var gold = GoldRow.Read(context);
+        if (!gold.IsChecked)
+        {
+            return;
+        }
+
+        if (!gold.IsDefined)
+        {
+            problems.Error(
+                ConfigLocation.WholeFile,
+                $"startingGold grants '{SampleAccountInitializer.Resource}', which is not defined in resources.json",
+                "add it to resources.json or remove account.json");
+            return;
+        }
+
+        if (gold.MaxQuantity is not { } max)
+        {
+            return;
+        }
+
+        var found = root.TryGetProperty("startingGold", out var value) ? value : default;
+        if (!(found.ValueKind == JsonValueKind.Number && found.TryGetInt64(out var amount) && amount >= 0 && amount <= max))
+        {
+            problems.Error(
+                ConfigLocation.WholeFile,
+                $"startingGold must be an integer from 0 to {max.ToString(CultureInfo.InvariantCulture)} (the maxQuantity of gold in resources.json); found {Quote(found)}",
+                fix);
+        }
+    }
+
+    /// <summary><c>"abc"</c>, <c>-1</c>, <c>1.5</c>; objects and arrays by kind, an absent value as <c>nothing</c>.</summary>
+    private static string Quote(JsonElement value) => value.ValueKind switch
+    {
+        JsonValueKind.Undefined => "nothing",
+        JsonValueKind.Object or JsonValueKind.Array => value.ValueKind.ToString().ToLowerInvariant(),
+        _ => value.GetRawText(),
+    };
+
     private static void CheckShop(ConfigContext context)
     {
         var problems = context.Problems;
@@ -144,5 +204,40 @@ public static class SampleGameConfigRules
                 resources.CheckLine(grant, "quantity", grantAt, problems, capAtMaxQuantity: true, "correct the grant", UnknownFix);
             }
         }
+    }
+}
+
+/// <summary>
+/// The gold row of <c>resources.json</c>, read leniently: not checked when the file is absent or has no <c>resources</c> array, and
+/// no cap when the first gold row has no valid maxQuantity (both are faults the economy rule reports).
+/// </summary>
+internal readonly record struct GoldRow(bool IsChecked, bool IsDefined, long? MaxQuantity)
+{
+    public static GoldRow Read(ConfigContext context)
+    {
+        if (!context.Config.HasFile(ResourceCatalog.ConfigFile))
+        {
+            return default;
+        }
+
+        var root = context.Json(ResourceCatalog.ConfigFile);
+        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("resources", out var rows) || rows.ValueKind != JsonValueKind.Array)
+        {
+            return default;
+        }
+
+        foreach (var row in rows.EnumerateArray())
+        {
+            if (row.ValueKind == JsonValueKind.Object
+                && row.TryGetProperty("id", out var id)
+                && id.ValueKind == JsonValueKind.String
+                && id.GetString() == SampleAccountInitializer.Resource)
+            {
+                var hasMax = row.TryGetProperty("maxQuantity", out var max) && max.ValueKind == JsonValueKind.Number && max.TryGetInt64(out var value) && value >= 1;
+                return new GoldRow(true, true, hasMax ? max.GetInt64() : null);
+            }
+        }
+
+        return new GoldRow(true, false, null);
     }
 }

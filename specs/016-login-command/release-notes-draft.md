@@ -2,7 +2,7 @@
 
 Framework `0.7.0` (unreleased). Input of `docs/releases/v0.7.0.md` (T083), which merges the drafts of slices 013, 014, 015 and
 016 into one round note (cross-slice ids written `0NN/BC-n`). Started in T002 (2026-11-04, framework `6054a04`); extended
-by the story checkpoints T022, T032, T046, T054, T062 and T075; final pass in T076. The release date, the restamp of the
+by the story checkpoints T022, T032, T046, T054, T062 and T075 (done 2026-11-04); final pass in T076. The release date, the restamp of the
 pages marked "chưa phát hành", the tag and any push are a separate round-close step, not part of this slice.
 
 **Fixed:** FG-013 (the login says whether it created the player; its sections are the client's boot read), FG-015 (a new
@@ -188,7 +188,7 @@ members; no existing field changes meaning (API-03); the Unity package stays `0.
   };
   var client = new GameServerClient(options, new UnityWebRequestTransport());
   await client.LoginGuestAsync(localId, secret);
-  foreach (var pending in client.PendingCommands)
+  foreach (var pending in new List<PendingCommand>(client.PendingCommands))   // a copy: the live list changes below
   {
       if (client.StatusOf(pending) == PendingCommandStatus.Resendable)
       {
@@ -203,6 +203,35 @@ members; no existing field changes meaning (API-03); the Unity package stays `0.
   var requestId = GameServerClient.NewRequestId();                            // optional: keep it in game state first
   var result = await client.SendCommandAsync(GameRoutes.BattleEnd, request, BattleEndResult.Parser, requestId);
   ```
+
+## Samples, fixture and docs (US6)
+
+- **Sample game seeds starting gold (FR-050, D12 changed).** New account initializer `sample.starting_gold`
+  (`samples/SampleGame/SampleGame/SampleAccountInitializer.cs`, touches `wallet`) grants `startingGold` gold with ledger source
+  `account_init`, read from the new optional, server-only `account.json`; rule `sample.account` (`startingGold` an integer from
+  0 to the gold `maxQuantity`; line `[module sample.game] config account.json: startingGold must be an integer from 0 to
+  {maxQuantity} (the maxQuantity of gold in resources.json); found {value}. Fix: set the gold a new account starts with.`).
+  `samples/SampleHost/config/base/account.json` = `{ "startingGold": 100 }`, listed in `files`, not client-visible:
+  SampleHost server config version `sample-1+8a37f29ee2dc` → `sample-1+53ca1d498d7a` (once), client version
+  `sample-1+9b25b8b6bc0b` unchanged; the startup line now says `6 files (4 client-visible …), 5 rules`. `tests/Shared/config`
+  has no `account.json`, so the full-game suites are unchanged; the hosts on the real SampleHost config needed no assertion
+  change (T064).
+- **Consumer fixture** registers `fixture.welcome` (welcome note in the hidden `notes` aggregate, cut to `notes.json`
+  `maxLength`) and tests it with the kit (`FixtureInitializerTests`) and the receipt check (`FixtureReceiptSizeTests`: host and
+  kit measure the same `fixture.save` receipt; one byte under it gives the runner's receipt line).
+- **Template** gains a commented initializer example (registration, touches budget, purity, failure, kit test).
+- **KestrelDemo** logs `new player: {IsNewPlayer}`, boots on the login sections, keeps commands in
+  `UnityPendingCommandStore.Create("local")`, resends the `Resendable` entries after login (`resent {id}: replayed=…`),
+  discards the others, and sends battle end with `GameServerClient.NewRequestId()` (an unknown outcome logs `EndBattle → pending
+  {id}`). `SmokeBuild.EndToEnd` accepts `-e2eDevice <name>` to keep one guest device across runs (PlayerPrefs).
+- **Docs:** consumer guide §13 (login flow, account initializers, degraded reads, command limits, request ids and the pending
+  store; §5.1 table, §10 pointer and §11 bump steps updated); module-authoring §3/§4 and the template README; PCR platform §2,
+  §3, §4, §5, §6, §8, §19 and the new §22 (limits table, measured receipt example, metrics, log and startup lines,
+  BC-1..BC-11); PCR identity, economy, sample-game, gm and unity-sdk; HTML pages 01, 02 (§3 step 9, codes table, §6b,
+  troubleshooting) and 03 (metrics, settings validation). Every touched page keeps the "0.7.0 (chưa phát hành / unreleased)"
+  stamp.
+- **Measured receipt sizes (PCR platform §22):** a creation receipt with the sample grant is 1068 B; each further ledger entry
+  adds 277–279 B; 11 entries fit 4096 B (3841 B; 12 = 4120 B) and 55 fit 16384 B (16117 B; 56 = 16396 B).
 
 ## Breaking changes
 
@@ -248,8 +277,10 @@ colon (`FRAMEWORK-GAP FG-NNN`). Verified in a temp clone by T078.
    `FRAMEWORK-GAP: FG-016`): delete the file-store measurement of result and receipt sizes (an overflow is now
    `COMMAND_OUTPUT_TOO_LARGE`, BC-1); the test becomes "a first login seeds the account once" (concurrent logins, lost
    response), and `InitAccountHandlerTests.cs` runs the initializer through `CommandContextDouble.ForAccountInitializer`
-   and `CheckAccountCreation()`. Raise `GameServer:Commands:ReceiptMaxBytes` if P2 chests need more than about 11 ledger
-   entries (BC-2: the value must stay in 1024..65536).
+   and `CheckAccountCreation()` (consumer guide §13.2, fixture `FixtureInitializerTests`). Raise
+   `GameServer:Commands:ReceiptMaxBytes` if P2 chests need more than about 11 ledger entries (measured 277–279 B per entry,
+   PCR platform §22; BC-2: the value must stay in 1024..65536 and, with the cross rule, at least 1112) and check the receipt
+   with `CheckCommit(outcome, encodeResult)` (fixture `FixtureReceiptSizeTests`).
 5. **Client boot on the login sections (FG-013, BC-3, BC-8).**
    - `Assets/MadProject/Scripts/Online/OnlineSession.cs:200` (marker `FRAMEWORK-GAP FG-013`: login sections ignored, boot
      reads the snapshot) and `PlayerReadModel.cs:24` (marker `FRAMEWORK-GAP FG-013`: `IsReady` only after that snapshot):
@@ -262,8 +293,9 @@ colon (`FRAMEWORK-GAP FG-NNN`). Verified in a temp clone by T078.
    an unknown outcome fails the boot, RETRY re-runs it): P2 commands pass `GameServerClient.NewRequestId()` (or `null`) to
    `SendCommandAsync(route, request, parser, requestId)`; set `Options.PendingCommands =
    UnityPendingCommandStore.Create(environmentName)` where the client is created (`OnlineSession.cs:83`, one folder per
-   environment like the 015 config cache); after login, list `PendingCommands`, resend the `Resendable` ones and discard
-   the others.
+   environment like the 015 config cache); after login, list a copy of `PendingCommands`, resend the `Resendable` ones and
+   discard the others (consumer guide §13.5 and KestrelDemo `SampleGameClient.cs` show the loop). Keep
+   `PendingCommandMaxAge` (23 h) below `GameServer:Commands:ReplayWindowHours` (24 h).
 7. **Remove the six markers:** server `InitAccountHandler.cs:16` (FG-015), `InitAccountHandler.cs:17` (FG-022),
    `AccountInitTests.cs:124` (FG-016); client `OnlineSession.cs:200` (FG-013), `PlayerReadModel.cs:24` (FG-013),
    `OnlineSession.cs:276` (FG-022). FG-029 has no marker; its rule in `docs/pcr/game.md` (deploy code before writing a new
@@ -290,9 +322,10 @@ Compatibility (contracts/wire-changes.md §5):
 | Mixed rollout (old and new instances) | old instances never send the new fields; `is_new_player` from an old instance is `false` (presentation flag only, D1) |
 | GM frontend | additive JSON members only |
 
-## Decisions awaiting owner override
+## Decisions awaiting owner override (owner confirmations)
 
-Each was applied as an architect decision; owner confirmation pending.
+Each was applied as an architect decision; owner confirmation pending. Status unchanged at T075 (2026-11-04): none answered;
+the docs describe the applied decision and name the fallback where one exists (BC-11).
 
 | # | Decision | Status |
 | --- | --- | --- |
@@ -325,9 +358,9 @@ Each was applied as an architect decision; owner confirmation pending.
 | --- | --- | --- |
 | T003 | V1 overload binding with a stub in the KestrelDemo Editor (Unity 6000.3.22f1) | done 2026-11-04 (agent-run, see V1) |
 | T060 | package `Runtime` compiled outside Unity (C# 9, netstandard2.1) against Unity 6000.3.22f1 `UnityEngine.CoreModule` + `UnityWebRequestModule`, with and without `UNITY_IOS` | done 2026-11-04: 0 warnings, 0 errors both ways |
-| T064 | the real SampleHost config tests after `account.json` lands | pending |
-| T068 | Editor compile, Windows player and Android IL2CPP build of KestrelDemo with the real package; pending store in the Editor and the Windows player | pending |
-| T069 | Android device and iOS build + device run (with the pending 015 T058 session) | pending (owner) |
+| T064 | the real SampleHost config tests after `account.json` lands | done 2026-11-04: `Sample.Counter.Tests`, `SampleGame.Tests`, Architecture, Client and Platform.Web suites green with no assertion change; Couchbase `SampleHostFlavorTests` skip without `COUCHBASE_CONNSTR` (they log in no player, T009) |
+| T068 | Editor compile, Windows player and Android IL2CPP build of KestrelDemo with the real package; pending store in the Editor and the Windows player | done 2026-11-04 (agent-run, Unity 6000.3.22f1): `-CompileOnly` 0 `error CS`/`warning CS`; run A through a dropping proxy `new player: True`, `EndBattle → pending {id}`, one `{id}.pending` file; run B `pending {id} Resendable`, `resent {id}: replayed=True`, folder empty, one battle reward for that command; Windows player probe recorded, reloaded and removed three entries; Android APK `Build/KestrelDemo.apk` built (IL2CPP arm64, stripping High, 0 errors) |
+| T069 | Android device and iOS build + device run (with the pending 015 T058 session) | pending (owner); APK built 2026-11-04, five starts listed in tasks.md T069; the tag waits for it |
 | T077 | fresh reviewer walkthrough of the consumer guide | pending |
 | T078 | first-consumer check in a temp clone of zh-pvp-server | pending |
 
@@ -339,11 +372,21 @@ Each was applied as an architect decision; owner confirmation pending.
   scheme's handler escapes `ExceptionMiddleware` and the request log (raw 500). Slice 016 makes the broken-profile path
   safe in the handler (T040); other handler exceptions (for example a store timeout in session validation) keep the
   pre-existing behaviour on such hosts. Hosts with Identity and GM, or with test authentication, are not affected.
-- 015 T058 (Android/iOS device run) is still open and gates the tag.
+- 015 T058 (Android/iOS device run) is still open and gates the tag; it is combined with 016 T069 (five starts, owner).
 - **`ReceiptMaxBytes` lower bound (T050).** The documented range 1024..65536 and the cross rule together make 1112 the
   smallest value that starts (with `ResultCompactMaxBytes` = 64); a value of 1024..1111 gets only the cross line. Both
-  lines are contract texts and were kept; PCR platform §22 should say so (T072).
-- **Creation failure logging (T026).** A failing initializer writes its one `GameServer.Accounts` line; the 500 `INTERNAL` the
-  login answers is also logged by the error middleware as `Request failed with INTERNAL: Account creation of player {id}
-  failed ({result}, initializer {name}).` (no exception message, no inner exception). Ops see two lines for one failed
-  creation: the creation line carries the cause.
+  lines are contract texts and were kept; PCR platform §22 says so (T072).
+- **Failed account creation logs two lines (T026, for the tech-lead review).** The writer's `GameServer.Accounts` Error line
+  (the cause) and the error middleware's `Request failed with INTERNAL: Account creation of player {id} failed ({result},
+  initializer {name}).` Kept as is; the review decides whether the middleware line should be suppressed with the read-failure
+  "reported" marker (PCR platform §22 documents both).
+- **`GameServerClient.PendingCommands` is the store's live list (found by T067).** `foreach` over it while calling
+  `ResendPendingAsync` or `DiscardPendingCommand` throws `InvalidOperationException: Collection was modified` at the next step,
+  even with one entry (checked with `InMemoryPendingCommandStore` in a scratch console). KestrelDemo, consumer guide §13.5,
+  PCR unity-sdk and the snippet above iterate a copy. A fix in the SDK (return a snapshot from `PendingCommands`/`Entries`) is
+  left to the review: it changes no signature.
+- **`smoke-build.ps1` has no `-E2EDevice` pass-through.** The `-e2eDevice` switch of `SmokeBuild.EndToEnd` is a Unity
+  command-line argument; T068 ran those two E2E runs with `Unity.exe … -executeMethod KestrelDemoBuild.EndToEnd -e2eDevice t068`
+  directly (the script's own E2E command line plus the switch), because T067/T068 allow changes to the two KestrelDemo files
+  only.
+- **PCR platform §8 still lacks codes 21 `CSRF_FAILED` and 22 `METHOD_NOT_ALLOWED`** (pre-existing; T072 added only 23–25).

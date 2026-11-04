@@ -91,6 +91,25 @@ public static class TemplateModuleDefinition
         // it in ConfigureServices (an undeclared catalog stays lazy and its faults surface on the first request). The file is
         // optional, so the build runs without it too and must return an empty catalog then, here with MyCatalog (your catalog type):
         // ConfigCatalogs = [ConfigCatalogDeclaration.Of(c => c.Config.HasFile(ConfigFile) ? MyCatalog.Load(c.Config) : MyCatalog.Empty, ConfigFile)],
+
+        // The starting state of a new account (FG-015): an IAccountInitializer runs once per account, in the transaction that
+        // creates it, here with MyStartingState (your initializer type, `using GameServer.Accounts;`):
+        //   public sealed class MyStartingState : IAccountInitializer
+        //   {
+        //       public ValueTask<ErrorCode?> InitializeAsync(ICommandContext context)
+        //       {
+        //           context.Set(TemplateModuleDefinition.AggregateId, new TemplateState { Points = 10 });
+        //           return ValueTask.FromResult<ErrorCode?>(null);
+        //       }
+        //   }
+        // - Touches: the aggregates it may read and write, never "profile". profile + every initializer's touches is at most 4
+        //   aggregates, and every initializer's claim markers together at most 2 (checked at startup, one line per fault).
+        // - Pure over the context, like a handler: the transaction may run it several times; no I/O, clock or random of its own.
+        // - A returned code or a throw fails the creation: nothing is written, the login answers INTERNAL with one log line naming
+        //   the initializer, and the next login retries. Accounts created before the registration are never seeded.
+        // - Test it host-free: CommandContextDouble.ForAccountInitializer("template.starting_state", modules) then
+        //   CheckAccountCreation() (consumer guide §13.2).
+        // AccountInitializers = [AccountInitializerRegistration.Of<MyStartingState>("template.starting_state", [AggregateId])],
     };
 }
 

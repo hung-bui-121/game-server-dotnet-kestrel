@@ -7,8 +7,9 @@ Phiên bản: 0.7.0 (slice 001 + sửa sau review + slice 002 identity + slice 0
 slice 010 lease job và xoá tài khoản, 2026-10-30 — mục 16; slice 011 môi trường theo flavor, file store, setting Couchbase,
 `--provision`, 2026-10-30 — mục 17; slice 012 analytics login và payment, 2026-10-31 — mục 18; slice 013 consumer
 readiness, 2026-11-03 — mục 19; slice 014 wire contract, 2026-11-03 — mục 20 và `RouteName` ở mục 13; slice 015 game config,
-2026-11-04 — mục 21, nén `GetConfig` ở mục 1 và 9, metric/readiness ở mục 13, `IStartupCheck` ở mục 17). Đúng với framework
-v0.7.0 (chưa phát hành / unreleased).
+2026-11-04 — mục 21, nén `GetConfig` ở mục 1 và 9, metric/readiness ở mục 13, `IStartupCheck` ở mục 17; slice 016 login và
+độ bền command, 2026-11-04 — mục 22, transaction tạo tài khoản ở mục 2, giới hạn ở mục 3 và 5, đọc suy giảm ở mục 4 và 6, ba mã ở
+mục 8, kit ở mục 19). Đúng với framework v0.7.0 (chưa phát hành / unreleased).
 
 ## 1. Limits và timeout theo nhóm endpoint (vận hành — API-06, PERF-04)
 
@@ -40,7 +41,16 @@ Budget tổng = giá trị × số instance.
   ≈ 1 RTT mà không cần get lại trước khi ghi.
 - Conflict: Couchbase chỉ phát hiện **write-write**; document chỉ đọc (`Reads`) có thể đổi trong lúc transaction
   chạy (read skew). Store in-memory mô phỏng đúng như vậy.
-- Mọi ghi `pa_*` và `rcpt::*` chỉ qua `ICommandRunner` / `IPlayerAggregateWriter` / `IAccountPurgeWriter` (purge, mục 16;
+- **Tạo tài khoản (slice 016, FG-013, FG-015):** mọi login ghi profile qua `IAccountWriter` (`GameServer.Platform.Commands`);
+  mỗi attempt tự quyết "tạo hay cập nhật" từ cái nó đọc, với `CommandContext` mới. Login đầu tiên không thấy profile ghi trong
+  **một** transaction: profile + aggregate do account initializer ghi + claim marker của chúng + receipt `identity.create_account`
+  (chỉ khi initializer có hiệu ứng; actor `system`, actor id = player, request id ngẫu nhiên mỗi lần gọi login). Login trả
+  `is_new_player = true` chỉ khi attempt đã commit là attempt tạo. Initializer lỗi → không ghi gì, login 500 `INTERNAL`.
+- **Mọi luật commit chạy trước lần ghi staged đầu tiên** (runner và account writer, slice 016 FG-016): handler → code → kích
+  thước result → phát hiện thay đổi từng touch, dựng document và `AGGREGATE_TOO_LARGE` → audit → dựng receipt → kích thước receipt →
+  chỉ khi đó mới stage aggregate, claim và receipt. Run bị từ chối không dựa vào rollback của store (VERIFY V2: store ném lại đúng
+  exception của body, không bọc).
+- Mọi ghi `pa_*` và `rcpt::*` chỉ qua `ICommandRunner` / `IAccountWriter` (login, slice 016) / `IPlayerAggregateWriter` / `IAccountPurgeWriter` (purge, mục 16;
   arch test: trong `GameServer.Platform` chỉ namespace `Commands`, `Aggregates`, `Persistence`, `Privacy` dùng
   `ITransactionContext`). Ngoại lệ: các cờ
   outbox của receipt **đã commit** (`outboxPending`, `outboxAttempts`, `outboxNextAttemptAtUtc`,
@@ -70,7 +80,7 @@ Budget tổng = giá trị × số instance.
 | Replay khác body | 409 `IDEMPOTENCY_PAYLOAD_MISMATCH` |
 | Ngoài window | như request mới; receipt cũ được thay bằng receipt mới |
 | Commit không rõ | 503 `COMMIT_UNKNOWN_RETRY` + `retry_after_ms`; retry cùng bytes |
-| Receipt / resultCompact | ≤ 4 KiB / ≤ 512 B; vượt = lỗi lập trình (500) |
+| Receipt / resultCompact | ≤ `ReceiptMaxBytes` (4096) / ≤ `ResultCompactMaxBytes` (512) (setting, mục 22); vượt → từ chối nghiệp vụ `COMMAND_OUTPUT_TOO_LARGE` (HTTP 200, `details` `part`/`bytes`/`limit`), không commit, không receipt; đúng bằng giới hạn thì commit (slice 016, BC-1) |
 | Lookup | `GET /api/v1/player/receipts/{receiptId}` — chỉ actor sở hữu; actor khác nhận 404 |
 | Guard (`ICommandGuard`, ví dụ ban theo nhóm command) | chỉ chặn lần thực thi mới; retry của command đã commit vẫn replay |
 | Commit kèm mã nghiệp vụ | `CommandOutcome.Commit(result, code)`: `code` phải có trong catalog (core hoặc ErrorCodeSet của một module đã đăng ký, đúng instance đã khai) và có HTTP 200; state + receipt được ghi, `resultCode = code`, HTTP 200; replay trả lại đúng mã. Mã ngoài catalog, mã trùng tên nhưng khác mã đã khai, hoặc mã có HTTP ≠ 200 = lỗi lập trình: 500 `INTERNAL`, không ghi gì (API-11). Receipt cũ có mã ngoài catalog: replay trả `OK` + log Warning |
@@ -83,15 +93,37 @@ Section ≡ player aggregate `ClientVisible`. `rev` tăng 1 cho mỗi commit là
 đổi giữ `rev` và không có trong `updates`. Document chưa tồn tại = state mặc định, `rev = 0`. Snapshot đọc
 ngoài transaction, song song, nhất quán per aggregate (không chéo aggregate).
 
+**Ngoại lệ của API-10 (slice 016, FG-029, BC-3):** snapshot và login không còn luôn chứa mọi section client-visible. Aggregate
+không đọc được (`AGGREGATE_VERSION_AHEAD` hoặc `AGGREGATE_UNREADABLE`, mục 6, 8) bị bỏ khỏi `sections` — không bao giờ gửi với
+payload rỗng — và liệt kê trong `unavailable_sections` (`{id, code, code_number}`, theo thứ tự id); HTTP vẫn 200 và mọi section
+khác byte-identical với lần đọc không hỏng. Áp dụng cho snapshot (mọi section hoặc danh sách chỉ định), login (aggregate không
+phải `profile`), replay command đã commit, response command khi wire mapper ném sau commit (commit vẫn giữ) và GM player view
+(`unreadable[]`). Command chạm hoặc đọc aggregate hỏng trả error envelope có mã trước handler và không ghi gì. `profile` hỏng làm
+login và mọi request đã xác thực trả mã đó. Login sections = toàn bộ section client-visible kèm `rev`: client boot trên đó, không
+cần snapshot thứ hai.
+
 ## 5. Ngân sách aggregate (semantic — DAT-09)
 
 ≤ 16 aggregate/game; `Touches` 1..4; marker ≤ 2. Kích thước document: cảnh báo ≥ 32 KiB
 (`aggregate_size_warnings_total`), cứng > 64 KiB → `AGGREGATE_TOO_LARGE` (HTTP 200), rollback toàn command.
 
+Tạo tài khoản (slice 016) tính như một command: `profile` + hợp `Touches` của mọi account initializer ≤ 4
+(`CommandDescriptor.MaxTouches`), tổng claim marker ≤ 2, kiểm khi startup (BC-9); kích thước aggregate và receipt kiểm bằng cùng
+luật trước khi ghi. `GameServer:Commands:MaxAggregatesPerGame` nằm trong 1..16 (mục 22).
+
 ## 6. Schema version (semantic — DAT-02)
 
 Upgrader chain per aggregate (đủ một upgrader cho mỗi bước); nâng lười khi đọc; ghi lại ở commit kế tiếp làm
-aggregate đổi; `aggregate_upgrades_total`. Document có `schemaVersion` mới hơn code → 500 `INTERNAL`.
+aggregate đổi; `aggregate_upgrades_total`. Document có `schemaVersion` mới hơn code → `AGGREGATE_VERSION_AHEAD` (24, HTTP 503,
+retryable, `retry_after_ms = 1000`); upgrader thiếu hoặc ném, field envelope sai kiểu, `state` thiếu/`null`/không phải object JSON
+hoặc không deserialize được → `AGGREGATE_UNREADABLE` (25, HTTP 500). `details` chỉ có `aggregate`, exception không có inner
+exception. Nơi đọc suy giảm (mục 4) bỏ section và liệt kê nó; nơi ghi (command) trả mã (slice 016, BC-4, BC-5). Mỗi lần đọc lỗi:
+một dòng category `GameServer.Aggregates` (Warning cho `version_ahead`, Error cho lý do khác; không có nội dung state hay message
+exception) và `aggregate_read_failures_total{aggregateId, reason}`.
+
+**Luật deploy giữ nguyên:** deploy code đọc được `schemaVersion` mới lên mọi instance **trước** khi bất kỳ instance nào ghi nó.
+Suy giảm chỉ giữ cho các section khác và login chạy trong khoảng deploy; cảnh báo theo
+`aggregate_read_failures_total{reason="version_ahead"}`.
 
 ## 7. Outbox (semantic — JOB-02, OPS-05)
 
@@ -126,6 +158,14 @@ idempotent theo `entryId`; projection mặc định Insert-if-absent `<kind>::<e
 | 18 | SESSION_REPLACED | 401 | no |
 | 19 | IDENTITY_CONFLICT | 409 | no |
 | 20 | SWITCH_ACCOUNT | 409 | no |
+| 23 | COMMAND_OUTPUT_TOO_LARGE | 200 | no |
+| 24 | AGGREGATE_VERSION_AHEAD | 503 | yes |
+| 25 | AGGREGATE_UNREADABLE | 500 | no |
+
+Slice 016: `COMMAND_OUTPUT_TOO_LARGE` là từ chối nghiệp vụ (`details` `part` = `result`|`receipt`, `bytes`, `limit`; mục 3, 22);
+`AGGREGATE_VERSION_AHEAD` (`retry_after_ms = 1000`) và `AGGREGATE_UNREADABLE` có `details` `aggregate` (mục 4, 6).
+`CommandResponse.details` (field 11) và `details` của response GM command mang `details` của mọi từ chối HTTP 200, kể cả mã của
+module (BC-11).
 
 Dải: core 0–999; module khai `ErrorCodeSet(rangeStart, rangeEnd)`; trùng tên/số/chồng dải → startup fail.
 
@@ -1057,8 +1097,11 @@ bằng của runner với cùng receipt id (test conformance). `Writes` như run
 không phải là ghi. `CheckCommit(outcome)` trả đúng thông báo commit-rule của runner (dùng chung `CommitRules`): code commit
 không có trong catalog hoặc ≠ HTTP 200, aggregate ghi vượt `HardBytes` (runner trả `AGGREGATE_TOO_LARGE`; envelope đo với
 GameId/EnvironmentId của actor, mặc định `test`/`test`), luật audit GM; `CheckCommit(outcome, encodeResult)` thêm giới hạn
-resultCompact (`ResultCompactMaxBytes`, giới hạn = mặc định framework hoặc `WithCommandSettings`). **Không** kiểm kích thước
-receipt (`ReceiptMaxBytes`): receipt chứa body hash, config version và encoding của host, double không có.
+resultCompact (`ResultCompactMaxBytes`, giới hạn = mặc định framework hoặc `WithCommandSettings`) và, từ slice 016 (FG-016,
+FR-034), kích thước receipt (`ReceiptMaxBytes`) đo bằng chính receipt builder của runner từ actor, request id, receipt id, config
+version, `At`, revision đã seed (`Seed(id, state, rev)`), claim và outbox; body hash của request là placeholder 64 ký tự (cùng độ
+dài SHA-256 hex của runner). Cùng giá trị cấu hình như host → cùng kích thước (VERIFY V7, `ReceiptParityTests`). Account
+initializer: `ForAccountInitializer(name, modules)` + `CheckAccountCreation()` (luật của account writer).
 
 ### Luật Dev (semantic — FG-010, FR-001..FR-008)
 
@@ -1504,3 +1547,116 @@ thì không thử, host không start); khi player API không map: `… client-vi
 | BC-10 | Startup check được tạo từ đăng ký ở mỗi lần start, trong isolation riêng; không phải singleton, không dispose. Check chỉ đăng ký trong container của bên thứ ba (Autofac `ConfigureContainer`) không chạy | không có với check stateless | giữ check stateless, không disposable; đăng ký mọi check trong `IServiceCollection` |
 
 Bước chuyển đầy đủ: release notes `v0.7.0` (bản nháp `specs/015-config/release-notes-draft.md`).
+
+## 22. Giới hạn command, tạo tài khoản và đọc suy giảm (slice 016 — FG-013, FG-015, FG-016, FG-022, FG-029, CMD-03, CMD-06, CMD-07, DAT-04, DAT-09, API-06)
+
+### Bảng giới hạn (semantic với vận hành và code module)
+
+Năm setting `GameServer:Commands:*` được kiểm khi khởi động (serve, `--provision` và kit), một dòng mỗi giá trị sai (BC-2);
+giá trị mặc định đều hợp lệ.
+
+| Giới hạn | Mặc định | Setting hay hằng số | Khoảng | Chi phí khi nâng | Khi vượt |
+| --- | --- | --- | --- | --- | --- |
+| `GameServer:Commands:ReplayWindowHours` | 24 | setting | 1..168 | receipt giữ lâu hơn (dung lượng `receipts`); retry muộn hơn vẫn replay | ngoài window: command chạy như mới, receipt cũ bị thay (mục 3) |
+| `GameServer:Commands:PerPlayerQueueLimit` | 2 | setting | 0..16 | nhiều request chờ hơn mỗi player mỗi instance (bộ nhớ, latency) | 429 `RATE_LIMITED` |
+| `GameServer:Commands:ReceiptMaxBytes` | 4096 | setting | 1024..65536, và luật chéo bên dưới | receipt lớn hơn: lưu suốt replay window, đọc ở mỗi replay | `COMMAND_OUTPUT_TOO_LARGE` part `receipt` (HTTP 200, không commit); tạo tài khoản: `INTERNAL` |
+| `GameServer:Commands:ResultCompactMaxBytes` | 512 | setting | 64..16384 | result lưu base64 trong receipt và replay byte-identical; cần `ReceiptMaxBytes` lớn hơn | `COMMAND_OUTPUT_TOO_LARGE` part `result` |
+| `GameServer:Commands:MaxAggregatesPerGame` | 16 | setting | 1..16 | — (DAT-09 chặn trên 16) | startup fail `[deployment] {n} player aggregates registered (max …)` |
+| `CommandDescriptor.MaxTouches` | 4 | hằng số (DAT-09) | — | — | startup fail (command, và `profile` + touches của account initializer) |
+| `CommandDescriptor.MaxClaimMarkersLimit` | 2 | hằng số (DAT-04) | — | — | startup fail (khai báo); claim vượt `maxClaimMarkers` đã khai ném lỗi lập trình khi chạy |
+| Ngân sách document aggregate (`HardBytes`) | 64 KiB (cảnh báo 32 KiB) | khai theo aggregate | — | document lớn hơn mỗi lần đọc/ghi | `AGGREGATE_TOO_LARGE` (HTTP 200, không commit) |
+| Body request player | 64 KiB | `GameServer:Limits:PlayerBodyBytes` (mục 1) | — | request lớn hơn | 413 `PAYLOAD_TOO_LARGE` |
+
+**Luật chéo:** `4·⌈ResultCompactMaxBytes/3⌉ + 1024 ≤ ReceiptMaxBytes` (result lớn nhất phải vừa receipt của chính nó). Vì luật
+này, giá trị **nhỏ nhất của `ReceiptMaxBytes` mà host chịu start là 1112** (với `ResultCompactMaxBytes` = 64): 1024..1111 nằm
+trong khoảng của chính nó nhưng luôn fail luật chéo và chỉ nhận dòng luật chéo. Cả hai dòng là văn bản hợp đồng, giữ nguyên.
+`MaxAggregatesPerGame` ngoài khoảng chỉ nhận dòng khoảng; số aggregate khi đó được so với 16.
+
+Quy tắc so sánh là "lớn hơn": đúng bằng giới hạn thì commit. Không commit thì không có receipt, nên retry cùng request id chạy lại
+và nhận cùng mã.
+
+### Ví dụ: bao nhiêu ledger entry vừa một receipt (đo, slice 016 T072)
+
+Đo bằng `ReceiptBuilder` (qua `CommandContextDouble.ForAccountInitializer` + `CheckAccountCreation`, cùng builder với runner) với
+receipt tạo tài khoản của sample: initializer cấp gold (`EconomyOperations.Grant`, ledger source `account_init`) lặp *n* lần,
+player id thật 28 ký tự, correlation id và request id UUID, game `sample`, môi trường `local`, config
+`sample-1+53ca1d498d7a`, ngày 2026-11-04:
+
+| Ledger entry | Byte receipt |
+| --- | --- |
+| 1 (`sample.starting_gold`, 100 gold) | 1068 |
+| 2 | 1345 |
+| 11 | 3841 |
+| 12 | 4120 |
+| 55 | 16117 |
+| 56 | 16396 |
+
+Tức là base ≈ 791 B + khoảng 277–279 B mỗi entry (số chữ số của `balanceAfter` tăng dần). Ở mặc định 4096 vừa **11** entry (12 thì
+vượt); ở 16384 vừa **55** (56 thì vượt). Game đầu tiên đo được base ≈ 894 B, entry ≈ 278 B cho `battle.end` (receipt command có
+thêm result và body hash), cùng kết quả khoảng 11 / 55. Command nhiều outbox hơn: nâng `ReceiptMaxBytes` và kiểm bằng
+`CheckCommit(outcome, encodeResult)` của kit (consumer guide §13.4).
+
+### Metric (vận hành)
+
+| Metric | Nhãn | Ý nghĩa |
+| --- | --- | --- |
+| `command_output_too_large_total` | `operation`, `part` | một lần mỗi command bị từ chối vì result/receipt (kể cả `identity.create_account`, part `receipt`) |
+| `account_creations_total` | `result` = `created` \| `failed` | tài khoản tạo qua login |
+| `account_initializer_failures_total` | `initializer`, `result` = `rejected` \| `threw` \| `rule` | initializer làm hỏng việc tạo; luật không thuộc riêng initializer nào (kích thước receipt) dùng `initializer="*"` |
+| `aggregate_read_failures_total` | `aggregateId`, `reason` | mỗi lần đọc aggregate hỏng (`version_ahead`, `unreadable` …); cảnh báo trong deploy (mục 6) |
+
+`command_results_total{code}` và `http_errors_total{code}` có thêm ba mã mới, không đổi gì khác.
+
+### Dòng log (semantic — văn bản dòng, errors-and-report-lines §2)
+
+```text
+Command {Operation} refused with COMMAND_OUTPUT_TOO_LARGE: {Part} is {Bytes} bytes, limit {Limit}. Fix: return less or raise GameServer:Commands:{SettingName} (PCR platform §22).
+Account {PlayerId} created: {InitializerCount} initializers, receipt {ReceiptId}.
+Account creation of player {PlayerId} failed: initializer {Initializer} (module {Module}) returned {Code}. Nothing was created; the next login retries.
+Account creation of player {PlayerId} failed: initializer {Initializer} (module {Module}) threw {ExceptionType}. Nothing was created; the next login retries.
+Account creation of player {PlayerId} failed: {RuleLine} Nothing was created; the next login retries.
+Aggregate {AggregateId} of player {PlayerId} is unavailable: version_ahead (stored schemaVersion {Stored}, code {Code}). Deploy code that reads it before writing it (PCR platform §6).
+Aggregate {AggregateId} of player {PlayerId} is unavailable: {Reason} ({ExceptionType}).
+```
+
+Category lần lượt `GameServer.Commands` (Error), `GameServer.Accounts` (Information / Error), `GameServer.Aggregates` (Warning /
+Error). Không dòng nào chứa nội dung state hay message exception của code game. Tạo tài khoản lỗi thì error middleware còn ghi
+`Request failed with INTERNAL: Account creation of player {id} failed ({result}, initializer {name}).` (hai dòng cho một lần lỗi;
+dòng `GameServer.Accounts` mang nguyên nhân).
+
+### Dòng startup (semantic — văn bản dòng)
+
+Sau dòng command, theo thứ tự: khối account initializer, rồi khối command settings:
+
+```text
+[module {m}] account initializer '{name}' touches 'profile'. Fix: remove it; the framework writes the profile of a new account.
+[deployment] account creation touches {count} aggregates (profile + {list} from initializers {names}); max is 4. Fix: move state into fewer aggregates or seed it in a later command (DAT-09).
+[deployment] account initializers reserve {sum} claim markers ({name}: {n}, …); max is 2. Fix: reserve fewer claims (DAT-04).
+[deployment] GameServer:Commands:ReplayWindowHours is {v}; allowed 1..168 (CMD-07).
+[deployment] GameServer:Commands:PerPlayerQueueLimit is {v}; allowed 0..16 (CMD-06).
+[deployment] GameServer:Commands:ReceiptMaxBytes is {v}; allowed 1024..65536 (CMD-03).
+[deployment] GameServer:Commands:ResultCompactMaxBytes is {v}; allowed 64..16384 (CMD-03).
+[deployment] GameServer:Commands:ResultCompactMaxBytes {r} needs {need} receipt bytes (base64 + 1024) but ReceiptMaxBytes is {v}. Fix: raise ReceiptMaxBytes or lower ResultCompactMaxBytes.
+[deployment] GameServer:Commands:MaxAggregatesPerGame is {v}; allowed 1..16 (DAT-09).
+```
+
+Các dòng initializer khác (tên sai, trùng, aggregate lạ, khai hai lần, claim ngoài 0..2, command trùng operation
+`identity.create_account`): `specs/016-login-command/contracts/errors-and-report-lines.md` §4.1.
+
+### Breaking (slice 016 — so với `v0.6.0`)
+
+| # | Thay đổi | Lộ ra thế nào | Cách chuyển |
+| --- | --- | --- | --- |
+| BC-1 | Result/receipt vượt giới hạn là từ chối nghiệp vụ `COMMAND_OUTPUT_TOO_LARGE` (HTTP 200, không commit) thay vì 500 `INTERNAL` | response 200 mã 23 với `details`; dòng Error `Command … refused with …`; `command_output_too_large_total` | coi là lỗi thiết kế command; nâng giới hạn hoặc trả ít hơn |
+| BC-2 | `GameServer:Commands:*` được kiểm khoảng khi khởi động; `MaxAggregatesPerGame` > 16 bị từ chối | exit 1, một dòng `[deployment] GameServer:Commands:…` mỗi giá trị | dùng giá trị trong khoảng |
+| BC-3 | Snapshot và login có thể thiếu section không đọc được, liệt kê trong `unavailable_sections` (mục 4) | HTTP 200, section vắng mặt | đọc danh sách unavailable, hiện trạng thái phục hồi được |
+| BC-4 | Command/replay chạm aggregate hỏng trả `AGGREGATE_VERSION_AHEAD` (503) hoặc `AGGREGATE_UNREADABLE` (500) thay vì `INTERNAL`; `profile` hỏng làm login và request xác thực fail với mã đó | error envelope mã 24/25, `details` `aggregate` | khớp mã mới; giữ luật deploy mục 6 |
+| BC-5 | `AggregateDocumentSerializer.Load` và `PlayerSnapshotReader.Read*` ném `GameServerException` mã 24/25 thay vì `INTERNAL`, `JsonException`, `InvalidOperationException`, `FormatException`, `OverflowException`; `state` thiếu/`null`/không phải object giờ là `AGGREGATE_UNREADABLE` (trước đọc như state mặc định). Thêm `TryLoad`, `ReadAvailableAsync`, `ReadAllAvailableAsync` | kiểu exception khác lúc chạy | catch `GameServerException` hoặc dùng member suy giảm |
+| BC-6 | Login đầu tiên chạy mọi account initializer trong transaction tạo tài khoản | section seed ở `rev = 1`, một receipt `identity.create_account` khi có hiệu ứng | assert state đã seed |
+| BC-7 | `LoginResult.IsNewPlayer`, `LoginResult.Unavailable`; tham số tuỳ chọn `correlationId` cuối của `LoginCompletion.CompleteAsync`, `GuestLoginService.LoginAsync`, `ProviderLoginService.LoginAsync`; `LoginCompletion` nhận `IAccountWriter` | không lỗi compile; binary build trên chữ ký cũ phải build lại | đọc giá trị mới khi cần |
+| BC-8 | SDK: section không đọc được giữ bản tốt cuối và bị đánh dấu; `AGGREGATE_VERSION_AHEAD` được SDK retry | `Sections.IsUnavailable(id)`, event `AvailabilityChanged` | đọc tập unavailable |
+| BC-9 | Khai báo account initializer được kiểm khi khởi động | exit 1, dòng `[module …] account initializer …` / `[deployment] account creation …` | sửa khai báo |
+| BC-10 | Login có transaction mơ hồ, hết hạn hoặc thua mọi vòng race trả `COMMIT_UNKNOWN_RETRY` (503) / `CONCURRENT_UPDATE` (409) thay vì 500 | error envelope retryable | xử lý như mã retryable |
+| BC-11 | `CommandResponse.details` (field 11) và `details` của GM command mang `details` của mọi từ chối HTTP 200, kể cả mã module | `details` có giá trị của `Reject(code, details)` | giữ details an toàn để hiện |
+
+Bước chuyển đầy đủ: release notes `v0.7.0` (bản nháp `specs/016-login-command/release-notes-draft.md`).
