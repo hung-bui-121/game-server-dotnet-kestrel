@@ -26,7 +26,7 @@ P0 is merged into `main` and pushed (fda9f00). The real-environment test tools f
 | 013 consumer-readiness (improvement round, FG group A) | `013-consumer-readiness` | DONE: 81/81 tasks + B1. FG-010 (Dev lockdown), FG-001/006 (TestKit), FG-025 (request log), FG-002/003/004 (run-local, build seal), FG-007/011/012 (version, error band, consumer guide). Review CONDITIONAL (0 Blocker, 0 Major, 13 Minor, all fixed `b8a8623`) |
 | 014 wire-contract (FG group B) | `014-wire-contract` | DONE: 87/87 tasks. FG-026 direction B (route catalog + pre-serving endpoint check), FG-028 (export mode + WireGen), FG-021 (typed wire mappers), FG-027 (TestKit WireConformance). Review r1 NO (B1 + 2 Major + 9 minor, fixed `7024791`), r2 CONDITIONAL (5 minor, fixed `b1ff174`) |
 | 015 config (FG group C) | `015-config` | DONE 71/72 (T058 Android/iOS device run = OWNER, tag waits on it). FG-018 (declared config rules + eager catalogs), FG-023 (isolated startup checks, GameConfigStatus), FG-024 (+ additive `client_config_version`), FG-019 (compression, PersistentConfigCache). Review r1 CONDITIONAL (3 Major + 11 minor + walkthrough G1–G4, decisions `specs/015-config/review-decisions.md`, fixed `8ac0023`), r2 CONDITIONAL (7 minor, fixed `1cb4a2e`) |
-| 016 login-command (FG group D) | — | FG-013, FG-015, FG-029, FG-016, FG-022 |
+| 016 login-command (FG group D) | `016-login-command` | DONE 83/84 (T069 device session = OWNER, also covers 015 T058; tag waits on it). FG-013 (`is_new_player`), FG-015 (account initializers), FG-029 (degraded reads), FG-016 (COMMAND_OUTPUT_TOO_LARGE + details), FG-022 (SDK request id + pending store). Review r1 CONDITIONAL (B1 + 3 Major + 10 minor, fixed `d5153da`), r2 CONDITIONAL (1 Major regression + 6 minor, fixed `a7b3d6b`). Round release note draft `docs/releases/v0.7.0.md` |
 | giftcode | — | GFT-01..06, GM-04 API, reaper (ACC-08, 22, 23) — number after the improvement round |
 | iap-notifications | — | IAP-03 S2S: Google RTDN, Apple v2, refund/revoke; add refund analytics event on the 012 seam |
 | ops-readiness | — | Secret scan in CI, PERF-05 budgets, load test report (TST-03), Linux/container guide, runbooks, deploy/rollback, restore drill (ACC-16, 19, 48; ACC-19 blocked on TBD-09), finish deploy guide (task 5c), TLS release gate, analytics re-drive tool |
@@ -194,6 +194,38 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
   no switch to allow cheats on Staging; version only via GM `ops.read`; `DeploymentEnvironment=Test` refused unless
   EnvironmentId `test` (BC-8, review m9). 014: `ReplaceWireMapper` must keep the framework message (M1 option
   "restrict", alternative = replaced section becomes origin `game`).
+
+## Technical notes from 016
+
+- Owner confirmations open (listed in `docs/releases/v0.7.0.md` with 013/014/015 ones): creation receipt only when an
+  initializer changed something; `CommandResponse.details` carries module rejections too; sample seeding via optional
+  `account.json`; release note split (draft in 016, round-close separate); login store failures answer
+  COMMIT_UNKNOWN_RETRY/CONCURRENT_UPDATE (BC-10); same-player re-login keeps last good copy of unavailable sections.
+- Login: `IAccountWriter` (Platform.Commands) decides create/update per transaction attempt; `is_new_player` and
+  analytics createdPlayer from the committed attempt; ≤3 race rounds then CONCURRENT_UPDATE. Creation receipt
+  `identity.create_account`, System actor + player id, random request id, only when initializers had effects.
+- Initializers: `AccountInitializers` in ModuleDescriptor, name `<first module segment>.<name>`, profile + union ≤ 4
+  aggregates, ≤ 2 claims, per-initializer view, NewId/NewSeed prefixed by name; claims checked (empty key, provisioned
+  collection) before the read; store exceptions marked `StoreFailureKey` pass through. Failure → INTERNAL, one log line
+  (`ReportedFailure` marker suppresses ExceptionMiddleware line).
+- Degraded reads: `AggregateReadFailures` (AGGREGATE_VERSION_AHEAD 503 / AGGREGATE_UNREADABLE 500), `state` must be a
+  JSON object, `SectionWriter` single mapping place, unavailable sections listed never empty, GM `unreadable` list,
+  bearer handler returns Fail(code) (V5: single-scheme hosts bypass error middleware — pre-existing follow-up).
+- Commands: every commit rule incl. receipt size before staging; COMMAND_OUTPUT_TOO_LARGE (HTTP 200) with
+  `CommandResponse.details` (11) part/bytes/limit; `GameServer:Commands:*` ranges validated (ReceiptMaxBytes ≥ 1112).
+  `CommandRunner` ctor takes ILoggerFactory (BC-12). Shared `ReceiptBuilder` = kit parity (exact only with matched
+  actor/request/receipt ids).
+- SDK: `SendCommandAsync(route, req, parser, string? requestId, ct)` (4th param required, null = generated),
+  `NewRequestId()`, `GameServerClientOptions.PendingCommands` (Persistent/InMemory/UnityPendingCommandStore, per-entry
+  `.pending` files via CacheFileOps, Flush(true), record p95 ~5.6 ms on C:); `PendingCommands` read-only snapshot; no
+  auto resend; 23 h expiry on server time; auth answers keep entry, ACCOUNT_DELETED final. AvailabilityChanged fires
+  after the copy is stored.
+- Sample: `samples/SampleHost/config/base/account.json` seeds 100 gold (tests/Shared config unseeded). KestrelDemo E2E
+  `-e2eDevice` switch. APK `samples/SampleGame/KestrelDemo/Build/KestrelDemo.apk` (rebuild with LAN serverUrl for T069).
+- Tests at `a7b3d6b`: 2751 total; in-memory/File 2640 pass / 111 skip; Couchbase project 148 pass / 3 skip. Full
+  Couchbase at `d5153da`: 2714 pass / 25 skip; 11 opt-in perf pass. Known flaky: two TelemetryTests,
+  IapAnalyticsTests.A_slow_sink…
+- Follow-ups: m9 broken-profile log volume; V5 single-scheme auth; CommandRunner.cs ~560 lines.
 
 ## Technical notes from 015
 
