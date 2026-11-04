@@ -377,6 +377,13 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
 
 ## Open items
 
+- **Sample cleanup (owner 2026-11-04, deferred — do later, not scheduled):** too many sample-like places confuse
+  devs (`modules/Sample.Counter`, `samples/SampleGame` + SampleHost + KestrelDemo, `templates/module`,
+  `tests/ConsumerFixture`). Owner chose **SampleGame as the single sample for case studies**: fold counter into
+  SampleGame and remove `modules/Sample.Counter` (≈41 Platform.Web test files use it as the probe module → move to
+  SampleGame or a test-only module in `tests/`), docs/HTML examples only on SampleGame (02-them-command §5 uses
+  `counter.reset`). Still undecided: keep `templates/module` and `tests/ConsumerFixture` (proposal: keep, label "not a
+  sample") and process (Spec Kit slice 017 vs light refactor). Ask the owner both before starting.
 - ACC-03/ACC-29 with real Play Games / Game Center devices: manual before release.
 - Couchbase outage drill `tools/local/couchbase-outage.ps1` needs admin; owner has not run it yet.
 - TBD-21 (GM frontend) open; another developer owns it.
