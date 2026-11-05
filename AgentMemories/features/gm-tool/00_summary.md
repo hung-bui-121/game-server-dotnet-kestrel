@@ -1,7 +1,7 @@
 # RESUME: GM tool (GM console + GM API) — framework shell, game mở rộng
 
-**Trạng thái (2026-11-05):** GM-1 (slice 017 `gm-api-contract`) ĐÃ IMPLEMENT trên nhánh `017-gm-api-contract` (chưa commit,
-owner commit; 62/64 task, còn T057 auto-memory và T061 Couchbase full suite do owner chạy). Bước kế tiếp: **GM-2
+**Trạng thái (2026-11-05):** GM-1 (slice 017 `gm-api-contract`) XONG trên nhánh `017-gm-api-contract` (`e182fba`, chưa merge
+main, chưa push). Bước kế tiếp: **GM-2
 `gm-console-hosting-shell`**.
 **Thiết kế:** `01_design.md` (đọc §0, rồi §6 hosting/bảo mật, §19 phạm vi GM-1).
 
@@ -63,5 +63,6 @@ GM-1 `gm-api-contract` (bắt đầu ngay) → GM-2 `gm-console-hosting-shell` �
 
 ## Bước kế tiếp
 
-1. Owner commit 017, chạy Couchbase full suite (T061), xử lý file auto-memory (T057), xác nhận các quyết định chờ.
+1. 017 XONG (`e182fba`, 64/64, full suite kèm Couchbase xanh, review r1+r2 đã sửa). Chờ owner: merge main? push?
+   xác nhận "Decisions awaiting owner override" trong `specs/017-gm-api-contract/release-notes-draft.md`.
 2. GM-2 `gm-console-hosting-shell` theo Q16–Q21 ở trên.
