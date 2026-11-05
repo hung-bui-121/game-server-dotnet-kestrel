@@ -21,7 +21,16 @@ public sealed class ErrorResponseWriter(IClock clock, IGameConfig config, Platfo
 {
     public const string ProtobufContentType = "application/x-protobuf";
 
-    public async Task WriteAsync(HttpContext context, ErrorCode code, int? retryAfterMs = null, IReadOnlyDictionary<string, string>? details = null)
+    /// <summary>
+    /// Writes the error answer. <paramref name="errors"/> (field errors of an invalid JSON body, slice 017) becomes the Problem
+    /// Details member <c>errors</c>, keys in ordinal order; the Protobuf envelope ignores it.
+    /// </summary>
+    public async Task WriteAsync(
+        HttpContext context,
+        ErrorCode code,
+        int? retryAfterMs = null,
+        IReadOnlyDictionary<string, string>? details = null,
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? errors = null)
     {
         if (context.Response.HasStarted)
         {
@@ -83,6 +92,13 @@ public sealed class ErrorResponseWriter(IClock clock, IGameConfig config, Platfo
         if (details is not null)
         {
             problem["details"] = new JsonObject(details.Select(d => KeyValuePair.Create(d.Key, (JsonNode?)d.Value)));
+        }
+
+        if (errors is not null)
+        {
+            problem["errors"] = new JsonObject(errors
+                .OrderBy(e => e.Key, StringComparer.Ordinal)
+                .Select(e => KeyValuePair.Create(e.Key, (JsonNode?)new JsonArray(e.Value.Select(m => (JsonNode?)m).ToArray()))));
         }
 
         context.Response.ContentType = "application/problem+json";

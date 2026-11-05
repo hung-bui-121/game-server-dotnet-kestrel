@@ -1,9 +1,11 @@
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using GameServer.Errors;
 using GameServer.Platform;
 using GameServer.Platform.Gate;
 using GameServer.Platform.Persistence;
+using GameServer.Platform.Web.Commands;
 using GameServer.Platform.Web.Endpoints;
 using GameServer.Platform.Web.Middleware;
 using GameServer.Platform.Web.Routing;
@@ -15,9 +17,18 @@ using Microsoft.Extensions.Logging;
 
 namespace GameServer.Modules.Gm;
 
-public sealed record MaintenanceBody(bool Enabled, string? Message, DateTimeOffset? ExpectedEndUtc, string? Reason);
+/// <summary>Body of <c>PUT /gm/v1/ops/gate/maintenance</c>; <see cref="Message"/> holds at most 500 characters (annotated, slice 017).</summary>
+public sealed record MaintenanceBody(bool Enabled, [property: StringLength(MaintenanceBody.MaxMessageLength)] string? Message, DateTimeOffset? ExpectedEndUtc, string? Reason)
+    : IGmCommandBody
+{
+    public const int MaxMessageLength = 500;
+}
 
-public sealed record MinClientVersionBody(string? Platform, string? MinVersion, string? UpdateUrl, string? Reason);
+/// <summary>
+/// Body of <c>PUT /gm/v1/ops/gate/min-client-version</c>. <see cref="IGmCommandBody"/>: the reason is required like on every GM
+/// mutation (checked by <c>StaffAdminService</c>), so the GM document lists it as required.
+/// </summary>
+public sealed record MinClientVersionBody(string? Platform, string? MinVersion, string? UpdateUrl, string? Reason) : IGmCommandBody;
 
 public sealed record GateView(MaintenanceState Maintenance, IReadOnlyDictionary<string, MinClientVersion> MinClientVersions, long Rev, bool Replayed = false);
 
@@ -39,12 +50,14 @@ public static class GateEndpoints
                 return GmHttp.Json(View(gate));
             }))
             .Produces<GateView>()
+            .WithSummary("Get the maintenance and minimum client version gate.")
             .AsGmEndpoint(GmPermissions.OpsRead);
 
         routes.MapDeclared(GmRoutes.OpsGateMaintenance, (Func<HttpContext, Task<IResult>>)(async http =>
             {
                 var body = await GmHttp.ReadJsonAsync<MaintenanceBody>(http);
-                if (body.Message is { Length: > 500 })
+                // Also the [StringLength] rule GmHttp.ReadJsonAsync enforces: kept as the guard of the stored message.
+                if (body.Message is { Length: > MaintenanceBody.MaxMessageLength })
                 {
                     throw new GameServerException(CoreErrorCodes.BadRequest, "message must be at most 500 characters.");
                 }
@@ -59,6 +72,9 @@ public static class GateEndpoints
             }))
             .Accepts<MaintenanceBody>(GmHttp.JsonContentType)
             .Produces<GateView>()
+            .WithSummary("Turn maintenance mode on or off for players (audited, idempotent per request id).")
+            .WithGmRequestId()
+            .WithGmConfirm(GmConfirm.Typed)
             .AsGmEndpoint(GmPermissions.OpsMaintenance);
 
         routes.MapDeclared(GmRoutes.OpsGateMinClientVersion, (Func<HttpContext, Task<IResult>>)(async http =>
@@ -100,6 +116,8 @@ public static class GateEndpoints
             }))
             .Accepts<MinClientVersionBody>(GmHttp.JsonContentType)
             .Produces<GateView>()
+            .WithSummary("Set or remove the minimum client version of a platform (audited, idempotent per request id).")
+            .WithGmRequestId()
             .AsGmEndpoint(GmPermissions.OpsMaintenance);
     }
 

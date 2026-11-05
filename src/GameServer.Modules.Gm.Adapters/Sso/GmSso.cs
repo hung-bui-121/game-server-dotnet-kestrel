@@ -78,6 +78,7 @@ public static class GmSso
                 await http.ChallengeAsync(SchemeName, new AuthenticationProperties { RedirectUri = SafeReturnUrl(returnUrl) });
                 return Results.Empty;
             })
+            .WithSummary("Start the SSO sign-in: redirect to the identity provider.")
             .AsPublicEndpoint(protobuf: false)
             .WithRequestTimeout(ApiRouteExtensions.GmTimeoutPolicy)
             .RequireRateLimiting(ApiRouteExtensions.GmLimiterPolicy);
@@ -94,6 +95,7 @@ public static class GmSso
 
                 return Results.Redirect(DeniedRedirect);
             }))
+            .WithSummary("Complete the SSO sign-in (identity provider callback) and start a GM session.")
             .AsPublicEndpoint(protobuf: false)
             .WithRequestTimeout(ApiRouteExtensions.GmTimeoutPolicy)
             .RequireRateLimiting(ApiRouteExtensions.GmLimiterPolicy);

@@ -1,6 +1,6 @@
 # Consumer guide — building a game on the framework
 
-> Matches framework v0.7.0 (released 2026-11-04, tag `v0.7.0`).
+> Matches framework v0.7.0 (released 2026-11-04, tag `v0.7.0`) + branch `017-gm-api-contract` (unreleased).
 
 This guide is for a **game repository** that uses this framework as a git submodule (the first consumer is
 `zh-pvp-server`). Every code sample below is taken from `tests/ConsumerFixture`, a consumer-shaped repository inside the
@@ -330,6 +330,9 @@ projects only: a host with `GameServer.TestKit` loaded fails startup outside Dev
 test kit (GameServer.TestKit) is loaded in …`), except on the kit's own in-process test server.
 
 Config rules are tested without a host through the kit call `ConfigDeclarationCheck.Check(config, modules)` (section 12.4).
+The game's GM contract is tested with the kit call `GmOpenApiSnapshot.DiffAsync(factory.Services, committedPath)` over the
+game host, with `committedPath` = the repository root + `docs/api/gm-openapi.json` as an absolute path (a relative path resolves
+against the test output folder; section 14.3).
 
 ### 5.1 Handler unit test — `CommandContextDouble`
 
@@ -979,10 +982,18 @@ client.Sections.SectionChanged += id =>
    commands that must not run twice (13.5).
 6. Regenerate the client files (`generate`, section 10.4), commit them and the `.meta` files Unity creates in the client
    repository, and check that `verify --no-build` passes (the framework's protoc, messages or generator may have changed).
-7. Build Debug and Release (0 warnings) and run the full game test suite; run the host once with `run-local`.
-8. Remove the workarounds the release notes list as removable (code, `FRAMEWORK-GAP` markers, friction-log entries).
-9. Commit the gitlink, the copied files, the regenerated client files, the docs and the removed workarounds together
-   (`chore: bump framework to vX.Y.Z`).
+7. Run the GM snapshot test (section 14.3); on a diff, review it (a framework bump changes framework operations, a game change
+   its own) and rewrite `docs/api/gm-openapi.json` in write mode (`UPDATE_OPENAPI=1`). The first bump to a framework with
+   the GM contract (slice 017) adds the test and commits the document for the first time; nothing changes for
+   `gm.auth_methods` (Public by declaration, no allowlist line); check tests that pin the full list of route names (four new
+   framework routes: `gm.auth_methods`, `gm.console_catalog`, `economy.resource_options`, `identity.ban_scopes`) and GM
+   bodies that already carry DataAnnotations (now enforced, 400 with `errors`). Every non-nullable value type of a GM body
+   (`int`, `long`, `bool`, enum) without a default is now required: an absent one is a 400 with `errors` (make it nullable
+   or give its constructor parameter a default to keep it optional; computed get-only members are never required).
+8. Build Debug and Release (0 warnings) and run the full game test suite; run the host once with `run-local`.
+9. Remove the workarounds the release notes list as removable (code, `FRAMEWORK-GAP` markers, friction-log entries).
+10. Commit the gitlink, the copied files, the regenerated client files, the GM document, the docs and the removed workarounds
+    together (`chore: bump framework to vX.Y.Z`).
 
 ## 12. Game config
 
@@ -1820,3 +1831,93 @@ A scratch console that drives it with the SDK references `sdk/GameServer.Client/
 the Unity package does (C# 9), set `<LangVersion>9.0</LangVersion>` **and** `<ImplicitUsings>disable</ImplicitUsings>`:
 implicit usings are `global using` directives (C# 10), so a C# 9 project that inherits `ImplicitUsings` from a
 `Directory.Build.props` (section 2) does not compile; write the `using` lines yourself.
+
+## 14. GM API contract
+
+The framework serves a GM console from the **GM document**: the OpenAPI 3.1 description of every `/gm/**` endpoint of the
+host, with `x-gm-*` keys a generic console reads (menus, forms, lists, confirmations). The console is framework work
+(GM-2..GM-4); a game ships no frontend. Its part is to describe its own GM routes well (Vietnamese guide
+`docs/guides/module-authoring.md` section 5.4) and to keep a committed copy of its document that CI compares with the host.
+
+### 14.1 Routes a console uses
+
+| Route | Auth | Answer |
+| --- | --- | --- |
+| `GET /gm/v1/auth/methods` | Public (allowlisted by its declaration, no configuration) | `{ "local": bool, "sso": bool }`: local accounts (development tools) and SSO (`Gm:Oidc` configured) |
+| `GET /gm/v1/me` | `gm.access` | the signed-in staff, its permissions, `frameworkVersion` and `gameVersion` of the answering instance |
+| `GET /gm/v1/console/openapi.json` | `gm.access` | the GM document, in **every** environment; strong `ETag`, `Cache-Control: private, no-cache`, `304` on a matching `If-None-Match` |
+| `GET /gm/v1/openapi/gm.json` | Public, Development/Test only | the same document (unchanged route) |
+
+The document is generated on the first catalog request (never at host start) and kept for the process. It holds no version,
+no `servers` entry and no configuration value, so one composition has one document; flavors differ only by their
+conditional routes (local login with development tools, SSO routes with `Gm:Oidc`).
+
+### 14.2 What the document says about a GM route
+
+- `operationId` = route name, tag = area (route-name segment before the first dot), `summary` from `WithSummary`.
+- `x-gm-kind` (`command` / `query` for GET / `action`), `x-gm-operation` (commands), `x-gm-target` (`player` when the template
+  has `{playerId}`, else `global`), `x-gm-confirm` (`simple` / `typed`, mutations only), `x-gm-paged` (paged lists),
+  `x-gm-permission` and `x-gm-csrf`.
+- GM commands (`MapGmCommand`): request body, `playerId` path parameter, required `X-Request-Id` header, `GmCommandResponse`.
+- Request bodies: `required` lists exactly the `[Required]` properties and `reason`; DataAnnotations become JSON Schema
+  keywords; `[GmOptions("<route>")]` becomes `x-gm-options`. The server enforces the same rules before `toDomain` and answers
+  `400 BAD_REQUEST` with `errors` (JSON path → messages).
+
+### 14.3 The snapshot test (CI-01)
+
+One kit call over the game's real host (`LocalFlavorFactory<Program>`, section 5.2) writes or compares the committed
+document. From `tests/ConsumerFixture/tests/Fixture.Tests/FixtureGmOpenApiTests.cs`:
+
+```csharp
+// The repository root of the game: walk up from the test output to the folder holding src/<Host> (here src/Fixture.Host).
+private static string FixtureRoot()
+{
+    var directory = new DirectoryInfo(AppContext.BaseDirectory);
+    while (directory is not null && !Directory.Exists(Path.Combine(directory.FullName, "src", "Fixture.Host")))
+    {
+        directory = directory.Parent;
+    }
+
+    return directory?.FullName ?? throw new InvalidOperationException("Repository root not found.");
+}
+
+private static string Committed => Path.Combine(FixtureRoot(), "docs", "api", "gm-openapi.json");
+
+[Fact]
+public async Task The_committed_gm_document_is_what_the_game_host_serves()
+{
+    await using var factory = new LocalFlavorFactory<Program>();
+    if (Environment.GetEnvironmentVariable("UPDATE_OPENAPI") == "1")
+    {
+        await GmOpenApiSnapshot.WriteAsync(factory.Services, Committed);
+    }
+
+    (await GmOpenApiSnapshot.DiffAsync(factory.Services, Committed)).ShouldBeEmpty();
+}
+```
+
+- `GmOpenApiSnapshot.GetDocumentAsync(services)` returns the canonical text the catalog route serves (indented JSON, LF, one
+  final newline, UTF-8 without BOM); `WriteAsync(services, path)` writes it (folder created, temporary file replaced);
+  `DiffAsync(services, path)` returns `""` when equal (line ends ignored: a CRLF checkout is equal), otherwise the first
+  differing line with both texts and the write hint; a missing file is a message, not an exception. `TestHost` overloads exist
+  for `WriteAsync` and `DiffAsync`.
+- Run it once in write mode, read the file, run it again without the variable (it must pass), commit
+  `docs/api/gm-openapi.json`. Git Bash: `UPDATE_OPENAPI=1 dotnet test --project tests/<Game>.Tests --filter-class
+  "*GmOpenApiTests"`; PowerShell: `$env:UPDATE_OPENAPI='1'; dotnet test …; Remove-Item Env:UPDATE_OPENAPI`. A failing run in
+  CI means the GM contract changed: review the diff, then rewrite and commit (bump checklist, section 11).
+- The committed file is the input of console code generation (GM-2): keep it at `docs/api/gm-openapi.json`.
+
+### 14.4 A GM command of the game
+
+The fixture's `fixture.note_set` (`tests/ConsumerFixture/src/Fixture.Game/FixtureGmNote.cs`, mapped in
+`FixtureModule.MapGmApi`) is a complete example: a body with `[property: Required, StringLength(140)] string? Text` and
+`[property: GmOptions("fixture.note_presets")] string? Preset`, an option route `GET /gm/v1/fixture/note-presets` answering a
+`GmOptionList`, a `WithSummary` on both. The host adds `GmModule` (`.AddModule<GmModule>()`, project reference
+`$(GameServerRoot)src/GameServer.Modules.Gm.Adapters/GameServer.Modules.Gm.Adapters.csproj`). A `[GmOptions]` that names no GM
+GET route of the host fails startup with one report line. GM routes generate nothing for Unity (WireGen selects Player and
+Host surfaces only). Register the command in `ModuleDescriptor.Commands`, its permission in `Permissions` and **both**
+declarations (command and option route) in `Routes`; give the option route the command's permission. Exercise the command in
+tests as `FixtureGmOpenApiTests.The_game_gm_command_enforces_its_annotated_body` does: `LocalFlavorFactory<Program>`, the
+test-authentication GM headers (`TestAuthenticationHandler.GmHeader` = staff id, `GmPermissionsHeader` = the permission;
+development flavors only, no CSRF needed) and an `X-Request-Id` UUID header. Module-authoring guide §5.4 has the full code
+with its `using` lines.

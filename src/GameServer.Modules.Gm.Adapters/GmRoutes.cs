@@ -28,6 +28,13 @@ public static class GmRoutes
 
     public static RouteDeclaration Me { get; } = Get("gm.me", GmModule.MeRoute, SecurityProfile.Gm, GmPermissions.Access);
 
+    /// <summary>Which sign-in methods a console shows (slice 017): Public, allowlisted through this declaration (SEC-09, V10).</summary>
+    public static RouteDeclaration AuthMethods { get; } = Get("gm.auth_methods", GmModule.AuthMethodsRoute, SecurityProfile.Public);
+
+    /// <summary>The GM document for a console, in every environment (slice 017): <c>gm.access</c>, ETag/304, not in the document.</summary>
+    public static RouteDeclaration ConsoleCatalog { get; } =
+        Get("gm.console_catalog", GmModule.ConsoleCatalogRoute, SecurityProfile.Gm, GmPermissions.Access);
+
     public static RouteDeclaration Ui { get; } = Get("gm.ui", GmModule.UiRoute, SecurityProfile.Public);
 
     public static RouteDeclaration Health { get; } = Get("gm.health", GmModule.HealthRoute, SecurityProfile.Gm, GmPermissions.OpsRead);
@@ -76,7 +83,7 @@ public static class GmRoutes
 
     public static IReadOnlyList<RouteDeclaration> All { get; } =
     [
-        AuthCsrf, AuthLogin, AuthLogout, SsoStart, SsoCallback, Me, Ui, Health, OpsVersion, OpsRotateKeys,
+        AuthCsrf, AuthLogin, AuthLogout, SsoStart, SsoCallback, Me, AuthMethods, ConsoleCatalog, Ui, Health, OpsVersion, OpsRotateKeys,
         OpsGate, OpsGateMaintenance, OpsGateMinClientVersion,
         Player, PlayerByMapping, PlayerSearch, PlayerReceipts, PlayerAudit, Receipt,
         StaffList, StaffCreate, Staff, StaffAudit, StaffGrant, StaffDisable, StaffEnable, StaffRevokeSessions,

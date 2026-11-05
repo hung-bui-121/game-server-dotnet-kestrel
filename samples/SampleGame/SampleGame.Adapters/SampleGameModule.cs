@@ -1,9 +1,11 @@
+using System.ComponentModel.DataAnnotations;
 using GameServer.Config;
 using GameServer.Errors;
 using GameServer.Modules;
 using GameServer.Platform.Web.Aggregates;
 using GameServer.Platform.Web.Commands;
 using GameServer.Platform.Web.Routing;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -46,13 +48,16 @@ public sealed class SampleGameModule : IGameModule, IPlayerApiModule, IGmApiModu
             SampleGameRoutes.ProgressionSet,
             body =>
             {
-                if (body is { Level: null, Xp: null, Stage: null } || body.Level < 1 || body.Xp < 0 || body.Stage < 1)
+                // The ranges are annotations of the body (checked before toDomain, shown in the GM document); a cross-field
+                // rule stays here: it is answered 400 without errors and the document cannot show it.
+                if (body is { Level: null, Xp: null, Stage: null })
                 {
-                    throw new GameServerException(CoreErrorCodes.BadRequest, "Set at least one of level (>= 1), xp (>= 0), stage (>= 1).");
+                    throw new GameServerException(CoreErrorCodes.BadRequest, "Set at least one of level, xp, stage.");
                 }
 
                 return new SetProgressionCommand(body.Level, body.Xp, body.Stage, body.Reason!);
-            });
+            })
+            .WithSummary("Set the level, xp or stage of the player (sample GM command).");
 
     public void MapPlayerApi(IEndpointRouteBuilder routes)
     {
@@ -115,5 +120,12 @@ public sealed class SampleGameModule : IGameModule, IPlayerApiModule, IGmApiModu
     }
 }
 
-/// <summary>Body of <c>POST /gm/v1/players/{playerId}/progression</c>; null fields are unchanged.</summary>
-public sealed record SetProgressionBody(int? Level, long? Xp, int? Stage, string? Reason) : IGmCommandBody;
+/// <summary>
+/// Body of <c>POST /gm/v1/players/{playerId}/progression</c>; null fields are unchanged. The reference example of GM body rules
+/// (slice 017): each range is declared once, enforced by the server before toDomain and shown in the GM document.
+/// </summary>
+public sealed record SetProgressionBody(
+    [property: Range(1, int.MaxValue)] int? Level,
+    [property: Range(0, long.MaxValue)] long? Xp,
+    [property: Range(1, int.MaxValue)] int? Stage,
+    string? Reason) : IGmCommandBody;

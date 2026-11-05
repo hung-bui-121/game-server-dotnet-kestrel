@@ -249,11 +249,11 @@ public static class GameServerBuilderExtensions
         services.AddAntiforgery(antiforgery => antiforgery.HeaderName = CsrfOptions.HeaderName);
         services.AddOptions<CsrfOptions>();
         services.AddCors();
-        if (options.AllowsDevelopmentTools)
-        {
-            // GM API contract for frontend developers (deliverable #8); not served outside Development/Test.
-            OpenApi.GmOpenApi.Add(services);
-        }
+
+        // GM document in every environment (slice 017, FR-030): generated lazily by the catalog (no cost at start, D12); the
+        // Development/Test route of the same document is still mapped only with development tools.
+        OpenApi.GmOpenApi.Add(services);
+        services.AddSingleton<OpenApi.GmCatalogDocument>();
 
         // OPS-03: drain in-flight requests (commits complete, PERF-02) before the host stops.
         services.Configure<HostOptions>(host => host.ShutdownTimeout = TimeSpan.FromSeconds(options.Hosting.ShutdownTimeoutSeconds));

@@ -1,10 +1,11 @@
 # PCR — gm
 
 Module framework `gm` (slice 004 + 007, version 0.8.0 sau slice 010). Nguồn: GM-01/02/03/06, SEC-02/03/04/05/06/07/08/10/14/15,
-OPS-04, ACC-09/10/11/24/27/45/49. Ban (GM-07), maintenance toggle: slice 008. GM frontend đầy đủ (GM-01, TBD-21): dev
-khác làm dựa trên OpenAPI `docs/api/gm-openapi.json` (owner 2026-10-27); trang tĩnh `/gm/v1/ui` chỉ còn mức P0.
+OPS-04, ACC-09/10/11/24/27/45/49. Ban (GM-07), maintenance toggle: slice 008. GM console (GM-01, TBD-21): owner tự xây console
+GM chung thành các slice framework GM-1..GM-4, dựng từ GM document (quyết định 2026-11-05, thiết kế
+`AgentMemories/features/gm-tool/01_design.md`); slice 017 (GM-1) là hợp đồng backend. Trang tĩnh `/gm/v1/ui` vẫn là trang P0.
 
-Đúng với framework v0.7.0 (phát hành 2026-11-04).
+Đúng với framework v0.7.0 (phát hành 2026-11-04) + nhánh `017-gm-api-contract` (chưa phát hành).
 
 ## Permission catalog (semantic — SEC-07)
 
@@ -13,7 +14,7 @@ catalog → startup fail (SEC-08).
 
 | Permission | Module sở hữu | Dùng cho |
 | --- | --- | --- |
-| `gm.access` | gm | `/gm/v1/me`, logout |
+| `gm.access` | gm | `/gm/v1/me`, logout, catalog GM `/gm/v1/console/openapi.json` (slice 017) |
 | `player.read` | gm, economy (tên dùng chung; catalog là hợp của các module) | lookup, search, receipts, audit, ledger |
 | `player.read.pii` | gm | hiện `identities` (mapping key) trong lookup |
 | `ops.read` | gm | `GET /gm/v1/health` (chi tiết health, slice 005), `GET /gm/v1/ops/gate`, `GET /gm/v1/ops/version` (slice 013) |
@@ -78,7 +79,9 @@ Module cũng khai index
   phải có `X-CSRF-Token`; mọi origin khác bị chặn.
 - Đăng nhập lại (local hoặc SSO) khi trình duyệt còn phiên → phiên cũ bị huỷ ở server. Endpoint login nhận CSRF token
   lấy khi đang đăng nhập (token gắn phiên).
-- Mọi response GM có `Cache-Control: no-store` (có thể chứa PII). Cookie luôn `Secure` ngoài Development.
+- Mọi response GM có `Cache-Control: no-store` (có thể chứa PII). Ngoại lệ duy nhất (slice 017): catalog route
+  `/gm/v1/console/openapi.json` ghi đè thành `private, no-cache` + `ETag` (document không chứa dữ liệu player/staff, console
+  revalidate bằng 304). Cookie luôn `Secure` ngoài Development.
 - Cache staff/session chỉ giữ kết quả tìm thấy (token/staffId lạ không làm phình cache).
 - Token player trên GM API → 401; cookie GM trên Player API → 401 (scheme tách theo profile, SEC-02).
 - Runner kiểm lại: command profile `Gm` chỉ chạy cho actor GM có permission của command; command `Player` chỉ cho
@@ -89,11 +92,13 @@ Module cũng khai index
 | Route | Profile / permission | Ghi chú |
 | --- | --- | --- |
 | `GET /gm/v1/auth/csrf` | Public | `{token}` + cookie `gs_gm_csrf` |
+| `GET /gm/v1/auth/methods` | Public (allowlist qua declaration, slice 017) | `{local, sso}`: `local` = route login local được map (development tools), `sso` = `Gm:Oidc` đã cấu hình (cấu hình, không phải IdP sống). Không trả gì khác (không version, staff, setting) |
 | `GET /gm/v1/auth/sso/start?returnUrl=` | Public (khi `Gm:Oidc` cấu hình) | 302 tới IdP (code + PKCE); `returnUrl` chỉ nhận đường dẫn `/gm/...` |
 | `GET /gm/v1/auth/sso/callback` | Public (handler OIDC) | thành công → cookie + 302 `returnUrl`; từ chối → 302 `/gm/?error=sso_denied` |
-| `POST /gm/v1/auth/login` `{staffId, password}` | Public, CSRF (chỉ map ở Development/Test) | 200 `{staffId, displayName, gameId, environmentId, permissions[]}` + cookie; sai → 401 |
+| `POST /gm/v1/auth/login` `{staffId, password}` | Public, CSRF (chỉ map ở Development/Test) | 200 `{staffId, displayName, gameId, environmentId, permissions[], frameworkVersion, gameVersion}` + cookie; sai → 401 |
 | `POST /gm/v1/auth/logout` | `gm.access`, CSRF | 204, xoá ticket + cookie; `GET` → 405 |
-| `GET /gm/v1/me` | `gm.access` | như response login |
+| `GET /gm/v1/me` | `gm.access` | như response login; `frameworkVersion` (informational, như `ops/version`) và `gameVersion` của instance trả lời (slice 017, D9) |
+| `GET /gm/v1/console/openapi.json` | `gm.access` | (slice 017) GM document của host, mọi môi trường; `ETag` mạnh, `Cache-Control: private, no-cache`, 304 khi `If-None-Match` khớp; xem mục "GM document và hợp đồng console" |
 | `GET /gm/v1/health` | `ops.read` | chi tiết từng health check (OBS-03); 404 nếu host không bật observability |
 | `GET /gm/v1/ui` | Public | trang HTML tĩnh same-origin, CSP chặt (`frame-ancestors 'none'`, `connect-src 'self'`) |
 | `GET /gm/v1/players/{playerId}` | `player.read` | `{playerId, aggregates[], deletion}`: mọi aggregate (kể cả hidden): `{id, exists, clientVisible, rev, schemaVersion, storedSchemaVersion, sizeBytes, updatedAtUtc, state}`; `deletion` (slice 010, null khi không có yêu cầu xoá) = `{state: pending\|purging\|purged, requestedAtUtc, purgeAfterUtc, purgeStartedAtUtc, purgedAtUtc}`. Player đã purge → **200** `aggregates: []`, `deletion.state = purged`, không dữ liệu cá nhân, không bao giờ trả anonymous id (D7). Không aggregate **và** không purge record → 404 |
@@ -118,7 +123,7 @@ Module cũng khai index
 | `POST /gm/v1/players/{playerId}/ban` `{reason, untilUtc?, scope[]?}` | `player.ban` | (module identity) command `identity.ban`; không `untilUtc` = vĩnh viễn, không scope = `login` |
 | `POST /gm/v1/players/{playerId}/unban` `{reason}` | `player.ban` | (module identity) command `identity.unban` |
 | `POST /gm/v1/players/{playerId}/deletion/cancel` `{reason}` | `player.ban`, CSRF | (module identity, slice 010) command `identity.cancel_deletion`; `result = {before: DeletionInfo}`; 409 `DELETION_NOT_PENDING` / `DELETION_GRACE_OVER` (grace hết, purge đã bắt đầu, hoặc đã purge); xem PCR identity |
-| `GET /gm/v1/openapi/gm.json` | Public (chỉ Development/Test) | OpenAPI GM: mỗi operation có `x-gm-permission`, `x-gm-csrf` |
+| `GET /gm/v1/openapi/gm.json` | Public (chỉ Development/Test) | cùng GM document với catalog route (giữ nguyên, route platform `platform.gm_openapi`) |
 
 `StaffView` = `{staffId, displayName, email, status, disabled, oidcBound, permissions[] (game/env này), updatedAtUtc, replayed}`
 — không trả password hash, `sessionEpoch`, subject OIDC. Mutation staff/rotate: `X-Request-Id` UUID bắt buộc, `reason`
@@ -137,8 +142,9 @@ cuối. Cursor keyset opaque = base64url(`{v: giá trị orderBy, k: key}`); cur
 
 ## Command GM (semantic)
 
-`MapGmCommand`: body JSON (`application/json`, ≤ 1 MiB) phải có `reason` 1–500 ký tự (thiếu → 400); header `X-Request-Id`
-UUID bắt buộc; actor = staff, player đích = `{playerId}` của route; `receiptId = hash(staffId|playerId|operation|requestId)`.
+`MapGmCommand`: body JSON (`application/json`, ≤ 1 MiB) phải có `reason` 1–500 ký tự, không chỉ khoảng trắng; DataAnnotations
+của body được kiểm trước `toDomain` (slice 017; lỗi → 400 `BAD_REQUEST` có `errors`, xem mục "GM document và hợp đồng
+console"); header `X-Request-Id` UUID bắt buộc; actor = staff, player đích = `{playerId}` của route; `receiptId = hash(staffId|playerId|operation|requestId)`.
 Player đích phải tồn tại (có `profile`) và không chờ xoá, nếu không → 404 `NOT_FOUND`, không ghi gì (`IGmTargetValidator`
 do module gm đăng ký). Ngoại lệ (slice 010): `identity.cancel_deletion` được nhắm player đang chờ xoá; player đã purge (chỉ còn
 purge record) → 409 `DELETION_GRACE_OVER`. Lookup `by-mapping` và `search` của player đã purge → 404 / rỗng (mapping và profile
@@ -207,9 +213,11 @@ Production: không có login local; staff đầu tiên qua `Gm:Oidc:BootstrapMan
 
 ## Route catalog và section (slice 014 — FG-026, FG-027, FG-028)
 
-27 route `gm.*` khai trong `GmRoutes` (`src/GameServer.Modules.Gm.Adapters/GmRoutes.cs`, `Routes = GmRoutes.All`);
-permission chép từ lời gọi `AsGmEndpoint(...)` trước đây; route Public được allowlist qua declaration (không còn
-`PublicEndpoints`). Điều kiện hosting: `gm.auth_login` chỉ map khi `development_tools` (Development/Test),
+29 route `gm.*` khai trong `GmRoutes` (`src/GameServer.Modules.Gm.Adapters/GmRoutes.cs`, `Routes = GmRoutes.All`; slice 017
+thêm `gm.auth_methods`, `gm.console_catalog`); permission chép từ lời gọi `AsGmEndpoint(...)` trước đây; route Public được
+allowlist qua declaration (không còn `PublicEndpoints`). **Allowlist Public (SEC-09)** của module gm: `gm.auth_csrf`,
+`gm.auth_login`, `gm.sso_start`, `gm.sso_callback`, `gm.ui`, `gm.auth_methods` — được allowlist qua declaration, game không
+cần cấu hình gì (`GameServer:PublicEndpointAllowlist` mặc định hay tường minh đều được, V10). Điều kiện hosting: `gm.auth_login` chỉ map khi `development_tools` (Development/Test),
 `gm.sso_start`/`gm.sso_callback` chỉ khi `gm.sso` (`AddRouteCondition("gm.sso", …)` = `Gm:Oidc` đã cấu hình); route có
 condition tắt không map và không bị endpoint check đòi. Bảng route lấy từ export của SampleHost (`--environment Local
 --export-wire-contract`, format `gameserver.wire-contract/1`). Endpoint check lúc khởi động, quy tắc đặt tên và điều
@@ -223,6 +231,8 @@ route `platform.gm_openapi` của platform (PCR platform mục 20). Route GM c�
 | `gm.auth_csrf` | GET | `/gm/v1/auth/csrf` | Public | — | — | — |
 | `gm.auth_login` | POST | `/gm/v1/auth/login` | Public | — | — | `development_tools` |
 | `gm.auth_logout` | POST | `/gm/v1/auth/logout` | Gm | — | `gm.access` | — |
+| `gm.auth_methods` | GET | `/gm/v1/auth/methods` | Public | — | — | — |
+| `gm.console_catalog` | GET | `/gm/v1/console/openapi.json` | Gm | — | `gm.access` | — |
 | `gm.health` | GET | `/gm/v1/health` | Gm | — | `ops.read` | — |
 | `gm.me` | GET | `/gm/v1/me` | Gm | — | `gm.access` | — |
 | `gm.ops_gate` | GET | `/gm/v1/ops/gate` | Gm | — | `ops.read` | — |
@@ -249,6 +259,115 @@ route `platform.gm_openapi` của platform (PCR platform mục 20). Route GM c�
 | `gm.ui` | GET | `/gm/v1/ui` | Public | — | — | — |
 
 Module không có aggregate client-visible.
+
+## GM document và hợp đồng console (slice 017 — GM-1)
+
+**Catalog route** `gm.console_catalog` (`GET /gm/v1/console/openapi.json`, Gm, `gm.access`, không nằm trong document):
+
+- GM document (OpenAPI `3.1.1`, document `gm`, mọi endpoint `/gm/**` không bị loại) đăng ký ở **mọi môi trường**; sinh **lười**
+  ở request catalog đầu tiên (hoặc lời gọi kit), qua `IOpenApiDocumentProvider` không cần request, rồi giữ cho cả process
+  (`GmCatalogDocument`, Platform.Web). Nhiều request đầu đồng thời dùng chung một lần sinh; lần sinh lỗi được giữ 30 giây
+  (`GmCatalogDocument.FailureHold`: mọi request trong khoảng đó nhận cùng lỗi, 500 `INTERNAL`), sau đó request kế tiếp sinh lại. Mỗi lần sinh một dòng Information category `GameServer.Gm.Catalog`:
+  `GM catalog generated: {Operations} operations, {Bytes} bytes, {ElapsedMs} ms.`
+- Bytes chuẩn: JSON của document viết lại bằng System.Text.Json, thụt lề, LF, đúng một newline cuối, UTF-8 không BOM — giống
+  hệt file commit và output của kit. `ETag` mạnh = `"` + 32 hex đầu của SHA-256(bytes) + `"`.
+- 200: `Content-Type: application/json`, bytes, `ETag`, `Cache-Control: private, no-cache`. `If-None-Match` khớp (danh sách
+  phân cách dấu phẩy, tag `W/` so theo giá trị, `*`) → 304 không body, cùng hai header. Không phiên → 401 `UNAUTHENTICATED`;
+  thiếu `gm.access` hoặc grant game/env khác → 403. Mọi staff `gm.access` nhận cùng bytes (không lọc theo permission, Q5).
+- Document không có `servers`, không version framework/game, không giá trị cấu hình (FR-008): cùng composition → cùng bytes ở
+  mọi môi trường, chỉ khác route có điều kiện (`gm.auth_login` khi có development tools, SSO khi có `Gm:Oidc`).
+- Route Dev/Test `platform.gm_openapi` (`/gm/v1/openapi/{documentName}.json`, Public) giữ nguyên, trả cùng document.
+- CORS cho console khác origin (expose `ETag`) là việc của GM-2.
+
+**Bootstrap của console** (thứ tự design §10): `GET /gm/v1/auth/methods` → đăng nhập → `GET /gm/v1/auth/csrf` →
+`GET /gm/v1/me` (có `frameworkVersion`, `gameVersion`) → `GET /gm/v1/console/openapi.json` (kèm `If-None-Match` khi có bản).
+
+**Khoá `x-gm-*` của operation** (framework sở hữu; game không thêm khoá, chỉ dùng presentation API):
+
+| Khoá / member | Luật | Có ở |
+| --- | --- | --- |
+| `operationId` | tên route declaration (`RouteDeclarationMetadata`, không có thì tra catalog theo method + template); duy nhất | mọi operation |
+| `tags` | `[area]` = phần tên route trước dấu `.` đầu tiên, trừ khi endpoint có `WithTags(...)` | mọi operation |
+| `summary` | `WithSummary(...)` (tiếng Anh, một câu) | mọi route GM của framework; route game tuỳ chọn nhưng nên có (console hiện nó) |
+| path parameter | mọi `{name}` của template, `required`, `string`; `playerId` thêm `pattern ^[A-Za-z0-9_-]{1,64}$` | operation có tham số template |
+| header `X-Request-Id` | `required`, `string`, `format: uuid` | GM command; action có `WithGmRequestId()` |
+| query parameter | `pageSize` (bắt buộc, integer 1..200), `cursor` (tuỳ chọn) của `ProducesGmPage<T>`; tham số khai bằng `WithGmQueryParameter` | list phân trang, tham số đọc tay |
+| `x-gm-permission`, `x-gm-csrf` | như trước (permission hoặc `public`; method unsafe và profile Gm hoặc `RequireCsrf`) | mọi operation |
+| `x-gm-kind` | `command` (có `CommandOperationMetadata`) · `query` (GET) · `action` (method khác) | mọi operation |
+| `x-gm-operation` | tên operation của command | `x-gm-kind = command` |
+| `x-gm-target` | `player` khi template có `{playerId}`, ngược lại `global` | mọi operation |
+| `x-gm-confirm` | `typed` khi có `WithGmConfirm(GmConfirm.Typed)`, ngược lại `simple` | operation không phải GET |
+| `x-gm-paged` | `true` | list có `ProducesGmPage<T>` |
+
+Bảng kind/target/confirm của operation framework: `contracts/gm-document.md` §2 của slice 017. Xác nhận kiểu gõ (Q7):
+`identity.ban`, `identity.cancel_deletion`, `economy.adjust`, `gm.ops_rotate_keys`, `gm.ops_gate_maintenance`. Header
+`X-Request-Id` trên 8 action framework (đều đi qua `StaffEndpoints.Change`): `gm.staff_create`, `gm.staff_grant`,
+`gm.staff_disable`, `gm.staff_enable`, `gm.staff_revoke_sessions`, `gm.ops_gate_maintenance`, `gm.ops_gate_min_client_version`,
+`gm.ops_rotate_keys`. List phân trang: `gm.player_search` (`GmPlayerSearchItem`, thêm `displayName` 1..64),
+`gm.player_receipts` (`GmReceiptSummary`), `gm.staff_list` (`StaffView`) có item typed; `gm.player_audit`, `gm.staff_audit`,
+`economy.ledger` item tự do (`JsonObject`: document lưu trữ trả nguyên, D10).
+
+**Schema của request body** (body của endpoint `/gm/**` có `Accepts<T>`; response schema giữ như generator):
+
+- `required` = đúng các property server đòi (thay list của generator, vốn liệt kê mọi tham số positional): property có
+  `[Required]`, **mọi value type không nullable được đọc từ JSON và không có giá trị mặc định** (`int`, `long`, `bool`, enum… —
+  vắng thì đọc ra giá trị mặc định nên server từ chối sự vắng mặt, có hay không có `[Required]`; tham số constructor có mặc định
+  không có `[Required]` và member tính toán chỉ-get vẫn tuỳ chọn; `[Required]` tường minh luôn kiểm có mặt), và `reason` của `IGmCommandBody`; áp cả cho object lồng (`ProbeNested.inner`).
+  `null` bị bỏ khỏi `type` của property `[Required]`; `[Required]` trên chuỗi thêm `minLength: 1` và `pattern: "\\S"` (server từ
+  chối `""` và chuỗi chỉ khoảng trắng). Muốn tuỳ chọn: khai nullable (`int?`).
+- `reason`: `type: string`, `minLength: 1`, `maxLength: 500`, `pattern: "\\S"` (JSON; regex `\S`, = luật server).
+- Keyword từ DataAnnotations: `[Range]` → `minimum`/`maximum` (biên `long.MaxValue` viết chính xác); `[StringLength]`,
+  `[MinLength]`, `[MaxLength]`, `[Length]` → `minLength`/`maxLength` (chuỗi) hoặc `minItems`/`maxItems` (collection);
+  `[RegularExpression("p")]` → `pattern: "^(?:p)?$"` (.NET so khớp **toàn bộ** chuỗi và cho `""` qua; `pattern` của JSON Schema
+  là tìm kiếm, nên được bọc lại); `[Description]` → `description`. Viết ở property schema (nơi dùng), không bao giờ ở
+  component dùng chung.
+- `[GmOptions("<route>")]` → `x-gm-options: "<route>"` trên property, hoặc trên `items` của collection.
+- Số giữ dạng của generator (`type: ["integer","string"]`, `format`, `pattern`); enum là `type: string` + `enum` = đúng các chuỗi
+  `GameServerJson.Options` ghi (camelCase), do schema transformer viết — HTTP JSON options của host không bị đổi.
+
+**Kiểm body ở server** (`MapGmCommand` và `GmHttp.ReadJsonAsync<T>`): cùng một lần duyệt contract System.Text.Json của body
+(property **và** tham số positional, object lồng và item của list object tới độ sâu 3) cho cả document lẫn server, nên hai bên
+không lệch. Value type không nullable (có hay không `[Required]`) được kiểm **có mặt** trong JSON (thiếu số đọc ra 0) → thiếu
+thì `errors["<path>"] = ["The <name> field is required."]`, kể cả trong object lồng (`nested.inner`, `items[0].inner`). Pattern
+của `[RegularExpression]` phải có cùng nghĩa trong regex .NET và JavaScript (console kiểm bằng JavaScript): tránh cú pháp chỉ
+.NET có (lookbehind phức tạp, `(?<name>…)` kiểu .NET cũ, class Unicode `\p{…}` không có cờ `u`). Câu trả lời:
+
+```json
+{ "type": "https://errors.gameserver/bad_request", "title": "The request is invalid.", "status": 400, "code": "BAD_REQUEST", "codeNumber": 1,
+  "requestId": "…", "retryable": false,
+  "errors": { "level": ["The field level must be between 1 and 2147483647."],
+              "reason": ["reason is required (1..500 characters, not only white space)."] } }
+```
+
+`errors`: khoá = JSON path (`level`, `box.label`, `items[1].quantity`), thứ tự ordinal, mỗi field mọi message (message tiếng
+Anh của attribute, không text exception). Chỉ có khi luật body hỏng; JSON sai, thiếu `X-Request-Id` và luật `toDomain` (luật
+chéo field) giữ dạng cũ (không `errors`). Đếm và log như mọi `BAD_REQUEST`. Console map `errors["<path>"]` vào field cùng path.
+
+**Option route**: route GM `GET` (surface GmApi) trả `GmOptionList { items: [{ value, label }] }`; property body trỏ tới bằng
+`[GmOptions]`. Tên không phải route GM GET của host (sai tên, route POST, surface Player, route service-only, condition không
+giữ) → startup fail, một dòng mỗi (endpoint, property). Framework: `economy.resource_options`, `identity.ban_scopes` (PCR
+economy, identity). Server vẫn kiểm giá trị gửi lên. Permission của option route phải là `gm.access` hoặc đúng permission của
+endpoint dùng body đó, nếu không startup fail (một dòng): ai chạy được command thì tải được lựa chọn. `economy.resource_options`
+cần `gm.access` (tên resource không nhạy cảm; mặc định do orchestrator chọn, chờ owner); `identity.ban_scopes` cần
+`player.ban` (= `identity.ban`). Cùng lần kiểm khi khởi động chạy thử mỗi validation attribute của body (regex sai, toán hạng
+`[Range]` không đổi được kiểu…) → một dòng startup mỗi attribute hỏng thay vì 500 ở request đầu.
+
+**Giới hạn đã biết của schema enum** (review r2 m2): enum `[Flags]` (ghi ra danh sách tên phân cách dấu phẩy) và property có
+converter riêng (`[JsonConverter]`) giữ schema của generator (thường `integer`), không có danh sách `enum` — console hiện ô nhập
+tự do.
+
+**Giới hạn đã biết** (quyết định chờ owner, review 017 M4): server kiểm body tới độ sâu 3 và không kiểm phần tử của body là mảng
+ở gốc; giữ body GM ≤ 3 cấp, gốc là object.
+
+**Quy ước annotation** (module-authoring guide): dùng tập attribute hỗ trợ, viết `[property: …]` hoặc trên tham số positional
+(cả hai được thi hành); nullable = tuỳ chọn; luật chéo field ở `toDomain`; attribute tự viết được thi hành nhưng document không
+hiện. Framework chỉ annotate luật đã thi hành chính xác (A10): `AdjustResourceBody.Resource` `[Required]`,
+`MaintenanceBody.Message` `[StringLength(500)]` (501 ký tự → 400 có `errors.message`); `CreateStaffBody`, `StaffGrantBody`,
+`MinClientVersionBody`, `GmLoginRequest` giữ kiểm tra viết tay (trim/lower-case/luật chéo).
+
+**Cam kết tương thích** (ARC-08): trong `/gm/v1`, document chỉ thay đổi kiểu thêm (operation mới, member tuỳ chọn mới, giá trị
+`x-gm-*` mới). Xoá/đổi tên operation id, path, member bắt buộc, hoặc đổi kind/target của route có sẵn là breaking change ghi
+trong release note. Document commit của game bằng đúng cái host phục vụ (`GmOpenApiSnapshot.DiffAsync` rỗng trong CI của game).
 
 ## Aggregate hỏng và details của từ chối (slice 016 — FG-029, FG-016, BC-3, BC-11)
 

@@ -106,6 +106,10 @@ then the same normalisation.
 converter). If so, `GameServerBuilder` configures the HTTP JSON options with the enum converter of `GameServerJson`, after
 the V12 inventory shows no framework endpoint whose runtime JSON changes; else an enum schema transformer.
 
+**V12 result (T003)**: confirmed; the only runtime user of the HTTP JSON options is the counter's GM read (anonymous
+object without enum), so the HTTP JSON options path was taken first. **Deviation (review r1 m1)**: replaced by the enum
+schema transformer (fallback of V12) so the host's HTTP JSON options never change; no BC entry.
+
 **Why**: GM handlers read and write with `GameServerJson.Options` (camelCase enum strings); a document showing integer
 enums would be wrong for every future game enum. Naming (camelCase) and number handling (`AllowReadingFromString`) already
 match: the committed copy shows `type: ["integer","string"]` for `long` and `int` (FR-014 keeps it).
@@ -127,6 +131,11 @@ records keep "always present"). Overwriting from the same contract makes V1's ou
 
 **Trap**: the generator may emit a `$ref` for a nested type and a property schema for the use site; keywords go on the
 property schema (the use site), never on the shared component (another use could have other rules).
+
+**V1 result (T003, deviation recorded)**: the generator emits keywords for `[property: …]` attributes only (none for
+positional-parameter attributes), never uses `[Required]`, lists every positional parameter in `required`, and writes
+`[Range]` of a nested-object property onto the shared component. Fallback applied: the transformer overwrites keywords
+from `GmBodyContract` on use sites and rewrites `required` of request bodies.
 
 ## R7 — Option routes; `ban-scopes` under `/gm/v1/players/`
 

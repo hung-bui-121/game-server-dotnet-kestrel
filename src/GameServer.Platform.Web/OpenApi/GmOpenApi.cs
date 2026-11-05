@@ -12,9 +12,11 @@ using Microsoft.OpenApi;
 namespace GameServer.Platform.Web.OpenApi;
 
 /// <summary>
-/// OpenAPI document of the GM API (deliverable #8, FR-020 of slice 007): every <c>/gm/**</c> endpoint, with the GM
-/// permission it needs (<c>x-gm-permission</c>) and whether a cookie caller must send <c>X-CSRF-Token</c>
-/// (<c>x-gm-csrf</c>). Served in Development/Test only; the committed copy is <c>docs/api/gm-openapi.json</c>.
+/// OpenAPI document of the GM API (deliverable #8, FR-020 of slice 007; slice 017): every <c>/gm/**</c> endpoint, with the GM
+/// permission it needs (<c>x-gm-permission</c>), whether a cookie caller must send <c>X-CSRF-Token</c> (<c>x-gm-csrf</c>) and
+/// the <c>x-gm-*</c> keys of a generic console. Registered in every environment and served by the catalog route
+/// (<see cref="GmCatalogDocument"/>); the route <see cref="Route"/> serves it in Development/Test only. The committed copy is
+/// <c>docs/api/gm-openapi.json</c>.
 /// </summary>
 public static class GmOpenApi
 {
@@ -22,23 +24,13 @@ public static class GmOpenApi
     public const string Route = "/gm/v1/openapi/{documentName}.json";
     public const string DocumentPath = "/gm/v1/openapi/gm.json";
 
+    /// <summary>Registers the GM document with the GM transformers (every environment since slice 017).</summary>
     public static void Add(IServiceCollection services)
     {
         services.AddOpenApi(DocumentName, options =>
         {
             options.ShouldInclude = description => description.RelativePath?.StartsWith("gm/", StringComparison.OrdinalIgnoreCase) == true;
-            options.AddDocumentTransformer((document, _, _) =>
-            {
-                document.Info = new OpenApiInfo
-                {
-                    Title = "Game Server GM API",
-                    Version = "v1",
-                    Description = "JSON API for GM tools. Errors are Problem Details with a `code` (error-code catalog). " +
-                        "Cookie-authenticated mutations need the `X-CSRF-Token` header from GET /gm/v1/auth/csrf; " +
-                        "GM commands need an `X-Request-Id` UUID and a `reason`.",
-                };
-                return Task.CompletedTask;
-            });
+            options.AddDocumentTransformer<GmDocumentTransformer>();
             options.AddOperationTransformer((operation, context, _) =>
             {
                 var metadata = context.Description.ActionDescriptor.EndpointMetadata;
@@ -55,6 +47,8 @@ public static class GmOpenApi
                 operation.Responses["5XX"] = new OpenApiResponse { Description = "Problem Details; `retryable` tells whether the same request may be retried." };
                 return Task.CompletedTask;
             });
+            options.AddOperationTransformer<GmOperationTransformer>();
+            options.AddSchemaTransformer<GmSchemaTransformer>();
         });
     }
 

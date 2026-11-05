@@ -1,6 +1,8 @@
+using System.Text.Json.Nodes;
 using GameServer.Errors;
 using GameServer.Platform;
 using GameServer.Platform.Web.Auth;
+using GameServer.Platform.Web.Commands;
 using GameServer.Platform.Web.Endpoints;
 using GameServer.Platform.Web.Middleware;
 using GameServer.Platform.Web.Routing;
@@ -23,6 +25,8 @@ public sealed record StaffView(
     string? UpdatedAtUtc,
     bool Replayed = false);
 
+// The staff bodies implement IGmCommandBody: the reason is required like on every GM mutation (StaffAdminService checks it), so
+// the GM document lists it as required with the server rule (slice 017 review M2). Reading them is unchanged.
 public sealed record CreateStaffBody(
     string? StaffId,
     string? DisplayName,
@@ -31,11 +35,11 @@ public sealed record CreateStaffBody(
     string? Subject,
     List<string>? Roles,
     List<string>? Permissions,
-    string? Reason);
+    string? Reason) : IGmCommandBody;
 
-public sealed record StaffGrantBody(List<string>? Roles, List<string>? Permissions, string? Reason);
+public sealed record StaffGrantBody(List<string>? Roles, List<string>? Permissions, string? Reason) : IGmCommandBody;
 
-public sealed record StaffReasonBody(string? Reason);
+public sealed record StaffReasonBody(string? Reason) : IGmCommandBody;
 
 /// <summary>Staff management API (SEC-15, SEC-10, SEC-14 — contract gm-security-api.md).</summary>
 public static class StaffEndpoints
@@ -53,16 +57,20 @@ public static class StaffEndpoints
         // Explicit delegate types: a lambda taking only HttpContext would bind to RequestDelegate and drop its result.
         routes.MapDeclared(GmRoutes.StaffList, (Func<HttpContext, Task<IResult>>)(async http =>
                 GmHttp.Json(await GmHttp.QueryAsync(http, StaffDirectory.Collection, "type", StaffRecord.DocumentType, "staffId", descending: false, d => View(http, StaffDirectory.Parse(d)!)))))
-            .Produces<GmPage<StaffView>>()
+            .ProducesGmPage<StaffView>()
+            .WithSummary("List the staff of this game and environment (paged).")
             .AsGmEndpoint(GmPermissions.StaffRead);
 
         routes.MapDeclared(GmRoutes.Staff, async (HttpContext http, string staffId) =>
                 GmHttp.Json(View(http, await GetAsync(http, RequireStaffId(staffId)))))
             .Produces<StaffView>()
+            .WithSummary("Show one staff member and its grants.")
             .AsGmEndpoint(GmPermissions.StaffRead);
 
         routes.MapDeclared(GmRoutes.StaffAudit, async (HttpContext http, string staffId) =>
                 GmHttp.Json(await GmHttp.QueryAsync(http, GmModule.AuditCollection, "targetStaffId", RequireStaffId(staffId), "committedAtUtc", descending: true, d => d.Content)))
+            .ProducesGmPage<JsonObject>()
+            .WithSummary("List the audit entries about a staff member, newest first (paged).")
             .AsGmEndpoint(GmPermissions.StaffRead);
 
         routes.MapDeclared(GmRoutes.StaffCreate, (Func<HttpContext, Task<IResult>>)(async http =>
@@ -99,6 +107,8 @@ public static class StaffEndpoints
             }))
             .Accepts<CreateStaffBody>(GmHttp.JsonContentType)
             .Produces<StaffView>(StatusCodes.Status201Created)
+            .WithSummary("Create a staff member invited by email or bound to an SSO identity (audited).")
+            .WithGmRequestId()
             .AsGmEndpoint(GmPermissions.StaffManage);
 
         routes.MapDeclared(GmRoutes.StaffGrant, async (HttpContext http, string staffId) =>
@@ -109,12 +119,22 @@ public static class StaffEndpoints
             })
             .Accepts<StaffGrantBody>(GmHttp.JsonContentType)
             .Produces<StaffView>()
+            .WithSummary("Replace the roles and permissions of a staff member (audited).")
+            .WithGmRequestId()
             .AsGmEndpoint(GmPermissions.StaffManage);
 
         routes.MapDeclared(GmRoutes.StaffDisable, (HttpContext http, string staffId) => SetDisabledAsync(http, staffId, disabled: true))
-            .Accepts<StaffReasonBody>(GmHttp.JsonContentType).Produces<StaffView>().AsGmEndpoint(GmPermissions.StaffManage);
+            .Accepts<StaffReasonBody>(GmHttp.JsonContentType)
+            .Produces<StaffView>()
+            .WithSummary("Disable a staff member and end its sessions (audited).")
+            .WithGmRequestId()
+            .AsGmEndpoint(GmPermissions.StaffManage);
         routes.MapDeclared(GmRoutes.StaffEnable, (HttpContext http, string staffId) => SetDisabledAsync(http, staffId, disabled: false))
-            .Accepts<StaffReasonBody>(GmHttp.JsonContentType).Produces<StaffView>().AsGmEndpoint(GmPermissions.StaffManage);
+            .Accepts<StaffReasonBody>(GmHttp.JsonContentType)
+            .Produces<StaffView>()
+            .WithSummary("Enable a disabled staff member (audited).")
+            .WithGmRequestId()
+            .AsGmEndpoint(GmPermissions.StaffManage);
 
         // gm.access: revoking one's own sessions needs no management permission; anyone else's does (checked below).
         routes.MapDeclared(GmRoutes.StaffRevokeSessions, async (HttpContext http, string staffId) =>
@@ -132,6 +152,8 @@ public static class StaffEndpoints
             })
             .Accepts<StaffReasonBody>(GmHttp.JsonContentType)
             .Produces<StaffView>()
+            .WithSummary("End every session of a staff member, one's own included (audited).")
+            .WithGmRequestId()
             .AsGmEndpoint(GmPermissions.Access);
     }
 

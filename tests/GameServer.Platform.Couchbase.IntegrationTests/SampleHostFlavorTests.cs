@@ -1,6 +1,7 @@
 using System.Net;
 using GameServer.Config;
 using GameServer.Modules.Economy;
+using GameServer.Modules.Gm;
 using GameServer.Platform.Couchbase.IntegrationTests.Infrastructure;
 using GameServer.Platform.Observability;
 using GameServer.Platform.Web.Auth;
@@ -33,6 +34,10 @@ public sealed class SampleHostFlavorTests(ProvisionedSampleScope scope)
 
         (await client.GetAsync(ObservabilityModule.ReadyRoute)).StatusCode.ShouldBe(HttpStatusCode.OK);
         (await client.GetAsync(GmOpenApi.DocumentPath)).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        // Slice 017 (FR-030, FR-034): the console catalog needs a GM session; the sign-in methods follow the flavor.
+        (await client.GetAsync(GmModule.ConsoleCatalogRoute)).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await client.GetStringAsync(GmModule.AuthMethodsRoute)).ShouldBe("""{"local":true,"sso":false}""");
         client.DefaultRequestHeaders.Add(TestAuthenticationHandler.PlayerHeader, "flavor-dev");
         (await client.PostProtobufAsync("/api/v1/player/snapshot", new SnapshotRequest())).StatusCode.ShouldBe(HttpStatusCode.OK);
     }
@@ -64,6 +69,11 @@ public sealed class SampleHostFlavorTests(ProvisionedSampleScope scope)
             // No development tools (R13): no cheat route, no GM OpenAPI, and the test authentication header is ignored.
             (await client.PostAsync(CheatModule.GrantRoute, new ByteArrayContent([]))).StatusCode.ShouldBe(HttpStatusCode.NotFound);
             (await client.GetAsync(GmOpenApi.DocumentPath)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+
+            // Slice 017 (FR-030, FR-034, SC-003): the catalog route exists without development tools and needs a GM session; no
+            // local login, SSO as the staging secrets configure it.
+            (await client.GetAsync(GmModule.ConsoleCatalogRoute)).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+            (await client.GetStringAsync(GmModule.AuthMethodsRoute)).ShouldBe("""{"local":false,"sso":true}""");
             client.DefaultRequestHeaders.Add(TestAuthenticationHandler.PlayerHeader, "flavor-staging");
             (await client.PostProtobufAsync("/api/v1/player/snapshot", new SnapshotRequest())).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         }

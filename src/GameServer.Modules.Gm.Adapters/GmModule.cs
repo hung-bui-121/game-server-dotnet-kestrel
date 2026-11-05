@@ -36,7 +36,21 @@ public sealed record GmHealthEntry(
 
 public sealed record GmHealthReport(string Status, double DurationMs, IReadOnlyList<GmHealthEntry> Entries);
 
-public sealed record GmMeResponse(string StaffId, string DisplayName, string GameId, string EnvironmentId, IReadOnlyList<string> Permissions);
+/// <summary>
+/// The signed-in staff (<c>GET /gm/v1/me</c> and the local login answer). Since slice 017 it also carries the versions of the
+/// answering instance (D9), so a console can warn about a skew with the catalog it holds.
+/// </summary>
+public sealed record GmMeResponse(string StaffId, string DisplayName, string GameId, string EnvironmentId, IReadOnlyList<string> Permissions)
+{
+    /// <summary>Framework informational version of the answering instance (as <c>GET /gm/v1/ops/version</c>).</summary>
+    public string FrameworkVersion { get; init; } = "";
+
+    /// <summary>Game informational version of the answering instance (<c>unknown</c> when unreadable).</summary>
+    public string GameVersion { get; init; } = "";
+}
+
+/// <summary>Pre-login answer (Public, allowlisted by declaration, SEC-09): which sign-in buttons the login page shows.</summary>
+public sealed record GmAuthMethods(bool Local, bool Sso);
 
 public sealed record GmRotateResponse(string? KeyId, string? ActivatesAtUtc, bool Replayed);
 
@@ -56,6 +70,8 @@ public sealed class GmModule : IGameModule, IGmApiModule
     public const string LoginRoute = "/gm/v1/auth/login";
     public const string LogoutRoute = "/gm/v1/auth/logout";
     public const string MeRoute = "/gm/v1/me";
+    public const string AuthMethodsRoute = "/gm/v1/auth/methods";
+    public const string ConsoleCatalogRoute = "/gm/v1/console/openapi.json";
     public const string UiRoute = "/gm/v1/ui";
     public const string HealthRoute = "/gm/v1/health";
     public const string RotateKeysRoute = "/gm/v1/ops/dataprotection/rotate";
@@ -122,6 +138,7 @@ public sealed class GmModule : IGameModule, IGmApiModule
             routes.MapDeclared(GmRoutes.AuthLogin, (Func<HttpContext, Task<IResult>>)LoginAsync)
                 .Accepts<GmLoginRequest>(GmHttp.JsonContentType)
                 .Produces<GmMeResponse>()
+                .WithSummary("Sign in with a local staff account (Development/Test only) and start a GM session.")
                 .AsPublicEndpoint(protobuf: false)
                 .RequireCsrf()
                 .WithRequestTimeout(ApiRouteExtensions.GmTimeoutPolicy)
@@ -135,17 +152,34 @@ public sealed class GmModule : IGameModule, IGmApiModule
 
         routes.MapDeclared(GmRoutes.AuthCsrf, (Func<HttpContext, Task<IResult>>)CsrfAsync)
             .Produces<GmCsrfResponse>()
+            .WithSummary("Get the CSRF token to send in X-CSRF-Token with cookie-authenticated mutations.")
             .AsPublicEndpoint(protobuf: false)
             .WithRequestTimeout(ApiRouteExtensions.GmTimeoutPolicy)
             .RequireRateLimiting(ApiRouteExtensions.GmLimiterPolicy);
-        routes.MapDeclared(GmRoutes.AuthLogout, (Func<HttpContext, Task<IResult>>)LogoutAsync).Produces(StatusCodes.Status204NoContent).AsGmEndpoint(GmPermissions.Access);
-        routes.MapDeclared(GmRoutes.Me, (HttpContext http) => GmHttp.Json(Me(http))).Produces<GmMeResponse>().AsGmEndpoint(GmPermissions.Access);
+        routes.MapDeclared(GmRoutes.AuthLogout, (Func<HttpContext, Task<IResult>>)LogoutAsync)
+            .Produces(StatusCodes.Status204NoContent)
+            .WithSummary("End the current GM session on every instance.")
+            .AsGmEndpoint(GmPermissions.Access);
+        routes.MapDeclared(GmRoutes.Me, (HttpContext http) => GmHttp.Json(Me(http)))
+            .Produces<GmMeResponse>()
+            .WithSummary("Get the signed-in staff, its permissions and the versions of the answering instance.")
+            .AsGmEndpoint(GmPermissions.Access);
+        GmConsoleEndpoints.Map(routes);
         routes.MapDeclared(GmRoutes.Ui, GmUi.Serve).ExcludeFromDescription().AsPublicEndpoint(protobuf: false);
-        routes.MapDeclared(GmRoutes.Health, (Func<HttpContext, Task<IResult>>)HealthAsync).Produces<GmHealthReport>().AsGmEndpoint(GmPermissions.OpsRead);
-        routes.MapDeclared(GmRoutes.OpsVersion, (Func<HttpContext, IResult>)VersionOf).Produces<GmVersionResponse>().AsGmEndpoint(GmPermissions.OpsRead);
+        routes.MapDeclared(GmRoutes.Health, (Func<HttpContext, Task<IResult>>)HealthAsync)
+            .Produces<GmHealthReport>()
+            .WithSummary("Run the health checks of this instance and report each one with its details.")
+            .AsGmEndpoint(GmPermissions.OpsRead);
+        routes.MapDeclared(GmRoutes.OpsVersion, (Func<HttpContext, IResult>)VersionOf)
+            .Produces<GmVersionResponse>()
+            .WithSummary("Get the identity and the versions of the answering instance.")
+            .AsGmEndpoint(GmPermissions.OpsRead);
         routes.MapDeclared(GmRoutes.OpsRotateKeys, (Func<HttpContext, Task<IResult>>)RotateKeysAsync)
             .Accepts<StaffReasonBody>(GmHttp.JsonContentType)
             .Produces<GmRotateResponse>()
+            .WithSummary("Schedule a new Data Protection key for every instance (audited, idempotent per request id).")
+            .WithGmRequestId()
+            .WithGmConfirm(GmConfirm.Typed)
             .AsGmEndpoint(GmPermissions.KeysRotate);
         StaffEndpoints.Map(routes);
         GateEndpoints.Map(routes);
@@ -197,12 +231,17 @@ public sealed class GmModule : IGameModule, IGmApiModule
         logger.LogInformation("GM local sign-in for staff {StaffId}.", record.StaffId);
 
         var gameServer = services.GetRequiredService<GameServerOptions>();
+        var runtime = services.GetRequiredService<GameServerRuntimeInfo>();
         return GmHttp.Json(new GmMeResponse(
             record.StaffId,
             record.DisplayName,
             gameServer.GameId,
             gameServer.EnvironmentId,
-            record.EffectivePermissions(gameServer.GameId, gameServer.EnvironmentId).Order(StringComparer.Ordinal).ToArray()));
+            record.EffectivePermissions(gameServer.GameId, gameServer.EnvironmentId).Order(StringComparer.Ordinal).ToArray())
+        {
+            FrameworkVersion = runtime.FrameworkVersion,
+            GameVersion = runtime.GameVersion,
+        });
     }
 
     /// <summary>POST only (SEC-05): ends the server-side ticket, so a copied cookie stops working on every instance.</summary>
@@ -264,12 +303,17 @@ public sealed class GmModule : IGameModule, IGmApiModule
     private static GmMeResponse Me(HttpContext http)
     {
         var actor = http.RequestServices.GetRequiredService<ActorContextAccessor>().GetActor(http);
+        var runtime = http.RequestServices.GetRequiredService<GameServerRuntimeInfo>();
         return new GmMeResponse(
             actor.ActorId,
             http.User.FindFirst(GmCookieAuthenticationHandler.DisplayNameClaim)?.Value ?? actor.ActorId,
             actor.GameId,
             actor.EnvironmentId,
-            actor.Permissions.Order(StringComparer.Ordinal).ToArray());
+            actor.Permissions.Order(StringComparer.Ordinal).ToArray())
+        {
+            FrameworkVersion = runtime.FrameworkVersion,
+            GameVersion = runtime.GameVersion,
+        };
     }
 
     private static readonly Lazy<string> DummyHash = new(() => DevPasswordHasher.Hash(Guid.NewGuid().ToString("N")));

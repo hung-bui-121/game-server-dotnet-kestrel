@@ -1,7 +1,8 @@
 # RESUME: GM tool (GM console + GM API) — framework shell, game mở rộng
 
-**Trạng thái (2026-11-05):** THIẾT KẾ BẢN SỬA 1 theo quyết định owner 2026-11-05. Bước kế tiếp: **slice GM-1
-`gm-api-contract`** bằng Spec Kit (phạm vi chốt ở `01_design.md` §19). Chưa có code, chưa commit.
+**Trạng thái (2026-11-05):** GM-1 (slice 017 `gm-api-contract`) ĐÃ IMPLEMENT trên nhánh `017-gm-api-contract` (chưa commit,
+owner commit; 62/64 task, còn T057 auto-memory và T061 Couchbase full suite do owner chạy). Bước kế tiếp: **GM-2
+`gm-console-hosting-shell`**.
 **Thiết kế:** `01_design.md` (đọc §0, rồi §6 hosting/bảo mật, §19 phạm vi GM-1).
 
 **Bối cảnh:** owner tự làm GM frontend (các dòng "giao dev khác" trong `docs/pcr/gm.md`, `p05-speckit/00_summary.md`,
@@ -47,7 +48,20 @@ GM-1 `gm-api-contract` (bắt đầu ngay) → GM-2 `gm-console-hosting-shell` �
 - Còn chờ owner xác nhận (đang làm theo mặc định): 017 D9 (version trong `/me` cho mọi `gm.access`, rộng hơn 013
   `ops.read`), D15 (không bump/tag trong slice, tag kế đề xuất v0.8.0).
 
+## Kết quả GM-1 (slice 017, 2026-11-05)
+
+- VERIFY: V1 sai một phần (generator chỉ đọc `[property:]`, bỏ `[Required]`, `required` = mọi tham số positional) → fallback
+  đã thiết kế: transformer ghi keyword từ cùng walk với server. V10 đúng (route Public của module allowlist qua declaration,
+  test vĩnh viễn `PublicDeclarationAllowlistTests`). V11 đúng (`IOpenApiDocumentProvider` keyed `"gm"`, không request, không
+  `servers`). V12: enum mô tả bằng schema transformer (chuỗi camelCase của `GameServerJson.Options`); review r1 bỏ enum converter toàn host. V13 đúng (`AssociatedParameter.AttributeProvider`).
+- Route mới: `gm.console_catalog`, `gm.auth_methods`, `economy.resource_options`, `identity.ban_scopes`; `/me` có
+  `frameworkVersion`/`gameVersion`; kit `GmOpenApiSnapshot`; fixture có GM command `fixture.note_set` + option route.
+- Đo SC-004: catalog lần đầu 195 ms, warm p95 0,32 ms.
+- Quyết định chờ owner (D/A + review): danh sách 1–9 ở `specs/017-gm-api-contract/release-notes-draft.md`.
+- Ghi chú cho GM-2: CORS cần expose `ETag` cho catalog; catalog ghi đè `no-store` thành `private, no-cache`; 415 cho
+  Content-Type sai trên mọi GM mutation có `Accepts`.
+
 ## Bước kế tiếp
 
-1. Slice GM-1 = **017 `gm-api-contract`** (nhánh `017-gm-api-contract`, spec `e5851ec`) — đang implement.
-2. Sau 017: GM-2 `gm-console-hosting-shell` theo Q16–Q21 ở trên.
+1. Owner commit 017, chạy Couchbase full suite (T061), xử lý file auto-memory (T057), xác nhận các quyết định chờ.
+2. GM-2 `gm-console-hosting-shell` theo Q16–Q21 ở trên.

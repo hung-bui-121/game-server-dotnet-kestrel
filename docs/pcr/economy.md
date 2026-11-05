@@ -2,7 +2,7 @@
 
 Module framework `economy` (slice 003, version 0.2.0 từ slice 004). Nguồn: ECO-01..08, OPS-09, GM-03.
 
-Đúng với framework v0.7.0 (phát hành 2026-11-04).
+Đúng với framework v0.7.0 (phát hành 2026-11-04) + nhánh `017-gm-api-contract` (chưa phát hành).
 
 ## Aggregate
 
@@ -61,6 +61,7 @@ module gm nên Economy chạy được khi không đăng ký module gm). Index `
 | --- | --- | --- |
 | `POST /gm/v1/players/{playerId}/resources/adjust` `{resource, delta, reason}` | `resource.adjust` | `economy.adjust` |
 | `GET /gm/v1/players/{playerId}/ledger?pageSize=&cursor=` | `player.read` | — (list `ledger`, mới nhất trước) |
+| `GET /gm/v1/economy/resources` | `gm.access` | — (slice 017: option list của resource catalog) |
 
 `economy.adjust`: profile `Gm`, Touches `wallet`, `inventory`. `delta > 0` → Grant, `delta < 0` → Debit, `delta = 0` →
 `INVALID_QUANTITY`; ledger `sourceType = gm_adjust`, `actorId` = staff; audit `{permission: resource.adjust, action:
@@ -100,6 +101,24 @@ BC-1: một `resources.json` trước đây chỉ hỏng khi có request đọc 
 của mình trên cùng file (ví dụ CASH/GOLD phải là currency); mỗi dòng nêu module khai báo. `ResourceReferences.Read(context)` đọc
 lỏng các row hợp lệ cho luật của module khác (IAP, sample game). Định dạng dòng chung: PCR platform §21.
 
+### GM document (slice 017 — GM-1, FR-027, FR-042..FR-046)
+
+- **`AdjustResourceBody`**: `[property: Required, GmOptions("economy.resource_options")] string? Resource`. `[Required]` từ chối
+  null, rỗng và chỉ khoảng trắng — đúng luật `IsNullOrWhiteSpace` cũ (giữ lại trong `toDomain` làm guard); nay câu trả lời là
+  cùng 400 `BAD_REQUEST` nhưng có `errors.resource`. `[property: Required] long Delta` (review r1 m3, **thay đổi hành vi**,
+  mặc định do orchestrator chọn, chờ owner): thiếu `delta` → 400 có `errors.delta` (trước: đọc thành 0 → từ chối nghiệp vụ
+  `INVALID_QUANTITY`); `delta: 0` vẫn là `INVALID_QUANTITY`. Document: `required: ["resource", "delta", "reason"]`, `resource`
+  kiểu `string` (không `null`, `minLength: 1`, `pattern: "\\S"`) với `x-gm-options: economy.resource_options`.
+- **Route `economy.resource_options`** `GET /gm/v1/economy/resources` (Gm, `gm.access` — tên resource không nhạy cảm, mọi staff
+  chạy được `economy.adjust` tải được; review r1 m2, mặc định do orchestrator chọn, chờ owner; module khai `gm.access` trong
+  catalog permission của mình như `player.read`): `GmOptionList` từ `ResourceCatalog`
+  (`resources.json`), sắp theo id, `value` = id, `label` = `displayName`. Command vẫn kiểm id với catalog
+  (`UNKNOWN_ITEM`).
+- `economy.adjust` có `WithGmConfirm(GmConfirm.Typed)` (Q7) → `x-gm-confirm: typed`.
+- `economy.ledger` có `ProducesGmPage<JsonObject>()`: `x-gm-paged`, `pageSize`/`cursor` trong document, item tự do (document
+  `ledger` lưu trữ trả nguyên, D10).
+- Ba route GM có `summary`.
+
 ## Route catalog và section (slice 014 — FG-026, FG-027, FG-028)
 
 Route khai trong business project: `EconomyRoutes` (`src/GameServer.Modules.Economy/EconomyRoutes.cs`, module `economy`)
@@ -114,6 +133,7 @@ tắc đặt tên và điều kiện hosting: PCR platform mục 20. `cheat.gran
 | `cheat.grant` | POST | `/api/v1/cheat/grant` | Dev | `cheat.grant` | — | — |
 | `economy.adjust` | POST | `/gm/v1/players/{playerId}/resources/adjust` | Gm | `economy.adjust` | `resource.adjust` | — |
 | `economy.ledger` | GET | `/gm/v1/players/{playerId}/ledger` | Gm | — | `player.read` | — |
+| `economy.resource_options` | GET | `/gm/v1/economy/resources` | Gm | — | `gm.access` | — |
 
 Section (mapper typed `AddAggregateWireMapper<WalletState, Wire.WalletState>` và `<InventoryState, Wire.InventoryState>`
 trong `EconomyModule.cs`, không member hidden; Unity `FrameworkSections.Wallet` / `Inventory` và `WalletId` /

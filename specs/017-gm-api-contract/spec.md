@@ -550,6 +550,7 @@ annotations is validated exactly as today. The old Development/Test document rou
 | BC-6 | The OpenAPI services are registered in every environment (FR-030) | Hosts that replaced or removed them (none known) | `IOpenApiDocumentProvider` registered outside Development/Test | None |
 | BC-7 | `GameServerException` gains an optional member for field errors (FR-026, Core) | None at compile time (init property) | — | — |
 | BC-8 | A `[GmOptions]` naming no declared GM GET route fails startup (FR-045) | New code only (new attribute) | One startup report line | Fix the route name or declare the route |
+| BC-9 | (review r1/r2, FR-021) Every non-nullable value type in a GM body without a default is required: absent → 400 `BAD_REQUEST` with `errors["<path>"]` (before: read as its default, e.g. `0`/`false`); the document lists it in `required` | A game GM body with value-type members (`int`, `long`, `bool`, enum) its clients may omit | 400 with `errors` where the call used to run | Make the member nullable (`int?`) or give its constructor parameter a default (`int Weight = 3`) to keep it optional |
 
 ## First-consumer migration (zh-pvp-server after the next tag)
 

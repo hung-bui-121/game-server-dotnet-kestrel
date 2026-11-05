@@ -11,6 +11,12 @@ public static class EconomyPermissions
 
     /// <summary>Shared read permission (also declared by module gm); the catalog is the union of all modules.</summary>
     public const string PlayerRead = "player.read";
+
+    /// <summary>
+    /// Shared GM sign-in permission (also declared by module gm): the resource option list needs only it (resource names are
+    /// not sensitive), so every staff who may adjust can load the list (slice 017 review r1 m2).
+    /// </summary>
+    public const string GmAccess = "gm.access";
 }
 
 /// <summary>GM resource adjustment (GM-03): positive delta grants, negative delta debits.</summary>

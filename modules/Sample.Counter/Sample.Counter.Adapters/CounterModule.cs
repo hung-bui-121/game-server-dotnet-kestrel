@@ -61,6 +61,7 @@ public sealed class CounterModule : IGameModule, IPlayerApiModule, IGmApiModule
                 var reading = await counters.GetAsync(playerId, cancellationToken);
                 return Results.Json(new { playerId, value = reading.Value, rev = reading.Rev });
             })
+            .WithSummary("Read the counter of a player (sample module).")
             .AsGmEndpoint(CounterModuleDefinition.ReadPermission);
 
     /// <summary>Wire → domain mapping and validation live in the adapter (ARC-02).</summary>

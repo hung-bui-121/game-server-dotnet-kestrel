@@ -1,5 +1,6 @@
 using Fixture.Game;
 using Fixture.Host;
+using GameServer.Modules.Gm;
 using GameServer.Modules.Identity;
 using GameServer.Platform;
 using GameServer.Platform.Couchbase;
@@ -42,6 +43,7 @@ try
 
     gameServer
         .AddModule<IdentityModule>()
+        .AddModule<GmModule>()
         .AddModule<FixtureModule>();
     builder.Services.AddSingleton<OutcomeCounts>();
 

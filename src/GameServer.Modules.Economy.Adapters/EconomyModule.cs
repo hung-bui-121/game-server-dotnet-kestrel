@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Nodes;
 using GameServer.Config;
 using GameServer.Errors;
 using GameServer.Platform.Web.Aggregates;
@@ -29,9 +31,12 @@ public sealed class EconomyModule : IGameModule, IGmApiModule
     {
         routes.MapGmCommand<AdjustResourceBody, AdjustResourceCommand, AdjustResourceResult>(
             EconomyRoutes.Adjust,
+            // [Required] on Resource is enforced before toDomain; the check stays as the guard of the command.
             body => string.IsNullOrWhiteSpace(body.Resource)
                 ? throw new GameServerException(CoreErrorCodes.BadRequest, "resource is required.")
-                : new AdjustResourceCommand(body.Resource, body.Delta, body.Reason!));
+                : new AdjustResourceCommand(body.Resource, body.Delta, body.Reason!))
+            .WithSummary("Adjust a resource balance of the player (GM-03).")
+            .WithGmConfirm(GmConfirm.Typed);
 
         routes.MapDeclared(EconomyRoutes.Ledger, async (HttpContext http, string playerId) =>
                 GmHttp.Json(await GmHttp.QueryAsync(
@@ -42,7 +47,19 @@ public sealed class EconomyModule : IGameModule, IGmApiModule
                     "committedAtUtc",
                     descending: true,
                     d => d.Content)))
+            .ProducesGmPage<JsonObject>()
+            .WithSummary("List the resource ledger of a player, newest first (paged).")
             .AsGmEndpoint(EconomyPermissions.PlayerRead);
+
+        // The values AdjustResourceBody.Resource accepts ([GmOptions]); the command still checks the id against the catalog.
+        routes.MapDeclared(EconomyRoutes.ResourceOptions, (HttpContext http) => GmHttp.Json(new GmOptionList(
+                http.RequestServices.GetRequiredService<ResourceCatalog>().All
+                    .OrderBy(r => r.Id, StringComparer.Ordinal)
+                    .Select(r => new GmOption(r.Id, r.DisplayName))
+                    .ToArray())))
+            .Produces<GmOptionList>()
+            .WithSummary("List the resources of the catalog a GM may adjust.")
+            .AsGmEndpoint(EconomyPermissions.GmAccess);
     }
 
     public void ConfigureServices(IServiceCollection services, ModuleContext context)
@@ -63,8 +80,14 @@ public sealed class EconomyModule : IGameModule, IGmApiModule
     }
 }
 
-/// <summary>Body of <c>POST /gm/v1/players/{playerId}/resources/adjust</c>.</summary>
-public sealed record AdjustResourceBody(string? Resource, long Delta, string? Reason) : IGmCommandBody;
+/// <summary>
+/// Body of <c>POST /gm/v1/players/{playerId}/resources/adjust</c>. <see cref="Resource"/> is required (null, empty and white space
+/// refused) and <see cref="Delta"/> must be present: a missing delta is a 400, never a 0-adjustment (slice 017 review r1 m3).
+/// </summary>
+public sealed record AdjustResourceBody(
+    [property: Required, GmOptions("economy.resource_options")] string? Resource,
+    [property: Required] long Delta,
+    string? Reason) : IGmCommandBody;
 
 /// <summary>
 /// Development cheat module (OPS-09): register only when <c>GameServerOptions.AllowsDevelopmentTools</c>; outside

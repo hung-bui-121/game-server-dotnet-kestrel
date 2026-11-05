@@ -47,6 +47,14 @@ public sealed class ProfileEnforcementMiddleware(
             return;
         }
 
+        if (profile is null && endpoint.DisplayName == UnsupportedMediaTypeEndpoint)
+        {
+            // Routing's own endpoint for a Content-Type the endpoint's Accepts metadata does not list (GM commands and actions
+            // declare application/json, slice 017): the usual 415 instead of a misleading 403.
+            await writer.WriteAsync(context, CoreErrorCodes.UnsupportedMediaType);
+            return;
+        }
+
         if (profile is null)
         {
             await writer.WriteAsync(context, CoreErrorCodes.Forbidden);
@@ -150,6 +158,9 @@ public sealed class ProfileEnforcementMiddleware(
 
     /// <summary>Display name of the endpoint ASP.NET Core routing selects when only the HTTP method does not match.</summary>
     private const string MethodNotAllowedEndpoint = "405 HTTP Method Not Supported";
+
+    /// <summary>Display name of routing's endpoint for a request body media type that no candidate accepts.</summary>
+    private const string UnsupportedMediaTypeEndpoint = "415 HTTP Unsupported Media Type";
 
     /// <summary>Returns the scheme that authenticated the caller, or null.</summary>
     private static async Task<string?> AuthenticateAsync(HttpContext context, IReadOnlyList<string> schemeNames, ActorType expected)

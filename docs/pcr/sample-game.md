@@ -2,7 +2,7 @@
 
 Module game mẫu (slice 003). Nguồn: SMP-01..05, 8.4, PLY-04/05, G7.
 
-Đúng với framework v0.7.0 (phát hành 2026-11-04).
+Đúng với framework v0.7.0 (phát hành 2026-11-04) + nhánh `017-gm-api-contract` (chưa phát hành).
 
 ## Aggregate
 
@@ -40,6 +40,22 @@ Login (SMP-01) = module identity; IAPurchase (SMP-04) = module iap.
 `progression.set`: profile `Gm`, permission `progression.edit` (catalog của module này). Body `{level?, xp?, stage?, reason}`;
 ít nhất một trường, `level ≥ 1`, `xp ≥ 0`, `stage ≥ 1` (sai → 400); `stage > maxStage` → `STAGE_LOCKED`. Trường null giữ
 nguyên. Audit ghi `before`/`after` (progression không có ledger).
+
+**Ví dụ tham chiếu của luật body GM (slice 017, FR-027)**: `SetProgressionBody`
+(`samples/SampleGame/SampleGame.Adapters/SampleGameModule.cs`) khai mỗi khoảng giá trị một lần:
+
+```csharp
+public sealed record SetProgressionBody(
+    [property: Range(1, int.MaxValue)] int? Level,
+    [property: Range(0, long.MaxValue)] long? Xp,
+    [property: Range(1, int.MaxValue)] int? Stage,
+    string? Reason) : IGmCommandBody;
+```
+
+Server kiểm trước `toDomain` (`level: 0, xp: -1` → 400 `BAD_REQUEST` có `errors.level` và `errors.xp`, không receipt); GM
+document hiện `minimum`/`maximum` (`xp` max `9223372036854775807`), `required: ["reason"]`. `toDomain` chỉ còn luật chéo field
+"đặt ít nhất một trong level, xp, stage" → 400 **không** `errors` (document không biểu diễn được). Route có `summary`;
+`x-gm-confirm: simple`.
 
 ## Error codes (40000–40099)
 

@@ -8,6 +8,7 @@
     <ProjectReference Include="$(GameServerRoot)src/GameServer.Platform.Couchbase/GameServer.Platform.Couchbase.csproj" />
     <ProjectReference Include="$(GameServerRoot)src/GameServer.Platform.Observability/GameServer.Platform.Observability.csproj" />
     <ProjectReference Include="$(GameServerRoot)src/GameServer.Modules.Identity.Adapters/GameServer.Modules.Identity.Adapters.csproj" />
+    <ProjectReference Include="$(GameServerRoot)src/GameServer.Modules.Gm.Adapters/GameServer.Modules.Gm.Adapters.csproj" />
     <ProjectReference Include="../Fixture.Game/Fixture.Game.csproj" />
   </ItemGroup>
   <ItemGroup>

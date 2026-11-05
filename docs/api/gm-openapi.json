@@ -2,20 +2,17 @@
   "openapi": "3.1.1",
   "info": {
     "title": "Game Server GM API",
-    "description": "JSON API for GM tools. Errors are Problem Details with a \u0060code\u0060 (error-code catalog). Cookie-authenticated mutations need the \u0060X-CSRF-Token\u0060 header from GET /gm/v1/auth/csrf; GM commands need an \u0060X-Request-Id\u0060 UUID and a \u0060reason\u0060.",
+    "description": "JSON API for GM tools. Errors are Problem Details with a \u0060code\u0060 (error-code catalog). Cookie-authenticated mutations need the \u0060X-CSRF-Token\u0060 header from GET /gm/v1/auth/csrf; GM commands need an \u0060X-Request-Id\u0060 UUID and a \u0060reason\u0060. Operations carry \u0060x-gm-*\u0060 keys for generic consoles: \u0060x-gm-permission\u0060, \u0060x-gm-csrf\u0060, \u0060x-gm-kind\u0060, \u0060x-gm-operation\u0060, \u0060x-gm-target\u0060, \u0060x-gm-confirm\u0060 and \u0060x-gm-paged\u0060; body properties may carry \u0060x-gm-options\u0060 (an option route name).",
     "version": "v1"
   },
-  "servers": [
-    {
-      "url": "http://localhost/"
-    }
-  ],
   "paths": {
     "/gm/v1/auth/login": {
       "post": {
         "tags": [
-          "GmModule"
+          "gm"
         ],
+        "summary": "Sign in with a local staff account (Development/Test only) and start a GM session.",
+        "operationId": "gm.auth_login",
         "requestBody": {
           "content": {
             "application/json": {
@@ -45,14 +42,19 @@
           }
         },
         "x-gm-permission": "public",
-        "x-gm-csrf": true
+        "x-gm-csrf": true,
+        "x-gm-kind": "action",
+        "x-gm-target": "global",
+        "x-gm-confirm": "simple"
       }
     },
     "/gm/v1/auth/sso/start": {
       "get": {
         "tags": [
-          "GameServer.Gm.Tests"
+          "gm"
         ],
+        "summary": "Start the SSO sign-in: redirect to the identity provider.",
+        "operationId": "gm.sso_start",
         "parameters": [
           {
             "name": "returnUrl",
@@ -74,14 +76,18 @@
           }
         },
         "x-gm-permission": "public",
-        "x-gm-csrf": false
+        "x-gm-csrf": false,
+        "x-gm-kind": "query",
+        "x-gm-target": "global"
       }
     },
     "/gm/v1/auth/sso/callback": {
       "get": {
         "tags": [
-          "GameServer.Gm.Tests"
+          "gm"
         ],
+        "summary": "Complete the SSO sign-in (identity provider callback) and start a GM session.",
+        "operationId": "gm.sso_callback",
         "responses": {
           "200": {
             "description": "OK"
@@ -94,14 +100,18 @@
           }
         },
         "x-gm-permission": "public",
-        "x-gm-csrf": false
+        "x-gm-csrf": false,
+        "x-gm-kind": "query",
+        "x-gm-target": "global"
       }
     },
     "/gm/v1/auth/csrf": {
       "get": {
         "tags": [
-          "GmModule"
+          "gm"
         ],
+        "summary": "Get the CSRF token to send in X-CSRF-Token with cookie-authenticated mutations.",
+        "operationId": "gm.auth_csrf",
         "responses": {
           "200": {
             "description": "OK",
@@ -121,14 +131,18 @@
           }
         },
         "x-gm-permission": "public",
-        "x-gm-csrf": false
+        "x-gm-csrf": false,
+        "x-gm-kind": "query",
+        "x-gm-target": "global"
       }
     },
     "/gm/v1/auth/logout": {
       "post": {
         "tags": [
-          "GmModule"
+          "gm"
         ],
+        "summary": "End the current GM session on every instance.",
+        "operationId": "gm.auth_logout",
         "responses": {
           "204": {
             "description": "No Content"
@@ -141,14 +155,19 @@
           }
         },
         "x-gm-permission": "gm.access",
-        "x-gm-csrf": true
+        "x-gm-csrf": true,
+        "x-gm-kind": "action",
+        "x-gm-target": "global",
+        "x-gm-confirm": "simple"
       }
     },
     "/gm/v1/me": {
       "get": {
         "tags": [
-          "GameServer.Gm.Tests"
+          "gm"
         ],
+        "summary": "Get the signed-in staff, its permissions and the versions of the answering instance.",
+        "operationId": "gm.me",
         "responses": {
           "200": {
             "description": "OK",
@@ -168,14 +187,49 @@
           }
         },
         "x-gm-permission": "gm.access",
-        "x-gm-csrf": false
+        "x-gm-csrf": false,
+        "x-gm-kind": "query",
+        "x-gm-target": "global"
+      }
+    },
+    "/gm/v1/auth/methods": {
+      "get": {
+        "tags": [
+          "gm"
+        ],
+        "summary": "Get which sign-in methods (local account, SSO) this host offers.",
+        "operationId": "gm.auth_methods",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmAuthMethods"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "public",
+        "x-gm-csrf": false,
+        "x-gm-kind": "query",
+        "x-gm-target": "global"
       }
     },
     "/gm/v1/health": {
       "get": {
         "tags": [
-          "GmModule"
+          "gm"
         ],
+        "summary": "Run the health checks of this instance and report each one with its details.",
+        "operationId": "gm.health",
         "responses": {
           "200": {
             "description": "OK",
@@ -195,14 +249,18 @@
           }
         },
         "x-gm-permission": "ops.read",
-        "x-gm-csrf": false
+        "x-gm-csrf": false,
+        "x-gm-kind": "query",
+        "x-gm-target": "global"
       }
     },
     "/gm/v1/ops/version": {
       "get": {
         "tags": [
-          "GmModule"
+          "gm"
         ],
+        "summary": "Get the identity and the versions of the answering instance.",
+        "operationId": "gm.ops_version",
         "responses": {
           "200": {
             "description": "OK",
@@ -222,13 +280,28 @@
           }
         },
         "x-gm-permission": "ops.read",
-        "x-gm-csrf": false
+        "x-gm-csrf": false,
+        "x-gm-kind": "query",
+        "x-gm-target": "global"
       }
     },
     "/gm/v1/ops/dataprotection/rotate": {
       "post": {
         "tags": [
-          "GmModule"
+          "gm"
+        ],
+        "summary": "Schedule a new Data Protection key for every instance (audited, idempotent per request id).",
+        "operationId": "gm.ops_rotate_keys",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
         ],
         "requestBody": {
           "content": {
@@ -259,13 +332,38 @@
           }
         },
         "x-gm-permission": "ops.keys.rotate",
-        "x-gm-csrf": true
+        "x-gm-csrf": true,
+        "x-gm-kind": "action",
+        "x-gm-target": "global",
+        "x-gm-confirm": "typed"
       }
     },
     "/gm/v1/staff": {
       "get": {
         "tags": [
-          "GameServer.Gm.Tests"
+          "gm"
+        ],
+        "summary": "List the staff of this game and environment (paged).",
+        "operationId": "gm.staff_list",
+        "parameters": [
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
           "200": {
@@ -286,11 +384,27 @@
           }
         },
         "x-gm-permission": "staff.read",
-        "x-gm-csrf": false
+        "x-gm-csrf": false,
+        "x-gm-kind": "query",
+        "x-gm-target": "global",
+        "x-gm-paged": true
       },
       "post": {
         "tags": [
-          "GameServer.Gm.Tests"
+          "gm"
+        ],
+        "summary": "Create a staff member invited by email or bound to an SSO identity (audited).",
+        "operationId": "gm.staff_create",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
         ],
         "requestBody": {
           "content": {
@@ -321,14 +435,19 @@
           }
         },
         "x-gm-permission": "staff.manage",
-        "x-gm-csrf": true
+        "x-gm-csrf": true,
+        "x-gm-kind": "action",
+        "x-gm-target": "global",
+        "x-gm-confirm": "simple"
       }
     },
     "/gm/v1/staff/{staffId}": {
       "get": {
         "tags": [
-          "GameServer.Gm.Tests"
+          "gm"
         ],
+        "summary": "Show one staff member and its grants.",
+        "operationId": "gm.staff",
         "parameters": [
           {
             "name": "staffId",
@@ -358,14 +477,18 @@
           }
         },
         "x-gm-permission": "staff.read",
-        "x-gm-csrf": false
+        "x-gm-csrf": false,
+        "x-gm-kind": "query",
+        "x-gm-target": "global"
       }
     },
     "/gm/v1/staff/{staffId}/audit": {
       "get": {
         "tags": [
-          "GameServer.Gm.Tests"
+          "gm"
         ],
+        "summary": "List the audit entries about a staff member, newest first (paged).",
+        "operationId": "gm.staff_audit",
         "parameters": [
           {
             "name": "staffId",
@@ -374,11 +497,36 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmPageOfJsonObject"
+                }
+              }
+            }
           },
           "4XX": {
             "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
@@ -388,14 +536,19 @@
           }
         },
         "x-gm-permission": "staff.read",
-        "x-gm-csrf": false
+        "x-gm-csrf": false,
+        "x-gm-kind": "query",
+        "x-gm-target": "global",
+        "x-gm-paged": true
       }
     },
     "/gm/v1/staff/{staffId}/grant": {
       "put": {
         "tags": [
-          "GameServer.Gm.Tests"
+          "gm"
         ],
+        "summary": "Replace the roles and permissions of a staff member (audited).",
+        "operationId": "gm.staff_grant",
         "parameters": [
           {
             "name": "staffId",
@@ -403,6 +556,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -435,14 +597,19 @@
           }
         },
         "x-gm-permission": "staff.manage",
-        "x-gm-csrf": true
+        "x-gm-csrf": true,
+        "x-gm-kind": "action",
+        "x-gm-target": "global",
+        "x-gm-confirm": "simple"
       }
     },
     "/gm/v1/staff/{staffId}/disable": {
       "post": {
         "tags": [
-          "GameServer.Gm.Tests"
+          "gm"
         ],
+        "summary": "Disable a staff member and end its sessions (audited).",
+        "operationId": "gm.staff_disable",
         "parameters": [
           {
             "name": "staffId",
@@ -450,6 +617,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -482,14 +658,19 @@
           }
         },
         "x-gm-permission": "staff.manage",
-        "x-gm-csrf": true
+        "x-gm-csrf": true,
+        "x-gm-kind": "action",
+        "x-gm-target": "global",
+        "x-gm-confirm": "simple"
       }
     },
     "/gm/v1/staff/{staffId}/enable": {
       "post": {
         "tags": [
-          "GameServer.Gm.Tests"
+          "gm"
         ],
+        "summary": "Enable a disabled staff member (audited).",
+        "operationId": "gm.staff_enable",
         "parameters": [
           {
             "name": "staffId",
@@ -497,6 +678,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -529,14 +719,19 @@
           }
         },
         "x-gm-permission": "staff.manage",
-        "x-gm-csrf": true
+        "x-gm-csrf": true,
+        "x-gm-kind": "action",
+        "x-gm-target": "global",
+        "x-gm-confirm": "simple"
       }
     },
     "/gm/v1/staff/{staffId}/sessions/revoke": {
       "post": {
         "tags": [
-          "GameServer.Gm.Tests"
+          "gm"
         ],
+        "summary": "End every session of a staff member, one\u0027s own included (audited).",
+        "operationId": "gm.staff_revoke_sessions",
         "parameters": [
           {
             "name": "staffId",
@@ -544,6 +739,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -576,14 +780,19 @@
           }
         },
         "x-gm-permission": "gm.access",
-        "x-gm-csrf": true
+        "x-gm-csrf": true,
+        "x-gm-kind": "action",
+        "x-gm-target": "global",
+        "x-gm-confirm": "simple"
       }
     },
     "/gm/v1/ops/gate": {
       "get": {
         "tags": [
-          "GameServer.Gm.Tests"
+          "gm"
         ],
+        "summary": "Get the maintenance and minimum client version gate.",
+        "operationId": "gm.ops_gate",
         "responses": {
           "200": {
             "description": "OK",
@@ -603,13 +812,28 @@
           }
         },
         "x-gm-permission": "ops.read",
-        "x-gm-csrf": false
+        "x-gm-csrf": false,
+        "x-gm-kind": "query",
+        "x-gm-target": "global"
       }
     },
     "/gm/v1/ops/gate/maintenance": {
       "put": {
         "tags": [
-          "GameServer.Gm.Tests"
+          "gm"
+        ],
+        "summary": "Turn maintenance mode on or off for players (audited, idempotent per request id).",
+        "operationId": "gm.ops_gate_maintenance",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
         ],
         "requestBody": {
           "content": {
@@ -640,13 +864,29 @@
           }
         },
         "x-gm-permission": "ops.maintenance",
-        "x-gm-csrf": true
+        "x-gm-csrf": true,
+        "x-gm-kind": "action",
+        "x-gm-target": "global",
+        "x-gm-confirm": "typed"
       }
     },
     "/gm/v1/ops/gate/min-client-version": {
       "put": {
         "tags": [
-          "GameServer.Gm.Tests"
+          "gm"
+        ],
+        "summary": "Set or remove the minimum client version of a platform (audited, idempotent per request id).",
+        "operationId": "gm.ops_gate_min_client_version",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
         ],
         "requestBody": {
           "content": {
@@ -677,14 +917,19 @@
           }
         },
         "x-gm-permission": "ops.maintenance",
-        "x-gm-csrf": true
+        "x-gm-csrf": true,
+        "x-gm-kind": "action",
+        "x-gm-target": "global",
+        "x-gm-confirm": "simple"
       }
     },
     "/gm/v1/players/by-mapping/{mappingKey}": {
       "get": {
         "tags": [
-          "GameServer.Gm.Tests"
+          "gm"
         ],
+        "summary": "Find a player by an identity mapping key and show its aggregates.",
+        "operationId": "gm.player_by_mapping",
         "parameters": [
           {
             "name": "mappingKey",
@@ -714,17 +959,58 @@
           }
         },
         "x-gm-permission": "player.read",
-        "x-gm-csrf": false
+        "x-gm-csrf": false,
+        "x-gm-kind": "query",
+        "x-gm-target": "global"
       }
     },
     "/gm/v1/players/search": {
       "get": {
         "tags": [
-          "GameServer.Gm.Tests"
+          "gm"
+        ],
+        "summary": "Search players by exact display name (paged).",
+        "operationId": "gm.player_search",
+        "parameters": [
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "displayName",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmPageOfGmPlayerSearchItem"
+                }
+              }
+            }
           },
           "4XX": {
             "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
@@ -734,20 +1020,26 @@
           }
         },
         "x-gm-permission": "player.read",
-        "x-gm-csrf": false
+        "x-gm-csrf": false,
+        "x-gm-kind": "query",
+        "x-gm-target": "global",
+        "x-gm-paged": true
       }
     },
     "/gm/v1/players/{playerId}": {
       "get": {
         "tags": [
-          "GameServer.Gm.Tests"
+          "gm"
         ],
+        "summary": "Show a player\u0027s aggregates and account deletion state.",
+        "operationId": "gm.player",
         "parameters": [
           {
             "name": "playerId",
             "in": "path",
             "required": true,
             "schema": {
+              "pattern": "^[A-Za-z0-9_-]{1,64}$",
               "type": "string"
             }
           }
@@ -771,19 +1063,42 @@
           }
         },
         "x-gm-permission": "player.read",
-        "x-gm-csrf": false
+        "x-gm-csrf": false,
+        "x-gm-kind": "query",
+        "x-gm-target": "player"
       }
     },
     "/gm/v1/players/{playerId}/receipts": {
       "get": {
         "tags": [
-          "GameServer.Gm.Tests"
+          "gm"
         ],
+        "summary": "List a player\u0027s command receipts, newest first (paged).",
+        "operationId": "gm.player_receipts",
         "parameters": [
           {
             "name": "playerId",
             "in": "path",
             "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9_-]{1,64}$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
             "schema": {
               "type": "string"
             }
@@ -791,7 +1106,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmPageOfGmReceiptSummary"
+                }
+              }
+            }
           },
           "4XX": {
             "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
@@ -801,19 +1123,43 @@
           }
         },
         "x-gm-permission": "player.read",
-        "x-gm-csrf": false
+        "x-gm-csrf": false,
+        "x-gm-kind": "query",
+        "x-gm-target": "player",
+        "x-gm-paged": true
       }
     },
     "/gm/v1/players/{playerId}/audit": {
       "get": {
         "tags": [
-          "GameServer.Gm.Tests"
+          "gm"
         ],
+        "summary": "List the GM audit entries of a player, newest first (paged).",
+        "operationId": "gm.player_audit",
         "parameters": [
           {
             "name": "playerId",
             "in": "path",
             "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9_-]{1,64}$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
             "schema": {
               "type": "string"
             }
@@ -821,7 +1167,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmPageOfJsonObject"
+                }
+              }
+            }
           },
           "4XX": {
             "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
@@ -831,14 +1184,19 @@
           }
         },
         "x-gm-permission": "player.read",
-        "x-gm-csrf": false
+        "x-gm-csrf": false,
+        "x-gm-kind": "query",
+        "x-gm-target": "player",
+        "x-gm-paged": true
       }
     },
     "/gm/v1/receipts/{receiptId}": {
       "get": {
         "tags": [
-          "GameServer.Gm.Tests"
+          "gm"
         ],
+        "summary": "Show one command receipt.",
+        "operationId": "gm.receipt",
         "parameters": [
           {
             "name": "receiptId",
@@ -861,14 +1219,48 @@
           }
         },
         "x-gm-permission": "player.read",
-        "x-gm-csrf": false
+        "x-gm-csrf": false,
+        "x-gm-kind": "query",
+        "x-gm-target": "global"
       }
     },
     "/gm/v1/players/{playerId}/ban": {
       "post": {
         "tags": [
-          "GameServer.Gm.Tests"
+          "identity"
         ],
+        "summary": "Ban a player from login or from command groups, until a time or permanently (GM-07).",
+        "operationId": "identity.ban",
+        "parameters": [
+          {
+            "name": "playerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9_-]{1,64}$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BanBody"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "OK",
@@ -888,14 +1280,81 @@
           }
         },
         "x-gm-permission": "player.ban",
-        "x-gm-csrf": true
+        "x-gm-csrf": true,
+        "x-gm-kind": "command",
+        "x-gm-operation": "identity.ban",
+        "x-gm-target": "player",
+        "x-gm-confirm": "typed"
+      }
+    },
+    "/gm/v1/players/ban-scopes": {
+      "get": {
+        "tags": [
+          "identity"
+        ],
+        "summary": "List the scopes a ban may name: login and every command group of this host.",
+        "operationId": "identity.ban_scopes",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmOptionList"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "player.ban",
+        "x-gm-csrf": false,
+        "x-gm-kind": "query",
+        "x-gm-target": "global"
       }
     },
     "/gm/v1/players/{playerId}/unban": {
       "post": {
         "tags": [
-          "GameServer.Gm.Tests"
+          "identity"
         ],
+        "summary": "Lift the ban of a player (GM-07).",
+        "operationId": "identity.unban",
+        "parameters": [
+          {
+            "name": "playerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9_-]{1,64}$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnbanBody"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "OK",
@@ -915,14 +1374,50 @@
           }
         },
         "x-gm-permission": "player.ban",
-        "x-gm-csrf": true
+        "x-gm-csrf": true,
+        "x-gm-kind": "command",
+        "x-gm-operation": "identity.unban",
+        "x-gm-target": "player",
+        "x-gm-confirm": "simple"
       }
     },
     "/gm/v1/players/{playerId}/deletion/cancel": {
       "post": {
         "tags": [
-          "GameServer.Gm.Tests"
+          "identity"
         ],
+        "summary": "Cancel a pending account deletion during its grace period (PRIV-01).",
+        "operationId": "identity.cancel_deletion",
+        "parameters": [
+          {
+            "name": "playerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9_-]{1,64}$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelDeletionBody"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "OK",
@@ -942,14 +1437,50 @@
           }
         },
         "x-gm-permission": "player.ban",
-        "x-gm-csrf": true
+        "x-gm-csrf": true,
+        "x-gm-kind": "command",
+        "x-gm-operation": "identity.cancel_deletion",
+        "x-gm-target": "player",
+        "x-gm-confirm": "typed"
       }
     },
     "/gm/v1/players/{playerId}/resources/adjust": {
       "post": {
         "tags": [
-          "GameServer.Gm.Tests"
+          "economy"
         ],
+        "summary": "Adjust a resource balance of the player (GM-03).",
+        "operationId": "economy.adjust",
+        "parameters": [
+          {
+            "name": "playerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9_-]{1,64}$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdjustResourceBody"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "OK",
@@ -969,19 +1500,44 @@
           }
         },
         "x-gm-permission": "resource.adjust",
-        "x-gm-csrf": true
+        "x-gm-csrf": true,
+        "x-gm-kind": "command",
+        "x-gm-operation": "economy.adjust",
+        "x-gm-target": "player",
+        "x-gm-confirm": "typed"
       }
     },
     "/gm/v1/players/{playerId}/ledger": {
       "get": {
         "tags": [
-          "GameServer.Gm.Tests"
+          "economy"
         ],
+        "summary": "List the resource ledger of a player, newest first (paged).",
+        "operationId": "economy.ledger",
         "parameters": [
           {
             "name": "playerId",
             "in": "path",
             "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9_-]{1,64}$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
             "schema": {
               "type": "string"
             }
@@ -989,7 +1545,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmPageOfJsonObject"
+                }
+              }
+            }
           },
           "4XX": {
             "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
@@ -999,14 +1562,80 @@
           }
         },
         "x-gm-permission": "player.read",
-        "x-gm-csrf": false
+        "x-gm-csrf": false,
+        "x-gm-kind": "query",
+        "x-gm-target": "player",
+        "x-gm-paged": true
+      }
+    },
+    "/gm/v1/economy/resources": {
+      "get": {
+        "tags": [
+          "economy"
+        ],
+        "summary": "List the resources of the catalog a GM may adjust.",
+        "operationId": "economy.resource_options",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmOptionList"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "Problem Details (application/problem\u002Bjson) with \u0060code\u0060 and \u0060codeNumber\u0060 from the error-code catalog."
+          },
+          "5XX": {
+            "description": "Problem Details; \u0060retryable\u0060 tells whether the same request may be retried."
+          }
+        },
+        "x-gm-permission": "gm.access",
+        "x-gm-csrf": false,
+        "x-gm-kind": "query",
+        "x-gm-target": "global"
       }
     },
     "/gm/v1/players/{playerId}/progression": {
       "post": {
         "tags": [
-          "GameServer.Gm.Tests"
+          "progression"
         ],
+        "summary": "Set the level, xp or stage of the player (sample GM command).",
+        "operationId": "progression.set",
+        "parameters": [
+          {
+            "name": "playerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9_-]{1,64}$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetProgressionBody"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "OK",
@@ -1026,20 +1655,27 @@
           }
         },
         "x-gm-permission": "progression.edit",
-        "x-gm-csrf": true
+        "x-gm-csrf": true,
+        "x-gm-kind": "command",
+        "x-gm-operation": "progression.set",
+        "x-gm-target": "player",
+        "x-gm-confirm": "simple"
       }
     },
     "/gm/v1/counter/{playerId}": {
       "get": {
         "tags": [
-          "GameServer.Gm.Tests"
+          "counter"
         ],
+        "summary": "Read the counter of a player (sample module).",
+        "operationId": "counter.gm_read",
         "parameters": [
           {
             "name": "playerId",
             "in": "path",
             "required": true,
             "schema": {
+              "pattern": "^[A-Za-z0-9_-]{1,64}$",
               "type": "string"
             }
           }
@@ -1056,21 +1692,91 @@
           }
         },
         "x-gm-permission": "counter.read",
-        "x-gm-csrf": false
+        "x-gm-csrf": false,
+        "x-gm-kind": "query",
+        "x-gm-target": "player"
       }
     }
   },
   "components": {
     "schemas": {
+      "AdjustResourceBody": {
+        "required": [
+          "resource",
+          "delta",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "resource": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string",
+            "x-gm-options": "economy.resource_options"
+          },
+          "delta": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          }
+        }
+      },
+      "BanBody": {
+        "required": [
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "untilUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "scope": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string",
+              "x-gm-options": "identity.ban_scopes"
+            }
+          }
+        }
+      },
+      "CancelDeletionBody": {
+        "required": [
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          }
+        }
+      },
       "CreateStaffBody": {
         "required": [
-          "staffId",
-          "displayName",
-          "email",
-          "issuer",
-          "subject",
-          "roles",
-          "permissions",
           "reason"
         ],
         "type": "object",
@@ -1124,10 +1830,10 @@
             }
           },
           "reason": {
-            "type": [
-              "null",
-              "string"
-            ]
+            "maxLength": 500,
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
           }
         }
       },
@@ -1272,6 +1978,21 @@
                 "$ref": "#/components/schemas/JsonNode"
               }
             ]
+          }
+        }
+      },
+      "GmAuthMethods": {
+        "required": [
+          "local",
+          "sso"
+        ],
+        "type": "object",
+        "properties": {
+          "local": {
+            "type": "boolean"
+          },
+          "sso": {
+            "type": "boolean"
           }
         }
       },
@@ -1466,10 +2187,6 @@
         }
       },
       "GmLoginRequest": {
-        "required": [
-          "staffId",
-          "password"
-        ],
         "type": "object",
         "properties": {
           "staffId": {
@@ -1513,6 +2230,104 @@
             "items": {
               "type": "string"
             }
+          },
+          "frameworkVersion": {
+            "type": "string"
+          },
+          "gameVersion": {
+            "type": "string"
+          }
+        }
+      },
+      "GmOption": {
+        "required": [
+          "value",
+          "label"
+        ],
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
+      "GmOptionList": {
+        "required": [
+          "items"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GmOption"
+            }
+          }
+        }
+      },
+      "GmPageOfGmPlayerSearchItem": {
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GmPlayerSearchItem"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "GmPageOfGmReceiptSummary": {
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GmReceiptSummary"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "GmPageOfJsonObject": {
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JsonObject"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -1534,6 +2349,21 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "GmPlayerSearchItem": {
+        "required": [
+          "playerId",
+          "displayName"
+        ],
+        "type": "object",
+        "properties": {
+          "playerId": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
           }
         }
       },
@@ -1569,6 +2399,56 @@
             "items": {
               "$ref": "#/components/schemas/GmUnreadableAggregate"
             }
+          }
+        }
+      },
+      "GmReceiptSummary": {
+        "required": [
+          "receiptId",
+          "operation",
+          "actorType",
+          "actorId",
+          "resultCode",
+          "committedAtUtc",
+          "aggregates",
+          "outboxPending",
+          "outboxDeadLetter",
+          "correlationId"
+        ],
+        "type": "object",
+        "properties": {
+          "receiptId": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "actorType": {
+            "type": "string"
+          },
+          "actorId": {
+            "type": "string"
+          },
+          "resultCode": {
+            "type": "string"
+          },
+          "committedAtUtc": {
+            "type": "string"
+          },
+          "aggregates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReceiptAggregate"
+            }
+          },
+          "outboxPending": {
+            "type": "boolean"
+          },
+          "outboxDeadLetter": {
+            "type": "boolean"
+          },
+          "correlationId": {
+            "type": "string"
           }
         }
       },
@@ -1677,11 +2557,12 @@
         }
       },
       "JsonNode": {},
+      "JsonObject": {
+        "type": "object"
+      },
       "MaintenanceBody": {
         "required": [
           "enabled",
-          "message",
-          "expectedEndUtc",
           "reason"
         ],
         "type": "object",
@@ -1690,6 +2571,7 @@
             "type": "boolean"
           },
           "message": {
+            "maxLength": 500,
             "type": [
               "null",
               "string"
@@ -1703,10 +2585,10 @@
             "format": "date-time"
           },
           "reason": {
-            "type": [
-              "null",
-              "string"
-            ]
+            "maxLength": 500,
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
           }
         }
       },
@@ -1747,9 +2629,6 @@
       },
       "MinClientVersionBody": {
         "required": [
-          "platform",
-          "minVersion",
-          "updateUrl",
           "reason"
         ],
         "type": "object",
@@ -1773,17 +2652,82 @@
             ]
           },
           "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          }
+        }
+      },
+      "ReceiptAggregate": {
+        "required": [
+          "aggregateId",
+          "newRev"
+        ],
+        "type": "object",
+        "properties": {
+          "aggregateId": {
+            "type": "string"
+          },
+          "newRev": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "SetProgressionBody": {
+        "required": [
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "level": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
             "type": [
               "null",
+              "integer",
               "string"
-            ]
+            ],
+            "format": "int32"
+          },
+          "xp": {
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "stage": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
           }
         }
       },
       "StaffGrantBody": {
         "required": [
-          "roles",
-          "permissions",
           "reason"
         ],
         "type": "object",
@@ -1807,10 +2751,10 @@
             }
           },
           "reason": {
-            "type": [
-              "null",
-              "string"
-            ]
+            "maxLength": 500,
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
           }
         }
       },
@@ -1821,10 +2765,10 @@
         "type": "object",
         "properties": {
           "reason": {
-            "type": [
-              "null",
-              "string"
-            ]
+            "maxLength": 500,
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
           }
         }
       },
@@ -1879,15 +2823,38 @@
             "default": false
           }
         }
+      },
+      "UnbanBody": {
+        "required": [
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          }
+        }
       }
     }
   },
   "tags": [
     {
-      "name": "GmModule"
+      "name": "counter"
     },
     {
-      "name": "GameServer.Gm.Tests"
+      "name": "economy"
+    },
+    {
+      "name": "gm"
+    },
+    {
+      "name": "identity"
+    },
+    {
+      "name": "progression"
     }
   ]
 }

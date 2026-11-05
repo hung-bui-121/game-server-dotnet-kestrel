@@ -496,7 +496,7 @@ details.dg-text[open] > summary { border-bottom: 1px solid var(--border); margin
 <p class="eyebrow">Trang 2 / 3 · Viết command</p>
 <h1>Thêm, bỏ, thay command (API) và đường đi của một request</h1>
 <p class="lead">Handler <strong>không</strong> đọc hay ghi database — framework làm hộ. Xem ngay <a href="#bang-doi-chieu-moi-buoc-trong-mo-hinh-cua-ban-na">bảng đối chiếu từng bước với code</a>.</p>
-<p class="meta">Đúng với framework v0.7.0 (phát hành 2026-11-04; nhánh <code>016-login-command</code>, cập nhật 2026-11-04). Repo game (framework là submodule): mỗi bước có biến thể &quot;trong repo game&quot;, chi tiết ở <a class="path" href="../../docs/guides/consumer-guide.md"><code>docs/<wbr>guides/<wbr>consumer-guide.<wbr>md</code></a>.</p>
+<p class="meta">Đúng với framework v0.7.0 (phát hành 2026-11-04) + nhánh <code>017-gm-api-contract</code> (chưa phát hành, cập nhật 2026-11-05). Repo game (framework là submodule): mỗi bước có biến thể &quot;trong repo game&quot;, chi tiết ở <a class="path" href="../../docs/guides/consumer-guide.md"><code>docs/<wbr>guides/<wbr>consumer-guide.<wbr>md</code></a>.</p>
 </header>
 
 <section class="doc-section" aria-labelledby="muc-1">
@@ -1049,10 +1049,10 @@ log(<span class="hl-str">$&quot;Buy → {buy.Code}&quot;</span>);
 <h2 id="muc-8">8. Command GM <a class="anchor" href="#muc-8" aria-label="Liên kết tới mục này">#</a></h2>
 <p>Command do staff GM thực hiện trên một player dùng cùng runner (receipt, idempotency), khác ở:</p>
 <div class="table-wrap" role="region" aria-label="Bảng — 8. Command GM" tabindex="0"><table class="tbl"><thead><tr><th scope="col"></th><th scope="col">Player command</th><th scope="col">GM command</th></tr></thead><tbody>
-<tr><td>Map route</td><td><code>MapPlayerCommand</code></td><td><code>MapGmCommand&lt;TBody, TRequest, TResult&gt;(pattern, operation, permission, toDomain)</code> (<a class="path" href="../../src/GameServer.Platform.Web/Commands/GmCommandEndpointFactory.cs"><code>src/<wbr>GameServer.<wbr>Platform.<wbr>Web/<wbr>Commands/<wbr>GmCommandEndpointFactory.<wbr>cs</code></a>)</td></tr>
-<tr><td>Wire</td><td>Protobuf</td><td>JSON; body implement <code>IGmCommandBody</code> (có <code>Reason</code>, bắt buộc 1..500 ký tự)</td></tr>
+<tr><td>Map route</td><td><code>MapPlayerCommand</code></td><td><code>MapGmCommand&lt;TBody, TRequest, TResult&gt;(route, toDomain)</code> — overload khai báo, operation và permission lấy từ <code>RouteDeclaration.<wbr>Command(...<wbr>)</code>; thêm <code>.<wbr>WithSummary(&quot;…&quot;)</code> (<a class="path" href="../../src/GameServer.Platform.Web/Commands/GmCommandEndpointFactory.cs"><code>src/<wbr>GameServer.<wbr>Platform.<wbr>Web/<wbr>Commands/<wbr>GmCommandEndpointFactory.<wbr>cs</code></a>)</td></tr>
+<tr><td>Wire</td><td>Protobuf</td><td>JSON; body implement <code>IGmCommandBody</code> (có <code>Reason</code>, bắt buộc 1..500 ký tự, không chỉ khoảng trắng). Luật của field khai bằng DataAnnotations trên body (<code>[Required]</code>, <code>[Range]</code>, <code>[StringLength]</code>, <code>[MinLength]</code>, <code>[MaxLength]</code>, <code>[Length]</code>, <code>[RegularExpression]</code>; trên property hay tham số positional đều được kiểm): server kiểm <strong>trước</strong> <code>toDomain</code>, vi phạm → <code>400 BAD_<wbr>REQUEST</code> có thêm <code>errors</code> (JSON path → messages); GM document hiện cùng luật (slice 017)</td></tr>
 <tr><td>Player đích</td><td>actor</td><td>route phải chứa <code>{playerId}</code></td></tr>
-<tr><td>Descriptor</td><td>profile mặc định <code>Player</code></td><td><code>profile:<wbr> SecurityProfile.<wbr>Gm, permission:<wbr> &quot;&lt;permission&gt;&quot;</code>; permission phải khai trong <code>ModuleDescriptor.<wbr>Permissions</code>, và <code>MapGmCommand</code> phải nhận <strong>đúng</strong> permission đó (khác → host không khởi động, SEC-07). Map command <code>Gm</code> bằng hàm khác <code>MapGmCommand</code> → không khởi động (SEC-08)</td></tr>
+<tr><td>Descriptor</td><td>profile mặc định <code>Player</code></td><td><code>profile:<wbr> SecurityProfile.<wbr>Gm, permission:<wbr> &quot;&lt;permission&gt;&quot;</code>; permission phải khai trong <code>ModuleDescriptor.<wbr>Permissions</code>; với overload khai báo, permission lấy từ descriptor qua <code>RouteDeclaration.<wbr>Command(...<wbr>)</code>, không truyền gì thêm (overload cũ nhận permission thì phải trùng, khác → host không khởi động, SEC-07). Map command <code>Gm</code> bằng hàm khác <code>MapGmCommand</code> → không khởi động (SEC-08)</td></tr>
 <tr><td>Audit</td><td>cấm</td><td><strong>bắt buộc đúng một</strong> <code>context.<wbr>AddAudit(...<wbr>)</code> (runner kiểm, sai → 500)</td></tr>
 <tr><td>Kiểm player đích</td><td>—</td><td>các <code>IGmTargetValidator</code> chạy trước (vd. player tồn tại, chưa xoá)</td></tr>
 <tr><td>Response</td><td><code>CommandResponse</code></td><td><code>GmCommandResponse</code> (JSON)</td></tr>
@@ -1066,13 +1066,31 @@ log(<span class="hl-str">$&quot;Buy → {buy.Code}&quot;</span>);
 <span class="hl-com">// ...</span>
 context.Set(SampleGameAggregates.Progression, after);
 context.AddAudit(SampleGamePermissions.ProgressionEdit, Operation, request.Reason, before, after);</code></pre></div>
-<p>và route — <a class="path" href="../../samples/SampleGame/SampleGame.Adapters/SampleGameModule.cs"><code>samples/<wbr>SampleGame/<wbr>SampleGame.<wbr>Adapters/<wbr>SampleGameModule.<wbr>cs</code></a>:</p>
-<div class="code-block"><div class="code-head"><span class="code-lang">C#</span></div><pre class="code" data-lang="csharp"><code>routes.MapGmCommand&lt;SetProgressionBody, SetProgressionCommand, SetProgressionResult&gt;(
-    GmProgressionRoute,                       <span class="hl-com">// &quot;/gm/v1/players/{playerId}/progression&quot;</span>
-    SetProgressionHandler.Operation,
-    SampleGamePermissions.ProgressionEdit,
-    body =&gt; { /* validate */ <span class="hl-kw">return</span> <span class="hl-kw">new</span> SetProgressionCommand(body.Level, body.Xp, body.Stage, body.Reason!); });</code></pre></div>
-<p>Module map GM API trong <code>IGmApiModule.<wbr>MapGmApi</code>. GM request cần <code>X-Request-Id</code> UUID như Player. Đổi GM API thì cập nhật <a class="path" href="../../docs/api/gm-openapi.json"><code>docs/<wbr>api/<wbr>gm-openapi.<wbr>json</code></a>: chạy test với <code>UPDATE_<wbr>OPENAPI=1</code> (<a class="path" href="../../tests/GameServer.Gm.Tests/OpenApiTests.cs"><code>tests/<wbr>GameServer.<wbr>Gm.<wbr>Tests/<wbr>OpenApiTests.<wbr>cs</code></a>) rồi commit file. GM chỉ <strong>đọc</strong> thì dùng <code>MapGet(...<wbr>).<wbr>AsGmEndpoint(permission)</code> như <code>CounterModule.<wbr>MapGmApi</code>.</p>
+<p>route khai một lần trong project nghiệp vụ — <a class="path" href="../../samples/SampleGame/SampleGame/SampleGameRoutes.cs"><code>samples/<wbr>SampleGame/<wbr>SampleGame/<wbr>SampleGameRoutes.<wbr>cs</code></a>:</p>
+<div class="code-block"><div class="code-head"><span class="code-lang">C#</span></div><pre class="code" data-lang="csharp"><code><span class="hl-kw">public</span> <span class="hl-kw">const</span> <span class="hl-kw">string</span> GmProgressionTemplate = &quot;/gm/v1/players/{playerId}/progression&quot;;
+<span class="hl-kw">public</span> <span class="hl-kw">static</span> RouteDeclaration ProgressionSet { <span class="hl-kw">get</span>; } = RouteDeclaration.Command(SetProgressionHandler.Descriptor, GmProgressionTemplate);</code></pre></div>
+<p>body có luật và map từ khai báo — <a class="path" href="../../samples/SampleGame/SampleGame.Adapters/SampleGameModule.cs"><code>samples/<wbr>SampleGame/<wbr>SampleGame.<wbr>Adapters/<wbr>SampleGameModule.<wbr>cs</code></a>:</p>
+<div class="code-block"><div class="code-head"><span class="code-lang">C#</span></div><pre class="code" data-lang="csharp"><code><span class="hl-kw">public</span> <span class="hl-kw">sealed</span> <span class="hl-kw">record</span> SetProgressionBody(
+    [property: Range(1, <span class="hl-kw">int</span>.MaxValue)] <span class="hl-kw">int</span>? Level,
+    [property: Range(0, <span class="hl-kw">long</span>.MaxValue)] <span class="hl-kw">long</span>? Xp,
+    [property: Range(1, <span class="hl-kw">int</span>.MaxValue)] <span class="hl-kw">int</span>? Stage,
+    <span class="hl-kw">string</span>? Reason) : IGmCommandBody;
+
+routes.MapGmCommand&lt;SetProgressionBody, SetProgressionCommand, SetProgressionResult&gt;(
+        SampleGameRoutes.ProgressionSet,
+        body =&gt;
+        {
+            <span class="hl-com">// Luật nhiều field ở lại toDomain: trả 400 không có errors, document không thể hiện.</span>
+            <span class="hl-kw">if</span> (body <span class="hl-kw">is</span> { Level: <span class="hl-kw">null</span>, Xp: <span class="hl-kw">null</span>, Stage: <span class="hl-kw">null</span> })
+            {
+                <span class="hl-kw">throw</span> <span class="hl-kw">new</span> GameServerException(CoreErrorCodes.BadRequest, &quot;Set at least one of level, xp, stage.&quot;);
+            }
+
+            <span class="hl-kw">return</span> <span class="hl-kw">new</span> SetProgressionCommand(body.Level, body.Xp, body.Stage, body.Reason!);
+        })
+    .WithSummary(&quot;Set the level, xp or stage of the player (sample GM command).&quot;);</code></pre></div>
+<p>Body sai luật nhận <code>{&quot;code&quot;:&quot;BAD_<wbr>REQUEST&quot;, …, &quot;errors&quot;:{&quot;level&quot;:[&quot;The field level must be between 1 and 2147483647.&quot;]}}</code>. Lựa chọn từ danh sách: <code>[GmOptions(&quot;&lt;route&gt;&quot;)]</code> trên property + một route GM <code>GET</code> trả <code>GmOptionList</code> (kiểm khi startup); thao tác nguy hiểm thêm <code>.<wbr>WithGmConfirm(GmConfirm.<wbr>Typed)</code>; danh sách phân trang <code>.<wbr>ProducesGmPage&lt;T&gt;()</code> — chi tiết <a class="path" href="../../docs/guides/module-authoring.md"><code>docs/<wbr>guides/<wbr>module-authoring.<wbr>md</code></a> mục 5.4.</p>
+<p>Module map GM API trong <code>IGmApiModule.<wbr>MapGmApi</code>. GM request cần <code>X-Request-Id</code> UUID như Player. GM document (OpenAPI của mọi <code>/<wbr>gm/<wbr>**</code>, có các key <code>x-gm-*</code> cho console generic) có ở <strong>mọi môi trường</strong> qua <code>GET /<wbr>gm/<wbr>v1/<wbr>console/<wbr>openapi.<wbr>json</code> (permission <code>gm.<wbr>access</code>, ETag/304); route Dev/Test <code>/<wbr>gm/<wbr>v1/<wbr>openapi/<wbr>gm.<wbr>json</code> vẫn còn. Đổi GM API thì cập nhật bản commit <a class="path" href="../../docs/api/gm-openapi.json"><code>docs/<wbr>api/<wbr>gm-openapi.<wbr>json</code></a>: test <a class="path" href="../../tests/GameServer.Gm.Tests/OpenApiTests.cs"><code>tests/<wbr>GameServer.<wbr>Gm.<wbr>Tests/<wbr>OpenApiTests.<wbr>cs</code></a> so bản commit với host bằng kit <code>GmOpenApiSnapshot.<wbr>DiffAsync</code>; chạy với <code>UPDATE_<wbr>OPENAPI=1</code> (<code>GmOpenApiSnapshot.<wbr>WriteAsync</code>), đọc diff rồi commit. Repo game làm y hệt với host của game (<code>LocalFlavorFactory&lt;Program&gt;</code>, consumer guide §14). GM chỉ <strong>đọc</strong> thì dùng <code>MapDeclared(...<wbr>).<wbr>AsGmEndpoint(permission)</code> như <code>CounterModule.<wbr>MapGmApi</code>.</p>
 </section>
 <section class="doc-section" aria-labelledby="muc-9">
 <h2 id="muc-9">9. Các biến thể khác của <code>MapPlayerCommand</code> <a class="anchor" href="#muc-9" aria-label="Liên kết tới mục này">#</a></h2>
@@ -1134,7 +1152,7 @@ context.AddAudit(SampleGamePermissions.ProgressionEdit, Operation, request.Reaso
 <nav class="pager" aria-label="Chuyển trang"><a class="prev" href="01-gioi-thieu.html" rel="prev"><span class="dir">← Trang trước</span><span class="ttl">Giới thiệu framework</span></a><a class="next" href="03-deploy.html" rel="next"><span class="dir">Trang sau →</span><span class="ttl">Deploy cho DevOps</span></a></nav>
 </main>
 </div>
-<footer class="site-footer"><p>Đúng với framework v0.7.0 (phát hành 2026-11-04), cập nhật 2026-11-04 — cập nhật khi đổi pipeline, hosting hoặc deploy.</p></footer>
+<footer class="site-footer"><p>Đúng với framework v0.7.0 (phát hành 2026-11-04) + nhánh <code>017-gm-api-contract</code> (chưa phát hành), cập nhật 2026-11-05 — cập nhật khi đổi pipeline, hosting hoặc deploy.</p></footer>
 <script>
 /* Progressive enhancement only — every page reads fine without this script. */
 (function () {

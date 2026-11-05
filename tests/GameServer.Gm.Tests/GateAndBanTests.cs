@@ -122,6 +122,19 @@ public sealed class GateAndBanTests : IAsyncLifetime
         (await LoginAsync(Versioned(_a, "android", "1.2.9"))).StatusCode.ShouldBe(HttpStatusCode.OK);
     }
 
+    /// <summary>Slice 017 T023 (FR-024, FR-027): [StringLength(500)] on message answers 400 with errors.message past 500 characters.</summary>
+    [Fact]
+    public async Task A_maintenance_message_holds_up_to_500_characters()
+    {
+        await PutAsync(_admin, GateEndpoints.MaintenanceRoute, new { enabled = false, message = new string('m', 500), reason = "long notice" }).ShouldBeAsync(200);
+
+        var problem = await PutAsync(_admin, GateEndpoints.MaintenanceRoute, new { enabled = false, message = new string('m', 501), reason = "too long" })
+            .ShouldBeAsync(400);
+
+        problem["code"]!.GetValue<string>().ShouldBe("BAD_REQUEST");
+        problem["errors"]!.ToJsonString().ShouldBe("""{"message":["The field message must be a string with a maximum length of 500."]}""");
+    }
+
     [Fact]
     public async Task Gate_changes_are_validated_permissioned_and_idempotent()
     {

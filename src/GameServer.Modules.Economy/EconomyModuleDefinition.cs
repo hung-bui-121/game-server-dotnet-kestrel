@@ -17,7 +17,7 @@ public static class EconomyModuleDefinition
         DependsOn = ["identity"],
         ConfigFiles = [ConfigFileDeclaration.Required(ResourceCatalog.ConfigFile, EconomyConfigRules.Resources)],
         ConfigCatalogs = [ConfigCatalogDeclaration.Of(c => ResourceCatalog.Load(c.Config), ResourceCatalog.ConfigFile)],
-        Permissions = [EconomyPermissions.ResourceAdjust, EconomyPermissions.PlayerRead],
+        Permissions = [EconomyPermissions.ResourceAdjust, EconomyPermissions.PlayerRead, EconomyPermissions.GmAccess],
         Commands = [Command.Define<AdjustResourceCommand, AdjustResourceResult>(AdjustResourceHandler.Descriptor).HandledBy<AdjustResourceHandler>()],
         Aggregates = [EconomyAggregates.WalletDescriptor, EconomyAggregates.InventoryDescriptor],
         Collections =

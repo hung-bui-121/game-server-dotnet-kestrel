@@ -22,4 +22,10 @@ public sealed class GameServerException : Exception
 
     /// <summary>Safe structured details sent to the client (for example <c>until</c> of a suspension).</summary>
     public IReadOnlyDictionary<string, string>? Details { get; init; }
+
+    /// <summary>
+    /// Field errors of an invalid JSON body (JSON path → messages), written as the Problem Details member <c>errors</c> of a
+    /// GM endpoint; ignored by the Protobuf error envelope. Messages must be safe to show (API-04).
+    /// </summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<string>>? Errors { get; init; }
 }

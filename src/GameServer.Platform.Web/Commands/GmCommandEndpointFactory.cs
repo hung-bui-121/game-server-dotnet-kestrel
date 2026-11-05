@@ -169,11 +169,9 @@ public static class GmCommandEndpointFactory
                     ?? throw new GameServerException(CoreErrorCodes.BadRequest, $"Header {CorrelationMiddleware.HeaderName} must be a UUID for commands.");
                 var body = await BoundedBody.ReadAsync(http, options.Limits.GmBodyBytes, GmHttp.JsonContentType);
                 var wire = Deserialize<TBody>(body);
-                if (string.IsNullOrWhiteSpace(wire.Reason) || wire.Reason.Length > MaxReasonLength)
-                {
-                    throw new GameServerException(CoreErrorCodes.BadRequest, $"reason is required (1..{MaxReasonLength} characters).");
-                }
 
+                // The rules the GM document shows (DataAnnotations of TBody) and the reason rule, before toDomain (slice 017, FR-020).
+                GmHttp.ThrowIfInvalid(GmBodyValidator.Validate(wire, body, commandBody: true));
                 var request = toDomain(wire);
                 foreach (var validator in services.GetServices<IGmTargetValidator>())
                 {
@@ -197,7 +195,8 @@ public static class GmCommandEndpointFactory
 
                 return Results.Json(BuildResponse(execution, services.GetRequiredService<IClock>()), GameServerJson.Options);
             })
-            .WithMetadata(new CommandOperationMetadata(operation))
+            .WithMetadata(new CommandOperationMetadata(operation), GmRequestIdMetadata.Instance)
+            .Accepts<TBody>(GmHttp.JsonContentType)
             .Produces<GmCommandResponse>()
             .AsGmEndpoint(permission);
     }

@@ -87,7 +87,7 @@ public sealed class SaveNoteHandler : ICommandHandler<SaveNote, SaveNoteResult>
 }
 
 /// <summary>HTTP routes of the game module (FG-026), declared in the business code next to the commands.</summary>
-public static class FixtureRoutes
+public static partial class FixtureRoutes
 {
     public const string SaveTemplate = "/api/v1/fixture/save";
 
@@ -118,12 +118,17 @@ public static class FixtureModuleDefinition
         DependsOn = ["identity"],
         ConfigFiles = [ConfigFileDeclaration.Required(RulesFile, FixtureConfigRules.Notes)],
         Aggregates = [Aggregate, Card],
-        Commands = [Command.Define<SaveNote, SaveNoteResult>(SaveNoteHandler.Descriptor).HandledBy<SaveNoteHandler>()],
+        Commands =
+        [
+            Command.Define<SaveNote, SaveNoteResult>(SaveNoteHandler.Descriptor).HandledBy<SaveNoteHandler>(),
+            Command.Define<SetNoteCommand, SetNoteResult>(SetNoteHandler.Descriptor).HandledBy<SetNoteHandler>(),
+        ],
+        Permissions = [FixturePermissions.NoteEdit],
 
         // Runs once per account, in the transaction that creates it (FG-015): the welcome note.
         AccountInitializers = [FixtureWelcomeInitializer.Registration],
         ErrorCodes = FixtureErrors.All,
-        Routes = [FixtureRoutes.Save, FixtureRoutes.Card],
+        Routes = [FixtureRoutes.Save, FixtureRoutes.Card, FixtureRoutes.NoteSet, FixtureRoutes.NotePresets],
     };
 }
 

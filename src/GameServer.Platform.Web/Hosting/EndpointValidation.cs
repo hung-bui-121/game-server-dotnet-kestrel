@@ -34,6 +34,7 @@ internal static class EndpointValidation
             registry.Modules.SelectMany(m => m.Descriptor.Permissions)));
         errors.AddRange(CommandRouteValidator.Validate(endpoints, registry.Commands));
         errors.AddRange(EndpointCatalogValidator.Validate(endpoints, catalog, context, includeUnmapped));
+        errors.AddRange(GmOptionsCheck.Validate(endpoints, catalog, context.ConditionHolds));
         foreach (var failure in optionFailures)
         {
             if (!reported.Contains(failure) && !errors.Contains(failure))

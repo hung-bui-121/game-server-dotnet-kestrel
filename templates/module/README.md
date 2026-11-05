@@ -1,6 +1,6 @@
 # Module template
 
-> Đúng với framework v0.7.0 (phát hành 2026-11-04).
+> Đúng với framework v0.7.0 (phát hành 2026-11-04) + nhánh `017-gm-api-contract` (chưa phát hành).
 
 Khung 2 project của một module (mục 4.2 tài liệu yêu cầu). Template được build cùng `GameServer.slnx` để
 luôn khớp API hiện hành.
@@ -31,10 +31,18 @@ luôn khớp API hiện hành.
    trả mã hoặc ném → không tạo gì, login trả `INTERNAL`, login sau thử lại. Test bằng
    `CommandContextDouble.ForAccountInitializer(name, modules)` + `CheckAccountCreation()` (`docs/guides/module-authoring.md`
    mục 4, consumer guide §13.2). Template không đăng ký initializer nào.
-7. Đăng ký ở host: `gameServer.AddModule<YourModule>()`.
-8. Sinh code Unity cho route, section và `.proto` của module bằng `tools/GameServer.WireGen` (`docs/guides/module-authoring.md`
+7. Route GM cho console generic (slice 017; template không có route GM): adapter thêm `IGmApiModule`; command GM map bằng
+   `MapGmCommand(route, toDomain).WithSummary("…")`; luật body khai bằng DataAnnotations (`[property: Required]`, `[Range]`,
+   `[StringLength]`, `[MinLength]`, `[MaxLength]`, `[Length]`, `[RegularExpression]`, `[Description]`; trên property hay tham
+   số positional đều được kiểm) → server trả `400` có `errors`, GM document hiện cùng luật; luật nhiều field để trong
+   `toDomain`. Giá trị chọn từ danh sách: `[GmOptions("<route GET GmApi>")]` + route trả `GmOptionList` (kiểm khi startup).
+   Danh sách: `.ProducesGmPage<T>()`, `.WithGmQueryParameter(...)`; thao tác nguy hiểm `.WithGmConfirm(GmConfirm.Typed)`;
+   mutation ngoài `MapGmCommand` cần `X-Request-Id` thì `.WithGmRequestId()`. Sinh lại `docs/api/gm-openapi.json` của game
+   bằng `GmOpenApiSnapshot` (`docs/guides/module-authoring.md` mục 5.4, consumer guide §14).
+8. Đăng ký ở host: `gameServer.AddModule<YourModule>()`.
+9. Sinh code Unity cho route, section và `.proto` của module bằng `tools/GameServer.WireGen` (`docs/guides/module-authoring.md`
    mục 9; repo game: `docs/guides/consumer-guide.md` mục 10).
-9. Viết PCR `docs/pcr/<your-module>.md` (aggregate, command → Touches/Reads, error codes, capability thay được, route và
-   section, file config và luật, account initializer).
+10. Viết PCR `docs/pcr/<your-module>.md` (aggregate, command → Touches/Reads, error codes, capability thay được, route và
+   section, file config và luật, account initializer, route GM và luật body).
 
 Chi tiết: `docs/guides/module-authoring.md`; repo game: `docs/guides/consumer-guide.md`.

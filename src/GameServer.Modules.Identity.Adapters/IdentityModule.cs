@@ -6,6 +6,7 @@ using GameServer.Platform.Commands;
 using GameServer.Platform.Web.Aggregates;
 using GameServer.Platform.Web.Auth;
 using GameServer.Platform.Web.Commands;
+using GameServer.Platform.Web.Endpoints;
 using GameServer.Platform.Web.Middleware;
 using GameServer.Platform.Web.Protobuf;
 using GameServer.Platform.Web.Routing;
@@ -39,6 +40,9 @@ public sealed partial class IdentityModule : IGameModule, IPlayerApiModule, IGmA
     public const string UnbanRoute = "/gm/v1/players/{playerId}/unban";
     public const string DeleteAccountRoute = "/api/v1/identity/delete-account";
     public const string CancelDeletionRoute = "/gm/v1/players/{playerId}/deletion/cancel";
+
+    /// <summary>A literal segment: it wins over <c>/gm/v1/players/{playerId}</c> (player ids are generated, never this word).</summary>
+    public const string BanScopesRoute = "/gm/v1/players/ban-scopes";
     public const string ProfileDeletionDueIndex = "ix_profile_deletion_due";
 
     public ModuleDescriptor Describe() => new()
@@ -78,6 +82,7 @@ public sealed partial class IdentityModule : IGameModule, IPlayerApiModule, IGmA
         services.AddOptions<IdentityOptions>().BindConfiguration(IdentityOptions.SectionName).ValidateOnStart();
         services.AddSingleton<IValidateOptions<IdentityOptions>, IdentityOptionsValidator>();
         services.AddSingleton<IdentityMetrics>();
+        services.AddSingleton<BanScopes>();
         services.AddSingleton<ProfileCache>();
         services.AddSingleton<SessionService>();
         services.AddSingleton<LoginRateLimits>();
@@ -178,11 +183,9 @@ public sealed partial class IdentityModule : IGameModule, IPlayerApiModule, IGmA
     /// <summary>GM-07: ban / unban with reason, end time and scope; audited command on the player's profile.</summary>
     public void MapGmApi(IEndpointRouteBuilder routes)
     {
-        // A scope must name something that exists: a typo would be a ban that silently blocks nothing (review M2).
-        var groups = routes.ServiceProvider.GetRequiredService<GameServer.Platform.Registry.ModuleRegistry>().Commands.Keys
-            .Select(operation => operation.Split('.', 2)[0])
-            .Append(BanInfo.LoginScope)
-            .ToHashSet(StringComparer.Ordinal);
+        // A scope must name something that exists: a typo would be a ban that silently blocks nothing (review M2). The same set
+        // is the option list of identity.ban_scopes (A9).
+        var scopes = routes.ServiceProvider.GetRequiredService<BanScopes>();
         routes.MapGmCommand<BanBody, BanPlayerCommand, BanResult>(
             IdentityRoutes.Ban,
             body =>
@@ -194,25 +197,34 @@ public sealed partial class IdentityModule : IGameModule, IPlayerApiModule, IGmA
                 }
 
                 var scope = body.Scope?.Distinct(StringComparer.Ordinal).ToArray() ?? [BanInfo.LoginScope];
-                var unknown = scope.Where(s => !groups.Contains(s)).ToArray();
+                var unknown = scope.Where(s => !scopes.Contains(s)).ToArray();
                 if (scope.Length > 10 || unknown.Length > 0)
                 {
                     throw new GameServerException(
                         CoreErrorCodes.BadRequest,
-                        $"scope holds up to 10 entries: 'login' or a command group of this deployment ({string.Join(", ", groups.Order(StringComparer.Ordinal))}); unknown: {string.Join(", ", unknown)}.");
+                        $"scope holds up to 10 entries: 'login' or a command group of this deployment ({string.Join(", ", scopes.Sorted)}); unknown: {string.Join(", ", unknown)}.");
                 }
 
                 return new BanPlayerCommand(body.Reason!, body.UntilUtc?.ToUniversalTime(), scope);
-            });
+            })
+            .WithSummary("Ban a player from login or from command groups, until a time or permanently (GM-07).")
+            .WithGmConfirm(GmConfirm.Typed);
+        routes.MapDeclared(IdentityRoutes.BanScopes, () => GmHttp.Json(new GmOptionList(scopes.Sorted.Select(s => new GmOption(s, s)).ToArray())))
+            .Produces<GmOptionList>()
+            .WithSummary("List the scopes a ban may name: login and every command group of this host.")
+            .AsGmEndpoint(IdentityPermissions.PlayerBan);
         routes.MapGmCommand<UnbanBody, UnbanPlayerCommand, BanResult>(
             IdentityRoutes.Unban,
-            body => new UnbanPlayerCommand(body.Reason!));
+            body => new UnbanPlayerCommand(body.Reason!))
+            .WithSummary("Lift the ban of a player (GM-07).");
 
         // PRIV-01, FR-011: GM cancels a pending account deletion while the grace period runs.
         routes.MapGmCommand<CancelDeletionBody, CancelDeletionCommand, CancelDeletionResult>(
             IdentityRoutes.CancelDeletion,
             body => new CancelDeletionCommand(body.Reason!),
-            AfterDeletionCancelAsync);
+            AfterDeletionCancelAsync)
+            .WithSummary("Cancel a pending account deletion during its grace period (PRIV-01).")
+            .WithGmConfirm(GmConfirm.Typed);
     }
 }
 
@@ -329,7 +341,7 @@ public sealed partial class IdentityModule
 }
 
 /// <summary>Body of <c>POST /gm/v1/players/{playerId}/ban</c>; no end time = permanent, no scope = login.</summary>
-public sealed record BanBody(string? Reason, DateTimeOffset? UntilUtc, List<string>? Scope) : IGmCommandBody;
+public sealed record BanBody(string? Reason, DateTimeOffset? UntilUtc, [property: GmOptions("identity.ban_scopes")] List<string>? Scope) : IGmCommandBody;
 
 public sealed record UnbanBody(string? Reason) : IGmCommandBody;
 

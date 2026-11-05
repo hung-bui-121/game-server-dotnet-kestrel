@@ -43,6 +43,26 @@ public sealed class GmVersionEndpointTests : IAsyncLifetime
         body["frameworkVersion"]!.GetValue<string>().ShouldBe(GameServerVersion.FrameworkInformational);
     }
 
+    /// <summary>Slice 017 T032 (FR-036, US3-8, D9): /me and the local login answer carry the versions of ops/version.</summary>
+    [Fact]
+    public async Task Me_and_the_local_login_answer_carry_the_versions_of_the_instance()
+    {
+        var runtime = _host.Services.GetRequiredService<GameServerRuntimeInfo>();
+        var browser = _host.Browser();
+
+        var login = await (await browser.PostLoginAsync("support")).JsonAsync();
+        await browser.RefreshCsrfAsync();
+        var me = await browser.GetAsync(GmModule.MeRoute).ShouldBeAsync(200);
+
+        foreach (var answer in new[] { login, me })
+        {
+            answer.AsObject().Select(p => p.Key).ShouldBe(
+                ["staffId", "displayName", "gameId", "environmentId", "permissions", "frameworkVersion", "gameVersion"]);
+            answer["frameworkVersion"]!.GetValue<string>().ShouldBe(GameServerVersion.FrameworkInformational);
+            answer["gameVersion"]!.GetValue<string>().ShouldBe(runtime.GameVersion);
+        }
+    }
+
     [Fact]
     public async Task Without_a_session_it_is_401_and_without_ops_read_403()
     {
@@ -66,6 +86,7 @@ public sealed class GmVersionEndpointTests : IAsyncLifetime
         };
         var login = await client.PostLoginAsync(IdentityHttp.NewLocalId(), IdentityHttp.NewSecret());
         responses.Add(("guest login", login));
+        responses.Add((GmModule.AuthMethodsRoute, await client.GetAsync(GmModule.AuthMethodsRoute)));
         var player = await _host.NewPlayerAsync();
         responses.Add(("player command", await player.PostAsync("/api/v1/counter/increment", new Sample.Counter.Protocol.V1.IncrementRequest { By = 1 })));
 

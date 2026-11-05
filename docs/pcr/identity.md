@@ -2,7 +2,7 @@
 
 Module framework `identity` (slice 002; version 0.10.0 sau slice 010; slice 012: event analytics `login`). Nguồn: IDN-01..12, BAN-01, SEC-02, SEC-13, PRIV-01.
 
-Đúng với framework v0.7.0 (phát hành 2026-11-04).
+Đúng với framework v0.7.0 (phát hành 2026-11-04) + nhánh `017-gm-api-contract` (chưa phát hành).
 
 ## Aggregate
 
@@ -167,6 +167,7 @@ SampleHost (`--environment Local --export-wire-contract`, format `gameserver.wir
 | Route | Method | Template | Profile | Operation | Permission | Condition |
 | --- | --- | --- | --- | --- | --- | --- |
 | `identity.ban` | POST | `/gm/v1/players/{playerId}/ban` | Gm | `identity.ban` | `player.ban` | — |
+| `identity.ban_scopes` | GET | `/gm/v1/players/ban-scopes` | Gm | — | `player.ban` | — |
 | `identity.cancel_deletion` | POST | `/gm/v1/players/{playerId}/deletion/cancel` | Gm | `identity.cancel_deletion` | `player.ban` | — |
 | `identity.link` | POST | `/api/v1/identity/link` | Player | `identity.link` | — | — |
 | `identity.login_guest` | POST | `/api/v1/identity/login/guest` | Public | — | — | — |
@@ -185,6 +186,23 @@ Section (mapper typed `AddAggregateWireMapper<ProfileState, Wire.ProfileState>` 
 
 `WireConformance` (TestKit) kiểm mapper mang mọi member không hidden lên wire và set mọi field proto
 (`tests/GameServer.Platform.Web.Tests/WireConformanceTests.cs`).
+
+## GM document: ban scope, xác nhận kiểu gõ (slice 017 — GM-1, FR-043, FR-044, FR-046)
+
+- **Route `identity.ban_scopes`** `GET /gm/v1/players/ban-scopes` (Gm, `player.ban`, surface GmApi): trả `GmOptionList`
+  `{items: [{value, label}]}` với `login` và nhóm command (phần đầu tên operation) của mọi command đăng ký trên host, thứ tự
+  ordinal, `label = value`. Đoạn `ban-scopes` là literal nên thắng `/gm/v1/players/{playerId}` (player id do server sinh, không
+  bao giờ là chữ này).
+- **Một nguồn** (A9): singleton nội bộ `BanScopes` (dựng một lần từ `ModuleRegistry` lúc dùng lần đầu) dùng cho cả validation
+  `scope` của `identity.ban` lẫn route trên, nên danh sách console hiện và giá trị server nhận không lệch nhau. Luật số lượng
+  (≤ 10, không rỗng, loại trùng) vẫn viết tay trong `toDomain` (không biểu diễn được bằng annotation).
+- **`BanBody.Scope`** có `[property: GmOptions("identity.ban_scopes")]` → `x-gm-options` trên `items` của `scope` trong GM
+  document. Server vẫn kiểm từng giá trị.
+- **Xác nhận kiểu gõ** (Q7): `identity.ban` và `identity.cancel_deletion` có `WithGmConfirm(GmConfirm.Typed)` → `x-gm-confirm:
+  typed`; `identity.unban` = `simple`.
+- Ba command GM có `summary`; body `BanBody`, `UnbanBody`, `CancelDeletionBody` trong document có request body đầy đủ,
+  `required: ["reason"]`, luật `reason` (1..500, regex `\S`). `UnbanBody`, `CancelDeletionBody` không thêm annotation
+  (chỉ có `reason`). Lỗi luật body → 400 `BAD_REQUEST` có `errors` (PCR gm).
 
 ## Login: người chơi mới, tạo tài khoản và lỗi đọc (slice 016 — FG-013, FG-015, FG-029, BC-3, BC-6, BC-7, BC-10)
 

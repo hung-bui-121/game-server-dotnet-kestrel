@@ -50,19 +50,39 @@ public static partial class GmHttp
         return new GmPage<T>(page.Items.Select(map).ToArray(), page.NextCursor);
     }
 
-    /// <summary>Reads a bounded JSON body (GM body limit, API-06).</summary>
+    /// <summary>
+    /// Reads a bounded JSON body (GM body limit, API-06). Since slice 017 it also validates the body's DataAnnotations (FR-024):
+    /// a failing rule is a <c>400 BAD_REQUEST</c> with <c>errors</c>; a body without annotations reads as before.
+    /// </summary>
     public static async Task<T> ReadJsonAsync<T>(HttpContext context)
     {
         var options = (GameServerOptions)context.RequestServices.GetService(typeof(GameServerOptions))!;
         var body = await BoundedBody.ReadAsync(context, options.Limits.GmBodyBytes, JsonContentType);
+        T value;
         try
         {
-            return JsonSerializer.Deserialize<T>(body, GameServerJson.Options)
+            value = JsonSerializer.Deserialize<T>(body, GameServerJson.Options)
                 ?? throw new GameServerException(CoreErrorCodes.BadRequest, "Body is required.");
         }
         catch (JsonException ex)
         {
             throw new GameServerException(CoreErrorCodes.BadRequest, "Body is not valid JSON for this endpoint.", ex);
+        }
+
+        // Annotations only: actions handle their reason themselves (plan N1).
+        ThrowIfInvalid(GmBodyValidator.Validate(value, body, commandBody: false));
+        return value;
+    }
+
+    /// <summary>Throws the validation answer (<c>400 BAD_REQUEST</c> with <c>errors</c>) when <paramref name="errors"/> is not empty.</summary>
+    internal static void ThrowIfInvalid(IReadOnlyDictionary<string, IReadOnlyList<string>> errors)
+    {
+        if (errors.Count > 0)
+        {
+            throw new GameServerException(CoreErrorCodes.BadRequest, "Body validation failed: " + string.Join(", ", errors.Keys) + ".")
+            {
+                Errors = errors,
+            };
         }
     }
 

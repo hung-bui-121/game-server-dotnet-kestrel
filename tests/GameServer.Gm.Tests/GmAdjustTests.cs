@@ -106,6 +106,41 @@ public sealed class GmAdjustTests : IAsyncLifetime
         Audits().ShouldBeEmpty();
     }
 
+    /// <summary>Slice 017 T023 (FR-027, BC-3): [Required] on resource answers the same 400 as before, now with errors.resource.</summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("  ")]
+    public async Task A_blank_resource_is_400_with_the_field_error(string? resource)
+    {
+        var gm = await _host.GmClientAsync("econ");
+
+        var problem = await gm.PostCommandAsync(AdjustRoute, new { resource, delta = 10, reason = "ok" }).ShouldBeAsync(400);
+
+        problem["code"]!.GetValue<string>().ShouldBe("BAD_REQUEST");
+        problem["errors"]!.ToJsonString().ShouldBe("""{"resource":["The resource field is required."]}""");
+        (await _player.WalletAsync()).Balances["gold"].ShouldBe(50);
+        Audits().ShouldBeEmpty();
+    }
+
+    /// <summary>
+    /// Review r1 m3: a missing delta is a 400 with errors.delta (before: read as 0), nothing written; the document lists delta as
+    /// required.
+    /// </summary>
+    [Fact]
+    public async Task A_missing_delta_is_400_with_the_field_error_and_writes_nothing()
+    {
+        var gm = await _host.GmClientAsync("econ");
+        var receipts = _host.Store.Count(GameServer.Platform.Commands.ReceiptDocument.Collection);
+
+        var problem = await gm.PostCommandAsync(AdjustRoute, new { resource = "gold", reason = "no delta" }).ShouldBeAsync(400);
+
+        problem["errors"]!.ToJsonString().ShouldBe("""{"delta":["The delta field is required."]}""");
+        _host.Store.Count(GameServer.Platform.Commands.ReceiptDocument.Collection).ShouldBe(receipts);
+        Audits().ShouldBeEmpty();
+        (await _player.WalletAsync()).Balances["gold"].ShouldBe(50);
+    }
+
     [Theory]
     [InlineData("diamond", 10, "UNKNOWN_ITEM")]
     [InlineData("gold", -51, "INSUFFICIENT_FUNDS")]

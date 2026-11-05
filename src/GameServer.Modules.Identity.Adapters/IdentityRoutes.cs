@@ -27,6 +27,14 @@ public static class IdentityRoutes
 
     public static RouteDeclaration CancelDeletion { get; } = RouteDeclaration.Command(CancelDeletionHandler.Descriptor, IdentityModule.CancelDeletionRoute);
 
+    /// <summary>The scopes a ban may name, as GM options (slice 017): <c>login</c> plus every command group of the host.</summary>
+    public static RouteDeclaration BanScopes { get; } = RouteDeclaration.Get(
+        "identity.ban_scopes",
+        IdentityModule.BanScopesRoute,
+        SecurityProfile.Gm,
+        RouteSurface.GmApi,
+        IdentityPermissions.PlayerBan);
+
     public static IReadOnlyList<RouteDeclaration> All { get; } =
-        [LoginGuest, LoginProvider, Logout, SetDisplayName, Link, RequestDeletion, Ban, Unban, CancelDeletion];
+        [LoginGuest, LoginProvider, Logout, SetDisplayName, Link, RequestDeletion, Ban, Unban, CancelDeletion, BanScopes];
 }

@@ -120,6 +120,7 @@ public static class GmPlayerEndpoints
                 return GmHttp.Json(await LookupAsync(http, playerId));
             })
             .Produces<GmPlayerView>()
+            .WithSummary("Find a player by an identity mapping key and show its aggregates.")
             .AsGmEndpoint(GmPermissions.PlayerRead);
 
         routes.MapDeclared(GmRoutes.PlayerSearch, async (HttpContext http) =>
@@ -141,10 +142,14 @@ public static class GmPlayerEndpoints
                         d.Content["playerId"]?.GetValue<string>() ?? d.Key.Key,
                         d.Content["state"]?["displayName"]?.GetValue<string>() ?? string.Empty)));
             })
+            .ProducesGmPage<GmPlayerSearchItem>()
+            .WithGmQueryParameter("displayName", required: true, maxLength: 64, minLength: 1)
+            .WithSummary("Search players by exact display name (paged).")
             .AsGmEndpoint(GmPermissions.PlayerRead);
 
         routes.MapDeclared(GmRoutes.Player, async (HttpContext http, string playerId) => GmHttp.Json(await LookupAsync(http, ValidPlayerId(playerId))))
             .Produces<GmPlayerView>()
+            .WithSummary("Show a player's aggregates and account deletion state.")
             .AsGmEndpoint(GmPermissions.PlayerRead);
 
         routes.MapDeclared(GmRoutes.PlayerReceipts, async (HttpContext http, string playerId) =>
@@ -156,6 +161,8 @@ public static class GmPlayerEndpoints
                     "committedAtUtc",
                     descending: true,
                     d => Summarize(ReceiptDocument.FromJson(d.Content)))))
+            .ProducesGmPage<GmReceiptSummary>()
+            .WithSummary("List a player's command receipts, newest first (paged).")
             .AsGmEndpoint(GmPermissions.PlayerRead);
 
         routes.MapDeclared(GmRoutes.PlayerAudit, async (HttpContext http, string playerId) =>
@@ -167,6 +174,8 @@ public static class GmPlayerEndpoints
                     "committedAtUtc",
                     descending: true,
                     d => d.Content)))
+            .ProducesGmPage<JsonObject>()
+            .WithSummary("List the GM audit entries of a player, newest first (paged).")
             .AsGmEndpoint(GmPermissions.PlayerRead);
 
         routes.MapDeclared(GmRoutes.Receipt, async (HttpContext http, string receiptId) =>
@@ -180,6 +189,7 @@ public static class GmPlayerEndpoints
                     ?? throw new GameServerException(CoreErrorCodes.NotFound, "Receipt not found.");
                 return GmHttp.Json(receipt);
             })
+            .WithSummary("Show one command receipt.")
             .AsGmEndpoint(GmPermissions.PlayerRead);
     }
 

@@ -9,7 +9,8 @@ slice 010 lease job và xoá tài khoản, 2026-10-30 — mục 16; slice 011 m�
 readiness, 2026-11-03 — mục 19; slice 014 wire contract, 2026-11-03 — mục 20 và `RouteName` ở mục 13; slice 015 game config,
 2026-11-04 — mục 21, nén `GetConfig` ở mục 1 và 9, metric/readiness ở mục 13, `IStartupCheck` ở mục 17; slice 016 login và
 độ bền command, 2026-11-04 — mục 22, transaction tạo tài khoản ở mục 2, giới hạn ở mục 3 và 5, đọc suy giảm ở mục 4 và 6, ba mã ở
-mục 8, kit ở mục 19). Đúng với framework v0.7.0 (phát hành / released 2026-11-04).
+mục 8, kit ở mục 19). Đúng với framework v0.7.0 (phát hành / released 2026-11-04) + nhánh `017-gm-api-contract` (chưa phát
+hành): slice 017 hợp đồng GM API — mục 23, OpenAPI GM ở mục 14.
 
 ## 1. Limits và timeout theo nhóm endpoint (vận hành — API-06, PERF-04)
 
@@ -501,9 +502,10 @@ policy → không header CORS.
 `CollectionSpec(TransactionOnly: true)`, platform tự thêm `dataprotection`. `gm_audit` là collection của platform (có cả
 khi không đăng ký module gm).
 
-**OpenAPI:** document `gm` (`GET /gm/v1/openapi/gm.json`, chỉ Development/Test), bản commit `docs/api/gm-openapi.json`
+**OpenAPI:** document `gm`; route `GET /gm/v1/openapi/gm.json` chỉ Development/Test, bản commit `docs/api/gm-openapi.json`
 được test so khớp (`UPDATE_OPENAPI=1` để ghi lại). Mỗi operation: `x-gm-permission` (`public` hoặc permission),
-`x-gm-csrf`, response `4XX`/`5XX` = Problem Details.
+`x-gm-csrf`, response `4XX`/`5XX` = Problem Details. Từ slice 017 document được đăng ký ở **mọi môi trường** và phục vụ
+cho console qua route `gm.console_catalog` (module gm), thêm các khoá `x-gm-*` khác: mục 23.
 
 **Khởi tạo store dùng chung (`IStoreInitializer`):** Couchbase provisioner chạy một lần mỗi process; key ring và
 bootstrap staff chờ nó trước khi đọc store, bất kể thứ tự hosted service. Tạo scope/collection: "đã tồn tại" = instance khác
@@ -646,7 +648,7 @@ transaction có fencing. `AuditedStore` vẫn từ chối sửa audit ở mọi 
 
 | Hạng mục | Ghi chú |
 | --- | --- |
-| Schema OpenAPI cho body/response của `POST /gm/v1/players/{playerId}/deletion/cancel` | route đã có trong `gm-openapi.json` (permission, CSRF) nhưng body `{reason}` và `GmCommandResponse` chưa có schema chi tiết (review T054, 12b) |
+| Schema OpenAPI cho body/response của `POST /gm/v1/players/{playerId}/deletion/cancel` | **đã giải quyết** ở slice 016 (`GmCommandResponse`) và 017 (request body `CancelDeletionBody`, header, path parameter); ban đầu: review T054, 12b |
 | Id đã purge trong `pa_*` của **player khác** | purge chỉ ghi dữ liệu của chính player; giá trị bằng id cũ nằm trong aggregate của người khác (bạn bè, tin nhắn, đối thủ…) không được xoá/ẩn — cần cơ chế khi có module xã hội; liên quan P1 MSG-01 (review T054, 12c) |
 
 **Rủi ro còn lại (vận hành):**
@@ -1676,3 +1678,102 @@ invalid name. Fix: use '{prefix}<name>' in lowercase.` (slice 016 T082). Các d�
 | BC-12 | Constructor public của `CommandRunner` nhận `ILoggerFactory loggers` thay cho `ILogger<CommandRunner> logger` (tham số cuối) | code tự `new CommandRunner(…)` (test, host riêng): `CS1503` ở tham số cuối; tạo qua DI thì không đổi gì | truyền `ILoggerFactory` (ví dụ `NullLoggerFactory.Instance` hoặc factory của host) |
 
 Bước chuyển đầy đủ: release notes `v0.7.0` (bản nháp `specs/016-login-command/release-notes-draft.md`).
+
+## 23. Hợp đồng GM API (slice 017 — GM-1; FR-001..FR-055, API-04, SEC-07..09, OBS-03, CI-01)
+
+Bối cảnh: GM-1 của track GM tool (console GM chung do owner xây, GM-1..GM-4; thiết kế
+`AgentMemories/features/gm-tool/01_design.md` §19). Chỉ hợp đồng backend: không đổi cookie, CORS, SSO, hosting, proto,
+Couchbase hay Unity; JSON GM chỉ thêm member. Chi tiết document, route và câu trả lời: PCR gm mục "GM document và hợp đồng
+console".
+
+### GM document trong mọi môi trường (semantic với console và CI của game)
+
+- `GameServerBuilder` gọi `GmOpenApi.Add` và đăng ký singleton public `GmCatalogDocument` (`GameServer.Platform.Web.OpenApi`)
+  ở **mọi môi trường** (trước: chỉ development tools). Document sinh **lười** lần đầu dùng (catalog route hoặc kit), qua
+  `IOpenApiDocumentProvider` keyed `"gm"` (không cần request), giữ cả process; host start không đổi.
+- `GmCatalogDocument.GetAsync(CancellationToken)` → `GmCatalogBytes(ReadOnlyMemory<byte> Bytes, string ETag)`: JSON OpenAPI 3.1
+  viết lại thụt lề, LF, một newline cuối, UTF-8 không BOM; `ETag` = `"` + 32 hex đầu SHA-256 + `"`. Nhiều lời gọi đầu dùng
+  chung một lần sinh; lần sinh lỗi được giữ `FailureHold` (30 s, đồng hồ `IClock`) rồi mới sinh lại (lỗi xác định không tốn một
+  lần sinh mỗi request). Một dòng Information category `GameServer.Gm.Catalog` mỗi lần sinh.
+- Transformer (nội bộ, đăng ký bởi `GmOpenApi.Add`): operation (`operationId` = tên route, tag = area, path/header/query
+  parameter, `x-gm-kind`, `x-gm-operation`, `x-gm-target`, `x-gm-confirm`, `x-gm-paged`), schema (DataAnnotations, `required`
+  thật của request body, luật `reason`, `x-gm-options`), document (`info` cố định, **không `servers`**, danh sách tag từ
+  operation). Enum mô tả bằng chuỗi camelCase: schema transformer viết `type: string` + `enum` = chuỗi `GameServerJson.Options`
+  ghi ra; HTTP JSON options của host **không** đổi (review r1 m1).
+- Route `platform.gm_openapi` (`/gm/v1/openapi/{documentName}.json`, Public, condition `development_tools`) **không đổi**,
+  trả cùng document.
+
+### Câu trả lời lỗi `errors` (semantic — API-04, FR-022, FR-026)
+
+- Core: `GameServerException.Errors` (`IReadOnlyDictionary<string, IReadOnlyList<string>>?`, init) — lỗi theo field của body
+  JSON không hợp lệ; message phải an toàn để hiện.
+- `ErrorResponseWriter.WriteAsync(context, code, retryAfterMs, details, errors)` (tham số tuỳ chọn cuối mới) ghi `errors` vào
+  Problem Details sau `details`: object JSON path → mảng message, khoá thứ tự ordinal. Envelope Protobuf (`ErrorEnvelope`)
+  **không đổi** (bỏ qua `errors`). `ExceptionMiddleware` chuyền `ex.Errors`.
+- `MapGmCommand` (mọi overload) kiểm body trước `toDomain`, target validator và runner; `GmHttp.ReadJsonAsync<T>` kiểm
+  annotation (không có luật `reason`). Hỏng → `GameServerException(BAD_REQUEST, "Body validation failed: <keys>.") { Errors }`:
+  400, đếm `http_errors_total{code="BAD_REQUEST"}`, một dòng Information `Request rejected with BAD_REQUEST: Body validation
+  failed: <keys>.`. Body không annotation xử lý như trước. Luật `reason` của command: 1..500 ký tự, không chỉ khoảng trắng,
+  message `reason is required (1..500 characters, not only white space).`.
+
+### Presentation API (semantic với code module — `GameServer.Platform.Web.Endpoints`, chỉ metadata)
+
+| API | Tác dụng trong document |
+| --- | --- |
+| `WithGmConfirm(GmConfirm.Simple \| Typed)` | `x-gm-confirm` của mutation |
+| `ProducesGmPage<T>()` (trên `RouteHandlerBuilder`) | `Produces<GmPage<T>>`, `pageSize` (bắt buộc, 1..200), `cursor`, `x-gm-paged: true` |
+| `WithGmQueryParameter(name, required, maxLength, minLength)` | query parameter handler đọc tay |
+| `WithGmRequestId()` | header `X-Request-Id` bắt buộc (mutation ngoài `MapGmCommand`) |
+| `[GmOptions("<route>")]` (property hoặc tham số) | `x-gm-options`; kiểm lúc khởi động |
+| `GmOption(Value, Label)`, `GmOptionList(Items)` | câu trả lời của option route |
+| `GmConfirmMetadata`, `GmPagedMetadata`, `GmQueryParameterMetadata`, `GmRequestIdMetadata` | metadata đọc bởi transformer |
+
+`MapGmCommand` tự thêm `Accepts<TBody>("application/json")` và `GmRequestIdMetadata`. `Accepts` **không chỉ là metadata**:
+routing gửi request có Content-Type không khớp tới endpoint 415 của nó (không có profile); `ProfileEnforcementMiddleware` trả
+415 `UNSUPPORTED_MEDIA_TYPE` cho endpoint đó (như với 405), không phải 403 (review 017 M1). Core và business project không phụ
+thuộc API này (ARC-01).
+
+**Giới hạn đã biết (quyết định chờ owner, review 017 M4):** server kiểm body tới độ sâu 3 (body → object lồng → object lồng
+của nó) và không kiểm phần tử của body là mảng ở gốc; document vẫn hiện keyword của attribute `[property: …]` trên type sâu hơn
+(generator tự sinh) mà server không kiểm. Giữ body GM ≤ 3 cấp và gốc là object.
+
+**Luật có mặt** (review r1 m3, r2 M1, BC-9): value type không nullable của body GM (có hay không `[Required]`) được đọc từ JSON
+(có setter hoặc tham số constructor) và tham số không có giá trị mặc định là bắt buộc — document liệt kê trong `required`, server
+từ chối khi vắng (`The <name> field is required.`); nullable, tham số có mặc định (không `[Required]`) hoặc member tính toán chỉ-get = tuỳ chọn; `[Required]` tường minh
+trên value type luôn kiểm có mặt. `[RegularExpression("p")]`
+được viết `pattern: "^(?:p)?$"` (khớp toàn bộ, `""` qua — như .NET).
+
+**Content-Type sai** (`text/plain`, form) trên mọi GM command/action có `Accepts`: 415 `UNSUPPORTED_MEDIA_TYPE`.
+
+### Dòng startup `[GmOptions]` (semantic — văn bản dòng, FR-045)
+
+Chạy cùng endpoint check (mục 20; lần trước khi phục vụ và đường lỗi của `UseGameServer`), một dòng mỗi (endpoint, property),
+nhập vào báo cáo startup chung:
+
+`[endpoint <METHOD> <template>] body <Type> property '<jsonPath>' names option route '<name>', which is not a GM GET route of this host. Fix: declare the route (RouteDeclaration.Get(..., RouteSurface.GmApi)) or correct the name in [GmOptions] (FR-045).`
+
+Route hợp lệ: có trong catalog, method `GET`, surface `GmApi`, không thuộc module service-only, condition (nếu có) giữ trên
+host. Property trong list object được ghi `items[].pick`.
+
+### Test kit (semantic với test của game — CI-01)
+
+`GmOpenApiSnapshot` (`GameServer.TestKit`): `GetDocumentAsync(IServiceProvider)`, `WriteAsync(IServiceProvider, path)`,
+`DiffAsync(IServiceProvider, path)` và overload `TestHost` của `WriteAsync`/`DiffAsync`. Diff bỏ qua kiểu xuống dòng; khác → dòng
+khác đầu tiên (`GM OpenAPI document differs from <path> at line <n>:` + hai dòng, cắt 200 ký tự, `(end of file)`); thiếu file →
+message. Chỉ dùng API public (`GmCatalogDocument`): allow-list nội bộ của kit không đổi.
+
+### Breaking (slice 017 — so với `v0.7.0`)
+
+| # | Thay đổi | Ai bị ảnh hưởng | Lộ ra thế nào | Cách chuyển |
+| --- | --- | --- | --- | --- |
+| BC-1 | Hình dạng GM document: `operationId`, tag = area, body/path/header của command, `required` thật, `x-gm-*`, không `servers` | tool sinh client hoặc diff `docs/api/gm-openapi.json` | diff file commit; tên client sinh theo tag/operation id đổi | sinh lại và commit; codegen theo path không ảnh hưởng |
+| BC-2 | Problem Details của `BAD_REQUEST` do luật body (và `reason`) có thêm `errors` | client GM từ chối member lạ (chưa thấy) | member mới | bỏ qua hoặc hiện |
+| BC-3 | Body GM có DataAnnotations được kiểm trước `toDomain` (`MapGmCommand`, `GmHttp.ReadJsonAsync`) | game có body GM **đã** gắn annotation cho mục đích khác | 400 có `errors` nơi trước chạy | bỏ annotation hoặc chấp nhận luật |
+| BC-4 | `GmMeResponse` (`/me`, login local) thêm `frameworkVersion`, `gameVersion` | chính sách lộ version; client assert đủ member | hai member mới | không (thêm member) |
+| BC-5 | Bốn route mới: `gm.auth_methods` (Public), `gm.console_catalog`, `economy.resource_options`, `identity.ban_scopes` | test/tool ghim danh sách route; route game trùng template | test ghim fail; trùng template fail startup | thêm tên; đổi route game |
+| BC-6 | Dịch vụ OpenAPI đăng ký ở mọi môi trường | host đã thay/xoá chúng (chưa thấy) | `IOpenApiDocumentProvider` có ngoài Development/Test | không |
+| BC-7 | `GameServerException.Errors` (init) | không ở compile time | — | — |
+| BC-8 | `[GmOptions]` trỏ route không phải GM GET → startup fail | chỉ code mới | một dòng startup | sửa tên hoặc khai route |
+| BC-9 | Mọi value type không nullable của body GM, không có giá trị mặc định, là bắt buộc: vắng → 400 `BAD_REQUEST` có `errors` (trước: đọc thành mặc định `0`/`false`); document liệt kê trong `required` | body GM của game có member value type (`int`, `long`, `bool`, enum) mà client có thể bỏ | 400 có `errors` nơi trước chạy | khai nullable (`int?`) hoặc cho tham số constructor giá trị mặc định (`int Weight = 3`) để giữ tuỳ chọn |
+
+Bước chuyển đầy đủ: bản nháp release notes `specs/017-gm-api-contract/release-notes-draft.md`.

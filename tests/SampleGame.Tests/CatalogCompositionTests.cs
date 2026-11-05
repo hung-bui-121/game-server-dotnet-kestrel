@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Reflection;
+using System.Text.Json.Nodes;
 using GameServer.Modules.Economy;
 using GameServer.Modules.Gm;
 using GameServer.Modules.Iap;
@@ -26,13 +27,14 @@ public sealed class CatalogCompositionTests
     /// <summary>data-model §1.3: every route the framework can map.</summary>
     private static readonly string[] FrameworkRouteNames =
     [
-        "cheat.grant", "economy.adjust", "economy.ledger",
-        "gm.auth_csrf", "gm.auth_login", "gm.auth_logout", "gm.health", "gm.me", "gm.ops_gate", "gm.ops_gate_maintenance",
+        "cheat.grant", "economy.adjust", "economy.ledger", "economy.resource_options",
+        "gm.auth_csrf", "gm.auth_login", "gm.auth_logout", "gm.auth_methods", "gm.console_catalog", "gm.health", "gm.me", "gm.ops_gate",
+        "gm.ops_gate_maintenance",
         "gm.ops_gate_min_client_version", "gm.ops_rotate_keys", "gm.ops_version", "gm.player", "gm.player_audit", "gm.player_by_mapping",
         "gm.player_receipts", "gm.player_search", "gm.receipt", "gm.sso_callback", "gm.sso_start", "gm.staff", "gm.staff_audit",
         "gm.staff_create", "gm.staff_disable", "gm.staff_enable", "gm.staff_grant", "gm.staff_list", "gm.staff_revoke_sessions", "gm.ui",
         "iap.purchase",
-        "identity.ban", "identity.cancel_deletion", "identity.link", "identity.login_guest", "identity.login_provider", "identity.logout",
+        "identity.ban", "identity.ban_scopes", "identity.cancel_deletion", "identity.link", "identity.login_guest", "identity.login_provider", "identity.logout",
         "identity.request_deletion", "identity.set_display_name", "identity.unban",
         "platform.config", "platform.gm_openapi", "platform.health_live", "platform.health_ready", "platform.receipt", "platform.snapshot",
         "platform.time",
@@ -73,7 +75,44 @@ public sealed class CatalogCompositionTests
 
         var developmentTools = factory.Services.GetRequiredService<GameServerOptions>().AllowsDevelopmentTools;
         endpoints.Any(e => e.RoutePattern.RawText == GmOpenApi.Route).ShouldBe(developmentTools && gm);
+
+        // Slice 017 (FR-030, FR-034): the console catalog and the sign-in methods are mapped whenever the GM API is, in every flavor.
+        endpoints.Any(e => e.RoutePattern.RawText == GmModule.ConsoleCatalogRoute).ShouldBe(gm);
+        endpoints.Any(e => e.RoutePattern.RawText == GmModule.AuthMethodsRoute).ShouldBe(gm);
     }
+
+    /// <summary>
+    /// Slice 017 SC-003 (planning note 8): Beta and Local serve the same GM document except their conditional routes (the local
+    /// login only with development tools; SSO only with <c>Gm:Oidc</c>, which the staging secrets set); the catalog needs a
+    /// session, the sign-in methods follow the flavor.
+    /// </summary>
+    [Fact]
+    public async Task Beta_and_local_serve_the_same_gm_document_except_conditional_routes()
+    {
+        await using var local = Factory("Local", player: true, gm: true);
+        await using var beta = Factory("Beta", player: true, gm: true);
+
+        var localDocument = await DocumentAsync(local);
+        var betaDocument = await DocumentAsync(beta);
+
+        Paths(localDocument).Except(Paths(betaDocument)).ShouldBe([GmModule.LoginRoute]);
+        Paths(betaDocument).Except(Paths(localDocument)).Order(StringComparer.Ordinal).ShouldBe(["/gm/v1/auth/sso/callback", "/gm/v1/auth/sso/start"]);
+        localDocument["paths"]!.AsObject().Remove(GmModule.LoginRoute);
+        localDocument["components"]!["schemas"]!.AsObject().Remove("GmLoginRequest");
+        betaDocument["paths"]!.AsObject().Remove("/gm/v1/auth/sso/callback");
+        betaDocument["paths"]!.AsObject().Remove("/gm/v1/auth/sso/start");
+        JsonNode.DeepEquals(localDocument, betaDocument).ShouldBeTrue();
+
+        var client = beta.CreateClient();
+        (await client.GetAsync(GmModule.ConsoleCatalogRoute)).StatusCode.ShouldBe(System.Net.HttpStatusCode.Unauthorized);
+        (await client.GetStringAsync(GmModule.AuthMethodsRoute)).ShouldBe("""{"local":false,"sso":true}""");
+        (await local.CreateClient().GetStringAsync(GmModule.AuthMethodsRoute)).ShouldBe("""{"local":true,"sso":false}""");
+    }
+
+    private static async Task<JsonNode> DocumentAsync(LocalFlavorFactory<Program> factory) =>
+        JsonNode.Parse((await factory.Services.GetRequiredService<GmCatalogDocument>().GetAsync(CancellationToken.None)).Bytes.Span)!;
+
+    private static string[] Paths(JsonNode document) => document["paths"]!.AsObject().Select(p => p.Key).ToArray();
 
     [Fact]
     public async Task The_framework_entries_of_the_local_composition_are_every_framework_route()

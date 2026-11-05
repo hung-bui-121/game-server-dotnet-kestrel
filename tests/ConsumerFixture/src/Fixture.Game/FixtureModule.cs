@@ -5,11 +5,13 @@ using GameServer.Platform.Aggregates;
 using GameServer.Platform.Web.Aggregates;
 using GameServer.Platform.Web.Auth;
 using GameServer.Platform.Web.Commands;
+using GameServer.Platform.Web.Endpoints;
 using GameServer.Platform.Web.Protobuf;
 using GameServer.Platform.Web.Routing;
 using GameServer.Protocol.Core.V1;
 using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,10 +20,11 @@ using Wire = Fixture.V1;
 namespace Fixture.Game;
 
 /// <summary>
-/// Adapter half of the fixture module: one player command over a well-known Protobuf type, and the client-visible <c>card</c>
-/// section with its typed wire mapper and a query route returning it (slice 014).
+/// Adapter half of the fixture module: one player command over a well-known Protobuf type, the client-visible <c>card</c>
+/// section with its typed wire mapper and a query route returning it (slice 014), and a GM command with an annotated body and
+/// its option route for the generic console (slice 017).
 /// </summary>
-public sealed class FixtureModule : IGameModule, IPlayerApiModule
+public sealed class FixtureModule : IGameModule, IPlayerApiModule, IGmApiModule
 {
     public const string SaveRoute = FixtureRoutes.SaveTemplate;
 
@@ -59,6 +62,22 @@ public sealed class FixtureModule : IGameModule, IPlayerApiModule
                 });
             })
             .AsPlayerEndpoint();
+    }
+
+    public void MapGmApi(IEndpointRouteBuilder routes)
+    {
+        // Body rules (required, length) are annotations; the preset value is checked against the same list the option route answers.
+        routes.MapGmCommand<SetNoteBody, SetNoteCommand, SetNoteResult>(
+                FixtureRoutes.NoteSet,
+                body => body.Preset is { } preset && !FixtureNotePresets.Contains(preset)
+                    ? throw new GameServerException(CoreErrorCodes.BadRequest, "preset is not one of fixture.note_presets.")
+                    : new SetNoteCommand(body.Text!, body.Preset, body.Reason!))
+            .WithSummary("Set the note of the player (fixture GM command).");
+
+        routes.MapDeclared(FixtureRoutes.NotePresets, () => GmHttp.Json(FixtureNotePresets.All))
+            .Produces<GmOptionList>()
+            .WithSummary("List the note presets a GM may pick.")
+            .AsGmEndpoint(FixturePermissions.NoteEdit);
     }
 
     /// <summary>State → wire: dates as UTC milliseconds; <see cref="CardState.InternalNote"/> stays on the server.</summary>

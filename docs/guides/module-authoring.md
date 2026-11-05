@@ -1,6 +1,6 @@
 # Viết module cho Game Server Framework
 
-> Đúng với framework v0.7.0 (phát hành 2026-11-04).
+> Đúng với framework v0.7.0 (phát hành 2026-11-04) + nhánh `017-gm-api-contract` (chưa phát hành).
 
 Hướng dẫn này dùng `modules/Sample.Counter` làm ví dụ đầy đủ. Template rỗng ở `templates/module/`. Module viết trong repo
 game (framework là submodule): xem thêm [consumer-guide.md](consumer-guide.md).
@@ -316,6 +316,156 @@ nối. Ví dụ:
 ```
 
 Endpoint host tự map (ngoài module) khai bằng `gameServer.DeclareRoutes(...)` trước `Build()` (consumer guide §4).
+
+### 5.4 Route GM cho console generic (slice 017)
+
+Console GM generic (GM-2..GM-4) dựng menu, form, danh sách và hộp xác nhận **chỉ từ GM document** (OpenAPI của mọi
+`/gm/**`, route `GET /gm/v1/console/openapi.json`, permission `gm.access`, mọi môi trường). Module không viết frontend; nó
+khai route, body và metadata để document mô tả đủ. Ví dụ đầy đủ (lấy từ consumer fixture,
+`tests/ConsumerFixture/src/Fixture.Game/FixtureGmNote.cs` + `FixtureModule.MapGmApi`):
+
+```csharp
+using System.ComponentModel.DataAnnotations;   // [Required], [Range], [StringLength], …
+using GameServer.Actors;                       // SecurityProfile
+using GameServer.Commands;                     // CommandDescriptor, ICommandHandler, Command.Define
+using GameServer.Errors;                       // GameServerException, CoreErrorCodes
+using GameServer.Modules;                      // ModuleDescriptor, IGameModule
+using GameServer.Platform.Web.Commands;        // IGmCommandBody, MapGmCommand
+using GameServer.Platform.Web.Endpoints;       // GmOptions, GmOption, GmOptionList, GmConfirm, GmHttp, ProducesGmPage, WithGm…
+using GameServer.Platform.Web.Routing;         // IGmApiModule, MapDeclared, AsGmEndpoint
+using GameServer.Routing;                      // RouteDeclaration, RouteSurface
+using Microsoft.AspNetCore.Http;               // WithSummary, Produces
+using Microsoft.AspNetCore.Routing;            // IEndpointRouteBuilder
+
+// Project nghiệp vụ / adapter: permission, command, body, route.
+public static class FixturePermissions
+{
+    public const string NoteEdit = "fixture.note.edit";            // khai trong ModuleDescriptor.Permissions
+}
+
+public sealed record SetNoteCommand(string Text, string? Preset, string Reason);
+
+public sealed record SetNoteResult(string Text, int Saves);
+
+public sealed record SetNoteBody(
+    [property: Required, StringLength(SetNoteHandler.MaxTextLength)] string? Text,
+    [property: GmOptions("fixture.note_presets")] string? Preset,
+    string? Reason) : IGmCommandBody;
+
+public sealed class SetNoteHandler : ICommandHandler<SetNoteCommand, SetNoteResult>
+{
+    public const string Operation = "fixture.note_set";
+    public const int MaxTextLength = 140;
+
+    public static CommandDescriptor Descriptor { get; } = new(
+        Operation,
+        touches: [FixtureModuleDefinition.NotesAggregate],
+        profile: SecurityProfile.Gm,
+        permission: FixturePermissions.NoteEdit);
+
+    public ValueTask<CommandOutcome<SetNoteResult>> HandleAsync(SetNoteCommand request, ICommandContext context)
+    {
+        var before = context.Get<NotesState>(FixtureModuleDefinition.NotesAggregate);
+        var after = before with { Text = request.Text, Saves = before.Saves + 1 };
+        context.Set(FixtureModuleDefinition.NotesAggregate, after);
+        context.AddAudit(FixturePermissions.NoteEdit, Operation, request.Reason, before, after);   // đúng một audit
+        return ValueTask.FromResult(CommandOutcome<SetNoteResult>.Ok(new SetNoteResult(after.Text, after.Saves)));
+    }
+}
+
+public static class FixtureNotePresets
+{
+    public static GmOptionList All { get; } = new(
+    [
+        new GmOption("apology", "Apology for an incident"),
+        new GmOption("welcome", "Welcome back"),
+    ]);
+
+    public static bool Contains(string value) => All.Items.Any(o => string.Equals(o.Value, value, StringComparison.Ordinal));
+}
+
+public static partial class FixtureRoutes
+{
+    public const string NoteSetTemplate = "/gm/v1/players/{playerId}/note";
+    public const string NotePresetsTemplate = "/gm/v1/fixture/note-presets";
+
+    public static RouteDeclaration NoteSet { get; } = RouteDeclaration.Command(SetNoteHandler.Descriptor, NoteSetTemplate);
+
+    public static RouteDeclaration NotePresets { get; } =
+        RouteDeclaration.Get("fixture.note_presets", NotePresetsTemplate, SecurityProfile.Gm, RouteSurface.GmApi, FixturePermissions.NoteEdit);
+}
+
+// ModuleDescriptor (Describe()): command, permission và CẢ HAI route (command + option route).
+public static ModuleDescriptor Describe() => new()
+{
+    Name = "fixture",
+    Commands = [Command.Define<SetNoteCommand, SetNoteResult>(SetNoteHandler.Descriptor).HandledBy<SetNoteHandler>()],
+    Permissions = [FixturePermissions.NoteEdit],
+    Routes = [FixtureRoutes.NoteSet, FixtureRoutes.NotePresets],
+    // … aggregate, config, … như mọi module
+};
+
+// Adapter (module implement IGmApiModule): map từ khai báo.
+public void MapGmApi(IEndpointRouteBuilder routes)
+{
+    routes.MapGmCommand<SetNoteBody, SetNoteCommand, SetNoteResult>(
+            FixtureRoutes.NoteSet,
+            body => body.Preset is { } preset && !FixtureNotePresets.Contains(preset)
+                ? throw new GameServerException(CoreErrorCodes.BadRequest, "preset is not one of fixture.note_presets.")
+                : new SetNoteCommand(body.Text!, body.Preset, body.Reason!))
+        .WithSummary("Set the note of the player (fixture GM command).");
+
+    routes.MapDeclared(FixtureRoutes.NotePresets, () => GmHttp.Json(FixtureNotePresets.All))
+        .Produces<GmOptionList>()
+        .WithSummary("List the note presets a GM may pick.")
+        .AsGmEndpoint(FixturePermissions.NoteEdit);
+}
+```
+
+- **Command GM**: `MapGmCommand(route, toDomain)` (overload khai báo) + `.WithSummary("…")` (tiếng Anh, một câu). Command
+  tự có trong document: request body (`$ref` tới body), tham số path `playerId`, header `X-Request-Id` bắt buộc, `200` =
+  `GmCommandResponse`, `operationId` = tên route, tag = area (phần trước dấu `.` đầu), `x-gm-kind: command`,
+  `x-gm-operation`, `x-gm-target: player`, `x-gm-confirm`.
+- **DataAnnotations trên body** — khai một lần, server kiểm **trước** `toDomain` (cả `MapGmCommand` và
+  `GmHttp.ReadJsonAsync<T>`) và document hiện cùng luật: `[Required]`, `[Range]`, `[StringLength]`, `[MinLength]`,
+  `[MaxLength]`, `[Length]`, `[RegularExpression]`, và `[Description]` (chỉ hiện trong document, không kiểm gì). Viết
+  `[property: Range(1, 10)]` hay `[Range(1, 10)]` trên tham số positional đều được: **cả hai được kiểm** (một lần walk qua
+  contract System.Text.Json, cả object lồng nhau và phần tử list object tới độ sâu 3). Khai **mọi** property của body là nullable (`string?`, `int?`): field
+  thiếu đến bước kiểm dưới dạng `null`. Có `[Required]` → bắt buộc (document bỏ `null` khỏi `type`); không có `[Required]` →
+  tuỳ chọn (`[Range]` trên `null` qua). Sau bước kiểm, `toDomain` được dùng `!` cho field `[Required]`. Value type **không**
+  nullable (`long Delta`, `int Count`, `bool`, enum) được đọc từ JSON luôn bắt buộc, có hay không `[Required]`: server kiểm
+  property **có mặt** trong JSON (thiếu số đọc thành 0) và document liệt kê nó trong `required`, kể cả trong object lồng. Muốn
+  tuỳ chọn: nullable (`int?`), hoặc cho tham số constructor giá trị mặc định (`int Weight = 3`); member tính toán chỉ-get
+  (`bool HasX => …`) không bao giờ bắt buộc.
+  `[RegularExpression("p")]` khớp **toàn bộ** chuỗi và cho `""` qua (như .NET), document ghi `pattern: "^(?:p)?$"`; viết `p` sao
+  cho có cùng nghĩa trong regex .NET và JavaScript (console kiểm bằng JavaScript). Attribute có tham số sai (regex hỏng, toán
+  hạng `[Range]` không đổi được kiểu) làm startup fail với một dòng. Body vi phạm → `400 BAD_REQUEST` Problem Details như cũ cộng member `errors` (JSON path → messages,
+  ví dụ `{"text":["The field text must be a string with a maximum length of 140."]}`); `reason` của `IGmCommandBody` luôn
+  1..500 ký tự, không chỉ khoảng trắng (cùng `errors`). Luật nhiều field (ví dụ "ít nhất một trong level, xp, stage") giữ
+  trong `toDomain`: trả 400 **không** có `errors`, document không thể hiện. `ValidationAttribute` tự viết được server kiểm
+  nhưng document không hiện: ưu tiên bộ chuẩn ở trên. Ví dụ tham chiếu của framework: `SetProgressionBody` của sample
+  (`samples/SampleGame/SampleGame.Adapters/SampleGameModule.cs`).
+- **Lựa chọn**: `[GmOptions("<route name>")]` trên property (hoặc list → `x-gm-options` trên `items`) trỏ tới một route GM
+  trả `GmOptionList` (`{ "items": [{ "value", "label" }] }`). Route đó phải là `GET`, surface `GmApi`, được map trên host
+  (không service-only, condition đúng), nếu không startup fail:
+  `[endpoint POST /gm/v1/players/{playerId}/note] body SetNoteBody property 'preset' names option route '…', which is not a GM GET route of this host. Fix: …`.
+  `[GmOptions]` chỉ là trình bày: server vẫn kiểm giá trị gửi lên (ví dụ trên kiểm preset trong `toDomain`). Permission
+  của option route phải là **cùng permission với command** nó phục vụ hoặc `gm.access` (`RouteDeclaration.Get(..., permission)`
+  và `AsGmEndpoint(permission)` cùng giá trị), nếu không startup fail — ai chạy được command thì tải được lựa chọn
+  (framework: `identity.ban_scopes` = `player.ban`, `economy.resource_options` = `gm.access`).
+- **Danh sách phân trang**: `.ProducesGmPage<T>()` (trên `RouteHandlerBuilder` của `MapDeclared`) = `Produces<GmPage<T>>` +
+  `x-gm-paged` + tham số `pageSize` (bắt buộc, 1..200) và `cursor` (tuỳ chọn) mà `GmHttp.ReadPageRequest`/`QueryAsync` đọc.
+  Item là document lưu trả nguyên → `ProducesGmPage<JsonObject>()`. Tham số query handler tự đọc:
+  `.WithGmQueryParameter("displayName", required: true, maxLength: 64, minLength: 1)` (handler giữ kiểm tra của nó).
+- **Xác nhận**: mọi mutation (method khác GET) có `x-gm-confirm: simple`; thao tác nguy hiểm (ban, xoá, điều chỉnh tài
+  nguyên…) thêm `.WithGmConfirm(GmConfirm.Typed)`. `typed` = console bắt người thao tác gõ lại mục tiêu: `playerId` khi
+  `x-gm-target: player`, còn với `global` thì tên thao tác (`operationId`) — chi tiết hộp thoại là của GM-3. Dùng được trên
+  command (`MapGmCommand`) và action (`MapDeclared` POST/PUT/DELETE); trên GET bị bỏ qua (query không bao giờ xác nhận).
+- **Request id**: mutation GM map **ngoài** `MapGmCommand` mà đòi `X-Request-Id` (idempotency) thêm `.WithGmRequestId()`
+  để document khai header bắt buộc.
+- **Sinh lại document của game**: chạy test snapshot của game (test gọi `GmOpenApiSnapshot.DiffAsync`, ví dụ
+  `FixtureGmOpenApiTests`) với `UPDATE_OPENAPI=1` (lệnh ở consumer guide §14.3), xem diff, chạy lại không có biến (phải
+  pass), commit `docs/api/gm-openapi.json`.
 
 ## 6. Override của game
 

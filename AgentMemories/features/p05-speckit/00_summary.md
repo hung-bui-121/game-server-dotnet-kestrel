@@ -6,8 +6,9 @@
 - P0.5 comes before P1.
 - P1 is full scope, including MSG-01 and ANA-01.
 - The workflow stops for review only once, after the spec and plan of slice 007.
-- The GM frontend is out of scope and goes to another developer. Slices deliver the GM API plus the OpenAPI document
-  `docs/api/gm-openapi.json`. TBD-21 stays open.
+- ~~GM frontend out of scope~~ — superseded 2026-11-05: owner builds the GM console as framework slices GM-1..GM-4, design
+  `AgentMemories/features/gm-tool/01_design.md`. Slices still deliver the GM API plus the OpenAPI document
+  `docs/api/gm-openapi.json`, now also served in every environment by `gm.console_catalog` (slice 017).
 
 P0 is merged into `main` and pushed (fda9f00). The real-environment test tools from 2026-10-27 are in
 `docs/guides/local-real-env-testing.md`.
@@ -27,6 +28,7 @@ P0 is merged into `main` and pushed (fda9f00). The real-environment test tools f
 | 014 wire-contract (FG group B) | `014-wire-contract` | DONE: 87/87 tasks. FG-026 direction B (route catalog + pre-serving endpoint check), FG-028 (export mode + WireGen), FG-021 (typed wire mappers), FG-027 (TestKit WireConformance). Review r1 NO (B1 + 2 Major + 9 minor, fixed `7024791`), r2 CONDITIONAL (5 minor, fixed `b1ff174`) |
 | 015 config (FG group C) | `015-config` | DONE 71/72 (T058 Android/iOS device run = OWNER, tag waits on it). FG-018 (declared config rules + eager catalogs), FG-023 (isolated startup checks, GameConfigStatus), FG-024 (+ additive `client_config_version`), FG-019 (compression, PersistentConfigCache). Review r1 CONDITIONAL (3 Major + 11 minor + walkthrough G1–G4, decisions `specs/015-config/review-decisions.md`, fixed `8ac0023`), r2 CONDITIONAL (7 minor, fixed `1cb4a2e`) |
 | 016 login-command (FG group D) | `016-login-command` | DONE 83/84 (T069 device session = OWNER, also covers 015 T058; tag waits on it). FG-013 (`is_new_player`), FG-015 (account initializers), FG-029 (degraded reads), FG-016 (COMMAND_OUTPUT_TOO_LARGE + details), FG-022 (SDK request id + pending store). Review r1 CONDITIONAL (B1 + 3 Major + 10 minor, fixed `d5153da`), r2 CONDITIONAL (1 Major regression + 6 minor, fixed `a7b3d6b`). Round release note draft `docs/releases/v0.7.0.md` |
+| 017 gm-api-contract (GM tool GM-1) | `017-gm-api-contract` | IMPLEMENTED 2026-11-05, uncommitted (owner commits): 62/64 tasks; open = T057 auto-memory file (owner), T061 Couchbase full suite (owner run). GM document in every env + `gm.console_catalog` (ETag/304), `gm.auth_methods`, `/me` versions, DataAnnotations enforced with `errors`, option routes, paged lists, kit `GmOpenApiSnapshot`, fixture GM dogfood. Review r1 CONDITIONAL (0 Blocker, 4 Major, 6 minor; M1–M3, m1–m3, m5, m6 fixed in T063; M4, m2, m4 = owner decisions). Release note draft `specs/017-gm-api-contract/release-notes-draft.md` |
 | giftcode | — | GFT-01..06, GM-04 API, reaper (ACC-08, 22, 23) — number after the improvement round |
 | iap-notifications | — | IAP-03 S2S: Google RTDN, Apple v2, refund/revoke; add refund analytics event on the 012 seam |
 | ops-readiness | — | Secret scan in CI, PERF-05 budgets, load test report (TST-03), Linux/container guide, runbooks, deploy/rollback, restore drill (ACC-16, 19, 48; ACC-19 blocked on TBD-09), finish deploy guide (task 5c), TLS release gate, analytics re-drive tool |
@@ -194,6 +196,23 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
   no switch to allow cheats on Staging; version only via GM `ops.read`; `DeploymentEnvironment=Test` refused unless
   EnvironmentId `test` (BC-8, review m9). 014: `ReplaceWireMapper` must keep the framework message (M1 option
   "restrict", alternative = replaced section becomes origin `game`).
+
+## Technical notes from 017
+
+- Catalog: `GmCatalogDocument` (Platform.Web, public) generates the GM document lazily through the keyed
+  `IOpenApiDocumentProvider("gm")` (no request needed, V11), canonical bytes (STJ indented, LF, final newline, no BOM), strong
+  ETag; served by `gm.console_catalog` (overrides the GM `no-store` with `private, no-cache`) and by the kit.
+- One walk (`GmBodyContract`, STJ contract, property + positional-parameter attributes, depth 3) feeds the schema
+  transformer and `GmBodyValidator`. V1: the generator only reads `[property:]` attributes, ignores `[Required]`, lists every
+  positional parameter as required and puts nested-property keywords on components → our transformer overwrites. The
+  generator wraps nullable objects as `oneOf: [null, $ref]` only after schema transformers → `GmDocumentTransformer` drops the
+  null branch of required objects (request bodies marked via `OpenApiSchema.Metadata`).
+- `Accepts<T>` is not metadata only: routing's "415 HTTP Unsupported Media Type" endpoint has no profile →
+  `ProfileEnforcementMiddleware` maps it to 415 (was 403).
+- Route names without a dot are refused by the catalog check on every host (so "whole-name tag" is only a unit case).
+- Enums: the schema transformer writes the camelCase strings of `GameServerJson.Options` (review r1 m1 removed the host-wide HTTP JSON enum converter; was BC-9); only runtime user of those options in the framework = counter GM read).
+- Open owner questions: release note "Decisions awaiting owner override" 1–9 (D9 versions on `/me`, D5–D7, D10, D14, D15,
+  A3/A4, review M4 depth limit, m4 option-route permission, m2 relative kit paths).
 
 ## Technical notes from 016
 
@@ -386,11 +405,11 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
   sample") and process (Spec Kit slice 017 vs light refactor). Ask the owner both before starting.
 - ACC-03/ACC-29 with real Play Games / Game Center devices: manual before release.
 - Couchbase outage drill `tools/local/couchbase-outage.ps1` needs admin; owner has not run it yet.
-- TBD-21 (GM frontend) open; another developer owns it.
+- TBD-21 (GM console) decided 2026-11-05: owner builds it as GM-1..GM-4; GM-1 = slice 017 `gm-api-contract` (in progress).
 - Possible flaky `TelemetryTests.A_command_is_one_trace...` under full-suite load.
 - Game Center pins: gc-prod-12 expires 2027-05-27; Apple chain change → `PROVIDER_UNAVAILABLE` + LogError, update pins.
-- 010 open (PCR platform §16): OpenAPI body/response schema for `deletion/cancel` and the `deletion` view field
-  (generator limitation); no supported way to scrub a purged id from *other* players' `pa_*` (needed for P1 MSG-01);
+- 010 open (PCR platform §16): the `deletion` view field schema (generator limitation; the `deletion/cancel` body/response
+  schema is done since 016/017); no supported way to scrub a purged id from *other* players' `pa_*` (needed for P1 MSG-01);
   backup restore before a purge resurrects data (013 runbook must re-run purges); Couchbase tombstones keep keys ~3 days.
 - `AccountPurgeService.cs` ~300 lines, split later.
 - 011 open: **TLS release gate** (`CouchbaseSettingsIntegrationTests.Tls_…`, opt-in) never run — no TLS cluster locally;
