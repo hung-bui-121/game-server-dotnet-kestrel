@@ -35,14 +35,19 @@ shell + extension slot; form chung sinh từ GM OpenAPI; chỉ thứ đã chứn
 GM-1 `gm-api-contract` (bắt đầu ngay) → GM-2 `gm-console-hosting-shell` → GM-3 `gm-generic-forms` → GM-4
 `gm-console-extension`. Giftcode/mail/event: trang đi cùng slice module.
 
-## Câu hỏi mở mới (mặc định trong ngoặc; không chặn GM-1) — chi tiết `01_design.md` §17
+## Q16–Q21 — owner trả lời 2026-11-05 — chi tiết `01_design.md` §17
 
-Q16 bố trí domain (trường hợp A, `gm.*` → `gm-api.*`, custom domain + TLS) · Q17 `/gm/v1/ui` (chỉ Dev/Test từ GM-2, xoá
-sau) · Q18 console cho game không trang riêng (CI build từ source submodule) · Q19 version skew (chặn chỉ sai game/env;
-cảnh báo framework minor) · Q20 cookie `__Host-` + `Path=/` (có) · Q21 GM-2 một slice hai phase (có).
+- **Q16: chưa có tên miền** → GM-2 làm và nghiệm thu bằng **local testing trước** (Vite trên `localhost` gọi `run-local`,
+  cross-origin thật, không proxy). Trường hợp A (`gm.*` → `gm-api.*`, custom domain + TLS) vẫn là hướng khi có domain;
+  cấu hình phải đổi được theo env mà không sửa code. Lưu ý GM-2: `localhost` khác port = cùng site; cookie `__Host-` cần
+  `Secure` — kiểm trình duyệt chấp nhận trên `http://localhost`.
+- Q17–Q21: **nhận mặc định** — Q17 `/gm/v1/ui` chỉ Dev/Test từ GM-2, xoá sau · Q18 CI game build app mặc định từ source
+  submodule · Q19 chặn chỉ khi sai game/env, cảnh báo framework minor · Q20 cookie `__Host-` + `Path=/` · Q21 GM-2 một
+  slice hai phase (backend trước).
+- Còn chờ owner xác nhận (đang làm theo mặc định): 017 D9 (version trong `/me` cho mọi `gm.access`, rộng hơn 013
+  `ops.read`), D15 (không bump/tag trong slice, tag kế đề xuất v0.8.0).
 
 ## Bước kế tiếp
 
-1. Mở slice GM-1 theo quy trình Spec Kit (`p05-speckit/00_summary.md` "How to resume" bước 3), đầu vào = `01_design.md`
-   §19; VERIFY V1, V10 trong slice.
-2. Trước GM-2: owner trả lời Q16–Q21 (hoặc nhận mặc định).
+1. Slice GM-1 = **017 `gm-api-contract`** (nhánh `017-gm-api-contract`, spec `e5851ec`) — đang implement.
+2. Sau 017: GM-2 `gm-console-hosting-shell` theo Q16–Q21 ở trên.
