@@ -66,7 +66,7 @@ public sealed class LoggingTests
 
             var jar = new System.Net.CookieContainer();
             var gm = await host.GmLoginAsync("admin", ObservedHost.StaffPassword, jar);
-            gmCookie = jar.GetCookies(new Uri("http://localhost/gm/"))[GmCookieAuthenticationHandler.CookieName]!.Value;
+            gmCookie = jar.GetCookies(new Uri("http://localhost/"))[GmCookies.DevelopmentSessionName]!.Value;
             var adjust = new HttpRequestMessage(HttpMethod.Post, EconomyModule.AdjustRoute.Replace("{playerId}", login.PlayerId, StringComparison.Ordinal))
             {
                 Content = JsonContent.Create(new { resource = "gold", delta = 5, reason = "log scan" }),

@@ -7,8 +7,8 @@ in-memory browser state.
 
 | Key | Type / default | Rule (startup failure unless noted) | FR |
 | --- | --- | --- | --- |
-| `Gm:Cookies:SameSite` | string, `Lax` | `Lax` or `None` (case-insensitive); `None` needs ≥ 1 CORS origin | FR-010, FR-011 |
-| `Gm:Cors:AllowedOrigins[]` | list, empty | existing rules (exact origin, no `*`, no path, `https` outside Development) + at most 1 entry outside Development | FR-003 |
+| `Gm:Cookies:SameSite` | string, `Lax` | `Lax` or `None` (case-insensitive); `None` only in Development/Test (review T024 m2) and needs ≥ 1 CORS origin | FR-010, FR-011 |
+| `Gm:Cors:AllowedOrigins[]` | list, empty | existing rules (no `*`, `https` outside Development) + each entry exactly its serialized origin (no default port, user info, path, query, fragment or trailing slash; review T024 m1) + at most 1 entry outside Development | FR-003 |
 | `Gm:Console:BaseUrl` | string, none | absolute `http(s)`, path ends `/`, no query/fragment/user info; `https` outside Development; origin ∈ `Gm:Cors:AllowedOrigins` (= the one origin outside Development); required when `Gm:Cors:AllowedOrigins` is set; optional otherwise (no console) | FR-020, FR-021 |
 
 Startup lines (text fixed by the tasks, data-model contract):
@@ -16,6 +16,8 @@ Startup lines (text fixed by the tasks, data-model contract):
 ```
 Gm:Cookies:SameSite '<value>' is not supported; use Lax (default) or None.
 Gm:Cookies:SameSite=None needs Gm:Cors:AllowedOrigins: SameSite=None is only for a console on another site (case B, unsupported).
+Gm:Cookies:SameSite=None is refused in '<DeploymentEnvironment>': a console on another site (case B) is not supported; use Lax (default) with a console on the same site.
+Gm:Cors:AllowedOrigins '<value>' must be an origin (scheme://host[:port]) without default port, user info, path, query or trailing slash.
 Gm:Cors:AllowedOrigins lists <n> origins in '<DeploymentEnvironment>'; list the one console origin of this environment.
 Gm:Console:BaseUrl '<value>' must be an absolute http(s) URL whose path ends with '/', without query, fragment or user info.
 Gm:Console:BaseUrl '<value>' is not https; plain http is allowed only in Development.
@@ -56,7 +58,8 @@ cookies unchanged (`Path=/gm/v1/auth/sso/callback`, `Lax`).
 | success, missing/refused `returnUrl` | `B` | `D` |
 | any denial | `B` + `#/login?error=sso_denied` | `D` + `?error=sso_denied` |
 
-Accepted `r`: 1..512 characters, each 0x21–0x7E, starts with `/`, no `//`, `\`, `..`.
+Accepted `r`: 1..512 characters, each 0x21–0x7E, none of `//`, `\`, `..`, `%2e` (any case); with a console `r` is `/` or
+`/#<fragment>` (no other path, no query), without a console it starts with `/gm/` (review T024 M1).
 
 ## 5. Console configuration `config.json` (static host, per environment)
 

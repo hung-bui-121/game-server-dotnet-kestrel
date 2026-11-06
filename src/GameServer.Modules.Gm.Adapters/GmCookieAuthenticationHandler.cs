@@ -10,10 +10,10 @@ using Microsoft.Extensions.Options;
 namespace GameServer.Modules.Gm;
 
 /// <summary>
-/// GM scheme <c>GmCookie</c> (SEC-02, SEC-04): protected cookie <c>gs_gm</c> → server-side ticket → staff. Permissions
-/// are those of the grant for this deployment's game and environment only (SEC-07), read from the (≤ 60 s) staff
-/// cache on every request. A disabled, invited or unknown staff, or a ticket from an older session epoch (sessions
-/// revoked, staff disabled — SEC-10), is UNAUTHENTICATED.
+/// GM scheme <c>GmCookie</c> (SEC-02, SEC-04): protected session cookie (name from <see cref="GmCookies.SessionName"/>) →
+/// server-side ticket → staff. Permissions are those of the grant for this deployment's game and environment only (SEC-07),
+/// read from the (≤ 60 s) staff cache on every request. A disabled, invited or unknown staff, or a ticket from an older session
+/// epoch (sessions revoked, staff disabled — SEC-10), is UNAUTHENTICATED.
 /// </summary>
 public sealed class GmCookieAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
@@ -24,7 +24,6 @@ public sealed class GmCookieAuthenticationHandler(
     GameServerOptions gameServer) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
     public const string SchemeName = "GmCookie";
-    public const string CookieName = "gs_gm";
     public const string SessionClaim = "gs:gm_session";
     public const string DisplayNameClaim = "gs:display_name";
 
@@ -33,7 +32,7 @@ public sealed class GmCookieAuthenticationHandler(
 
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        var token = Request.Cookies[CookieName];
+        var token = Request.Cookies[GmCookies.SessionName(gameServer)];
         if (string.IsNullOrEmpty(token))
         {
             return AuthenticateResult.NoResult();

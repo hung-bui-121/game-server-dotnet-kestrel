@@ -135,7 +135,7 @@ Spec defaults D1–D20 and the decisions this plan adds (A1–A10). **Architect 
 | --- | --- | --- | --- |
 | D1 | H14 proven by a permanent test before any writer change | confirmed | R2 |
 | D2 | One CORS origin outside Development | confirmed (owner confirmation 2) | R4 |
-| D3 | `SameSite=None` still accepted outside Development (with CORS, always `Secure`) | confirmed (owner confirmation 3) | R4 |
+| D3 | `SameSite=None` only in Development/Test (with CORS, always `Secure`); refused elsewhere because case B is not supported | changed by review T024 m2 (orchestrator default in line with the owner's "case B not supported"; was "accepted outside Development") | R4 |
 | D4 | Development names `gs_gm_dev` / `gs_gm_dev_csrf` | confirmed (owner confirmation 1) | R1 |
 | D5 | `BaseUrl` required together with a CORS console origin; no console = starts, SSO lands on `/gm/v1/me` (coordinator correction) | confirmed | R4, R5 |
 | D6 | Return path rules + append to `BaseUrl` | confirmed | R5 |
@@ -458,6 +458,6 @@ e2e 3, US9 7, close 7). tasks.md is authoritative.
 
 1. **D4**: Development cookie names `gs_gm_dev` / `gs_gm_dev_csrf` (production `__Host-…`). OK?
 2. **D2 / BC-5**: one console origin per environment outside Development. OK?
-3. **D3**: keep `SameSite=None` possible outside Development? Or refuse it (case B unsupported)?
+3. **D3**: answered by review T024 m2 (orchestrator default): `SameSite=None` is refused outside Development/Test.
 4. **D10**: no business mutation in the console until GM-3. OK?
 5. **D14**: e2e smoke in GM-2 with the host started outside the test. OK?

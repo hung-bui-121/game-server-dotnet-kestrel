@@ -9,7 +9,7 @@ namespace GameServer.TestKit;
 public static class GmBrowser
 {
     /// <summary>
-    /// A client that keeps cookies (TestServer has no cookie jar) so the antiforgery cookie and <c>gs_gm</c> travel
+    /// A client that keeps cookies (TestServer has no cookie jar) so the GM antiforgery and session cookies travel
     /// like in a browser. Pass <paramref name="cookies"/> to share one jar between instances (ACC-49).
     /// </summary>
     public static HttpClient Browser(this TestHost host, CookieContainer? cookies = null, bool https = false) =>

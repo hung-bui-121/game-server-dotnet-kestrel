@@ -16,19 +16,25 @@ namespace GameServer.Modules.Gm;
 /// GM sign-in through the company OpenID Connect provider (SEC-03, research R1/R2): authorization code + PKCE,
 /// <c>response_mode=query</c> (the callback is a same-site GET, so <c>SameSite=Lax</c> correlation cookies arrive).
 /// The handler's sign-in step is replaced: on a valid id_token the identity is matched to a staff record, MFA is
-/// checked, and a framework GM session (protected <c>gs_gm</c> cookie) is created.
+/// checked, and a framework GM session (protected session cookie, <see cref="GmCookies"/>) is created. Every redirect target
+/// (success, each denial) comes from <see cref="GmConsoleUrls"/> (slice 018).
 /// </summary>
 public static class GmSso
 {
     public const string SchemeName = "GmOidc";
     public const string StartRoute = "/gm/v1/auth/sso/start";
     public const string CallbackRoute = "/gm/v1/auth/sso/callback";
-    public const string DeniedRedirect = "/gm/?error=sso_denied";
-    public const string DefaultReturnUrl = "/gm/";
+
+    /// <summary>
+    /// Kept in the OIDC properties when the <c>returnUrl</c> is missing or refused: never empty (the OIDC handler would store the
+    /// start URL with the refused value instead); it lands on the console root, or on the default without a console.
+    /// </summary>
+    private const string RefusedReturnPath = "/";
 
     public static void Add(IServiceCollection services)
     {
         services.AddSingleton<StaffIdentityMatcher>();
+        services.AddSingleton<GmConsoleUrls>();
         services.AddAuthentication().AddOpenIdConnect(SchemeName, _ => { });
         services.AddOptions<OpenIdConnectOptions>(SchemeName).Configure<IOptions<GmOptions>, GameServerOptions>((o, gm, gameServer) =>
         {
@@ -75,7 +81,8 @@ public static class GmSso
     {
         routes.MapDeclared(GmRoutes.SsoStart, async (HttpContext http, string? returnUrl) =>
             {
-                await http.ChallengeAsync(SchemeName, new AuthenticationProperties { RedirectUri = SafeReturnUrl(returnUrl) });
+                var accepted = http.RequestServices.GetRequiredService<GmConsoleUrls>().AcceptReturnPath(returnUrl);
+                await http.ChallengeAsync(SchemeName, new AuthenticationProperties { RedirectUri = accepted ?? RefusedReturnPath });
                 return Results.Empty;
             })
             .WithSummary("Start the SSO sign-in: redirect to the identity provider.")
@@ -93,23 +100,13 @@ public static class GmSso
                     return Results.Empty;
                 }
 
-                return Results.Redirect(DeniedRedirect);
+                return Results.Redirect(http.RequestServices.GetRequiredService<GmConsoleUrls>().DeniedTarget());
             }))
             .WithSummary("Complete the SSO sign-in (identity provider callback) and start a GM session.")
             .AsPublicEndpoint(protobuf: false)
             .WithRequestTimeout(ApiRouteExtensions.GmTimeoutPolicy)
             .RequireRateLimiting(ApiRouteExtensions.GmLimiterPolicy);
     }
-
-    /// <summary>Only a local GM path: no scheme, no host, no protocol-relative <c>//</c> (open redirect).</summary>
-    public static string SafeReturnUrl(string? returnUrl) =>
-        returnUrl is { Length: <= 512 }
-        && returnUrl.All(c => c is > ' ' and < (char)127)
-        && returnUrl.StartsWith("/gm/", StringComparison.Ordinal)
-        && !returnUrl.Contains("//", StringComparison.Ordinal)
-        && !returnUrl.Contains('\\', StringComparison.Ordinal)
-            ? returnUrl
-            : DefaultReturnUrl;
 
     private static async Task OnTicketReceivedAsync(TicketReceivedContext context)
     {
@@ -118,6 +115,7 @@ public static class GmSso
         var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(GmSso));
         var gm = services.GetRequiredService<IOptions<GmOptions>>().Value;
         var gameServer = services.GetRequiredService<GameServerOptions>();
+        var urls = services.GetRequiredService<GmConsoleUrls>();
         var principal = context.Principal ?? new ClaimsPrincipal();
         var subject = principal.FindFirst("sub");
         var issuer = principal.FindFirst("iss")?.Value ?? subject?.Issuer;
@@ -154,16 +152,16 @@ public static class GmSso
             // Security log: reason, issuer and the hashed identity key (same as gm_staff_identities); no token, no subject.
             var identityKey = subject is not null && issuer is not null ? StaffAdminService.OidcKey(issuer, subject.Value).Key : "none";
             logger.LogWarning("GM SSO sign-in denied: {Reason} (issuer {Issuer}, identity {IdentityKey}).", denial, issuer, identityKey);
-            http.Response.Redirect(DeniedRedirect);
+            http.Response.Redirect(urls.DeniedTarget());
             return;
         }
 
         var sessions = services.GetRequiredService<GmSessionService>();
         await sessions.EndCurrentAsync(http);
         var (cookie, expiresAt) = await sessions.CreateAsync(staff, http.RequestAborted);
-        http.Response.Cookies.Append(GmCookieAuthenticationHandler.CookieName, cookie, GmCookies.Session(http, expiresAt));
+        http.Response.Cookies.Append(GmCookies.SessionName(gameServer), cookie, GmCookies.Session(http, expiresAt));
         logger.LogInformation("GM SSO sign-in for staff {StaffId}.", staff.StaffId);
-        http.Response.Redirect(SafeReturnUrl(context.ReturnUri));
+        http.Response.Redirect(urls.SuccessTarget(context.ReturnUri));
     }
 
     private static Task OnRemoteFailureAsync(RemoteFailureContext context)
@@ -171,7 +169,7 @@ public static class GmSso
         var logger = context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(GmSso));
         logger.LogWarning("GM SSO callback rejected: {Failure}.", context.Failure?.GetType().Name ?? "unknown");
         context.HandleResponse();
-        context.Response.Redirect(DeniedRedirect);
+        context.Response.Redirect(context.HttpContext.RequestServices.GetRequiredService<GmConsoleUrls>().DeniedTarget());
         return Task.CompletedTask;
     }
 }

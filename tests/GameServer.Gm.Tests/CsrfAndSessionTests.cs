@@ -87,7 +87,7 @@ public sealed class CsrfAndSessionTests : IAsyncLifetime
     {
         var jar = new CookieContainer();
         var gm = await _host.GmClientAsync("support", jar);
-        var session = jar.GetCookies(new Uri("http://localhost/gm/"))[GmCookieAuthenticationHandler.CookieName]!.Value;
+        var session = jar.GetCookies(new Uri("http://localhost/"))[GmCookies.DevelopmentSessionName]!.Value;
 
         (await gm.GetAsync(GmModule.LogoutRoute).ShouldBeAsync(405))["code"]!.GetValue<string>().ShouldBe("METHOD_NOT_ALLOWED");
         await gm.GetAsync(GmModule.MeRoute).ShouldBeAsync(200);
@@ -96,7 +96,7 @@ public sealed class CsrfAndSessionTests : IAsyncLifetime
 
         // An attacker kept a copy of the cookie: the server-side ticket is gone, so it is useless.
         var copy = _host.Client();
-        copy.DefaultRequestHeaders.Add("Cookie", $"{GmCookieAuthenticationHandler.CookieName}={session}");
+        copy.DefaultRequestHeaders.Add("Cookie", $"{GmCookies.DevelopmentSessionName}={session}");
         await copy.GetAsync(GmModule.MeRoute).ShouldBeAsync(401);
     }
 
@@ -105,13 +105,13 @@ public sealed class CsrfAndSessionTests : IAsyncLifetime
     {
         var jar = new CookieContainer();
         var browser = await _host.GmClientAsync("support", jar);
-        var first = jar.GetCookies(new Uri("http://localhost/gm/"))[GmCookieAuthenticationHandler.CookieName]!.Value;
+        var first = jar.GetCookies(new Uri("http://localhost/"))[GmCookies.DevelopmentSessionName]!.Value;
 
         // The token the signed-in page holds is accepted by the (anonymous) login endpoint.
         (await browser.PostAsJsonAsync(GmModule.LoginRoute, new { staffId = "support", password = GmTestHost.Password })).StatusCode.ShouldBe(HttpStatusCode.OK);
 
         var copy = _host.Client();
-        copy.DefaultRequestHeaders.Add("Cookie", $"{GmCookieAuthenticationHandler.CookieName}={first}");
+        copy.DefaultRequestHeaders.Add("Cookie", $"{GmCookies.DevelopmentSessionName}={first}");
         await copy.GetAsync(GmModule.MeRoute).ShouldBeAsync(401);
         await browser.GetAsync(GmModule.MeRoute).ShouldBeAsync(200);
     }
@@ -121,13 +121,13 @@ public sealed class CsrfAndSessionTests : IAsyncLifetime
     {
         var jar = new CookieContainer();
         await _host.GmClientAsync("support", jar);
-        var session = jar.GetCookies(new Uri("http://localhost/gm/"))[GmCookieAuthenticationHandler.CookieName]!.Value;
+        var session = jar.GetCookies(new Uri("http://localhost/"))[GmCookies.DevelopmentSessionName]!.Value;
         var tampered = session[..^2] + (session[^2] == 'A' ? "B" : "A") + session[^1];
 
         foreach (var value in new[] { tampered, "forged-session-id", new string('x', 600) })
         {
             var client = _host.Client();
-            client.DefaultRequestHeaders.Add("Cookie", $"{GmCookieAuthenticationHandler.CookieName}={value}");
+            client.DefaultRequestHeaders.Add("Cookie", $"{GmCookies.DevelopmentSessionName}={value}");
             await client.GetAsync(GmModule.MeRoute).ShouldBeAsync(401);
         }
     }
@@ -148,20 +148,21 @@ public sealed class CsrfAndSessionTests : IAsyncLifetime
         await active.GetAsync(GmModule.MeRoute).ShouldBeAsync(401);
     }
 
+    /// <summary>Slice 018 (FR-013): the Development names, <c>Path=/</c>, <c>HttpOnly</c>, <c>SameSite=Lax</c>.</summary>
     [Fact]
-    public async Task Cookies_are_http_only_lax_and_scoped_to_gm()
+    public async Task Cookies_are_http_only_lax_with_the_development_names_on_the_site_root()
     {
         var browser = _host.Browser();
         var csrf = await browser.GetAsync(GmModule.CsrfRoute);
-        csrf.Headers.GetValues("Set-Cookie").Single(c => c.StartsWith(GmCookies.CsrfCookieName, StringComparison.Ordinal)).ToLowerInvariant()
-            .ShouldSatisfyAllConditions(c => c.ShouldContain("httponly"), c => c.ShouldContain("path=/gm"), c => c.ShouldContain("samesite=lax"));
+        GmTestHost.CookieAttributes(csrf.Headers.GetValues("Set-Cookie").Single(c => c.StartsWith(GmCookies.DevelopmentCsrfName + "=", StringComparison.Ordinal)))
+            .ShouldSatisfyAllConditions(c => c.ShouldContain("httponly"), c => c.ShouldContain("path=/"), c => c.ShouldContain("samesite=lax"));
 
         var login = await browser.PostLoginAsync("admin");
         var cookie = GmTestHost.SessionCookie(login)!;
-        cookie.ToLowerInvariant().ShouldSatisfyAllConditions(
+        GmTestHost.CookieAttributes(cookie).ShouldSatisfyAllConditions(
             c => c.ShouldContain("httponly"),
             c => c.ShouldContain("samesite=lax"),
-            c => c.ShouldContain("path=/gm"));
+            c => c.ShouldContain("path=/"));
 
         // Only a protected id: the stored ticket key (hash of the id) is not derivable from it.
         var value = cookie.Split(';')[0].Split('=', 2)[1];

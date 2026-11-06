@@ -35,7 +35,9 @@ public static class GmRoutes
     public static RouteDeclaration ConsoleCatalog { get; } =
         Get("gm.console_catalog", GmModule.ConsoleCatalogRoute, SecurityProfile.Gm, GmPermissions.Access);
 
-    public static RouteDeclaration Ui { get; } = Get("gm.ui", GmModule.UiRoute, SecurityProfile.Public);
+    /// <summary>The static GM page (slice 018 FR-030): only where development tools are allowed; elsewhere the console is the GM UI.</summary>
+    public static RouteDeclaration Ui { get; } =
+        RouteDeclaration.Get("gm.ui", GmModule.UiRoute, SecurityProfile.Public, RouteSurface.GmApi, condition: RouteConditions.DevelopmentTools);
 
     public static RouteDeclaration Health { get; } = Get("gm.health", GmModule.HealthRoute, SecurityProfile.Gm, GmPermissions.OpsRead);
 

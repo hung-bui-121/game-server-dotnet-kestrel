@@ -82,7 +82,7 @@ public sealed class RequestLogPrivacyTests(ITestOutputHelper output)
             scan.Add(($"cookie {cookie.Name}", cookie.Value));
         }
 
-        scan.ShouldContain(entry => entry.Name == "cookie " + GameServer.Modules.Gm.GmCookieAuthenticationHandler.CookieName);
+        scan.ShouldContain(entry => entry.Name == "cookie " + GameServer.Modules.Gm.GmCookies.DevelopmentSessionName);
         (await gm.GetAsync(GameServer.Modules.Gm.GmModule.MeRoute)).StatusCode.ShouldBe(HttpStatusCode.OK);
         (await gm.PostAsync(GameServer.Modules.Gm.GmModule.LogoutRoute, null)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
 

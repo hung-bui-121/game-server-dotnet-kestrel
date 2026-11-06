@@ -75,13 +75,17 @@ no Claude signature lines).
 
 ## Phase 1: Setup (Phase A)
 
-- [ ] T001 Baseline on branch `018-gm-console-hosting-shell` (base `47f7468`): Release build of `GameServer.slnx`; the
+- [x] T001 Baseline on branch `018-gm-console-hosting-shell` (base `47f7468`): Release build of `GameServer.slnx`; the
   `GameServer.Gm.Tests` project alone (count, duration); record into the scratch folder (not committed):
   (a) totals and the Gm.Tests wall time (reference for T066);
   (b) SHA-256 of `docs/api/gm-openapi.json` (SC-009 reference);
   (c) `git status` (only `specs/018-gm-console-hosting-shell/` and the owner's `tasks/` untracked).
   Done when: 0 warnings, 0 failures; the values recorded as a Note. (FR-099)
-- [ ] T002 [P] Release notes draft `specs/018-gm-console-hosting-shell/release-notes-draft.md` (FR-095), created now and
+  Note (2026-11-06, HEAD `caeecf6` = base `47f7468` + docs): Release build 0 warnings / 0 errors (39 s);
+  `GameServer.Gm.Tests` alone: 197 total, 196 passed, 1 skipped (opt-in perf), 0 failed, **31.6 s** (reference for T066);
+  SHA-256 of `docs/api/gm-openapi.json` = `5d274034c2a93852ef31a22e986a4b74a775c36342d25a0fd1ec35544af342b6`;
+  `git status`: only `?? tasks/` (the 018 spec folder is committed in `caeecf6`). Recorded in the session scratch folder.
+- [x] T002 [P] Release notes draft `specs/018-gm-console-hosting-shell/release-notes-draft.md` (FR-095), created now and
   extended by every story checkpoint (T010, T015, T020, T023, T031, T038, T049, T053, T056) before the final pass (T063).
   English, like the 013–017 drafts. Skeleton:
   - summary: GM-2 of the GM tool track; Phase A backend (cookies, CORS, SSO return, Dev/Test-only page), Phase B console
@@ -94,7 +98,9 @@ no Claude signature lines).
   - "Verification items" (V2–V13 results), "Docs touched", "Tests", "Next tag" (`v0.8.0` proposed with 017, not part of
     the slice).
   Done when: the file exists with every section and the BC table. (FR-095)
-- [ ] T003 [P] **Inventory of pins and traps** (read-only; research R15, R16): grep `src/`, `tests/`, `templates/`,
+  Note: created with summary, BC-1..BC-9 table, zh-pvp migration (with the T003 findings), Phase A/B story placeholders,
+  owner questions 1–5 ("applied, owner confirmation pending"), verification table, docs, tests, next tag.
+- [x] T003 [P] **Inventory of pins and traps** (read-only; research R15, R16): grep `src/`, `tests/`, `templates/`,
   `tools/`, `modules/`, `docs/`, `README.md` and the project folders of `samples/SampleHost`, `samples/SampleGame/*` for
   `gs_gm`, `CookieName`, `CsrfCookieName`, `Path=/gm`/`path=/gm`, `samesite`, `SameSite`, `DefaultReturnUrl`,
   `DeniedRedirect`, `SafeReturnUrl`, `sso_denied`, `/gm/v1/ui`, `UiRoute`, `gm.ui`, `Gm:Cors`, `Access-Control`,
@@ -105,7 +111,28 @@ no Claude signature lines).
   Done when: a Note lists every pin with file:line and its updating task (R15's table confirmed or corrected), every
   `LocalFlavorFactory<SampleHost …>` test class (re-run by T019), and the zh-pvp findings (BC-2 exposure). (BC-1, BC-2,
   BC-8)
-- [ ] T004 [P] **[VERIFY] V2 — decision gate for CORS headers on error answers (permanent test)**: new
+  Note: R15 confirmed, plus pins it missed (all updated by T013 unless stated):
+  `GmCookieAuthenticationHandler.cs:27,36` (`CookieName`), `GmSessionService.cs:119`, `GmModule.cs:230,256`, `GmSso.cs:26-27,
+  78,96,105-112,157,164,166,174` (T013/T017), `GmCookies.cs:17,26,42,45`, `GmCors.cs:29` (T005), `GmRoutes.cs:38` (T021);
+  tests: `CsrfAndSessionTests.cs:90,99,108,114,124,130` (`CookieName` + jar URI `http://localhost/gm/`), `:156-164` (path
+  `/gm`, `CsrfCookieName`); `GmTestHost.cs:104`; `GmAuthTests.cs:41-42`; `CorsTests.cs:32-49` (+ every `CorsTests` host
+  with an origin needs `Gm:Console:BaseUrl` after T016); `SsoTests.cs:84,94,101,114,124,133` (`DeniedRedirect`, T018),
+  `:136-138` (`DefaultReturnUrl`, T018); **`tests/GameServer.Observability.Tests/LoggingTests.cs:69`** and
+  **`tests/GameServer.Platform.Web.Tests/RequestLogPrivacyTests.cs:85`** (`CookieName`, T013 — not in R15);
+  `src/GameServer.TestKit/GmBrowser.cs:12` (doc comment `gs_gm`, T013); `CatalogCompositionTests.cs:35` (T021);
+  `RunLocalScriptTests.cs:98` (T030, Phase B). No `GmOptionsValidator` test file exists: unit cases live in
+  `GmAuthTests.cs:220-227` and `SsoTests.cs:162-175` (kept there; new rules go to the new `GmOptionsValidatorTests.cs`).
+  `tests/ConsumerFixture`: no `Gm` section, no cookie/route pin; its `LocalFlavorFactory<Program>` is the fixture host.
+  Docs pins (Phase B, T057): `docs/pcr/gm.md:60-61,72,78,94,97`; `README.md:52,117`; `run-local.ps1:279`, `run-local.sh:246`.
+  `LocalFlavorFactory<SampleHost Program>` users (re-run by T019): `FrameworkModuleCoverageTests` (Architecture.Tests),
+  `SdkRouteTests` (Client.Tests), `LateEndpointValidationTests`, `LocalFlavorFactoryStartupFailureTests`, `WireCatalogTests`
+  (Platform.Web.Tests), `SampleHostSmokeTests` (Sample.Counter.Tests), `CatalogCompositionTests` (SampleGame.Tests).
+  Staging/Production starts: `StagingSecrets.Create()` users `SampleHostFlavorTests`, `CouchbaseProvisioningTests`,
+  `CatalogCompositionTests` — none sets `Gm:Cors`, so FR-021 adds no violation.
+  zh-pvp (read-only): no `gs_gm`, `CookieName`, `DefaultReturnUrl`, `Gm:Cors`, `gm.ui` in `src/`/`tests/`; only
+  `src/ZhPvp.Host/Properties/launchSettings.json:6` `launchUrl: gm/v1/ui` in its `local` profile (Local = Development
+  flavor, page kept) → BC-2 exposure none.
+- [x] T004 [P] **[VERIFY] V2 — decision gate for CORS headers on error answers (permanent test)**: new
   `tests/GameServer.Gm.Tests/Infrastructure/CorsProbeModule.cs` (test-only GM module, added only through
   `GmTestHost.StartAsync(extra:)`, A3): `GET /gm/v1/probe-cors/throw` (throws `InvalidOperationException`),
   `GET /gm/v1/probe-cors/wait` (awaits a gate the test releases; `gm.access`), declared routes, `AsGmEndpoint`. New
@@ -120,12 +147,17 @@ no Claude signature lines).
   Run on the **current code** (no production change). Scripted check (not committed): comment out the `/gm` `UseCors` line
   in `GameServerApplicationExtensions.cs:74`, rebuild, the allowed-origin cases are red; restore, rebuild, green.
   Done when: the test is committed-ready and the Note records per status green/red on current code and the scripted check.
+  Note (V2): `GmCorsErrorHeadersTests` (12 tests: 200, 304, 400, 401, 403, 403 `CSRF_FAILED`, 404 endpoint + routing, 405,
+  415, 429, 500, 503; each asserts status, error code and both origins) **all green on the current code**. The signed-in
+  browser runs over HTTPS (pre-018 code makes the antiforgery cookie `Always`-Secure as soon as CORS is on). Scripted check:
+  `app.UseWhen(... UseCors ...)` commented out in `GameServerApplicationExtensions.cs:74`, rebuild → **12/12 red**; restored
+  (`git checkout`), rebuild → 12/12 green. **Gate: no red status → T007 closes with "no change".**
   **Gate**: all green → T007 closes with "no change" (design H14 recorded as not reproduced); any red → T007 fixes exactly
   those paths. (FR-002, SC-001, FR-098)
 
 ## Phase 2: US1 — A console on another origin of the same site reads every GM answer, errors included (P1, H14, H16) — Phase A
 
-- [ ] T005 [US1] `src/GameServer.Modules.Gm.Adapters/Security/GmCors.cs`: `ExposedHeaders` (`X-Request-Id`, `Retry-After`,
+- [x] T005 [US1] `src/GameServer.Modules.Gm.Adapters/Security/GmCors.cs`: `ExposedHeaders` (`X-Request-Id`, `Retry-After`,
   `ETag`) and `PreflightMaxAge` (7200 s) members (contract §3); policy `.WithExposedHeaders(...)`,
   `.SetPreflightMaxAge(PreflightMaxAge)`; doc comment updated (no more "same-origin default (TBD-05a)" wording, case A).
   Tests in `tests/GameServer.Gm.Tests/CorsTests.cs`: preflight from the allowed origin has `Access-Control-Max-Age: 7200`,
@@ -133,45 +165,63 @@ no Claude signature lines).
   names (red before the change).
   Done when: the new assertions are red on the old code and green now; `CorsTests` otherwise unchanged except the SameSite
   test (handled by T013). (FR-001, BC-9)
-- [ ] T006 [US1] Extend `GmCorsErrorHeadersTests` (T004): every allowed-origin case also asserts the exposed-header list;
+  Note: `CorsTests.Preflights_are_cached_two_hours_and_answers_expose_the_console_headers` red on the old code
+  (`Access-Control-Max-Age` "600"), green after the change; `Allow-Methods` = `GET,POST,PUT,DELETE`, `Allow-Headers` =
+  `Content-Type,X-CSRF-Token,X-Request-Id` pinned unchanged.
+- [x] T006 [US1] Extend `GmCorsErrorHeadersTests` (T004): every allowed-origin case also asserts the exposed-header list;
   429 and 503 assert `Retry-After` present; every error case asserts `X-Request-Id` present (the console reads it, FR-062).
   Done when: green after T005 (or red only where T004 was red, fixed by T007). (FR-001, FR-002, SC-001)
-- [ ] T007 [US1] **Conditional** (gate T004/T006): for each status red in T004/T006, fix the path that writes it without
+  Note: green (12/12). Scripted check: `.WithExposedHeaders(...)` removed → 12/12 red (and the T005 test red); restored.
+- [x] T007 [US1] **Conditional** (gate T004/T006): for each status red in T004/T006, fix the path that writes it without
   CORS headers (`src/GameServer.Platform.Web/Errors/ErrorResponseWriter.cs` or the pipeline order in
   `GameServerApplicationExtensions.cs`), smallest change, no CORS logic duplicated when the middleware can apply it; the red
   case of T004 is the test. If none is red: no source change.
   Done when: every T004/T006 case green; Note = "no change, H14 not reproduced on ASP.NET Core 10.0.14 (OnStarting)" or the
   list of fixed paths with their red-first evidence. (FR-002, N1)
-- [ ] T008 [US1] One console origin outside Development: `GmCorsValidation.Validate` (`GmCors.cs`) adds the line of
+  Note: **no change, H14 not reproduced on ASP.NET Core 10.0.14 (OnStarting)**. `ErrorResponseWriter.cs` and
+  `GameServerApplicationExtensions.cs` untouched.
+- [x] T008 [US1] One console origin outside Development: `GmCorsValidation.Validate` (`GmCors.cs`) adds the line of
   data-model §1 when `!gameServer.IsDevelopment && AllowedOrigins.Count > 1`. Tests: new
   `tests/GameServer.Gm.Tests/GmOptionsValidatorTests.cs` (unit: Production with 2 origins → the line; Development with 2 →
   none; Production with 1 → none) and one host case in `CorsTests` (Development host with two origins starts).
   Done when: unit cases red before, green after. (FR-003, BC-5)
-- [ ] T009 [P] [US1] Guard test for the CSRF `Origin` rule with a sibling of the same site (`CorsTests`): signed-in
+  Note: `GmOptionsValidatorTests.Outside_development_one_console_origin_is_allowed` red before, green after; the Development
+  unit case and `CorsTests.A_development_host_accepts_two_console_origins` green before and after (no regression guard).
+- [x] T009 [P] [US1] Guard test for the CSRF `Origin` rule with a sibling of the same site (`CorsTests`): signed-in
   HTTPS browser, `POST /gm/v1/staff/{id}/sessions/revoke` with `Origin: https://evil.example.com`,
   `Sec-Fetch-Site: same-site`, a valid token → 403 `CSRF_FAILED` and no `Access-Control-Allow-Origin`; same with the allowed
   origin → 200 with CORS headers. No production change. Scripted check (not committed): removing the trusted-origin
   comparison in `Csrf.cs:65-69` turns the sibling case green→red as expected.
   Done when: green; the scripted check recorded. (FR-004)
-- [ ] T010 [US1] **Checkpoint US1**: `GameServer.Gm.Tests` green (Release); `OpenApiTests` green (document unchanged);
+  Note: `CorsTests.A_sibling_origin_of_the_same_site_cannot_send_cookie_mutations` green. Scripted check: the Origin
+  comparison of `Csrf.cs:65-69` removed → red (sibling gets 200); restored (`git checkout`).
+- [x] T010 [US1] **Checkpoint US1**: `GameServer.Gm.Tests` green (Release); `OpenApiTests` green (document unchanged);
   release notes US1 section (exposed headers, max-age, one-origin rule, H14 outcome of T007).
   Done when: all hold; Note with counts. (FR-001..FR-004)
+  Note: `GameServer.Gm.Tests` 214 total, 213 passed, 1 skipped, 0 failed (31.8 s); `OpenApiTests` green (document
+  unchanged); release notes US1 written.
 
 ## Phase 3: US2 — The session cookies resist cookie tossing and keep `SameSite=Lax` with CORS on (P2, Q20, H15) — Phase A
 
-- [ ] T011 [US2] Options: `GmCookieOptions` and `GmConsoleOptions` classes, `GmOptions.Cookies`, `GmOptions.Console`
+- [x] T011 [US2] Options: `GmCookieOptions` and `GmConsoleOptions` classes, `GmOptions.Cookies`, `GmOptions.Console`
   (`src/GameServer.Modules.Gm.Adapters/GmOptions.cs`, contract §1); validator rules for `Gm:Cookies:SameSite` (value;
   `None` needs CORS origins) with the data-model §1 lines. Unit cases in `GmOptionsValidatorTests` (`lax`, `LAX`, `None`
   with/without origins, `Strict`, empty).
   Done when: unit cases red before, green after; no behaviour uses the option yet. (FR-010, FR-011)
-- [ ] T012 [US2] `src/GameServer.Modules.Gm.Adapters/Security/GmCookies.cs` per contract §2 and plan US2: name constants and
+  Note: `GmCookieOptions` (`SameSite`, default `"Lax"`; internal `IsNone`/`IsSupported`) and `GmConsoleOptions` (`BaseUrl`)
+  added; unit cases (`Lax`/`lax`/`LAX`/`None`/`none` valid; `Strict`, `Unspecified`, empty, `" Lax"` refused; `None` without
+  origins refused in Development and Production, accepted with one) — 6 red before the rules, all green after. Decision:
+  the value is matched exactly without case (no trimming), so `" Lax"` is refused.
+- [x] T012 [US2] `src/GameServer.Modules.Gm.Adapters/Security/GmCookies.cs` per contract §2 and plan US2: name constants and
   `SessionName/CsrfName(GameServerOptions)`; `Session(http, expiresAt)` with `Path=/`, `HttpOnly`, `SameSite` from the
   option, `Secure = !IsDevelopment || IsHttps || SameSite == None`; `Configure`: antiforgery `Cookie.Name = CsrfName`,
   `Path = "/"`, `SameSite` from the option, `SecurePolicy = (!IsDevelopment || None) ? Always : SameAsRequest`; CSRF
   trusted origins unchanged. Remove `CsrfCookieName`; doc comment states case A, `__Host-`, Development names and why
   (research R1).
   Done when: the module compiles with T013; behaviour proven by T013/T014. (FR-010..FR-014, FR-017, BC-2, BC-3)
-- [ ] T013 [US2] Callers and pinned tests: `GmCookieAuthenticationHandler.cs` (remove `CookieName`, read
+  Note: `GmCookies` per contract §2 (four name constants, `SessionName`/`CsrfName`, `Session`, `Configure`); `CsrfCookieName`
+  removed; doc comment states case A, `__Host-`, the Development names and why.
+- [x] T013 [US2] Callers and pinned tests: `GmCookieAuthenticationHandler.cs` (remove `CookieName`, read
   `GmCookies.SessionName(options)`), `GmSessionService.cs:119`, `GmModule.cs:230, 256`, `Sso/GmSso.cs:164`; update
   `tests/GameServer.Gm.Tests/GmTestHost.cs` `SessionCookie` (by `GmCookies.DevelopmentSessionName`), `GmAuthTests.cs:41-42`
   (`path=/`), `CsrfAndSessionTests.cs:154-169` (`gs_gm_dev_csrf`, `path=/`), `CorsTests.cs:32-49` → renamed
@@ -179,7 +229,15 @@ no Claude signature lines).
   `Gm:Cookies:SameSite = None` → `samesite=none; secure` over HTTPS). Apply T003's other pins.
   Done when: Release build 0 warnings; `GameServer.Gm.Tests` green; every changed expectation was red on the old code.
   (FR-010, FR-012..FR-014, FR-017, BC-1..BC-3)
-- [ ] T014 [US2] New `tests/GameServer.Gm.Tests/GmCookiePolicyTests.cs`:
+  Note: callers switched (`GmCookieAuthenticationHandler` uses its injected `GameServerOptions`; `GmSessionService`,
+  `GmModule` login/logout, `GmSso` callback). Test pins: `GmTestHost.SessionCookie` (+ new `SetCookie`, `CookieAttributes`
+  for exact attribute matches — `ShouldContain("path=/")` on the raw string would also match `path=/gm`), `GmAuthTests`,
+  `CsrfAndSessionTests` (test renamed `Cookies_are_http_only_lax_with_the_development_names_on_the_site_root`; jar URI
+  `http://localhost/`), `CorsTests` (renamed `Configured_origins_get_credentialed_cors_and_cookies_stay_lax`, second host
+  with `SameSite=None`), `Observability.Tests/LoggingTests.cs:69`, `Platform.Web.Tests/RequestLogPrivacyTests.cs:85`,
+  `GmBrowser.cs` doc comment. Scripted checks: path `/gm` restored → 5 Gm tests red; "always None" restored → the CorsTests
+  case red; restored → green. Release build 0 warnings.
+- [x] T014 [US2] New `tests/GameServer.Gm.Tests/GmCookiePolicyTests.cs`:
   (a) Development over HTTP: CSRF route → `gs_gm_dev_csrf=…; path=/; samesite=lax; httponly` (no `secure`); local login →
   `gs_gm_dev=…; path=/; samesite=lax; httponly`; logout → `gs_gm_dev` expired with the same `path`/`samesite`;
   (b) Development over HTTPS (`Browser(https: true)`): session cookie `secure`;
@@ -195,13 +253,18 @@ no Claude signature lines).
   unprefixed names; pins research R1).
   Done when: (a)–(e) red on the old code and green now; (f) green; Note records V5 as confirmed in the repository.
   (FR-012..FR-016, SC-002, FR-098)
-- [ ] T015 [US2] **Checkpoint US2**: `GameServer.Gm.Tests` and `GameServer.Platform.Web.Tests` green (Release);
+  Note: `GmCookiePolicyTests` 6 tests green. Scripted check with the pre-018 names (`gs_gm`/`gs_gm_csrf` everywhere) and
+  `Path=/gm`: (a)–(e) red (5), (f) green; restored → 6/6 green. The bare app clears configuration sources and logging
+  providers (no machine/host file reaches it). **V5 confirmed in the repository.**
+- [x] T015 [US2] **Checkpoint US2**: `GameServer.Gm.Tests` and `GameServer.Platform.Web.Tests` green (Release);
   release notes US2 (BC-1..BC-3, one-time sign-out, Development names and why).
   Done when: all hold; Note with counts. (FR-010..FR-017)
+  Note: Release build 0 warnings; `GameServer.Gm.Tests` 232 (231 passed, 1 skipped); `GameServer.Platform.Web.Tests` 942
+  (939 passed, 3 skipped); `GameServer.Observability.Tests` 69/69; release notes US2 written.
 
 ## Phase 4: US3 — SSO sign-in returns to the console, never anywhere else (P3, H6, Q16) — Phase A
 
-- [ ] T016 [US3] `GmOptionsValidator` rules for `Gm:Console:BaseUrl` (data-model §1: shape, `https` outside Development,
+- [x] T016 [US3] `GmOptionsValidator` rules for `Gm:Console:BaseUrl` (data-model §1: shape, `https` outside Development,
   origin ∈ CORS origins, required when CORS origins are set). Unit cases in `GmOptionsValidatorTests` (each line; valid
   Production config with both; **Production with OIDC and neither setting → no line** (zh-pvp bump case); Production with a
   CORS origin and no `BaseUrl` → the line; `BaseUrl` without a CORS origin → the origin line; sub-path
@@ -209,7 +272,15 @@ no Claude signature lines).
   case-insensitive on scheme/host). Host case: Development host with a bad `BaseUrl` fails startup with the line.
   Done when: the new failing-rule cases red before, green after; the no-console case green before and after. (FR-020,
   FR-021, BC-4)
-- [ ] T017 [US3] New `src/GameServer.Modules.Gm.Adapters/Sso/GmConsoleUrls.cs` (contract §4, data-model §4, research R5),
+  Note: 18 new failing-rule cases red before the rules (incl. the host startup case), green after; the no-console cases
+  (`A_deployment_without_console_settings_starts`, Production with OIDC and neither setting) green before and after. Decisions:
+  (1) an **empty** `BaseUrl` counts as unset (a configuration layer clearing it), so with a CORS origin it reports the "not
+  set" line, without one nothing; (2) the shape rule also refuses characters outside printable ASCII (the value is written into
+  `Location` headers; same rule as FR-022 for paths); (3) origins are compared through `Uri.GetLeftPart(Authority)`, so case of
+  scheme/host and a default port do not matter. `CorsTests` hosts with an origin now use `GmTestHost.WithConsole`;
+  `Bad_origins_fail_startup` now asserts the origin's own line (`Gm:Cors:AllowedOrigins '<origin>'`) because the new "BaseUrl
+  not set" line also names `Gm:Cors:AllowedOrigins` and would have kept the old assertion green without the origin rule.
+- [x] T017 [US3] New `src/GameServer.Modules.Gm.Adapters/Sso/GmConsoleUrls.cs` (contract §4, data-model §4, research R5),
   registered by `GmSso.Add`; `GmSso.cs`: start stores `urls.AcceptReturnPath(returnUrl)` (relative) as `RedirectUri`;
   `OnTicketReceivedAsync` success → `urls.SuccessTarget(context.ReturnUri)`; every denial in `OnTicketReceivedAsync`,
   `OnRemoteFailureAsync` and the unhandled callback → `urls.DeniedTarget()`; remove `DefaultReturnUrl`, `DeniedRedirect`,
@@ -219,14 +290,24 @@ no Claude signature lines).
   defaults `/gm/v1/ui` and `/gm/v1/ui?error=sso_denied` with Development options, `/gm/v1/me` and
   `/gm/v1/me?error=sso_denied` with Staging/Production options).
   Done when: unit matrix green; build 0 warnings. (FR-022..FR-026, BC-7)
-- [ ] T018 [US3] `tests/GameServer.Gm.Tests/SsoTests.cs`: keep the existing host (no `BaseUrl`, legacy) and update its pins
+  Note: `GmConsoleUrlsTests` 34 cases green; build 0 warnings. **Deviation from plan US3 (`RedirectUri = ... ?? ""`)**: the
+  start endpoint stores `"/"` for a missing/refused value, because the OIDC handler replaces an empty `RedirectUri` with the
+  start URL itself (`/gm/v1/auth/sso/start?returnUrl=<refused value>`), which then passes the path rule with a console and
+  lands on `BaseUrl` + that path. `"/"` lands on `BaseUrl` with a console and is refused by the `/gm/` rule without one (→
+  default). Scripted check: `?? ""` → 3 `SsoTests` red. `SuccessTarget` re-checks the value (defence in depth).
+- [x] T018 [US3] `tests/GameServer.Gm.Tests/SsoTests.cs`: keep the existing host (no `BaseUrl`, legacy) and update its pins
   (`:136-138` → `/gm/v1/ui`; `/gm/v1/me` success kept); add a host with `Gm:Console:BaseUrl = https://gm.example.com/` and
   `Gm:Cors:AllowedOrigins:0 = https://gm.example.com`: `returnUrl=/#/players/abc` → `https://gm.example.com/#/players/abc`;
   the hostile values of SC-003 → `https://gm.example.com/`; no MFA, disabled staff, unknown identity, forged state →
   `https://gm.example.com/#/login?error=sso_denied`; the session cookie is set on the success answer
   (`gs_gm_dev`, Development); `_idp.RejectedTokenRequests` stays 0.
   Done when: green; the new cases red on the old code. (FR-022..FR-025, SC-003, US3-1..US3-3, US3-6)
-- [ ] T019 [US3] Sample host configuration (D12, research R16): `samples/SampleHost/appsettings.Local.json` and
+  Note: `SsoTests` 12 green: legacy pins now `/gm/v1/ui` (default, also for a console path and a missing `returnUrl`) and
+  `/gm/v1/ui?error=sso_denied`; success to `/gm/v1/me` kept; new: return to `https://gm.example.com/#/players/abc` with the
+  `gs_gm_dev` cookie on the callback answer, missing `returnUrl` → root, 8 hostile values → root, 4 denials (no MFA, disabled,
+  unknown identity, forged state) → `#/login?error=sso_denied` without cookie, unhandled callback → denial target in both
+  configurations; `RejectedTokenRequests` 0. Scripted check with the pre-018 `GmSso` (cookie-name line adapted): 9/12 red.
+- [x] T019 [US3] Sample host configuration (D12, research R16): `samples/SampleHost/appsettings.Local.json` and
   `appsettings.Dev.json` gain `Gm:Cors:AllowedOrigins = ["http://localhost:5173"]` and
   `Gm:Console:BaseUrl = "http://localhost:5173/"`; `appsettings.Beta.json`, `appsettings.Uat.json`,
   `appsettings.Live.json` stay without console values (D12). `tests/Shared/StagingSecrets.cs` and the other
@@ -234,17 +315,27 @@ no Claude signature lines).
   `LocalFlavorFactory<SampleHost …>` test class listed by T003 and `GameServer.Platform.Web.Tests`.
   Done when: those suites green; no Staging/Production start gains a violation; Note lists the files changed. (FR-021,
   FR-045, BC-4)
-- [ ] T020 [US3] **Checkpoint US3**: `GameServer.Gm.Tests`, `SampleGame.Tests`, `GameServer.Platform.Web.Tests` green
+  Note: changed `samples/SampleHost/appsettings.Local.json` and `appsettings.Dev.json` (both `DeploymentEnvironment`
+  Development, so `http` is valid); Beta/Uat/Live untouched. Re-run green: Architecture.Tests 69 (61 passed, 8 opt-in
+  `RunLocalScriptTests` skipped), Client.Tests 234 (232, 2 skipped), Platform.Web.Tests 942 (939, 3 skipped),
+  Sample.Counter.Tests 20/20, SampleGame.Tests 282 (276, 6 skipped). No Staging/Production start sets `Gm:Cors` (T003), so
+  none gains a violation; the Couchbase starts are proven by T022.
+- [x] T020 [US3] **Checkpoint US3**: `GameServer.Gm.Tests`, `SampleGame.Tests`, `GameServer.Platform.Web.Tests` green
   (Release); release notes US3 (BC-4, BC-7, zh-pvp steps).
   Done when: all hold; Note with counts. (FR-020..FR-026)
+  Note: `GameServer.Gm.Tests` 293 (292 passed, 1 skipped); `SampleGame.Tests` 282 (276, 6 skipped);
+  `GameServer.Platform.Web.Tests` 942 (939, 3 skipped); release notes US3 written.
 
 ## Phase 5: US4 — The static GM page exists only where development tools exist (P4, H9, Q17) + Phase A gate
 
-- [ ] T021 [US4] `GmRoutes.Ui` gains `condition: RouteConditions.DevelopmentTools` (contract §5); `GmModule.MapGmApi` maps it
+- [x] T021 [US4] `GmRoutes.Ui` gains `condition: RouteConditions.DevelopmentTools` (contract §5); `GmModule.MapGmApi` maps it
   inside the existing `AllowsDevelopmentTools` block. Update `tests/SampleGame.Tests/CatalogCompositionTests.cs` (route list
   per flavor: `gm.ui` only with development tools) and keep `GmAuthTests.Ui_page_is_served_with_a_strict_policy`.
   Done when: green; the composition change red on the old code. (FR-030, SC-004, BC-6, BC-8)
-- [ ] T022 [US2] [US3] [US4] Couchbase flavor matrix `tests/GameServer.Platform.Couchbase.IntegrationTests/SampleHostFlavorTests.cs`:
+  Note: `CatalogCompositionTests` 24 green (new assertion `gm.ui` mapped ⇔ development tools && GM API); with the old
+  declaration and unconditional mapping restored → 6 red (Beta/Uat/Live × player on/off with GM on); restored → green.
+  `GmAuthTests.Ui_page_is_served_with_a_strict_policy` green; `FrameworkRouteNames` (Local composition) keeps `gm.ui`.
+- [x] T022 [US2] [US3] [US4] Couchbase flavor matrix `tests/GameServer.Platform.Couchbase.IntegrationTests/SampleHostFlavorTests.cs`:
   Dev: `/gm/v1/ui` 200, CSRF route sets `gs_gm_dev_csrf; path=/`; Beta (sample config, **no console settings**, SSO from
   the staging settings; client with HTTPS base address): starts, `/gm/v1/ui` 404, CSRF route sets
   `__Host-gs_gm_csrf; path=/; secure; samesite=lax; httponly`, no CORS headers for any origin; Uat (test settings add
@@ -252,12 +343,25 @@ no Claude signature lines).
   from that origin answers CORS with max-age 7200 and one from another origin none; Live: the process test still reports
   exactly the `couchbases://` violation (no console settings needed).
   Done when: green against local Couchbase (`COUCHBASE_*` set, PowerShell). (FR-012, FR-021, FR-030, SC-002, SC-004)
-- [ ] T023 **Phase A gate**: Release build 0 warnings; full suite in memory (no `COUCHBASE_*`) and with
+  Note: `SampleHostFlavorTests` 5/5 green against local Couchbase (1 m 29 s, not skipped). Dev: `/gm/v1/ui` 200,
+  `gs_gm_dev_csrf` = `path=/; samesite=lax; httponly`; Beta and Uat: `/gm/v1/ui` 404, `__Host-gs_gm_csrf` = `path=/; secure;
+  samesite=lax; httponly` over an HTTPS client (`WebApplicationFactoryClientOptions`, `HandleCookies = false`), preflight
+  (`OPTIONS` logout) gets CORS + `Max-Age: 7200` only on Uat from `https://gm.uat.example.com` (test settings), none from
+  other origins or on Beta; Live unchanged (one `couchbases://` violation, comment added). No Couchbase revert run: the
+  same `gm.ui` and cookie changes were shown red in memory (T021, T014).
+- [x] T023 **Phase A gate**: Release build 0 warnings; full suite in memory (no `COUCHBASE_*`) and with
   `GAMESERVER_TEST_STORE=File`; `GameServer.Platform.Couchbase.IntegrationTests` project; `git diff main --
   docs/api/gm-openapi.json` empty (SHA of T001 (b)); `git diff main -- proto src/*/Protos sdk` empty; release notes Phase A
   complete; `git status` lists only intended files.
   Done when: all hold; counts recorded against T001. (FR-099 partial, SC-009)
-- [ ] T024 **Phase A security review** (after T023): `tech-lead-reviewer`, read-only, gets spec, plan, this file and
+  Note (test infrastructure, from the gate's full Couchbase run: 1 failure of 2971): `GameServer.Platform.Web.Tests.ConfigPhasePerformanceTests.The_phase_on_the_sample_config_stays_within_the_budget`
+  (slice 015, unrelated to 018; likely the unexplained Platform.Web failure of 017) is timing noise, not only parallel
+  load: median over 13 runs of the test alone 12.0–129.5 ms (one failure at 129.5 > 100), over 3 runs of its project
+  3.0–33.3 ms. A non-parallel collection would not help, so it is now opt-in (`GAMESERVER_PERF=1`, like
+  `GmCatalogPerformanceTests` and the 1 MiB case of the same class); budget unchanged (median ≤ 5 × 20 ms). With the
+  variable set it runs (median 1.8 ms); without it it skips with the opt-in message.
+  **Gate result (orchestrator, 2026-11-06):** Release build 0 warnings; full suite incl. Couchbase 3011 total, 2984 passed, 27 skipped, 0 failed (first run 1 failure = `ConfigPhasePerformanceTests`, made opt-in above). T024 review r1 CONDITIONAL (1 Major + 4 minor, fixed), r2 **YES**; carry-over to Phase B review: every hash-route parameter goes through `encodeURIComponent` before it enters an API path, never navigate to a URL taken from the hash.
+- [x] T024 **Phase A security review** (after T023): `tech-lead-reviewer`, read-only, gets spec, plan, this file and
   `git diff --stat main`; focus: cookie names/attributes per environment and every write/delete site, antiforgery policy per
   environment, `SameSite` decoupling, CORS exposure and origin rules, `GmConsoleUrls` open-redirect rules (both
   configurations, every denial path), validator lines, `/gm/v1/ui` mapping, no secret or cookie value logged, tests that would
@@ -265,6 +369,37 @@ no Claude signature lines).
   affected projects and T023's in-memory suite.
   Done when: findings list (Blocker/Major/Minor) recorded; accepted ones fixed; suites green. **Phase B may start.**
   (constitution governance)
+  Note — **Review (T024) r1** (verdict CONDITIONAL; fixes by the implementer, task left for the orchestrator to close). Each
+  fix has a test shown red with the fix disabled (scripted edit, rebuild, run, byte-for-byte restore):
+  - **M1** `GmConsoleUrls`: `%2e` (any case) refused like `..`; with a console only `/` or `/#<fragment>` accepted (no path,
+    no query); without a console the `/gm/` rule stays. Tests: `GmConsoleUrlsTests` hostile list (+ `/%2e%2e/x`, `/.%2e/x`,
+    `/%2E./x`, `/gm/%2E%2E/x`, `/gm/v1/.%2e/x`, `/?x=1`), `A_console_accepts_only_its_root_and_hash_routes`,
+    `Without_a_console_a_gm_path_keeps_its_query`, `SsoTests.A_sub_path_console_is_never_left_through_the_return_url` (real
+    start + callback, `BaseUrl` `https://gm.example.com/console/`), `SsoTests.A_forged_state_or_an_external_return_url_gets_nowhere`
+    (+ `/gm/%2e%2e/x`, `/gm/.%2E/x`). Red checks: `%2e` rule off → 3 `GmConsoleUrlsTests` + the legacy SSO test red (with a
+    console the shape rule alone already refuses those paths); console shape rule off → 6 `GmConsoleUrlsTests` + the
+    sub-path SSO test red. Spec FR-022 + US3 scenario 2 + independent test, data-model §4, contract §4 narrowed.
+  - **m1** `GmCorsValidation.Validate`: an origin must equal `uri.GetLeftPart(Authority)` (case-insensitive) and have no
+    user info; line text now names default port and user info. Tests: `GmOptionsValidatorTests.An_origin_not_in_its_serialized_form_fails`
+    (8 cases), `An_origin_in_its_serialized_form_is_valid` (4), `CorsTests.Bad_origins_fail_startup` (+ `:443`). Red check: old
+    condition → 4 unit cases (`:443`, `:80`, two user-info forms) + the `:443` host case red. Data-model §1 updated.
+  - **m2** `GmOptionsValidator`: `SameSite=None` refused where `!AllowsDevelopmentTools`, one line
+    (`Gm:Cookies:SameSite=None is refused in '<env>': a console on another site (case B) is not supported; use Lax (default)
+    with a console on the same site.`). Tests: `Samesite_none_is_refused_outside_development_and_test` (Staging, Production),
+    `Samesite_none_needs_a_cors_origin` now Development + Test. Red check: rule off → both cases red. Spec FR-011, D3, BC-3,
+    owner question 3; plan D3 + owner question 3; data-model §1; contract §1; PCR `docs/pcr/gm.md` (cookie and CORS
+    bullets only — the rest of the PCR stays T057); release notes.
+  - **m3**: `GmCookiePolicyTests.Outside_development_the_session_cookie_is_read_ended_and_deleted_by_its_host_name` (real
+    `GmTestHost` with `DeploymentEnvironment = Test`: development tools, `__Host-` names, HTTPS: sign-in, `/me`, sign-in again
+    ends the old session, logout deletion attributes) and `The_names_follow_the_deployment_environment` (Development, Test,
+    Staging, Production). Red checks: the Development name hard-coded in the handler, in `GmSessionService.EndCurrentAsync`
+    or in the logout delete → the test red each time. Chosen over the stubbed bare app: same coverage through the real
+    pipeline, no stub of sealed services.
+  - **m4**: `GmConsoleUrls` class comment states the real rule.
+  - Suites after the fixes: Release build 0 warnings; Gm.Tests 333 (332, 1 skipped); Platform.Web.Tests 942 (938, 4 skipped);
+    Architecture.Tests 69 (61, 8 skipped); SampleGame.Tests 282 (276, 6 skipped); Client.Tests 234 (232, 2 skipped);
+    Sample.Counter.Tests 20/20; Observability.Tests 69/69; Fixture.Tests 40/40; `SampleHostFlavorTests` (Couchbase) 5/5;
+    `docs/api/gm-openapi.json` SHA unchanged.
 
 ## Phase 6: US5 — A developer runs the console locally against run-local, cross-origin, in two commands (P5, Q16, Q18) — Phase B
 

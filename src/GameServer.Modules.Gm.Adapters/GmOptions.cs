@@ -23,6 +23,37 @@ public sealed class GmOptions
     public GmOidcOptions Oidc { get; set; } = new();
 
     public GmCorsOptions Cors { get; set; } = new();
+
+    public GmCookieOptions Cookies { get; set; } = new();
+
+    public GmConsoleOptions Console { get; set; } = new();
+}
+
+/// <summary>Section <c>Gm:Cookies</c> (slice 018): <c>SameSite</c> of the session and CSRF cookies, independent of CORS.</summary>
+public sealed class GmCookieOptions
+{
+    /// <summary>
+    /// <c>Lax</c> (default: a console on the same site as the API) or <c>None</c> (Development/Test only, needs
+    /// <c>Gm:Cors:AllowedOrigins</c>; the cookies are then always <c>Secure</c>). Case-insensitive; any other value, and <c>None</c>
+    /// elsewhere (case B is not supported), fails startup.
+    /// </summary>
+    public string SameSite { get; set; } = "Lax";
+
+    /// <summary>True for <c>None</c>; false for <c>Lax</c> and for a refused value (startup fails on it first).</summary>
+    internal bool IsNone => string.Equals(SameSite, "None", StringComparison.OrdinalIgnoreCase);
+
+    internal bool IsSupported => IsNone || string.Equals(SameSite, "Lax", StringComparison.OrdinalIgnoreCase);
+}
+
+/// <summary>Section <c>Gm:Console</c> (slice 018): where the GM console of this environment lives.</summary>
+public sealed class GmConsoleOptions
+{
+    /// <summary>
+    /// Absolute URL of the console root, path ending with <c>/</c>, without query, fragment or user info; <c>https</c> outside
+    /// Development; its origin is the one in <c>Gm:Cors:AllowedOrigins</c>. Required together with a CORS origin; unset with
+    /// none (no console: SSO lands on the API). SSO sign-ins return here (FR-020..FR-025).
+    /// </summary>
+    public string? BaseUrl { get; set; }
 }
 
 /// <summary>Section <c>Gm:Oidc</c>: company identity provider for GM sign-in (SEC-03, research R1/R2/R11).</summary>
@@ -151,6 +182,22 @@ public sealed partial class GmOptionsValidator(GameServerOptions gameServer) : I
         }
 
         errors.AddRange(GmCorsValidation.Validate(options.Cors, gameServer));
+        if (!options.Cookies.IsSupported)
+        {
+            errors.Add($"Gm:Cookies:SameSite '{options.Cookies.SameSite}' is not supported; use Lax (default) or None.");
+        }
+        else if (options.Cookies.IsNone && !gameServer.AllowsDevelopmentTools)
+        {
+            // Case B (a console on another site) is not supported (owner decision; review T024 m2).
+            errors.Add($"Gm:Cookies:SameSite=None is refused in '{gameServer.DeploymentEnvironment}': a console on another site (case B) " +
+                "is not supported; use Lax (default) with a console on the same site.");
+        }
+        else if (options.Cookies.IsNone && !options.Cors.Enabled)
+        {
+            errors.Add("Gm:Cookies:SameSite=None needs Gm:Cors:AllowedOrigins: SameSite=None is only for a console on another site (case B, unsupported).");
+        }
+
+        errors.AddRange(ValidateConsole(options, gameServer));
 
         if (options.Bootstrap.Staff.Count > 0 && !gameServer.AllowsDevelopmentTools)
         {
@@ -178,4 +225,47 @@ public sealed partial class GmOptionsValidator(GameServerOptions gameServer) : I
 
     [GeneratedRegex("^[a-z0-9][a-z0-9._-]{0,63}$")]
     internal static partial Regex StaffIdPattern();
+
+    /// <summary>
+    /// <c>Gm:Console:BaseUrl</c> (FR-020, FR-021): set together with the CORS console origin, never alone; a console URL is the
+    /// root of a static site on that origin. Neither setting = no console, valid in every environment.
+    /// </summary>
+    private static IEnumerable<string> ValidateConsole(GmOptions options, GameServerOptions gameServer)
+    {
+        var baseUrl = options.Console.BaseUrl;
+        if (string.IsNullOrEmpty(baseUrl))
+        {
+            if (options.Cors.Enabled)
+            {
+                yield return "Gm:Cors:AllowedOrigins is set but Gm:Console:BaseUrl is not; set the console URL of that origin (SSO returns there).";
+            }
+
+            yield break;
+        }
+
+        // Printable ASCII only: the value is written verbatim into redirect Location headers (FR-022 applies the same rule to paths).
+        if (!baseUrl.All(c => c is > ' ' and < (char)127)
+            || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp)
+            || !baseUrl.EndsWith('/')
+            || baseUrl.Contains('?', StringComparison.Ordinal)
+            || baseUrl.Contains('#', StringComparison.Ordinal)
+            || uri.UserInfo.Length > 0)
+        {
+            yield return $"Gm:Console:BaseUrl '{baseUrl}' must be an absolute http(s) URL whose path ends with '/', without query, fragment or user info.";
+            yield break;
+        }
+
+        if (uri.Scheme == Uri.UriSchemeHttp && !gameServer.IsDevelopment)
+        {
+            yield return $"Gm:Console:BaseUrl '{baseUrl}' is not https; plain http is allowed only in Development.";
+        }
+
+        var origin = uri.GetLeftPart(UriPartial.Authority);
+        if (!options.Cors.AllowedOrigins.Any(o => Uri.TryCreate(o, UriKind.Absolute, out var allowed)
+            && string.Equals(allowed.GetLeftPart(UriPartial.Authority), origin, StringComparison.OrdinalIgnoreCase)))
+        {
+            yield return $"Gm:Console:BaseUrl origin '{origin}' is not in Gm:Cors:AllowedOrigins; add it (one console origin per environment).";
+        }
+    }
 }

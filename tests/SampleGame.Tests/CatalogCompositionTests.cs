@@ -76,6 +76,9 @@ public sealed class CatalogCompositionTests
         var developmentTools = factory.Services.GetRequiredService<GameServerOptions>().AllowsDevelopmentTools;
         endpoints.Any(e => e.RoutePattern.RawText == GmOpenApi.Route).ShouldBe(developmentTools && gm);
 
+        // Slice 018 (FR-030, BC-8): the static GM page only with development tools (Local, Dev); the console elsewhere.
+        endpoints.Any(e => e.RoutePattern.RawText == GmModule.UiRoute).ShouldBe(developmentTools && gm, $"gm.ui in {flavor}");
+
         // Slice 017 (FR-030, FR-034): the console catalog and the sign-in methods are mapped whenever the GM API is, in every flavor.
         endpoints.Any(e => e.RoutePattern.RawText == GmModule.ConsoleCatalogRoute).ShouldBe(gm);
         endpoints.Any(e => e.RoutePattern.RawText == GmModule.AuthMethodsRoute).ShouldBe(gm);

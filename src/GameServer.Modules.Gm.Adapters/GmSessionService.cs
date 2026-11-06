@@ -116,7 +116,7 @@ public sealed class GmSessionService
     /// <summary>Signing in again over a live session ends the old ticket (no orphaned sessions, review m3).</summary>
     public async Task EndCurrentAsync(Microsoft.AspNetCore.Http.HttpContext http)
     {
-        var cookie = http.Request.Cookies[GmCookieAuthenticationHandler.CookieName];
+        var cookie = http.Request.Cookies[GmCookies.SessionName(_gameServer)];
         if (!string.IsNullOrEmpty(cookie) && cookie.Length <= 512 && await ValidateAsync(cookie, http.RequestAborted) is { } current)
         {
             await RemoveAsync(current.Key, http.RequestAborted);

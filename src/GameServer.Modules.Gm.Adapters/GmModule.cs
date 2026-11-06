@@ -143,6 +143,9 @@ public sealed class GmModule : IGameModule, IGmApiModule
                 .RequireCsrf()
                 .WithRequestTimeout(ApiRouteExtensions.GmTimeoutPolicy)
                 .RequireRateLimiting(ApiRouteExtensions.GmLimiterPolicy);
+
+            // The static GM page is a development tool (slice 018 FR-030): the console replaces it elsewhere.
+            routes.MapDeclared(GmRoutes.Ui, GmUi.Serve).ExcludeFromDescription().AsPublicEndpoint(protobuf: false);
         }
 
         if (services.GetRequiredService<IOptions<GmOptions>>().Value.Oidc.IsConfigured)
@@ -165,7 +168,6 @@ public sealed class GmModule : IGameModule, IGmApiModule
             .WithSummary("Get the signed-in staff, its permissions and the versions of the answering instance.")
             .AsGmEndpoint(GmPermissions.Access);
         GmConsoleEndpoints.Map(routes);
-        routes.MapDeclared(GmRoutes.Ui, GmUi.Serve).ExcludeFromDescription().AsPublicEndpoint(protobuf: false);
         routes.MapDeclared(GmRoutes.Health, (Func<HttpContext, Task<IResult>>)HealthAsync)
             .Produces<GmHealthReport>()
             .WithSummary("Run the health checks of this instance and report each one with its details.")
@@ -227,10 +229,10 @@ public sealed class GmModule : IGameModule, IGmApiModule
         var sessions = services.GetRequiredService<GmSessionService>();
         await sessions.EndCurrentAsync(http);
         var (cookie, expiresAt) = await sessions.CreateAsync(record, http.RequestAborted);
-        http.Response.Cookies.Append(GmCookieAuthenticationHandler.CookieName, cookie, GmCookies.Session(http, expiresAt));
+        var gameServer = services.GetRequiredService<GameServerOptions>();
+        http.Response.Cookies.Append(GmCookies.SessionName(gameServer), cookie, GmCookies.Session(http, expiresAt));
         logger.LogInformation("GM local sign-in for staff {StaffId}.", record.StaffId);
 
-        var gameServer = services.GetRequiredService<GameServerOptions>();
         var runtime = services.GetRequiredService<GameServerRuntimeInfo>();
         return GmHttp.Json(new GmMeResponse(
             record.StaffId,
@@ -253,7 +255,7 @@ public sealed class GmModule : IGameModule, IGmApiModule
             await http.RequestServices.GetRequiredService<GmSessionService>().RemoveAsync(sessionKey, http.RequestAborted);
         }
 
-        http.Response.Cookies.Delete(GmCookieAuthenticationHandler.CookieName, GmCookies.Session(http, null));
+        http.Response.Cookies.Delete(GmCookies.SessionName(http.RequestServices.GetRequiredService<GameServerOptions>()), GmCookies.Session(http, null));
         http.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger<GmModule>()
             .LogInformation("GM sign-out for staff {StaffId}.", http.User.FindFirst(ActorClaims.ActorId)?.Value);
         return Results.NoContent();

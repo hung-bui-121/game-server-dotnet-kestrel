@@ -36,10 +36,10 @@ public sealed class GmAuthTests : IAsyncLifetime
     {
         var response = await _host.PostLoginAsync("admin");
         response.EnsureSuccessStatusCode();
-        var cookie = GmTestHost.SessionCookie(response)!.ToLowerInvariant();
+        var cookie = GmTestHost.CookieAttributes(GmTestHost.SessionCookie(response)!);
         cookie.ShouldContain("httponly");
         cookie.ShouldContain("samesite=lax");
-        cookie.ShouldContain("path=/gm");
+        cookie.ShouldContain("path=/");
 
         var gm = await _host.GmClientAsync("admin");
         var me = await gm.GetAsync(GmModule.MeRoute).ShouldBeAsync(200);

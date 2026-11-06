@@ -13,14 +13,17 @@ namespace GameServer.Platform.Web.Tests;
 
 /// <summary>
 /// SC-007 (slice 015 T050): the config phase (load, registry checks, rules, catalogs, bundle and its size check) stays within its
-/// startup budget. The sample config runs always, against five times the budget so a loaded machine does not fail it; 1 MiB of
-/// row tables is opt-in (<c>GAMESERVER_PERF=1</c>).
+/// startup budget: the sample config against five times its budget, 1 MiB of row tables against its own. Both are opt-in
+/// (<c>GAMESERVER_PERF=1</c>): timing budgets are not reliable in a normal test run (slice 018 review r1: the sample-config median
+/// measured 12–130 ms over 13 runs of this test alone and 3–33 ms inside its project, and failed once in each setting).
 /// </summary>
 public sealed class ConfigPhasePerformanceTests(ITestOutputHelper output)
 {
-    private const string OptIn = "Opt-in: set GAMESERVER_PERF=1 to measure the config phase on 1 MiB of row tables (SC-007: <= 300 ms).";
+    private const string OptIn = "Opt-in: set GAMESERVER_PERF=1 to measure the config phase (SC-007: sample config <= 5 x 20 ms, 1 MiB of row tables <= 300 ms).";
     private const double SampleBudgetMs = 20;
-    private const double AlwaysOnMargin = 5;
+
+    /// <summary>The sample-config budget is checked against five times its value (a developer machine, not a quiet bench).</summary>
+    private const double SampleMargin = 5;
     private const double LargeBudgetMs = 300;
 
     /// <summary>The first phase of a process pays the JIT of the loader, the rules and the catalogs; a start pays it once.</summary>
@@ -31,12 +34,13 @@ public sealed class ConfigPhasePerformanceTests(ITestOutputHelper output)
     [Fact]
     public void The_phase_on_the_sample_config_stays_within_the_budget()
     {
+        Assert.SkipUnless(Environment.GetEnvironmentVariable("GAMESERVER_PERF") == "1", OptIn);
         var path = Path.Combine(RepositoryRoot(), "samples", "SampleHost", "config");
 
         var median = MedianPhaseMs(s => s["GameServer:ConfigPath"] = path);
 
         output.WriteLine(string.Create(CultureInfo.InvariantCulture, $"config phase, samples/SampleHost/config: median {median:F1} ms"));
-        median.ShouldBeLessThanOrEqualTo(SampleBudgetMs * AlwaysOnMargin);
+        median.ShouldBeLessThanOrEqualTo(SampleBudgetMs * SampleMargin);
     }
 
     [Fact]

@@ -11,6 +11,14 @@ namespace GameServer.Gm.Tests;
 /// <summary>US1: SSO with explicit authorization, one-time email invitation, MFA evidence (SEC-03, ACC-10).</summary>
 public sealed class SsoTests : IAsyncLifetime
 {
+    /// <summary>The host without console (slice 018 FR-025): Development defaults, the GM page exists.</summary>
+    private const string LegacyDefault = "/gm/v1/ui";
+    private const string LegacyDenied = "/gm/v1/ui?error=sso_denied";
+
+    private const string ConsoleOrigin = "https://gm.example.com";
+    private const string ConsoleRoot = "https://gm.example.com/";
+    private const string ConsoleDenied = "https://gm.example.com/#/login?error=sso_denied";
+
     private readonly FakeOidcProvider _idp = new();
     private TestHost _host = null!;
 
@@ -22,8 +30,19 @@ public sealed class SsoTests : IAsyncLifetime
         values["Gm:Oidc:RequireMfa"] = "true";
     }
 
-    public async ValueTask InitializeAsync() =>
-        _host = await GmTestHost.StartAsync(Settings, services: s => s.PostConfigure<GmOptions>(o => o.Oidc.BackchannelHandler = _idp));
+    public async ValueTask InitializeAsync() => _host = await StartAsync();
+
+    private Task<TestHost> StartAsync(Action<Dictionary<string, string?>>? more = null) =>
+        GmTestHost.StartAsync(
+            values =>
+            {
+                Settings(values);
+                more?.Invoke(values);
+            },
+            services: s => s.PostConfigure<GmOptions>(o => o.Oidc.BackchannelHandler = _idp));
+
+    /// <summary>A deployment with a console (slice 018): its origin and its URL.</summary>
+    private Task<TestHost> StartWithConsoleAsync() => StartAsync(values => GmTestHost.WithConsole(values, ConsoleOrigin));
 
     public async ValueTask DisposeAsync()
     {
@@ -44,22 +63,32 @@ public sealed class SsoTests : IAsyncLifetime
     }
 
     /// <summary>Drives the browser: start → provider sign-in → callback. Returns the final redirect and the client.</summary>
-    private async Task<(HttpClient Client, string Location)> SignInAsync(Dictionary<string, object> claims, string returnUrl = "/gm/v1/me", string? tamperedState = null)
+    private async Task<(HttpClient Client, string Location)> SignInAsync(Dictionary<string, object> claims, string? returnUrl = "/gm/v1/me", string? tamperedState = null)
     {
-        var browser = _host.Browser();
-        var start = await browser.GetAsync($"{GmSso.StartRoute}?returnUrl={Uri.EscapeDataString(returnUrl)}");
+        var (client, callback) = await CallbackAsync(_host, claims, returnUrl, tamperedState);
+        return (client, callback.Headers.Location!.ToString());
+    }
+
+    /// <summary>The callback answer itself (status, Location, Set-Cookie) on <paramref name="host"/>; no <c>returnUrl</c> when null.</summary>
+    private async Task<(HttpClient Client, HttpResponseMessage Callback)> CallbackAsync(
+        TestHost host, Dictionary<string, object> claims, string? returnUrl, string? tamperedState = null)
+    {
+        var browser = host.Browser();
+        var start = await browser.GetAsync(returnUrl is null ? GmSso.StartRoute : $"{GmSso.StartRoute}?returnUrl={Uri.EscapeDataString(returnUrl)}");
         start.StatusCode.ShouldBe(HttpStatusCode.Redirect);
         start.Headers.Location!.ToString().ShouldStartWith(FakeOidcProvider.Issuer + "/authorize");
 
         var callback = _idp.Authorize(start.Headers.Location!, claims, tamperedState);
         var result = await browser.GetAsync(callback);
         result.StatusCode.ShouldBe(HttpStatusCode.Redirect, await result.Content.ReadAsStringAsync());
-        return (browser, result.Headers.Location!.ToString());
+        return (browser, result);
     }
 
-    private async Task CreateStaffAsync(object body)
+    private Task CreateStaffAsync(object body) => CreateStaffAsync(_host, body);
+
+    private static async Task CreateStaffAsync(TestHost host, object body)
     {
-        var admin = await _host.GmClientAsync("admin");
+        var admin = await host.GmClientAsync("admin");
         await admin.PostCommandAsync(StaffEndpoints.ListRoute, body).ShouldBeAsync(201);
     }
 
@@ -81,7 +110,7 @@ public sealed class SsoTests : IAsyncLifetime
     public async Task Company_identities_without_a_grant_are_refused()
     {
         var (client, location) = await SignInAsync(Claims("stranger", "stranger@corp.test"));
-        location.ShouldBe(GmSso.DeniedRedirect);
+        location.ShouldBe(LegacyDenied);
         await client.GetAsync(GmModule.MeRoute).ShouldBeAsync(401);
         _host.Logs.ShouldContain(l => l.Contains("GM SSO sign-in denied", StringComparison.Ordinal));
     }
@@ -91,14 +120,14 @@ public sealed class SsoTests : IAsyncLifetime
     {
         await CreateStaffAsync(new { staffId = "invitee", email = "invitee@corp.test", roles = new[] { "Support" }, reason = "invite" });
 
-        (await SignInAsync(Claims("sub-unverified", "invitee@corp.test", verified: false))).Location.ShouldBe(GmSso.DeniedRedirect);
+        (await SignInAsync(Claims("sub-unverified", "invitee@corp.test", verified: false))).Location.ShouldBe(LegacyDenied);
 
         var (client, location) = await SignInAsync(Claims("sub-invitee", "INVITEE@corp.test"));
         location.ShouldBe("/gm/v1/me");
         await client.GetAsync(GmModule.MeRoute).ShouldBeAsync(200);
 
         // From now on only the bound identity matches: the email no longer grants anything.
-        (await SignInAsync(Claims("sub-other", "invitee@corp.test"))).Location.ShouldBe(GmSso.DeniedRedirect);
+        (await SignInAsync(Claims("sub-other", "invitee@corp.test"))).Location.ShouldBe(LegacyDenied);
         (await SignInAsync(Claims("sub-invitee", "changed@corp.test"))).Location.ShouldBe("/gm/v1/me");
 
         var admin = await _host.GmClientAsync("admin");
@@ -111,7 +140,7 @@ public sealed class SsoTests : IAsyncLifetime
     public async Task Missing_mfa_evidence_is_refused()
     {
         await CreateStaffAsync(new { staffId = "nomfa", issuer = FakeOidcProvider.Issuer, subject = "sub-nomfa", roles = new[] { "Support" }, reason = "sso" });
-        (await SignInAsync(Claims("sub-nomfa", amr: ["pwd"]))).Location.ShouldBe(GmSso.DeniedRedirect);
+        (await SignInAsync(Claims("sub-nomfa", amr: ["pwd"]))).Location.ShouldBe(LegacyDenied);
         (await SignInAsync(Claims("sub-nomfa", amr: ["pwd", "otp"]))).Location.ShouldBe("/gm/v1/me");
     }
 
@@ -121,7 +150,7 @@ public sealed class SsoTests : IAsyncLifetime
         await CreateStaffAsync(new { staffId = "gone", issuer = FakeOidcProvider.Issuer, subject = "sub-gone", roles = new[] { "Support" }, reason = "sso" });
         var admin = await _host.GmClientAsync("admin");
         await admin.PostCommandAsync("/gm/v1/staff/gone/disable", new { reason = "left" }).ShouldBeAsync(200);
-        (await SignInAsync(Claims("sub-gone"))).Location.ShouldBe(GmSso.DeniedRedirect);
+        (await SignInAsync(Claims("sub-gone"))).Location.ShouldBe(LegacyDenied);
     }
 
     [Fact]
@@ -130,13 +159,124 @@ public sealed class SsoTests : IAsyncLifetime
         await CreateStaffAsync(new { staffId = "redir", issuer = FakeOidcProvider.Issuer, subject = "sub-redir", roles = new[] { "Support" }, reason = "sso" });
 
         var (forged, location) = await SignInAsync(Claims("sub-redir"), tamperedState: "forged-state");
-        location.ShouldBe(GmSso.DeniedRedirect);
+        location.ShouldBe(LegacyDenied);
         await forged.GetAsync(GmModule.MeRoute).ShouldBeAsync(401);
 
-        (await SignInAsync(Claims("sub-redir"), returnUrl: "https://evil.example/steal")).Location.ShouldBe(GmSso.DefaultReturnUrl);
-        (await SignInAsync(Claims("sub-redir"), returnUrl: "//evil.example")).Location.ShouldBe(GmSso.DefaultReturnUrl);
-        (await SignInAsync(Claims("sub-redir"), returnUrl: "/gm/v1/é")).Location.ShouldBe(GmSso.DefaultReturnUrl);
+        // Without a console (slice 018 FR-025): only /gm/ paths; anything else lands on the Development page.
+        (await SignInAsync(Claims("sub-redir"), returnUrl: "https://evil.example/steal")).Location.ShouldBe(LegacyDefault);
+        (await SignInAsync(Claims("sub-redir"), returnUrl: "//evil.example")).Location.ShouldBe(LegacyDefault);
+        (await SignInAsync(Claims("sub-redir"), returnUrl: "/gm/v1/é")).Location.ShouldBe(LegacyDefault);
+        (await SignInAsync(Claims("sub-redir"), returnUrl: "/#/players/abc")).Location.ShouldBe(LegacyDefault);
+
+        // Review T024 M1: browsers resolve %2e%2e as "..", so /gm/%2e%2e/x would land on /x.
+        (await SignInAsync(Claims("sub-redir"), returnUrl: "/gm/%2e%2e/x")).Location.ShouldBe(LegacyDefault);
+        (await SignInAsync(Claims("sub-redir"), returnUrl: "/gm/.%2E/x")).Location.ShouldBe(LegacyDefault);
+        (await SignInAsync(Claims("sub-redir"), returnUrl: null)).Location.ShouldBe(LegacyDefault);
         _idp.RejectedTokenRequests.ShouldBe(0);
+    }
+
+    /// <summary>
+    /// Slice 018 US3-1 (FR-022, FR-023): with a console the sign-in returns to the console path the console asked for, and the
+    /// session cookie is set on that callback answer.
+    /// </summary>
+    [Fact]
+    public async Task With_a_console_the_sign_in_returns_to_the_console_path()
+    {
+        await using var host = await StartWithConsoleAsync();
+        await CreateStaffAsync(host, new { staffId = "console", issuer = FakeOidcProvider.Issuer, subject = "sub-console", roles = new[] { "Support" }, reason = "sso" });
+
+        var (client, callback) = await CallbackAsync(host, Claims("sub-console"), "/#/players/abc");
+        callback.Headers.Location!.ToString().ShouldBe("https://gm.example.com/#/players/abc");
+        GmTestHost.SessionCookie(callback).ShouldNotBeNull();
+        (await client.GetAsync(GmModule.MeRoute).ShouldBeAsync(200))["staffId"]!.GetValue<string>().ShouldBe("console");
+
+        (await CallbackAsync(host, Claims("sub-console"), null)).Callback.Headers.Location!.ToString().ShouldBe(ConsoleRoot);
+        _idp.RejectedTokenRequests.ShouldBe(0);
+    }
+
+    /// <summary>Slice 018 US3-2 (SC-003): no hostile return value is followed; each lands on the console root.</summary>
+    [Fact]
+    public async Task With_a_console_hostile_return_values_land_on_the_console_root()
+    {
+        await using var host = await StartWithConsoleAsync();
+        await CreateStaffAsync(host, new { staffId = "console", issuer = FakeOidcProvider.Issuer, subject = "sub-console", roles = new[] { "Support" }, reason = "sso" });
+
+        foreach (var hostile in new[]
+        {
+            "https://evil.example/steal", "//evil.example", "/\\evil.example", "/a/../b", "/é", "/" + new string('a', 512), "javascript:alert(1)",
+            "/#/x y",
+        })
+        {
+            var (_, callback) = await CallbackAsync(host, Claims("sub-console"), hostile);
+            callback.Headers.Location!.ToString().ShouldBe(ConsoleRoot, hostile);
+        }
+
+        _idp.RejectedTokenRequests.ShouldBe(0);
+    }
+
+    /// <summary>Slice 018 US3-3 (FR-024): every denial lands on the console's login route, without a reason and without a session.</summary>
+    [Fact]
+    public async Task With_a_console_every_denial_lands_on_the_console_login()
+    {
+        await using var host = await StartWithConsoleAsync();
+        await CreateStaffAsync(host, new { staffId = "nomfa", issuer = FakeOidcProvider.Issuer, subject = "sub-nomfa", roles = new[] { "Support" }, reason = "sso" });
+        await CreateStaffAsync(host, new { staffId = "gone", issuer = FakeOidcProvider.Issuer, subject = "sub-gone", roles = new[] { "Support" }, reason = "sso" });
+        var admin = await host.GmClientAsync("admin");
+        await admin.PostCommandAsync("/gm/v1/staff/gone/disable", new { reason = "left" }).ShouldBeAsync(200);
+
+        var denials = new (string Case, Dictionary<string, object> Claims, string? State)[]
+        {
+            ("no MFA", Claims("sub-nomfa", amr: ["pwd"]), null),
+            ("disabled staff", Claims("sub-gone"), null),
+            ("unknown identity", Claims("stranger", "stranger@corp.test"), null),
+            ("forged state", Claims("sub-nomfa"), "forged-state"),
+        };
+        foreach (var (name, claims, state) in denials)
+        {
+            var (client, callback) = await CallbackAsync(host, claims, "/#/players/abc", state);
+            callback.Headers.Location!.ToString().ShouldBe(ConsoleDenied, name);
+            GmTestHost.SessionCookie(callback).ShouldBeNull(name);
+            await client.GetAsync(GmModule.MeRoute).ShouldBeAsync(401);
+        }
+
+        _idp.RejectedTokenRequests.ShouldBe(0);
+    }
+
+    /// <summary>
+    /// Review T024 M1: a console under a sub-path never leaves it. Percent-encoded dots (<c>%2e%2e</c>, which browsers resolve as
+    /// <c>..</c>), other path segments and a query land on the console root; the hash route is kept under the sub-path.
+    /// </summary>
+    [Fact]
+    public async Task A_sub_path_console_is_never_left_through_the_return_url()
+    {
+        const string SubPathConsole = "https://gm.example.com/console/";
+        await using var host = await StartAsync(values =>
+        {
+            values["Gm:Cors:AllowedOrigins:0"] = ConsoleOrigin;
+            values["Gm:Console:BaseUrl"] = SubPathConsole;
+        });
+        await CreateStaffAsync(host, new { staffId = "console", issuer = FakeOidcProvider.Issuer, subject = "sub-console", roles = new[] { "Support" }, reason = "sso" });
+
+        (await CallbackAsync(host, Claims("sub-console"), "/#/players/abc")).Callback.Headers.Location!.ToString()
+            .ShouldBe("https://gm.example.com/console/#/players/abc");
+        foreach (var hostile in new[] { "/%2e%2e/other/", "/.%2e/other/", "/%2E./other/", "/other/", "/?x=1" })
+        {
+            (await CallbackAsync(host, Claims("sub-console"), hostile)).Callback.Headers.Location!.ToString().ShouldBe(SubPathConsole, hostile);
+        }
+
+        _idp.RejectedTokenRequests.ShouldBe(0);
+    }
+
+    /// <summary>FR-024: a callback the OIDC handler does not take (no state at all) is a denial too.</summary>
+    [Fact]
+    public async Task An_unhandled_callback_is_a_denial()
+    {
+        (await _host.Client().GetAsync(GmSso.CallbackRoute)).Headers.Location!.ToString().ShouldBe(LegacyDenied);
+
+        await using var host = await StartWithConsoleAsync();
+        var callback = await host.Client().GetAsync(GmSso.CallbackRoute);
+        callback.StatusCode.ShouldBe(HttpStatusCode.Redirect);
+        callback.Headers.Location!.ToString().ShouldBe(ConsoleDenied);
     }
 
     [Fact]

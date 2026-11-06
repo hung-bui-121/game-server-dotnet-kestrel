@@ -44,6 +44,16 @@ public static class GmTestHost
             clock: clock,
             services: services);
 
+    /// <summary>
+    /// A console on <paramref name="origin"/> (slice 018, FR-021): the CORS origin and the console URL of that origin are set
+    /// together, as a deployment with a console must.
+    /// </summary>
+    public static void WithConsole(Dictionary<string, string?> values, string origin)
+    {
+        values["Gm:Cors:AllowedOrigins:0"] = origin;
+        values["Gm:Console:BaseUrl"] = origin + "/";
+    }
+
     private static void Seed(
         Dictionary<string, string?> values,
         int index,
@@ -99,10 +109,21 @@ public static class GmTestHost
         return client;
     }
 
-    public static string? SessionCookie(HttpResponseMessage response) =>
+    /// <summary>The session <c>Set-Cookie</c> of a Development host (<see cref="GmCookies.DevelopmentSessionName"/>), or null.</summary>
+    public static string? SessionCookie(HttpResponseMessage response) => SetCookie(response, GmCookies.DevelopmentSessionName);
+
+    /// <summary>The <c>Set-Cookie</c> value for <paramref name="name"/>, or null.</summary>
+    public static string? SetCookie(HttpResponseMessage response, string name) =>
         response.Headers.TryGetValues("Set-Cookie", out var values)
-            ? values.FirstOrDefault(v => v.StartsWith(GmCookieAuthenticationHandler.CookieName + "=", StringComparison.Ordinal))
+            ? values.FirstOrDefault(v => v.StartsWith(name + "=", StringComparison.Ordinal))
             : null;
+
+    /// <summary>
+    /// The attributes of one <c>Set-Cookie</c> value without its name=value pair, trimmed and lower case, so a test matches an
+    /// attribute exactly (<c>path=/</c> is not <c>path=/gm</c>).
+    /// </summary>
+    public static string[] CookieAttributes(string setCookie) =>
+        setCookie.Split(';').Skip(1).Select(part => part.Trim().ToLowerInvariant()).ToArray();
 
     public static async Task<JsonNode> JsonAsync(this HttpResponseMessage response)
     {

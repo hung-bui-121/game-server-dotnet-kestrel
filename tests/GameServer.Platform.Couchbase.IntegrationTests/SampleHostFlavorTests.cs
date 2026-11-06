@@ -8,6 +8,7 @@ using GameServer.Platform.Web.Auth;
 using GameServer.Platform.Web.OpenApi;
 using GameServer.Protocol.Core.V1;
 using GameServer.Tests.Shared;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Shouldly;
 
@@ -22,6 +23,7 @@ namespace GameServer.Platform.Couchbase.IntegrationTests;
 public sealed class SampleHostFlavorTests(ProvisionedSampleScope scope)
 {
     private const string OverlayLabel = "staging-overlay";
+    private const string UatConsole = "https://gm.uat.example.com";
 
     [Fact]
     public async Task Dev_is_ready_with_development_tools_on()
@@ -38,6 +40,11 @@ public sealed class SampleHostFlavorTests(ProvisionedSampleScope scope)
         // Slice 017 (FR-030, FR-034): the console catalog needs a GM session; the sign-in methods follow the flavor.
         (await client.GetAsync(GmModule.ConsoleCatalogRoute)).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         (await client.GetStringAsync(GmModule.AuthMethodsRoute)).ShouldBe("""{"local":true,"sso":false}""");
+
+        // Slice 018 (FR-013, FR-030, SC-004): the GM page exists with development tools; Development cookie names on the site root.
+        (await client.GetAsync(GmModule.UiRoute)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        CookieAttributes(await client.GetAsync(GmModule.CsrfRoute), GmCookies.DevelopmentCsrfName).ShouldBe(["path=/", "samesite=lax", "httponly"]);
+
         client.DefaultRequestHeaders.Add(TestAuthenticationHandler.PlayerHeader, "flavor-dev");
         (await client.PostProtobufAsync("/api/v1/player/snapshot", new SnapshotRequest())).StatusCode.ShouldBe(HttpStatusCode.OK);
     }
@@ -57,6 +64,12 @@ public sealed class SampleHostFlavorTests(ProvisionedSampleScope scope)
             await File.WriteAllTextAsync(Path.Combine(overlay, "manifest.json"), $$"""{"label":"{{OverlayLabel}}","files":[],"clientVisible":[]}""");
             var settings = StagingSettings(user);
             settings["GameServer:ConfigPath"] = configRoot;
+            if (flavor == "Uat")
+            {
+                // Slice 018: a console for this environment comes from deployment settings; Beta keeps the committed file (no console).
+                settings["Gm:Cors:AllowedOrigins:0"] = UatConsole;
+                settings["Gm:Console:BaseUrl"] = UatConsole + "/";
+            }
 
             await using var factory = SampleHostFactory.Create(flavor, settings);
             var client = factory.CreateClient();
@@ -74,6 +87,24 @@ public sealed class SampleHostFlavorTests(ProvisionedSampleScope scope)
             // local login, SSO as the staging secrets configure it.
             (await client.GetAsync(GmModule.ConsoleCatalogRoute)).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
             (await client.GetStringAsync(GmModule.AuthMethodsRoute)).ShouldBe("""{"local":false,"sso":true}""");
+            // Slice 018 (FR-012, FR-030, SC-002, SC-004): no GM page; __Host- cookies over HTTPS; CORS only for the console origin.
+            (await client.GetAsync(GmModule.UiRoute)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+            var https = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost/"), HandleCookies = false });
+            CookieAttributes(await https.GetAsync(GmModule.CsrfRoute), GmCookies.HostCsrfName).ShouldBe(["path=/", "secure", "samesite=lax", "httponly"]);
+            foreach (var origin in new[] { UatConsole, "https://gm.beta.example.com", "https://evil.example.com" })
+            {
+                var preflight = await client.SendAsync(Preflight(origin));
+                if (flavor == "Uat" && origin == UatConsole)
+                {
+                    preflight.Headers.GetValues("Access-Control-Allow-Origin").ShouldHaveSingleItem().ShouldBe(UatConsole);
+                    preflight.Headers.GetValues("Access-Control-Max-Age").ShouldHaveSingleItem().ShouldBe("7200");
+                }
+                else
+                {
+                    preflight.Headers.Contains("Access-Control-Allow-Origin").ShouldBeFalse($"{flavor} from {origin}");
+                }
+            }
+
             client.DefaultRequestHeaders.Add(TestAuthenticationHandler.PlayerHeader, "flavor-staging");
             (await client.PostProtobufAsync("/api/v1/player/snapshot", new SnapshotRequest())).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         }
@@ -101,6 +132,7 @@ public sealed class SampleHostFlavorTests(ProvisionedSampleScope scope)
 
         var run = await SampleHostProcess.RunAsync("Live", settings, ["--urls", "http://127.0.0.1:0"], TimeSpan.FromMinutes(2));
 
+        // Slice 018: no console settings are needed to start (FR-021), so TLS stays the only violation.
         run.ExitCode.ShouldBe(1, run.ToString());
         var violations = Violations(run.Error);
         violations.Length.ShouldBe(1, run.Error);
@@ -135,6 +167,23 @@ public sealed class SampleHostFlavorTests(ProvisionedSampleScope scope)
         }
 
         return settings;
+    }
+
+    private static HttpRequestMessage Preflight(string origin)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Options, GmModule.LogoutRoute);
+        request.Headers.Add("Origin", origin);
+        request.Headers.Add("Access-Control-Request-Method", "POST");
+        request.Headers.Add("Access-Control-Request-Headers", "x-csrf-token,content-type");
+        return request;
+    }
+
+    /// <summary>The attributes of the <c>Set-Cookie</c> named <paramref name="name"/>, trimmed and lower case (exact matches).</summary>
+    private static string[] CookieAttributes(HttpResponseMessage response, string name)
+    {
+        response.EnsureSuccessStatusCode();
+        var cookie = response.Headers.GetValues("Set-Cookie").SingleOrDefault(v => v.StartsWith(name + "=", StringComparison.Ordinal));
+        return cookie.ShouldNotBeNull($"Set-Cookie {name}").Split(';').Skip(1).Select(part => part.Trim().ToLowerInvariant()).ToArray();
     }
 
     /// <summary>The <c> - violation</c> lines of a <see cref="GameServerStartupException"/> report.</summary>

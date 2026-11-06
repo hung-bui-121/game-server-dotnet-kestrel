@@ -172,7 +172,8 @@ host, and a console on another origin has no way back.
 **Independent Test**:
 - Fake identity provider (as in `SsoTests`), `Gm:Console:BaseUrl = https://gm.example.com/` and the matching CORS origin:
   `returnUrl=/#/players/abc` → 302 `https://gm.example.com/#/players/abc`; `https://evil.example/x`, `//evil.example`,
-  `/\evil`, `/../x`, a non-ASCII path and a 513-character path → 302 `https://gm.example.com/`; no MFA, disabled staff,
+  `/\evil`, `/../x`, `/%2e%2e/x`, `/?x=1`, `/other/`, a non-ASCII path and a 513-character path → 302
+  `https://gm.example.com/` (a sub-path `BaseUrl` is never left); no MFA, disabled staff,
   unknown identity, forged state → 302 `https://gm.example.com/#/login?error=sso_denied`.
 - Without `Gm:Console:BaseUrl` (no console in this deployment): a missing return URL → `/gm/v1/ui` where development
   tools are on, `/gm/v1/me` elsewhere; denied → the same path + `?error=sso_denied`; `/gm/v1/me` still accepted as today.
@@ -184,8 +185,9 @@ host, and a console on another origin has no way back.
 1. **Given** `Gm:Console:BaseUrl`, **When** a sign-in succeeds, **Then** the answer is 302 to `BaseUrl` + the accepted
    relative return path (without its leading `/`), or to `BaseUrl` when the return path is missing or refused.
 2. **Given** a return path, **When** it is longer than 512 characters, contains a character outside printable ASCII
-   (0x21–0x7E), does not start with `/`, or contains `//`, `\` or `..`, **Then** it is refused (no error page; the default
-   target is used).
+   (0x21–0x7E), or contains `//`, `\`, `..` or `%2e` (any case), or — with a console — is anything but `/` or
+   `/#<fragment>` (no other path, no query; review T024 M1), **Then** it is refused (no error page; the default target is
+   used).
 3. **Given** any denial (no issuer/subject, no MFA, not a staff member, disabled, failed remote authentication, rejected
    callback), **When** the callback answers, **Then** it is 302 to `BaseUrl#/login?error=sso_denied` with no reason in the
    URL (the reason stays in the security log as today).
@@ -460,9 +462,8 @@ static-host deployment (built app + reference headers + `config.json`) without h
   `SameSite` attribute of the session and CSRF cookies, independently of whether CORS origins are configured. Any other
   value fails startup.
 - **FR-011**: `Gm:Cookies:SameSite = None` MUST be refused at startup when `Gm:Cors:AllowedOrigins` is empty, and MUST
-  make both cookies `Secure` in every environment (so `None` without `Secure` cannot be produced). Outside Development
-  `None` is accepted (case B is unsupported by owner decision, the guide says so) because it is not weaker than the 007
-  behaviour it replaces.
+  make both cookies `Secure` in every environment (so `None` without `Secure` cannot be produced). Outside Development and
+  Test, `None` MUST fail startup with one line: case B is not supported (owner decision; review T024 m2, D3).
 - **FR-012** (Q20): Outside Development the cookie names MUST be `__Host-gs_gm` (session) and `__Host-gs_gm_csrf`
   (antiforgery), both `Secure`, `HttpOnly`, `Path=/`, without `Domain`; the antiforgery cookie policy stays `Always`.
 - **FR-013** **[DEFAULT]** (V5, research R1): In Development the names MUST be `gs_gm_dev` and `gs_gm_dev_csrf`, both
@@ -490,9 +491,10 @@ static-host deployment (built app + reference headers + `config.json`) without h
   deployment has no console: startup does not fail in any environment, whether SSO is configured or not, and the API works
   as before (Q16: no console domain exists yet; a game bumps without new settings).
 - **FR-022** (open redirect): With `Gm:Console:BaseUrl`, the `returnUrl` of `GET /gm/v1/auth/sso/start` MUST be accepted
-  only when it has 1..512 characters, all printable ASCII (0x21–0x7E), starts with `/`, and contains none of `//`, `\`,
-  `..`; the redirect target is `BaseUrl` + the path without its leading `/`. A missing or refused value gives `BaseUrl`. An
-  absolute URL from input is never used.
+  only when it has 1..512 characters, all printable ASCII (0x21–0x7E), contains none of `//`, `\`, `..` or `%2e` (any
+  case: browsers resolve `%2e%2e`, `.%2e`, `%2e.` as `..`), and is `/` or `/#<fragment>` — the hash route the console
+  sends; no other path segment and no query (review T024 M1). The redirect target is `BaseUrl` + the value without its
+  leading `/`. A missing or refused value gives `BaseUrl`. An absolute URL from input is never used.
 - **FR-023**: A successful callback MUST set the session cookie (FR-012/FR-013) and answer 302 to the target of FR-022.
 - **FR-024**: Every denial (no issuer/subject, no MFA, identity not a staff member of the deployment, disabled staff, remote
   failure such as a forged state, callback not handled) MUST answer 302 to `BaseUrl#/login?error=sso_denied`; no reason in
@@ -693,7 +695,7 @@ cookies, configuration, redirects and response headers.
 | --- | --- | --- | --- | --- |
 | BC-1 | Cookie names and path: `__Host-gs_gm` / `__Host-gs_gm_csrf` (`Path=/`, `Secure`) outside Development, `gs_gm_dev` / `gs_gm_dev_csrf` (`Path=/`) in Development (FR-012, FR-013) | Every signed-in staff member; tools or scripts that read or send `gs_gm` | 401 until the next sign-in (once per browser) | Sign in again; scripts use the new names (PCR gm) |
 | BC-2 | Public constants `GmCookieAuthenticationHandler.CookieName` and `GmCookies.CsrfCookieName` replaced by `GmCookies` name members (FR-017) | Game code or tests that referenced them | Compile error | Use `GmCookies.SessionName(options)` / `CsrfName(options)` or the constants of the environment |
-| BC-3 | CORS origins no longer imply `SameSite=None`; `Gm:Cookies:SameSite` decides, default `Lax` (FR-010) | A deployment that relies on a cross-site console (case B, unsupported) | Session cookie not sent cross-site | Move to case A; or set `Gm:Cookies:SameSite = None` knowing it is unsupported |
+| BC-3 | CORS origins no longer imply `SameSite=None`; `Gm:Cookies:SameSite` decides, default `Lax` (FR-010) | A deployment that relies on a cross-site console (case B, unsupported) | Session cookie not sent cross-site; `Gm:Cookies:SameSite = None` fails startup outside Development/Test (review T024 m2) | Move to case A |
 | BC-4 | A host that sets `Gm:Cors:AllowedOrigins` must also set `Gm:Console:BaseUrl` with the same origin (FR-020, FR-021) | Only hosts that already configured a CORS console origin (none known; zh-pvp sets none) | Startup fails with one line | Add the console URL of that origin; hosts without CORS/console settings need nothing |
 | BC-5 | Outside Development, at most one CORS origin (FR-003) | A host that lists several console origins | Startup failure line | Keep the environment's one console origin |
 | BC-6 | `/gm/v1/ui` only where development tools are on (FR-030) | Staff who opened it on beta/uat/live (it could not sign in there) | 404 | Use the console |
@@ -763,9 +765,9 @@ Decisions taken by default (owner may override; each is referenced where it appl
   test decides whether `ErrorResponseWriter` changes at all (017 lesson: no change without a test that fails without it).
 - **D2 — one CORS origin outside Development** (FR-003): design §6.3 "exactly one console origin per environment";
   Development may list several.
-- **D3 — `SameSite=None` stays possible outside Development** (FR-011): refused without CORS origins and always `Secure`;
-  not refused outright because it is the 007 behaviour and the owner may need it for an experiment. Alternative: refuse it
-  outside Development.
+- **D3 — `SameSite=None` only in Development/Test** (FR-011, changed by review T024 m2): refused without CORS origins,
+  always `Secure`, and refused outright outside Development/Test because case B is not supported (owner decision; default
+  taken by the orchestrator). Before the review: accepted outside Development.
 - **D4 — Development cookie names `gs_gm_dev` / `gs_gm_dev_csrf` without prefix** (FR-013): browsers accept `__Host-`
   from `http://localhost` (probe), but ASP.NET antiforgery refuses a `Secure`-only policy on plain HTTP, and plain HTTP is
   needed for run-local, `-Lan` and the in-process tests; new names avoid the `Path=/gm` leftover.
@@ -819,7 +821,7 @@ No `[NEEDS CLARIFICATION]` remains; every open point has a default. The owner sh
 
 1. **D4**: Development cookie names `gs_gm_dev` / `gs_gm_dev_csrf` (not `__Host-`), since the local loop runs on plain HTTP.
 2. **D2 / BC-5**: one CORS origin per environment outside Development.
-3. **D3**: `SameSite=None` still accepted outside Development (with CORS, always `Secure`) although case B is unsupported.
+3. **D3**: `SameSite=None` refused outside Development/Test (review T024 m2, in line with "case B not supported").
 4. **D10**: no business mutation in the console until GM-3.
 5. **D14**: end-to-end smoke now, with the host started outside the test.
 

@@ -57,9 +57,12 @@ Module cũng khai index
 
 ## Xác thực và phạm vi (semantic)
 
-- Scheme `GmCookie`: cookie `gs_gm` = session id 256-bit **đã bảo vệ** (mã hoá + MAC) bằng key ring Data Protection dùng
-  chung (PCR platform mục 14) → ticket `gm_sessions` (lưu theo hash) → `gm_staff`. Cookie `HttpOnly`, `Path=/gm`,
-  `SameSite=Lax` (`None; Secure` khi CORS bật), `Secure` ngoài Development. Cookie giả/sửa → 401. Không log id/cookie.
+- Scheme `GmCookie`: cookie phiên = session id 256-bit **đã bảo vệ** (mã hoá + MAC) bằng key ring Data Protection dùng
+  chung (PCR platform mục 14) → ticket `gm_sessions` (lưu theo hash) → `gm_staff`. Tên cookie (slice 018, `GmCookies`):
+  `__Host-gs_gm` ngoài Development, `gs_gm_dev` ở Development. Cookie `HttpOnly`, `Path=/`, `Secure` ngoài Development;
+  `SameSite` theo `Gm:Cookies:SameSite` (mặc định `Lax`, không phụ thuộc CORS). `None` chỉ được ở Development/Test, cần
+  `Gm:Cors:AllowedOrigins` và luôn `Secure`; ngoài Development/Test `None` làm startup fail (console khác site — trường hợp
+  B — không hỗ trợ). Cookie giả/sửa → 401. Không log id/cookie.
 - Phiên hết hạn tuyệt đối `Gm:SessionHours` (8 h) và idle `Gm:IdleMinutes` (60 phút; ghi `lastActiveAtUtc` lười, tối
   đa 5 phút/lần). Ticket mang `epoch` của staff lúc tạo; khoá staff hoặc "thu hồi mọi phiên" tăng `sessionEpoch` → mọi
   phiên cũ 401. Staff `invited` (chưa đăng nhập SSO lần đầu) không đăng nhập local được.
@@ -74,9 +77,10 @@ Module cũng khai index
   phiên (lấy lại sau login/logout qua `GET /gm/v1/auth/csrf`). Client header (test auth) không cần CSRF. Startup fail khi
   có endpoint Public GM unsafe thiếu CSRF. Logout chỉ POST; `GET` → 405 `METHOD_NOT_ALLOWED`.
 - **CORS (SEC-06)**: tắt mặc định (same-origin). `Gm:Cors:AllowedOrigins[]` (khớp chính xác scheme+host+port) bật CORS
-  có credentials cho `/gm/**`; `*`, path, `/` cuối, origin không tuyệt đối, `http` ngoài Development → startup fail. CORS
-  không thay CSRF: frontend ở origin cấu hình gửi mutation `cross-site` được (cookie `SameSite=None; Secure`) nhưng vẫn
-  phải có `X-CSRF-Token`; mọi origin khác bị chặn.
+  có credentials cho `/gm/**`; `*`, path, `/` cuối, cổng mặc định viết ra, user info, origin không tuyệt đối, `http` ngoài
+  Development → startup fail (slice 018: mỗi giá trị phải đúng dạng origin trình duyệt gửi). CORS không thay CSRF: frontend
+  ở origin cấu hình gửi mutation được (cookie vẫn `SameSite=Lax`, slice 018) nhưng vẫn phải có `X-CSRF-Token`; mọi origin
+  khác bị chặn.
 - Đăng nhập lại (local hoặc SSO) khi trình duyệt còn phiên → phiên cũ bị huỷ ở server. Endpoint login nhận CSRF token
   lấy khi đang đăng nhập (token gắn phiên).
 - Mọi response GM có `Cache-Control: no-store` (có thể chứa PII). Ngoại lệ duy nhất (slice 017): catalog route

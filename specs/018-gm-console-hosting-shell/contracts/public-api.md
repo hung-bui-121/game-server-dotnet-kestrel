@@ -18,7 +18,7 @@ public sealed class GmOptions
 /// <summary>Section <c>Gm:Cookies</c> (slice 018): SameSite of the session and CSRF cookies, independent of CORS.</summary>
 public sealed class GmCookieOptions
 {
-    /// <summary><c>Lax</c> (default, console on the same site) or <c>None</c> (needs CORS origins; always Secure).</summary>
+    /// <summary><c>Lax</c> (default, console on the same site) or <c>None</c> (Development/Test only, needs CORS origins; always Secure).</summary>
     public string SameSite { get; set; } = "Lax";
 }
 
@@ -92,7 +92,8 @@ public sealed class GmConsoleUrls(IOptions<GmOptions> options, GameServerOptions
     public const string DeniedQuery = "?error=sso_denied";
     public const string DeniedFragment = "#/login?error=sso_denied";
 
-    /// <summary>The relative value kept in the OIDC properties: the accepted return path, or null.</summary>
+    /// <summary>The relative value kept in the OIDC properties: the accepted return path, or null. Printable ASCII, 1..512, none of
+    /// //, \, .., %2e; with a console only "/" or "/#fragment", without one a path under /gm/ (review T024 M1).</summary>
     public string? AcceptReturnPath(string? returnUrl);
 
     /// <summary>Where a successful sign-in lands.</summary>
