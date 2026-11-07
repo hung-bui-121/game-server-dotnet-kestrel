@@ -29,6 +29,7 @@ P0 is merged into `main` and pushed (fda9f00). The real-environment test tools f
 | 015 config (FG group C) | `015-config` | DONE 71/72 (T058 Android/iOS device run = OWNER, tag waits on it). FG-018 (declared config rules + eager catalogs), FG-023 (isolated startup checks, GameConfigStatus), FG-024 (+ additive `client_config_version`), FG-019 (compression, PersistentConfigCache). Review r1 CONDITIONAL (3 Major + 11 minor + walkthrough G1–G4, decisions `specs/015-config/review-decisions.md`, fixed `8ac0023`), r2 CONDITIONAL (7 minor, fixed `1cb4a2e`) |
 | 016 login-command (FG group D) | `016-login-command` | DONE 83/84 (T069 device session = OWNER, also covers 015 T058; tag waits on it). FG-013 (`is_new_player`), FG-015 (account initializers), FG-029 (degraded reads), FG-016 (COMMAND_OUTPUT_TOO_LARGE + details), FG-022 (SDK request id + pending store). Review r1 CONDITIONAL (B1 + 3 Major + 10 minor, fixed `d5153da`), r2 CONDITIONAL (1 Major regression + 6 minor, fixed `a7b3d6b`). Round release note draft `docs/releases/v0.7.0.md` |
 | 017 gm-api-contract (GM tool GM-1) | `017-gm-api-contract` | DONE 2026-11-05: 64/64 tasks, `e182fba` feat (not merged to main, not pushed). Full suite incl. Couchbase green (2875, 0 failed; one later run hit a local Couchbase query timeout in the fixture, project rerun green). Review tech-lead r1 CONDITIONAL (1 Major + 6 minor) and r2 CONDITIONAL (1 Major + 3 minor), all fixed in `e182fba`. GM document in every env + `gm.console_catalog` (ETag/304), `gm.auth_methods`, `/me` versions, DataAnnotations enforced with `errors`, option routes, paged lists, kit `GmOpenApiSnapshot`, fixture GM dogfood. Review r1 CONDITIONAL (0 Blocker, 4 Major, 6 minor; M1–M3, m1–m3, m5, m6 fixed in T063; M4, m2, m4 = owner decisions). Release note draft `specs/017-gm-api-contract/release-notes-draft.md` |
+| 018 gm-console-hosting-shell (GM tool GM-2) | `018-gm-console-hosting-shell` | DONE 2026-11-07, branch `018-gm-console-hosting-shell`: 70/70 tasks. Phase A `63ddb8f` (cookies `__Host-gs_gm`/`__Host-gs_gm_csrf` outside Development, `gs_gm_dev`/`gs_gm_dev_csrf` in Development, `Path=/`, `Gm:Cookies:SameSite` (Lax), CORS expose + max-age 7200 + one origin, SSO to `Gm:Console:BaseUrl`, `/gm/v1/ui` Dev/Test only; review T024 r1 CONDITIONAL 1 Major + 4 minor fixed, r2 YES). Phase B: `gm-console/` npm workspace (shell `@gameserver/gm-shell`, default app, `deploy/`, e2e smoke on system Chrome/Edge), docs (PCR gm/platform §24, `docs/guides/gm-console.md`, consumer guide §15). Review T068 r1 CONDITIONAL (2 Major + 8 minor) → T069, r2 YES (5 minor + spec FR-052/FR-054 amendment, done). Suites: in memory 3026 (0 failed), File 1 known-flaky TelemetryTests (rerun green), Couchbase 32 fixture provisioning timeouts (project rerun 151, 0 failed); `npm run verify` 231 tests; e2e Chrome 157 + Edge 156 green. Release note draft `specs/018-gm-console-hosting-shell/release-notes-draft.md` |
 | giftcode | — | GFT-01..06, GM-04 API, reaper (ACC-08, 22, 23) — number after the improvement round |
 | iap-notifications | — | IAP-03 S2S: Google RTDN, Apple v2, refund/revoke; add refund analytics event on the 012 seam |
 | ops-readiness | — | Secret scan in CI, PERF-05 budgets, load test report (TST-03), Linux/container guide, runbooks, deploy/rollback, restore drill (ACC-16, 19, 48; ACC-19 blocked on TBD-09), finish deploy guide (task 5c), TLS release gate, analytics re-drive tool |
@@ -196,6 +197,39 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
   no switch to allow cheats on Staging; version only via GM `ops.read`; `DeploymentEnvironment=Test` refused unless
   EnvironmentId `test` (BC-8, review m9). 014: `ReplaceWireMapper` must keep the framework message (M1 option
   "restrict", alternative = replaced section becomes origin `game`).
+
+## Technical notes from 018
+
+- **Cookies**: outside Development `__Host-gs_gm` / `__Host-gs_gm_csrf` (`Path=/`, `Secure`, no `Domain`, antiforgery `Always`); in
+  Development `gs_gm_dev` / `gs_gm_dev_csrf`: run-local is plain HTTP and ASP.NET antiforgery with `SecurePolicy=Always` throws on
+  HTTP while a `__Host-` cookie must be `Secure` (research R1); new names, because the pre-018 `gs_gm` (`Path=/gm`) would be
+  sent first and shadow a `Path=/` cookie of the same name. `SameSite` comes from `Gm:Cookies:SameSite` (Lax; `None` only in
+  Development/Test with a CORS origin). One-time sign-out for every staff member on upgrade.
+- **H14** (CORS headers lost on error answers) **not reproduced** on ASP.NET Core 10.0.14: `CorsMiddleware` applies the headers in
+  `OnStarting`, which `Response.Clear()` keeps; `GmCorsErrorHeadersTests` (12 statuses × 2 origins) is the permanent guard;
+  `ErrorResponseWriter` unchanged.
+- **e2e harness** `gm-console/e2e/` (`npm run e2e`, run-local started first, never `-Reset`): Vitest node + `playwright-core`
+  with the **system** browser, never a download — Chrome `C:/Program Files (x86)/Google/Chrome/Application/chrome.exe` (default),
+  Edge `C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe` via `GM_E2E_BROWSER`; targets `dev` and `preview` (built app +
+  `deploy/security-headers.json`) on 5173 strict; request headers, preflights and raw 304s read through CDP; reports in
+  `e2e/.artifacts/` (ignored). `GM_E2E_API`: the preview target serves a generated `e2e/.artifacts/config.json` for it; any API other
+  than `http://localhost:5080` skips the dev target (it serves `app/public/config.json`); run-local prints the console banner line only
+  on port 5080. Port 5180 is never used.
+- **Toolchain pins** (rule: newest stable ≥ 14 days old that runs on Node 22.20, exact versions, `engine-strict`, lockfile v3):
+  React 19.3.1, Mantine 9.7.3, TanStack Query 5.104.5, React Router 7.18.4 (8 needs Node ≥ 22.22), openapi-fetch 0.17.0,
+  openapi-typescript 7.13.0, TypeScript 5.9.3 (6/7 outside typescript-eslint and openapi-typescript peers), Vite 8.3.5, Vitest 5.0.5,
+  jsdom 29.1.1, ESLint 10.13.0 + typescript-eslint 8.72.0, playwright-core 1.64.1. npm 10.9.3 needs root
+  `"overrides": { "vitest": "5.0.5" }` (Arborist `edgesOut` crash through vite's optional `@vitejs/devtools` peers). `gm-console/.npmrc`
+  blocks the scope: `@gameserver:registry=https://registry.invalid/` (dependency confusion; workspaces still link locally; a game root
+  needs the same line). `GmConsoleWorkspaceTests` pins exact versions, the shell link in the lockfile and the framework version.
+- **Mutation boundary (D10)** in three layers: lint (`gm-console/eslint.rules.js`: any use/destructuring of `POST/PUT/DELETE/PATCH/
+  request`, non-literal computed calls, raw `fetch` outside client/config/session; `session/` only `.POST` with the literal
+  login/logout path; fixtures in `eslint.rules.test.ts`), the source scan `mutationBoundary.test.ts`, and the client's run-time guard
+  `MUTATION_NOT_ALLOWED` (GM-3 replaces it with the catalog check). Session token after a sign-in is fetched lazily (spec FR-052/054
+  amended).
+- **CSP**: static host keeps `style-src 'self'` (V3): Mantine runs with `withCssVariables={false}`, `withGlobalClasses={false}`, no
+  responsive style props (`SimpleGrid` injected a `<style>`), in-memory colour-scheme manager (default one uses `localStorage`).
+- **Build**: `base: './'`, `copyPublicDir: false` (no `config.json` in `dist/`), `check:dist` 500 KB gzip budget (185.4 KB).
 
 ## Technical notes from 017
 
@@ -405,7 +439,8 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
   sample") and process (Spec Kit slice 017 vs light refactor). Ask the owner both before starting.
 - ACC-03/ACC-29 with real Play Games / Game Center devices: manual before release.
 - Couchbase outage drill `tools/local/couchbase-outage.ps1` needs admin; owner has not run it yet.
-- TBD-21 (GM console) decided 2026-11-05: owner builds it as GM-1..GM-4; GM-1 = slice 017 `gm-api-contract` (in progress).
+- TBD-21 (GM console) decided 2026-11-05: owner builds it as GM-1..GM-4; GM-1 = slice 017 `gm-api-contract` (DONE),
+  GM-2 = slice 018 `gm-console-hosting-shell` (DONE 2026-11-07); next GM-3 `gm-generic-forms`.
 - Possible flaky `TelemetryTests.A_command_is_one_trace...` under full-suite load.
 - Game Center pins: gc-prod-12 expires 2027-05-27; Apple chain change → `PROVIDER_UNAVAILABLE` + LogError, update pins.
 - 010 open (PCR platform §16): the `deletion` view field schema (generator limitation; the `deletion/cancel` body/response

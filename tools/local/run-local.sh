@@ -244,6 +244,8 @@ print_urls() {
         echo "  Player API   ${base_url}          (routes /api/v1/..., /v1/time)"
         echo "  Health       ${base_url}health/ready"
         echo "  GM UI        ${base_url}gm/v1/ui  (staff admin / dev-only-change-me)"
+        # The console's app/public/config.json calls http://localhost:5080: only that port gets the console line.
+        [ "$port" = "5080" ] && echo "  GM console   http://localhost:5173  (cd gm-console; npm ci; npm run dev)"
         echo "  GM OpenAPI   ${base_url}gm/v1/openapi/gm.json"
     else
         echo "  Project      $project (profile $launch_profile)"

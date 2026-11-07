@@ -1,0 +1,24 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "node"
+    ],
+    "allowImportingTsExtensions": true,
+    "allowJs": true
+  },
+  "include": [
+    "vitest.config.ts",
+    "app/vite.config.ts",
+    "app/vite-plugins",
+    "deploy",
+    "e2e",
+    "eslint.rules.test.ts",
+    "eslint.rules.js"
+  ]
+}

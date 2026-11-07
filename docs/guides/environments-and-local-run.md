@@ -1,6 +1,6 @@
 # Môi trường (flavor) và chạy local
 
-> Đúng với framework v0.7.0 (phát hành 2026-11-04).
+> Đúng với framework v0.7.0 (phát hành 2026-11-04) + slice 018 (GM console, chưa phát hành).
 
 Một bản build chạy ở mọi môi trường; môi trường được chọn bằng **flavor** = tên môi trường của host. Hướng dẫn này gồm:
 chọn flavor, biến môi trường bắt buộc, chạy local một lệnh, file store, cấu hình Couchbase, TLS, quyền RBAC và lệnh
@@ -121,13 +121,14 @@ Không tham số, script chạy host mẫu `samples/SampleHost` với launch pro
 `tools/GameServer.LocalRun describe` đọc (launch profile, flavor, cổng, thư mục data/log, `global.json`; chỉ đọc, không ghi
 file nào của host); script in dòng `run-local: host project … (profile …, flavor …)`, build host (Debug), chạy
 `dotnet run --no-build --project <file project> --launch-profile <profile> -- --urls …` từ thư mục project (thư mục có thể chứa file project khác), chờ `GET /health/ready` = 200 (tối đa
-60 s), in khối URL rồi tiếp tục hiện log của host. Host mẫu giữ nguyên khối URL của slice 011:
+60 s), in khối URL rồi tiếp tục hiện log của host. Host mẫu giữ khối URL của slice 011, thêm dòng `GM console` (slice 018):
 
 ```text
 Local game server is ready (flavor Local, data ../_database/dbbase)
   Player API   http://localhost:5080/          (routes /api/v1/..., /v1/time)
   Health       http://localhost:5080/health/ready
   GM UI        http://localhost:5080/gm/v1/ui  (staff admin / dev-only-change-me)
+  GM console   http://localhost:5173  (cd gm-console; npm ci; npm run dev)
   GM OpenAPI   http://localhost:5080/gm/v1/openapi/gm.json
 Press Ctrl+C to stop.
 ```
@@ -140,6 +141,12 @@ Press Ctrl+C to stop.
 | `-Port <n>` / `--port <n>` | cổng của URL `http://` đầu tiên trong profile; không có → 5080 kèm dòng `Note` | host nhận `--urls http://localhost:<n>` |
 | `-Reset` / `--reset` | tắt | host nhận `--FileStore:ResetOnStart=true`: **host** xoá nội dung thư mục store sau khi đã khoá nó (mục 4.3) |
 | `-Lan` / `--lan` | tắt | nghe mọi interface (`http://0.0.0.0:<n>`) để điện thoại cùng mạng kết nối; in cảnh báo đỏ và các địa chỉ IPv4 LAN |
+
+Dòng `GM console` là console web của slice 018 (GM-2): trong thư mục `gm-console/` chạy `npm ci` rồi `npm run dev` (Node
+22.20), mở `http://localhost:5173` (dùng `localhost`, không dùng `127.0.0.1`), đăng nhập `admin` / `dev-only-change-me`.
+Flavor `Local` và `Dev` của host mẫu đã đặt `Gm:Cors:AllowedOrigins = ["http://localhost:5173"]` và
+`Gm:Console:BaseUrl = "http://localhost:5173/"`. Trang `/gm/v1/ui` vẫn còn ở Development/Test (404 ở beta, uat, live).
+Vòng lặp đầy đủ, cấu hình theo môi trường và deploy host tĩnh: `docs/guides/gm-console.md`.
 
 | Exit code | Ý nghĩa (thông báo nêu nguyên nhân và cách sửa) |
 | --- | --- |
@@ -211,7 +218,7 @@ cho kiểm tra riêng (ví dụ 8 = submodule chưa init) rồi gọi script c�
 
 | Profile | Flavor | URL | Ghi chú |
 | --- | --- | --- | --- |
-| `local` (mặc định, profile đầu tiên) | `Local` | `http://localhost:5080` | IDE mở `/gm/v1/ui`; cùng thư mục dữ liệu với script |
+| `local` (mặc định, profile đầu tiên) | `Local` | `http://localhost:5080` | IDE vẫn mở `/gm/v1/ui` (trang GM tĩnh, chỉ có ở Development/Test); cùng thư mục dữ liệu với script |
 | `dev-couchbase` | `Dev` | `http://localhost:5080` | Couchbase local, bucket `gameserver-dev`; mật khẩu từ biến môi trường user `Couchbase__Password` (profile không chứa mật khẩu) |
 
 ```powershell

@@ -10,7 +10,8 @@ readiness, 2026-11-03 — mục 19; slice 014 wire contract, 2026-11-03 — mụ
 2026-11-04 — mục 21, nén `GetConfig` ở mục 1 và 9, metric/readiness ở mục 13, `IStartupCheck` ở mục 17; slice 016 login và
 độ bền command, 2026-11-04 — mục 22, transaction tạo tài khoản ở mục 2, giới hạn ở mục 3 và 5, đọc suy giảm ở mục 4 và 6, ba mã ở
 mục 8, kit ở mục 19). Đúng với framework v0.7.0 (phát hành / released 2026-11-04) + nhánh `017-gm-api-contract` (chưa phát
-hành): slice 017 hợp đồng GM API — mục 23, OpenAPI GM ở mục 14.
+hành): slice 017 hợp đồng GM API — mục 23, OpenAPI GM ở mục 14; + nhánh `018-gm-console-hosting-shell` (chưa phát hành):
+slice 018 GM console (hosting và shell) — mục 24, CORS ở mục 14, `/gm/v1/ui` ở mục 9.
 
 ## 1. Limits và timeout theo nhóm endpoint (vận hành — API-06, PERF-04)
 
@@ -211,7 +212,7 @@ startup chặn ngoài Development/Test.
 | `GET /v1/time` | server time (TIME-01) |
 | `POST /api/v1/identity/login/guest` | guest login (khai báo bởi module identity qua `ModuleDescriptor.PublicEndpoints`) |
 | `POST /gm/v1/auth/login` | GM local login, chỉ map ở Development/Test (module gm) |
-| `GET /gm/v1/ui` | trang GM tĩnh (module gm) |
+| `GET /gm/v1/ui` | trang GM tĩnh (module gm), chỉ map ở Development/Test (condition `development_tools`, slice 018); nơi khác 404 |
 
 `GetConfig` (`POST /api/v1/config/get`) là endpoint **Player** (SEC-09, CFG-03): trả các file `clientVisible` (bytes sau
 overlay), `not_modified` khi `config_version` của request bằng **một trong hai** version hiện tại (client hoặc server, so
@@ -493,8 +494,16 @@ correlation/nonce của OIDC.
 `Sec-Fetch-Site` ≠ `cross-site` + `Origin` cùng origin/allowlist; lỗi 403 `CSRF_FAILED`. Endpoint Public `/gm/**` unsafe
 thiếu `RequireCsrf()` → startup fail. Đường dẫn có nhưng sai method → 405 `METHOD_NOT_ALLOWED` (ErrorEnvelope/Problem Details).
 
-**CORS (SEC-06):** middleware CORS chỉ trên `/gm/**`, policy `gs-gm` do module gm đăng ký khi có allowlist; không có
-policy → không header CORS.
+**CORS (SEC-06):** middleware CORS chỉ trên `/gm/**` (`UseWhen("/gm", UseCors)` sau routing, trước gate, profile
+enforcement, timeout và rate limiter), policy `gs-gm` do module gm đăng ký khi có allowlist; không có policy → không header
+CORS. Slice 018 (`GmCors`): policy expose `X-Request-Id`, `Retry-After`, `ETag` (`Access-Control-Expose-Headers`) và cache
+preflight `Access-Control-Max-Age: 7200`; methods `GET,POST,PUT,DELETE`, headers `Content-Type,X-CSRF-Token,X-Request-Id`
+không đổi; ngoài Development tối đa một origin. Header CORS có trên **mọi** câu trả lời `/gm/**`, kể cả lỗi do
+`ErrorResponseWriter` ghi (`Response.Clear()` không xoá callback): middleware CORS áp kết quả qua `Response.OnStarting`. Test
+`GmCorsErrorHeadersTests` (200, 304, 400, 401, 403, 403 `CSRF_FAILED`, 404 endpoint và routing, 405, 415, 429 limiter, 500
+exception, 503 timeout; origin cấu hình có header, origin khác không) xanh trên code cũ → kết quả T007: **không đổi**
+`ErrorResponseWriter` hay thứ tự pipeline (claim H14 của thiết kế không tái hiện trên ASP.NET Core 10.0.14). Chi tiết cookie
+và origin: PCR gm.
 
 **`IAuditedStore` (SEC-14):** transaction cho document không phải dữ liệu player (staff, cấu hình vận hành): từ chối
 `pa_*`/`receipts`; transaction có ghi phải insert đúng 1 `gm_audit`, audit không sửa được. `gm_staff`,
@@ -1777,3 +1786,158 @@ message. Chỉ dùng API public (`GmCatalogDocument`): allow-list nội bộ c�
 | BC-9 | Mọi value type không nullable của body GM, không có giá trị mặc định, là bắt buộc: vắng → 400 `BAD_REQUEST` có `errors` (trước: đọc thành mặc định `0`/`false`); document liệt kê trong `required` | body GM của game có member value type (`int`, `long`, `bool`, enum) mà client có thể bỏ | 400 có `errors` nơi trước chạy | khai nullable (`int?`) hoặc cho tham số constructor giá trị mặc định (`int Weight = 3`) để giữ tuỳ chọn |
 
 Bước chuyển đầy đủ: bản nháp release notes `specs/017-gm-api-contract/release-notes-draft.md`.
+
+## 24. GM console: hosting và shell (slice 018 — GM-2; FR-040..FR-099, SEC-04/05/06/11/12, CI-01, PCR-01)
+
+Bối cảnh: GM-2 của track GM tool. Phía server (cookie `__Host-`, CORS, SSO quay về console, `/gm/v1/ui` chỉ Dev/Test): PCR
+gm (mục "Xác thực và phạm vi", "Cấu hình", "Console hosting") và mục 14. Mục này là phía console: npm workspace
+`gm-console/` ở gốc repository (`framework/gm-console/` nhìn từ submodule của game), ngoài solution .NET.
+
+### Workspace (semantic với game — GM-4)
+
+| Thành phần | Hợp đồng |
+| --- | --- |
+| `gm-console/package.json` | `@gameserver/gm-console-workspace`, private, workspaces `packages/*` và `app`, `engines.node >=22.20.0`, script bên dưới; `package-lock.json` lockfileVersion 3 được commit |
+| `.npmrc` / `.nvmrc` | `engine-strict=true`, `save-exact=true`, `@gameserver:registry=https://registry.invalid/` (scope `@gameserver` không bao giờ lấy từ registry: chống dependency confusion, review T068 M2) / `22.20.0` |
+| `packages/shell` | `@gameserver/gm-shell`, private, **source TypeScript** qua `exports` (`.` → `./src/index.ts`, `./package.json`), không bước build, không `dist/`; thư viện runtime (React, React DOM, Mantine core/hooks, TanStack Query, React Router, openapi-fetch) là `peerDependencies` version chính xác; không import từ `app/` hay ra ngoài package |
+| `app` | `@gameserver/gm-console-default`: Vite app, `src/main.tsx` = `createGmConsole()`, không gì riêng của game; `dependencies` = peer của shell + shell |
+| `deploy/`, `e2e/`, `scripts/` | header static host, smoke trình duyệt, `gen-api.mjs` / `check-dist.mjs` |
+
+- `version` của root, shell và app = `GameServerFrameworkVersion` (0.7.0), test
+  `VersionTests.The_gm_console_packages_carry_the_declared_version`; bump cùng `Directory.Build.props` và package Unity.
+  Version của shell là framework version "built for" của console.
+- Mọi giá trị trong `dependencies`, `devDependencies`, `peerDependencies`, `overrides` là version chính xác `MAJOR.MINOR.PATCH`
+  (không prerelease, không `*`; `GmConsoleWorkspaceTests`); dependency `@gameserver/gm-shell` của app = framework version, lockfile
+  link `node_modules/@gameserver/gm-shell` → `packages/shell` (`link: true`), version root/`app`/`packages/shell` trong lockfile =
+  framework version, và dòng registry của `.npmrc` (`GmConsoleWorkspaceTests.WorkspaceLinkFailures`); bump: mọi `version`, dependency
+  shell của app, rồi `npm install` trong `gm-console`; không file `node_modules/` hay `dist/` nào được track; không `.csproj`/`.props`/`.targets` nào gọi
+  `npm`/`npx`/`node` — `dotnet build` và `dotnet test` không cần Node (FR-046); shell chỉ import source của chính nó.
+- Quy tắc version (FR-043): bản stable mới nhất đã phát hành ≥ 14 ngày, chạy được trên Node 22.20 (`engine-strict`), thoả peer
+  của các bản khác. Bảng chọn ngày 2026-11-06 (tasks T025): React/React DOM 19.3.1, `@mantine/core`/`hooks` 9.7.3,
+  `@tanstack/react-query` 5.104.5, `react-router` 7.18.4, `openapi-fetch` 0.17.0, `openapi-typescript` 7.13.0, TypeScript 5.9.3,
+  Vite 8.3.5, `@vitejs/plugin-react` 6.1.2, Vitest 5.0.5, jsdom 29.1.1, Testing Library (react 16.3.3, dom 10.4.2, user-event
+  14.6.8, jest-dom 7.0.1), ESLint 10.13.0 + `@eslint/js` 10.0.1 + `typescript-eslint` 8.72.0 + `eslint-plugin-react-hooks` 7.1.1,
+  `globals` 17.13.0, `playwright-core` 1.64.1, `postcss` 8.5.31 + `postcss-preset-mantine` 1.18.0, `@types/react(-dom)` 19.3.0,
+  `@types/node` 22.20.5. Không mới hơn vì: TypeScript 6/7 ngoài peer của `typescript-eslint` (`<6.1.0`) và
+  `openapi-typescript` (`^5.x`); React Router 8 và jsdom 30 cần Node ≥ 22.22.
+- npm 10.9.3: root có `"overrides": { "vitest": "5.0.5" }` — thiếu nó `npm install` lỗi `Cannot read properties of null
+  (reading 'edgesOut')` (lỗi peer-set của Arborist qua chuỗi peer tuỳ chọn của vite `@vitejs/devtools` → `vitest@*`). Root
+  workspace của game có Vitest cạnh Vite 8 cần cùng override.
+- Game (GM-4, đã thử ở V9): root `package.json` của game với workspaces `["gm-console", "framework/gm-console/packages/shell"]`;
+  peer của shell được cài tự động và hoist một bản; tiêu thụ **cả** thư mục `framework/gm-console` (tsconfig của shell extends
+  `../../tsconfig.base.json`); app của game tự `define` `__GM_BUILT_FOR__`; root của game cần `.npmrc` riêng với
+  `@gameserver:registry=https://registry.invalid/` (npm chỉ đọc `.npmrc` của root workspace đang chạy).
+
+### Script (semantic với CI — CI-01)
+
+| Script | Làm gì |
+| --- | --- |
+| `gen:api` | `node scripts/gen-api.mjs`: CLI `openapi-typescript` trên `../docs/api/gm-openapi.json` → `packages/shell/src/generated/gm-api.d.ts` (LF, không timestamp; output xác định — V12) |
+| `check:api` | sinh lại và so với file trên đĩa (khác → ghi lại, exit 1 nêu tên file), rồi `git diff --exit-code` trên file đó |
+| `lint` | `eslint --max-warnings 0 .` |
+| `typecheck` | `tsc` cho shell (`tsconfig.json`, `tsconfig.test.json`), app, công cụ (`tsconfig.tools.json`) |
+| `test` | Vitest: shell (jsdom), `tooling` (node: luật lint trên fixture, `eslint.rules.test.ts`) và `deploy` (node) |
+| `build` | `vite build` của `app` |
+| `check:dist` | `node scripts/check-dist.mjs app/dist` |
+| `verify` | `check:api`, `lint`, `typecheck`, `test`, `build`, `check:dist` theo thứ tự |
+| `dev` / `preview` | Vite dev / preview trên `localhost:5173` (strict port) |
+| `e2e` | smoke trình duyệt (`e2e/vitest.e2e.config.ts`), cần host run-local đang chạy |
+
+Lint (FR-048; luật dùng chung trong `gm-console/eslint.rules.js`, có test fixture) báo lỗi ở mọi file: `dangerouslySetInnerHTML`,
+`srcDoc`/`srcdoc`, `innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`/`writeln`, `document.cookie`, `eval`, implied eval,
+`new Function`, `localStorage`, `sessionStorage`, `indexedDB` (cả qua `window`/`globalThis`/`self` và truy cập computed như
+`w['indexedDB']`); luật React hooks, `typescript-eslint` recommended-type-checked. **Ranh giới GM-2 (D10)** trong source shell
+(không tính test): mọi dùng member `POST`/`PUT`/`DELETE`/`PATCH`/`request` (gọi, `.call`, gán), destructure chúng
+(`const { POST } = api`), gọi qua member computed không literal (`api[m](…)`), `method: 'post'` hoặc template, và `fetch` thô
+(`fetch`, `window/globalThis/self.fetch`) ngoài `api/client.ts`, `config/loadConfig.ts`, `session/SessionProvider.tsx`; trong
+`session/` chỉ `.POST('/gm/v1/auth/login' | '/gm/v1/auth/logout', …)` với path literal. Chuỗi CI của game: snapshot GM document (`GmOpenApiSnapshot.DiffAsync`, mục 23) → `npm ci` →
+`npm run verify`.
+
+### Shell (semantic với console)
+
+- API công khai GM-2: `createGmConsole(options?: { root?: HTMLElement })` và type `GmConsoleConfig`, `GmBuiltFor`, `GmMe`,
+  `GmProblem`. Registry trang (`GmConsoleRegistry`, `GmPageDef`, `GmPlayerTabDef`, hình dạng design §7.3) là **nội bộ** (D9),
+  GM-4 export thêm.
+- `config.json` đọc tương đối theo document (`cache: 'no-store'`): `apiBaseUrl` URL `http(s)` tuyệt đối (pattern
+  `^https?://[^/?#@\s]+(/[^?#\s]*)?$`, không query/fragment/user info, `/` cuối bỏ qua), `gameId`/`environmentId` 1..64 ký tự,
+  member lạ bỏ qua; sai → màn hình lỗi nêu field, không gọi API. Build stamp `__GM_BUILT_FOR__` = version của shell
+  (+ `GM_CONSOLE_GAME_VERSION`).
+- Client `openapi-fetch` typed theo `gm-api.d.ts`, `credentials: 'include'`: GET không thêm header; method khác thêm
+  `X-CSRF-Token` (và `Content-Type` khi có body); `403 CSRF_FAILED` → làm mới token và thử lại **một** lần; 401 → login (giữ
+  trang trong bộ nhớ, không vào URL); 403 khác → `/me` một lần mỗi điều hướng; không có câu trả lời → "No answer from the GM API
+  at <origin>" (cả khi lần thử lại CSRF không có câu trả lời). Path parameter mã hoá thành đúng một segment; `''`, `.`, `..` bị từ
+  chối trước khi gửi. **Guard lúc chạy**: request không phải GET/HEAD tới path (tính từ path của `apiBaseUrl`) khác
+  `/gm/v1/auth/login`, `/gm/v1/auth/logout` bị từ chối trước khi gửi với `MUTATION_NOT_ALLOWED` (GM-3 thay bằng kiểm theo catalog).
+  Token CSRF: lấy ẩn danh trước login; sau login token bị bỏ và token gắn phiên được lấy lười trước mutation kế tiếp; các lần
+  refresh đồng thời dùng chung một request; đăng xuất bỏ token và lấy một token ẩn danh mới.
+- Trạng thái chỉ trong bộ nhớ (không storage; Mantine dùng color-scheme manager trong bộ nhớ). Mutation duy nhất: đăng nhập,
+  đăng xuất (+ lấy CSRF token) (D10), kiểm ba lớp: luật lint ở trên, test quét source (`mutationBoundary.test.ts`), guard
+  `MUTATION_NOT_ALLOWED` của client lúc chạy.
+
+### Static host (semantic với vận hành — SEC-11)
+
+- Nguồn duy nhất: `gm-console/deploy/security-headers.json`; `nginx.conf.example` và `headers.md` (bảng CDN) bằng nó
+  (`deploy.test.ts`); `config.example.json` + `config.schema.json` (JSON Schema 2020-12, cùng luật với shell).
+
+| Lớp đường dẫn | Header |
+| --- | --- |
+| mọi câu trả lời | `Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self' {{apiOrigin}}; img-src 'self' data:; font-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`, `Strict-Transport-Security: max-age=31536000`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cross-Origin-Opener-Policy: same-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=()` |
+| `/`, `/index.html`, `/config.json` | `Cache-Control: no-cache` |
+| `/assets/*` | `Cache-Control: public, max-age=31536000, immutable` |
+
+- Các lớp đường dẫn **tính từ base path của console**, không phải gốc domain. Console dưới sub-path (`Gm:Console:BaseUrl`
+  `https://gm.beta.example.com/console/`): thêm tiền tố cho mọi lớp (`/console/`, `/console/index.html`, `/console/config.json`,
+  `/console/assets/*`), nginx dùng `location = /console/`, `location = /console/index.html`, `location = /console/config.json`,
+  `location /console/assets/` và `location /console/` thay `location /`, giá trị header không đổi (`deploy/headers.md`).
+  Origin của console **chỉ phục vụ console**: sub-path chỉ dành cho một host riêng của console, không bao giờ là origin dùng chung của CDN/app khác (mọi trang khác trên cùng origin đọc được token CSRF bằng `credentials` và gửi được mutation GM).
+- `{{apiOrigin}}` = origin của `apiBaseUrl` trong `config.json` của môi trường (CSP theo môi trường). Header phải là response
+  header HTTP (`<meta>` không mang được `frame-ancestors`); custom domain + TLS dưới domain công ty; hash routing → không cần
+  rewrite SPA.
+- **Quyết định V3: giữ `style-src 'self'`** (không `'unsafe-inline'`). Lần đo đầu có 2 vi phạm `style-src-elem` (thẻ
+  `<style>` CSS variables của `MantineProvider`, `<style>` responsive của `SimpleGrid`); shell bỏ chúng
+  (`withCssVariables={false}` — biến của theme mặc định nằm trong `styles.css` tĩnh —, `withGlobalClasses={false}`, không style
+  prop responsive) → 0 vi phạm. Theme riêng của game phải ship biến dưới dạng CSS tĩnh.
+- Build không phụ thuộc môi trường (FR-084): URL asset tương đối (`base: './'`, console dưới sub-path được), `dist/` không có
+  `config.json` (`build.copyPublicDir: false`; `app/public/config.json` chỉ cho dev loop). `npm run preview` phục vụ `dist/` với
+  đúng header trên mỗi lớp đường dẫn và `config.json` từ `GM_CONSOLE_CONFIG` (mặc định `app/public/config.json`), `apiOrigin` =
+  `GM_E2E_API` hoặc origin của `apiBaseUrl` (V11).
+- `check:dist` (FR-083, SC-007) fail khi: `index.html` có `<script>` inline; `src`/`href` không phải đường dẫn tương đối hoặc
+  gốc; file nào chứa `localhost:5080`; có `config.json` trong `dist/`; JS+CSS mà `index.html` tải > 500 KB gzip. Hiện tại
+  185.2 KB gzip (JS 154.8 + CSS 36.2).
+
+### End-to-end smoke (vận hành — FR-087)
+
+`npm run e2e` trong `gm-console/` khi host run-local (flavor Local, `http://localhost:5080`) đang chạy: Vitest (node) +
+`playwright-core` với trình duyệt **hệ thống** (`GM_E2E_BROWSER`, mặc định
+`C:/Program Files (x86)/Google/Chrome/Application/chrome.exe`; Edge `C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe`),
+không bao giờ tải trình duyệt. Hai target trên `http://localhost:5173`: `dev` (Vite dev) và `preview` (bản build dưới header
+tham chiếu). Biến: `GM_E2E_API` (`http://localhost:5080`), `GM_E2E_TARGET` (`dev,preview`), `GM_E2E_STAFF`/`GM_E2E_PASSWORD`
+(`admin`/`dev-only-change-me`). Cổng 5180 không bao giờ dùng. Host không trả lời → fail với gợi ý chạy
+`tools/local/run-local.ps1`.
+
+Kết quả 2026-11-07 (Chrome 157.0.8103.38 và Edge 156.0.4314.58, cả hai target xanh): POST login có
+`Origin: http://localhost:5173`, `Sec-Fetch-Site: same-site`, `X-CSRF-Token`; cookie `gs_gm_dev`/`gs_gm_dev_csrf` HttpOnly,
+`Lax`, `Path=/`; một request catalog; chỉ POST login và logout được preflight; `X-Request-Id` đọc được trên 404; đăng xuất rồi
+`/me` 401; màn hình chặn Q19 với `config.json` `beta`; 0 vi phạm CSP (preview); storage trình duyệt rỗng; trang đầu khoảng
+0,1 s sau câu trả lời login; tải lại → catalog revalidate `If-None-Match` → 304 (V13). Báo cáo JSON ở `e2e/.artifacts/`
+(không commit).
+
+### Breaking (slice 018 — so với `v0.7.0` + 017)
+
+Không đổi route, permission, body request/response, document lưu trữ, proto, Couchbase hay Unity; `docs/api/gm-openapi.json`
+không đổi. Thay đổi nằm ở cookie, cấu hình, redirect và response header.
+
+| # | Thay đổi | Ai bị ảnh hưởng | Lộ ra thế nào | Cách chuyển |
+| --- | --- | --- | --- | --- |
+| BC-1 | Tên và path cookie: `__Host-gs_gm` / `__Host-gs_gm_csrf` (`Path=/`, `Secure`) ngoài Development, `gs_gm_dev` / `gs_gm_dev_csrf` (`Path=/`) ở Development | mọi staff đang đăng nhập; tool/script đọc hoặc gửi `gs_gm` | 401 tới lần đăng nhập sau (một lần mỗi trình duyệt) | đăng nhập lại; script dùng tên mới (PCR gm) |
+| BC-2 | Hằng số public `GmCookieAuthenticationHandler.CookieName` và `GmCookies.CsrfCookieName` thay bằng member tên của `GmCookies` | code/test của game tham chiếu chúng | lỗi compile | `GmCookies.SessionName(options)` / `CsrfName(options)` hoặc hằng số của môi trường |
+| BC-3 | Origin CORS không còn kéo theo `SameSite=None`; `Gm:Cookies:SameSite` quyết định, mặc định `Lax` | deployment dựa vào console khác site (trường hợp B, không hỗ trợ) | cookie phiên không gửi cross-site; `Gm:Cookies:SameSite = None` fail startup ngoài Development/Test | chuyển sang trường hợp A |
+| BC-4 | Host đặt `Gm:Cors:AllowedOrigins` phải đặt `Gm:Console:BaseUrl` cùng origin | chỉ host đã cấu hình origin console CORS (chưa thấy; zh-pvp không đặt) | startup fail một dòng | thêm URL console của origin đó; host không có cấu hình CORS/console không cần gì |
+| BC-5 | Ngoài Development tối đa một origin CORS | host liệt kê nhiều origin console | dòng startup fail | giữ một origin console của môi trường |
+| BC-6 | `/gm/v1/ui` chỉ khi có development tools | staff mở nó ở beta/uat/live (ở đó không đăng nhập được) | 404 | dùng console |
+| BC-7 | Đích SSO: có `BaseUrl` → `returnUrl` là đường dẫn console, thành công/từ chối về console; không có → mặc định `/gm/v1/ui` (có development tools) hoặc `/gm/v1/me`, từ chối + `?error=sso_denied`, thay cho `/gm/` 404 | bookmark/tool bắt đầu SSO với `returnUrl=/gm/...` trên host có `BaseUrl`; staff sau SSO trên host không console | redirect về console, hoặc `/gm/v1/me` thay vì 404 | bắt đầu SSO từ console khi có |
+| BC-8 | Route catalog: `gm.ui` có condition `development_tools` | test của game ghim route theo flavor | danh sách ghim khác ở flavor Staging/Production | bỏ `gm.ui` khỏi danh sách không phải development |
+| BC-9 | Câu trả lời CORS thêm `Access-Control-Expose-Headers`; cache preflight 600 s → 7200 s | chưa thấy (chỉ thêm) | header mới | — |
+
+Bước chuyển đầy đủ (zh-pvp: không cần setting mới để bump; staff đăng nhập lại một lần): bản nháp release notes
+`specs/018-gm-console-hosting-shell/release-notes-draft.md`.

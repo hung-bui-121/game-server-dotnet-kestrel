@@ -35,7 +35,8 @@ GET  {api}/gm/v1/auth/csrf                → { token } + CSRF cookie   (before 
 GET  {api}/gm/v1/auth/csrf                → token T1 (anonymous)
 POST {api}/gm/v1/auth/login  X-CSRF-Token: T1, JSON {staffId, password}   (preflight once per 7200 s)
      → 200 GmMe + Set-Cookie session
-GET  {api}/gm/v1/auth/csrf                → token T2 (bound to the new session)
+GET  {api}/gm/v1/auth/csrf                → token T2 (bound to the new session), fetched lazily before the next mutation
+                                            (T069 / review m3: not right after the login)
 ```
 
 **SSO**

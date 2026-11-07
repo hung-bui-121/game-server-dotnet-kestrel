@@ -3,9 +3,13 @@
 Module framework `gm` (slice 004 + 007, version 0.8.0 sau slice 010). Nguồn: GM-01/02/03/06, SEC-02/03/04/05/06/07/08/10/14/15,
 OPS-04, ACC-09/10/11/24/27/45/49. Ban (GM-07), maintenance toggle: slice 008. GM console (GM-01, TBD-21): owner tự xây console
 GM chung thành các slice framework GM-1..GM-4, dựng từ GM document (quyết định 2026-11-05, thiết kế
-`AgentMemories/features/gm-tool/01_design.md`); slice 017 (GM-1) là hợp đồng backend. Trang tĩnh `/gm/v1/ui` vẫn là trang P0.
+`AgentMemories/features/gm-tool/01_design.md`); slice 017 (GM-1) là hợp đồng backend; slice 018 (GM-2) ship console: shell
+React `@gameserver/gm-shell` + app mặc định trong `gm-console/` (host tĩnh riêng, cùng site với GM API — trường hợp A), và
+phần backend cho nó (cookie `__Host-`, CORS, SSO quay về console). Trang tĩnh `/gm/v1/ui` chỉ còn ở Development/Test (công cụ
+dev, sẽ bỏ sau); ở môi trường khác GM UI là console.
 
-Đúng với framework v0.7.0 (phát hành 2026-11-04) + nhánh `017-gm-api-contract` (chưa phát hành).
+Đúng với framework v0.7.0 (phát hành 2026-11-04) + nhánh `017-gm-api-contract` và `018-gm-console-hosting-shell` (chưa phát
+hành).
 
 ## Permission catalog (semantic — SEC-07)
 
@@ -58,11 +62,23 @@ Module cũng khai index
 ## Xác thực và phạm vi (semantic)
 
 - Scheme `GmCookie`: cookie phiên = session id 256-bit **đã bảo vệ** (mã hoá + MAC) bằng key ring Data Protection dùng
-  chung (PCR platform mục 14) → ticket `gm_sessions` (lưu theo hash) → `gm_staff`. Tên cookie (slice 018, `GmCookies`):
-  `__Host-gs_gm` ngoài Development, `gs_gm_dev` ở Development. Cookie `HttpOnly`, `Path=/`, `Secure` ngoài Development;
-  `SameSite` theo `Gm:Cookies:SameSite` (mặc định `Lax`, không phụ thuộc CORS). `None` chỉ được ở Development/Test, cần
-  `Gm:Cors:AllowedOrigins` và luôn `Secure`; ngoài Development/Test `None` làm startup fail (console khác site — trường hợp
-  B — không hỗ trợ). Cookie giả/sửa → 401. Không log id/cookie.
+  chung (PCR platform mục 14) → ticket `gm_sessions` (lưu theo hash) → `gm_staff`. Cookie (slice 018, `GmCookies` là nơi
+  duy nhất đặt tên và thuộc tính):
+
+  | Môi trường | Cookie phiên | Cookie CSRF (antiforgery) | `Path` | `Secure` | `SameSite` | `Domain` |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | ngoài Development | `__Host-gs_gm` | `__Host-gs_gm_csrf` | `/` | luôn (antiforgery `SecurePolicy = Always`) | `Gm:Cookies:SameSite` | không |
+  | Development | `gs_gm_dev` | `gs_gm_dev_csrf` | `/` | phiên: khi HTTPS hoặc `SameSite=None`; CSRF: `SameAsRequest` (`Always` khi `None`) | `Gm:Cookies:SameSite` | không |
+
+  Mọi cookie `HttpOnly`; ghi và xoá dùng cùng thuộc tính. Prefix `__Host-` buộc `Secure`, `Path=/`, không `Domain` → trình
+  duyệt từ chối cookie do host anh em cùng site "ném" vào (cookie tossing). Development không dùng `__Host-` vì antiforgery
+  ASP.NET Core ném lỗi với policy `Always` trên HTTP thường, mà run-local (cả `-Lan`) và test client chạy HTTP. `SameSite` theo
+  `Gm:Cookies:SameSite` (mặc định `Lax`, **không phụ thuộc CORS**). `None` chỉ được ở Development/Test, cần
+  `Gm:Cors:AllowedOrigins` và luôn `Secure` (trên HTTP thì route CSRF lỗi — `None` cần HTTPS); ngoài Development/Test `None`
+  làm startup fail (console khác site — trường hợp B — không hỗ trợ). Cookie cũ trước 018 (`gs_gm`, `gs_gm_csrf`, đường
+  dẫn `/gm`) không bao giờ được đọc: **mọi staff đăng nhập lại một lần** sau khi nâng cấp; cookie cũ tự hết hạn. Cookie
+  correlation/nonce của OIDC không đổi (đường dẫn của callback `/gm/v1/auth/sso/callback`, `Lax`). Cookie giả/sửa → 401.
+  Không log id/cookie.
 - Phiên hết hạn tuyệt đối `Gm:SessionHours` (8 h) và idle `Gm:IdleMinutes` (60 phút; ghi `lastActiveAtUtc` lười, tối
   đa 5 phút/lần). Ticket mang `epoch` của staff lúc tạo; khoá staff hoặc "thu hồi mọi phiên" tăng `sessionEpoch` → mọi
   phiên cũ 401. Staff `invited` (chưa đăng nhập SSO lần đầu) không đăng nhập local được.
@@ -72,15 +88,23 @@ Module cũng khai index
   đa 60 — SEC-10); logout xoá session ngay trên instance xử lý, instance khác chậm tối đa bằng thời gian cache.
 - Mutation GM (method khác GET/HEAD/OPTIONS) có `Sec-Fetch-Site: cross-site` → 403 (phần P0 của SEC-05).
 - **CSRF (SEC-05)**: mọi request thay đổi dữ liệu xác thực bằng cookie, và mọi endpoint Public dưới `/gm/` có method
-  unsafe (local login), phải có header `X-CSRF-Token` hợp lệ (antiforgery: header token + cookie `gs_gm_csrf`), không
-  `cross-site`, và `Origin` (nếu có) cùng origin hoặc trong allowlist CORS → nếu không 403 `CSRF_FAILED`. Token gắn với
+  unsafe (local login), phải có header `X-CSRF-Token` hợp lệ (antiforgery: header token + cookie CSRF của môi trường —
+  `__Host-gs_gm_csrf` / `gs_gm_dev_csrf`), không `cross-site`, và `Origin` (nếu có) cùng origin hoặc trong allowlist CORS →
+  nếu không 403 `CSRF_FAILED`. Một origin anh em cùng site (`Sec-Fetch-Site: same-site`, origin không trong allowlist) gửi
+  mutation bằng cookie kèm token hợp lệ vẫn bị 403 `CSRF_FAILED` và không có header CORS (slice 018, FR-004). Token gắn với
   phiên (lấy lại sau login/logout qua `GET /gm/v1/auth/csrf`). Client header (test auth) không cần CSRF. Startup fail khi
   có endpoint Public GM unsafe thiếu CSRF. Logout chỉ POST; `GET` → 405 `METHOD_NOT_ALLOWED`.
-- **CORS (SEC-06)**: tắt mặc định (same-origin). `Gm:Cors:AllowedOrigins[]` (khớp chính xác scheme+host+port) bật CORS
-  có credentials cho `/gm/**`; `*`, path, `/` cuối, cổng mặc định viết ra, user info, origin không tuyệt đối, `http` ngoài
-  Development → startup fail (slice 018: mỗi giá trị phải đúng dạng origin trình duyệt gửi). CORS không thay CSRF: frontend
-  ở origin cấu hình gửi mutation được (cookie vẫn `SameSite=Lax`, slice 018) nhưng vẫn phải có `X-CSRF-Token`; mọi origin
-  khác bị chặn.
+- **CORS (SEC-06)**: tắt khi không cấu hình origin (deployment không có console). `Gm:Cors:AllowedOrigins[]` (khớp chính
+  xác scheme+host+port) bật CORS có credentials cho `/gm/**`; `*`, path, `/` cuối, cổng mặc định viết ra, user info, origin
+  không tuyệt đối, `http` ngoài Development → startup fail (slice 018: mỗi giá trị phải đúng dạng origin trình duyệt gửi).
+  Ngoài Development **đúng một** origin (origin console của môi trường); Development cho nhiều. Policy `gs-gm` (slice 018,
+  `GmCors`): methods `GET,POST,PUT,DELETE`; allowed headers `Content-Type,X-CSRF-Token,X-Request-Id`;
+  `Access-Control-Expose-Headers: X-Request-Id,Retry-After,ETag`; preflight `Access-Control-Max-Age: 7200` (giới hạn của
+  Chromium). Header CORS có trên **mọi** câu trả lời `/gm/**` cho origin cấu hình, kể cả lỗi (400, 401, 403, 403
+  `CSRF_FAILED`, 404, 405, 415, 429, 500, 503 — middleware CORS áp header qua `OnStarting`, `ErrorResponseWriter` không đổi;
+  test `GmCorsErrorHeadersTests`); origin khác không nhận header nào. GET của console là simple request (không preflight);
+  chỉ mutation (JSON + `X-CSRF-Token`) preflight. CORS không thay CSRF: frontend ở origin cấu hình gửi mutation được
+  (cookie vẫn `SameSite=Lax`) nhưng vẫn phải có `X-CSRF-Token`; mọi origin khác bị chặn.
 - Đăng nhập lại (local hoặc SSO) khi trình duyệt còn phiên → phiên cũ bị huỷ ở server. Endpoint login nhận CSRF token
   lấy khi đang đăng nhập (token gắn phiên).
 - Mọi response GM có `Cache-Control: no-store` (có thể chứa PII). Ngoại lệ duy nhất (slice 017): catalog route
@@ -95,16 +119,16 @@ Module cũng khai index
 
 | Route | Profile / permission | Ghi chú |
 | --- | --- | --- |
-| `GET /gm/v1/auth/csrf` | Public | `{token}` + cookie `gs_gm_csrf` |
+| `GET /gm/v1/auth/csrf` | Public | `{token}` + cookie CSRF: `__Host-gs_gm_csrf` ngoài Development, `gs_gm_dev_csrf` ở Development (`Path=/`) |
 | `GET /gm/v1/auth/methods` | Public (allowlist qua declaration, slice 017) | `{local, sso}`: `local` = route login local được map (development tools), `sso` = `Gm:Oidc` đã cấu hình (cấu hình, không phải IdP sống). Không trả gì khác (không version, staff, setting) |
-| `GET /gm/v1/auth/sso/start?returnUrl=` | Public (khi `Gm:Oidc` cấu hình) | 302 tới IdP (code + PKCE); `returnUrl` chỉ nhận đường dẫn `/gm/...` |
-| `GET /gm/v1/auth/sso/callback` | Public (handler OIDC) | thành công → cookie + 302 `returnUrl`; từ chối → 302 `/gm/?error=sso_denied` |
+| `GET /gm/v1/auth/sso/start?returnUrl=` | Public (khi `Gm:Oidc` cấu hình) | 302 tới IdP (code + PKCE). `returnUrl` (slice 018, `GmConsoleUrls`): 1..512 ký tự ASCII in được, không chứa `//`, `\`, `..`, `%2e` (mọi kiểu chữ); có console (`Gm:Console:BaseUrl`) → chỉ `/` hoặc `/#<fragment>`; không console → chỉ đường dẫn dưới `/gm/`. Giá trị thiếu/bị từ chối → đích mặc định. Không bao giờ nhận URL tuyệt đối |
+| `GET /gm/v1/auth/sso/callback` | Public (handler OIDC) | thành công → cookie phiên + 302: có console → `BaseUrl` + `returnUrl` bỏ `/` đầu (ghép chuỗi, giữ sub-path), không có thì `BaseUrl`; không console → `returnUrl`, mặc định `/gm/v1/ui` (có development tools) hoặc `/gm/v1/me`. Mọi từ chối (không MFA, staff khoá, danh tính lạ, state giả, callback không xử lý) → 302 `BaseUrl#/login?error=sso_denied`, không console → mặc định + `?error=sso_denied`; không lý do trong URL (log bảo mật giữ lý do) |
 | `POST /gm/v1/auth/login` `{staffId, password}` | Public, CSRF (chỉ map ở Development/Test) | 200 `{staffId, displayName, gameId, environmentId, permissions[], frameworkVersion, gameVersion}` + cookie; sai → 401 |
 | `POST /gm/v1/auth/logout` | `gm.access`, CSRF | 204, xoá ticket + cookie; `GET` → 405 |
 | `GET /gm/v1/me` | `gm.access` | như response login; `frameworkVersion` (informational, như `ops/version`) và `gameVersion` của instance trả lời (slice 017, D9) |
 | `GET /gm/v1/console/openapi.json` | `gm.access` | (slice 017) GM document của host, mọi môi trường; `ETag` mạnh, `Cache-Control: private, no-cache`, 304 khi `If-None-Match` khớp; xem mục "GM document và hợp đồng console" |
 | `GET /gm/v1/health` | `ops.read` | chi tiết từng health check (OBS-03); 404 nếu host không bật observability |
-| `GET /gm/v1/ui` | Public | trang HTML tĩnh same-origin, CSP chặt (`frame-ancestors 'none'`, `connect-src 'self'`) |
+| `GET /gm/v1/ui` | Public (chỉ Development/Test — slice 018) | trang HTML tĩnh same-origin, CSP chặt (`frame-ancestors 'none'`, `connect-src 'self'`); công cụ dev, sẽ bỏ sau; môi trường khác → 404 (GM UI là console) |
 | `GET /gm/v1/players/{playerId}` | `player.read` | `{playerId, aggregates[], deletion}`: mọi aggregate (kể cả hidden): `{id, exists, clientVisible, rev, schemaVersion, storedSchemaVersion, sizeBytes, updatedAtUtc, state}`; `deletion` (slice 010, null khi không có yêu cầu xoá) = `{state: pending\|purging\|purged, requestedAtUtc, purgeAfterUtc, purgeStartedAtUtc, purgedAtUtc}`. Player đã purge → **200** `aggregates: []`, `deletion.state = purged`, không dữ liệu cá nhân, không bao giờ trả anonymous id (D7). Không aggregate **và** không purge record → 404 |
 | `GET /gm/v1/players/by-mapping/{mappingKey}` | `player.read` | `identities/{mappingKey}` → như trên; không có → 404 |
 | `GET /gm/v1/players/search?displayName=&pageSize=&cursor=` | `player.read` | khớp chính xác `displayName`, sắp theo `playerId` |
@@ -210,10 +234,31 @@ Mã lỗi module gm (13000–13099): `STAFF_EXISTS` (13000, 409), `LAST_STAFF_MA
 | `Gm:Oidc:Scopes` | `openid profile email` | |
 | `Gm:Oidc:RequireMfa` | `true` ngoài Dev/Test | |
 | `Gm:Oidc:BootstrapManagers[]` | — | xem trên |
-| `Gm:Cors:AllowedOrigins[]` | rỗng (same-origin) | |
+| `Gm:Cors:AllowedOrigins[]` | rỗng (không console) | origin console (đúng dạng `scheme://host[:port]` trình duyệt gửi); ngoài Development tối đa **một**; `https` ngoài Development; cần `Gm:Console:BaseUrl` cùng origin (slice 018) |
+| `Gm:Console:BaseUrl` | — (không console) | (slice 018) URL gốc của console: tuyệt đối `http(s)`, path kết thúc `/`, không query/fragment/user info, `https` ngoài Development, origin nằm trong `Gm:Cors:AllowedOrigins`; bắt buộc khi có origin CORS. SSO quay về đây |
+| `Gm:Cookies:SameSite` | `Lax` | (slice 018) `Lax` hoặc `None` (không phân biệt hoa thường); `None` chỉ Development/Test và cần `Gm:Cors:AllowedOrigins` |
 | `Gm:Bootstrap:Staff[]` | — | `{staffId, displayName, password, roles[], permissions[], disabled, gameId?, environmentId?}`; **chỉ Development/Test** (môi trường khác → startup fail). Password hash PBKDF2-SHA256 100 000 vòng |
 
 Production: không có login local; staff đầu tiên qua `Gm:Oidc:BootstrapManagers`, sau đó quản lý qua API staff.
+
+Không đặt `Gm:Cors:AllowedOrigins` lẫn `Gm:Console:BaseUrl` = deployment **không có console**: hợp lệ ở mọi môi trường (có hay
+không OIDC), khởi động như trước, SSO về `/gm/v1/me` (hoặc `/gm/v1/ui` khi có development tools). Giá trị mẫu của sample host:
+flavor Local/Dev `Gm:Cors:AllowedOrigins = ["http://localhost:5173"]`, `Gm:Console:BaseUrl = "http://localhost:5173/"`;
+Beta/Uat/Live không đặt (chưa có domain console).
+
+Dòng startup (slice 018, văn bản chép từ `GmOptionsValidator` / `GmCorsValidation`; gộp vào một báo cáo với các dòng có sẵn):
+
+```
+Gm:Cookies:SameSite '<value>' is not supported; use Lax (default) or None.
+Gm:Cookies:SameSite=None is refused in '<DeploymentEnvironment>': a console on another site (case B) is not supported; use Lax (default) with a console on the same site.
+Gm:Cookies:SameSite=None needs Gm:Cors:AllowedOrigins: SameSite=None is only for a console on another site (case B, unsupported).
+Gm:Cors:AllowedOrigins lists <n> origins in '<DeploymentEnvironment>'; list the one console origin of this environment.
+Gm:Cors:AllowedOrigins '<value>' must be an origin (scheme://host[:port]) without default port, user info, path, query or trailing slash.
+Gm:Cors:AllowedOrigins is set but Gm:Console:BaseUrl is not; set the console URL of that origin (SSO returns there).
+Gm:Console:BaseUrl '<value>' must be an absolute http(s) URL whose path ends with '/', without query, fragment or user info.
+Gm:Console:BaseUrl '<value>' is not https; plain http is allowed only in Development.
+Gm:Console:BaseUrl origin '<origin>' is not in Gm:Cors:AllowedOrigins; add it (one console origin per environment).
+```
 
 ## Route catalog và section (slice 014 — FG-026, FG-027, FG-028)
 
@@ -221,7 +266,8 @@ Production: không có login local; staff đầu tiên qua `Gm:Oidc:BootstrapMan
 thêm `gm.auth_methods`, `gm.console_catalog`); permission chép từ lời gọi `AsGmEndpoint(...)` trước đây; route Public được
 allowlist qua declaration (không còn `PublicEndpoints`). **Allowlist Public (SEC-09)** của module gm: `gm.auth_csrf`,
 `gm.auth_login`, `gm.sso_start`, `gm.sso_callback`, `gm.ui`, `gm.auth_methods` — được allowlist qua declaration, game không
-cần cấu hình gì (`GameServer:PublicEndpointAllowlist` mặc định hay tường minh đều được, V10). Điều kiện hosting: `gm.auth_login` chỉ map khi `development_tools` (Development/Test),
+cần cấu hình gì (`GameServer:PublicEndpointAllowlist` mặc định hay tường minh đều được, V10). Điều kiện hosting: `gm.auth_login`
+và (slice 018) `gm.ui` chỉ map khi `development_tools` (Development/Test; nơi khác `/gm/v1/ui` → 404),
 `gm.sso_start`/`gm.sso_callback` chỉ khi `gm.sso` (`AddRouteCondition("gm.sso", …)` = `Gm:Oidc` đã cấu hình); route có
 condition tắt không map và không bị endpoint check đòi. Bảng route lấy từ export của SampleHost (`--environment Local
 --export-wire-contract`, format `gameserver.wire-contract/1`). Endpoint check lúc khởi động, quy tắc đặt tên và điều
@@ -260,7 +306,7 @@ route `platform.gm_openapi` của platform (PCR platform mục 20). Route GM c�
 | `gm.staff_grant` | PUT | `/gm/v1/staff/{staffId}/grant` | Gm | — | `staff.manage` | — |
 | `gm.staff_list` | GET | `/gm/v1/staff` | Gm | — | `staff.read` | — |
 | `gm.staff_revoke_sessions` | POST | `/gm/v1/staff/{staffId}/sessions/revoke` | Gm | — | `gm.access` | — |
-| `gm.ui` | GET | `/gm/v1/ui` | Public | — | — | — |
+| `gm.ui` | GET | `/gm/v1/ui` | Public | — | — | `development_tools` |
 
 Module không có aggregate client-visible.
 
@@ -281,10 +327,12 @@ Module không có aggregate client-visible.
 - Document không có `servers`, không version framework/game, không giá trị cấu hình (FR-008): cùng composition → cùng bytes ở
   mọi môi trường, chỉ khác route có điều kiện (`gm.auth_login` khi có development tools, SSO khi có `Gm:Oidc`).
 - Route Dev/Test `platform.gm_openapi` (`/gm/v1/openapi/{documentName}.json`, Public) giữ nguyên, trả cùng document.
-- CORS cho console khác origin (expose `ETag`) là việc của GM-2.
+- CORS cho console khác origin (expose `ETag`): slice 018, mục "Console hosting".
 
-**Bootstrap của console** (thứ tự design §10): `GET /gm/v1/auth/methods` → đăng nhập → `GET /gm/v1/auth/csrf` →
-`GET /gm/v1/me` (có `frameworkVersion`, `gameVersion`) → `GET /gm/v1/console/openapi.json` (kèm `If-None-Match` khi có bản).
+**Bootstrap của console** (thứ tự design §10, sửa ở slice 018): `GET /gm/v1/auth/methods` → `GET /gm/v1/me` (401 → đăng
+nhập; có `frameworkVersion`, `gameVersion`) → guard game/env → `GET /gm/v1/console/openapi.json`. Console **không** tự gửi
+`If-None-Match` (không phải header CORS-safelisted: sẽ preflight mọi GET); cache HTTP của trình duyệt tự revalidate bằng
+`ETag` → 304 (đo ở e2e slice 018, Chrome 157 / Edge 156). Token CSRF lấy trước mutation đầu tiên.
 
 **Khoá `x-gm-*` của operation** (framework sở hữu; game không thêm khoá, chỉ dùng presentation API):
 
@@ -386,3 +434,47 @@ trong release note. Document commit của game bằng đúng cái host phục v�
   không ghi gì.
 - Chỉ thêm member JSON (frontend GM không phải sửa); lần sinh lại đầu tiên của OpenAPI thêm schema đầy đủ của hai response này
   (trước đây các operation chỉ có `200: OK`).
+
+## Console hosting (slice 018 — GM-2)
+
+**Bố trí (trường hợp A, semantic với vận hành):** console là site tĩnh trên **origin khác, cùng site** với GM API, ví dụ
+`https://gm.<env>.<domain>` (static host: `index.html`, `assets/*`, `config.json`, header của
+`gm-console/deploy/security-headers.json`) → `https://gm-api.<env>.<domain>` (reverse proxy → Kestrel, chỉ `/gm/**`, TLS kết
+thúc ở proxy với forwarded headers, OPS-02). Request của console: `credentials: 'include'`, `Sec-Fetch-Site: same-site`.
+Cấu hình server của môi trường: `Gm:Cors:AllowedOrigins = ["https://gm.<env>.<domain>"]`, `Gm:Console:BaseUrl =
+"https://gm.<env>.<domain>/"`, `Gm:Cookies:SameSite` không đặt (`Lax`), `Gm:Oidc:*` như cũ. File console: `config.json =
+{ "apiBaseUrl": "https://gm-api.<env>.<domain>", "gameId": "<game>", "environmentId": "<env>" }`. Local: console
+`http://localhost:5173` → API `http://localhost:5080` (flavor Local của sample host); dùng `localhost` ở cả hai đầu
+(`127.0.0.1` khác site). Console trên site khác (domain mặc định của CDN/PaaS, nằm trong Public Suffix List) — trường hợp B —
+không hỗ trợ.
+
+**Chuỗi gọi** (contract `console-hosting.md` §2): mở console = `config.json` (no-store) → `auth/methods` → `/me` (401 → login)
+→ guard (`gameId`/`environmentId` của `/me` khác `config.json` → màn hình chặn, chỉ có đăng xuất) → catalog. Local sign-in =
+`GET /auth/csrf` (token ẩn danh) → `POST /auth/login` với `X-CSRF-Token` (preflight một lần mỗi 7200 s); `/me` = câu trả lời
+login; token ẩn danh bị bỏ, token gắn phiên mới lấy lười (`GET /auth/csrf`) trước mutation kế tiếp (review T068 m3: lỗi lấy token
+sau login không còn giấu một phiên đã mở). SSO = điều hướng top-level `{api}/gm/v1/auth/sso/start?returnUrl=%2F%23%2F…`
+→ IdP → callback đặt cookie phiên → 302 `https://gm.<env>.<domain>/#/…`. Đăng xuất = `POST /auth/logout` với token → 204 +
+cookie phiên hết hạn (cùng tên, `Path=/`, `Secure`) → `GET /auth/csrf` lấy token ẩn danh mới.
+
+**Bảo đảm của GM API cho console:**
+
+| Bảo đảm | Từ |
+| --- | --- |
+| Header CORS cho origin cấu hình trên mọi câu trả lời `/gm/**`, kể cả lỗi; `X-Request-Id`, `Retry-After`, `ETag` đọc được | 018 (FR-001, FR-002) |
+| GET không cần header tuỳ biến (không preflight) | 018 (FR-051) |
+| Lỗi = Problem Details: `code`, `codeNumber`, `requestId`, `retryable`, tuỳ chọn `detail`, `details`, `errors` | 004, 017 |
+| `401` = không có/hết phiên; `403 FORBIDDEN` = permission/scope; `403 CSRF_FAILED` = token/origin | 007 |
+| Cookie phiên `SameSite=Lax` khi CORS bật (trừ `Gm:Cookies:SameSite=None`, chỉ Development/Test) | 018 (FR-010) |
+| SSO về `BaseUrl` + đường dẫn console, hoặc `BaseUrl#/login?error=sso_denied` | 018 (FR-022..FR-025) |
+| `/me` có `gameId`, `environmentId`, `frameworkVersion`, `gameVersion` | 013, 017 |
+| `/gm/v1` thay đổi kiểu thêm trong một version; breaking ghi release note | PCR gm |
+
+**Cam kết tương thích (semantic):** tên cookie, `Path` và thuộc tính theo môi trường, `Gm:Cookies`, `Gm:Console`, đích
+redirect của SSO và danh sách header expose là mục PCR: đổi = breaking change có release note. Member của `config.json` chỉ
+thêm; console bỏ qua member lạ. Fragment từ chối `#/login?error=sso_denied` và hash route `#/login` thuộc hợp đồng này (D7).
+
+**Thứ tự deploy và lệch version (Q19):** deploy server trước, console build từ cùng commit sau. Trong khoảng giữa, console cũ
+chạy với server mới: menu dựng từ catalog lúc chạy; trang compile theo document cũ có thể nhận 400/404 (backend vẫn an toàn);
+console cảnh báo khi `major.minor` framework khác và chỉ chặn khi khác game hoặc môi trường.
+
+Phía console (workspace `gm-console/`, header static host, codegen, kiểm bundle, e2e): PCR platform mục 24.

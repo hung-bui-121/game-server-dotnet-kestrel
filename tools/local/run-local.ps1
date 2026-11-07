@@ -277,6 +277,10 @@ try {
         Write-Host ("  Player API   " + $baseUrl + "          (routes /api/v1/..., /v1/time)")
         Write-Host ("  Health       " + $baseUrl + "health/ready")
         Write-Host ("  GM UI        " + $baseUrl + "gm/v1/ui  (staff admin / dev-only-change-me)")
+        # The console's app/public/config.json calls http://localhost:5080: only that port gets the console line.
+        if ($portNumber -eq 5080) {
+            Write-Host "  GM console   http://localhost:5173  (cd gm-console; npm ci; npm run dev)"
+        }
         Write-Host ("  GM OpenAPI   " + $baseUrl + "gm/v1/openapi/gm.json")
     }
     else {

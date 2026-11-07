@@ -39,6 +39,31 @@ public sealed partial class VersionTests
         Mismatch("0.7.0", "0.7.0").ShouldBeNull();
     }
 
+    /// <summary>
+    /// Slice 018 T027 (FR-047): the GM console workspace root, shell and app carry the declared version (the shell's is the
+    /// console's "built for" framework version, FR-056).
+    /// </summary>
+    [Fact]
+    public void The_gm_console_packages_carry_the_declared_version()
+    {
+        var declared = RepositoryTooling.DeclaredFrameworkVersion();
+
+        GmConsoleWorkspaceTests.PackageFiles
+            .Select(file => ConsoleMismatch(declared, file, GmConsoleWorkspaceTests.ReadPackage(file).GetProperty("version").GetString()))
+            .OfType<string>()
+            .ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void A_gm_console_version_mismatch_names_both_values_and_the_fix()
+    {
+        ConsoleMismatch("0.7.0", "gm-console/app/package.json", "0.6.0").ShouldBe(
+            "Framework version mismatch: Directory.Build.props GameServerFrameworkVersion is '0.7.0', gm-console/app/package.json version is '0.6.0'. " +
+            "Fix: bump with Directory.Build.props and the Unity package: every gm-console package.json version and the app's @gameserver/gm-shell " +
+            "dependency, then npm install in gm-console (GmConsoleWorkspaceTests checks the lockfile) (FR-047).");
+        ConsoleMismatch("0.7.0", "gm-console/app/package.json", "0.7.0").ShouldBeNull();
+    }
+
     [Fact]
     public void Every_framework_sample_and_template_assembly_carries_the_declared_version()
     {
@@ -135,6 +160,14 @@ public sealed partial class VersionTests
             ? null
             : $"Framework version mismatch: Directory.Build.props GameServerFrameworkVersion is '{declared}', {PackageJson} version is '{package}'. " +
               "Fix: bump both together; the release tag is v{version} (FR-051).";
+
+    /// <summary>Null when a gm-console package carries the declared version; otherwise the failure text naming both and the fix.</summary>
+    internal static string? ConsoleMismatch(string declared, string file, string? package) =>
+        string.Equals(declared, package, StringComparison.Ordinal)
+            ? null
+            : $"Framework version mismatch: Directory.Build.props GameServerFrameworkVersion is '{declared}', {file} version is '{package}'. " +
+              "Fix: bump with Directory.Build.props and the Unity package: every gm-console package.json version and the app's @gameserver/gm-shell " +
+              "dependency, then npm install in gm-console (GmConsoleWorkspaceTests checks the lockfile) (FR-047).";
 
     [GeneratedRegex(@"^\d+\.\d+\.\d+$")]
     private static partial Regex SemVer();

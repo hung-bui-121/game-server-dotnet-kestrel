@@ -1,0 +1,72 @@
+# GM console static host — nginx reference (slice 018, FR-080).
+# The headers below are deploy/security-headers.json; deploy/deploy.test.ts fails when they differ.
+# {{apiOrigin}} (CSP connect-src) is the origin of this environment's config.json apiBaseUrl; this example uses
+# https://gm-api.beta.example.com. nginx does not inherit add_header into a location that has its own, so every location
+# repeats the full set. Headers must be HTTP response headers: a <meta> CSP cannot carry frame-ancestors.
+# The console uses hash routing (#/players/...): no SPA rewrite is needed.
+# Paths are relative to the console base path: under a sub-path (e.g. /gm/) prefix every location (headers.md).
+
+server {
+    listen 443 ssl;
+    server_name gm.beta.example.com;
+    # Custom domain under the company domain + TLS (never a CDN/PaaS default domain: another site, case B, unsupported).
+    # ssl_certificate     /etc/ssl/gm.beta.example.com.crt;
+    # ssl_certificate_key /etc/ssl/gm.beta.example.com.key;
+
+    # dist/ of `npm run build -w app` + this environment's config.json.
+    root /srv/gm-console;
+
+    # document: / , /index.html , /config.json
+    location = / {
+        try_files /index.html =404;
+        add_header Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self' https://gm-api.beta.example.com; img-src 'self' data:; font-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'" always;
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Cross-Origin-Opener-Policy "same-origin" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+        add_header Cache-Control "no-cache" always;
+    }
+
+    location = /index.html {
+        add_header Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self' https://gm-api.beta.example.com; img-src 'self' data:; font-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'" always;
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Cross-Origin-Opener-Policy "same-origin" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+        add_header Cache-Control "no-cache" always;
+    }
+
+    location = /config.json {
+        add_header Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self' https://gm-api.beta.example.com; img-src 'self' data:; font-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'" always;
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Cross-Origin-Opener-Policy "same-origin" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+        add_header Cache-Control "no-cache" always;
+    }
+
+    # asset: /assets/* (file names carry a content hash)
+    location /assets/ {
+        add_header Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self' https://gm-api.beta.example.com; img-src 'self' data:; font-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'" always;
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Cross-Origin-Opener-Policy "same-origin" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+    }
+
+    # any other path: not part of the console
+    location / {
+        return 404;
+        add_header Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self' https://gm-api.beta.example.com; img-src 'self' data:; font-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'" always;
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Cross-Origin-Opener-Policy "same-origin" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    }
+}

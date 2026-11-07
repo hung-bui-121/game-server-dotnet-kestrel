@@ -38,3 +38,7 @@ dotnet_diagnostic.CA1707.severity = none
 dotnet_diagnostic.CA1515.severity = none
 dotnet_diagnostic.CA2000.severity = none
 dotnet_diagnostic.xUnit1051.severity = none
+
+# GM console workspace (slice 018): the npm/TypeScript convention
+[gm-console/**/*.{ts,tsx,js,mjs,cjs,css,html,json}]
+indent_size = 2

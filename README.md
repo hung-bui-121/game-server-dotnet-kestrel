@@ -49,7 +49,8 @@ sẵn sàng rồi in các URL:
 | --- | --- |
 | Player API | `http://localhost:5080/` (Unity client mẫu dùng mặc định địa chỉ này) |
 | Health | `http://localhost:5080/health/ready` |
-| GM tool | `http://localhost:5080/gm/v1/ui` — staff seed `admin` / `dev-only-change-me` (chỉ có ở flavor `Local` và `Dev`) |
+| GM console | `http://localhost:5173` — `cd gm-console; npm ci; npm run dev` (Node 22.20), staff seed `admin` / `dev-only-change-me`; hướng dẫn `docs/guides/gm-console.md` |
+| GM page (Dev/Test) | `http://localhost:5080/gm/v1/ui` — trang GM tĩnh, chỉ có ở flavor `Local` và `Dev` (404 ở beta, uat, live) |
 
 Ctrl+C dừng êm; chạy lại giữ nguyên dữ liệu. `-Port 5090` đổi cổng, `-Reset` bắt đầu với store rỗng, `-Lan` cho điện thoại cùng
 mạng kết nối (bash: `--port`, `--reset`, `--lan`). Từ IDE hoặc `dotnet run --project samples/SampleHost`: launch profile `local`
@@ -114,7 +115,8 @@ dotnet test --project tests/GameServer.Platform.Couchbase.IntegrationTests -c Re
 | `src/GameServer.Platform.Testing` | store in-memory + tiêm lỗi, `FakeClock`, file store của flavor local |
 | `src/GameServer.Modules.Identity*` | aggregate bắt buộc `profile`, guest login, session |
 | `src/GameServer.Modules.Economy*`, `src/GameServer.Modules.Iap*` | wallet/inventory/ledger; mua IAP |
-| `src/GameServer.Modules.Gm*` | GM: staff, cookie session, lookup, audit, trang `/gm/v1/ui` |
+| `src/GameServer.Modules.Gm*` | GM API: staff, cookie session, lookup, audit, CORS cho console, trang `/gm/v1/ui` (chỉ Development/Test) |
+| `gm-console` | GM console web (npm workspace, React + TypeScript + Vite + Mantine): shell `@gameserver/gm-shell`, app mặc định, `deploy/` (header host tĩnh), smoke e2e |
 | `samples/SampleGame`, `samples/SampleHost` | game mẫu và host chạy thử |
 | `sdk/unity/com.gameserver.client` | gói Unity client SDK (UPM); `sdk/GameServer.Client` build cùng mã nguồn cho .NET |
 | `samples/SampleGame/KestrelDemo` | client mẫu Unity 6 dùng SDK (scene `SampleGameClient`) |

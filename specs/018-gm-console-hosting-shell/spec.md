@@ -551,13 +551,15 @@ static-host deployment (built app + reference headers + `config.json`) without h
 - **FR-051**: Every API call MUST use `credentials: 'include'` and the configured `apiBaseUrl`. `GET` calls MUST NOT add
   any request header (no preflight, design §6.3); non-GET calls add `X-CSRF-Token` and, with a body,
   `Content-Type: application/json`; `X-Request-Id` is added only when the caller passes one (policy belongs to GM-3).
-- **FR-052** (§6.4): The CSRF token MUST be fetched with `GET /gm/v1/auth/csrf` before the first mutation, after a sign-in
-  and after a sign-out, kept in memory only; on `403 CSRF_FAILED` a mutation fetches a new token and is retried once; a
-  second failure is shown.
+- **FR-052** (§6.4; amended by T034/T069): The CSRF token MUST be fetched with `GET /gm/v1/auth/csrf` before the first
+  mutation and kept in memory only; a sign-in or sign-out discards the held token (the next mutation fetches one; sign-out
+  also fetches an anonymous one); on `403 CSRF_FAILED` a mutation fetches a new token and is retried once; a second failure
+  is shown.
 - **FR-053**: The login page MUST follow `GET /gm/v1/auth/methods` (US6 scenario 2), start SSO by a top-level navigation
   with the saved hash as `returnUrl` (scenario 3), and show the `sso_denied` message.
-- **FR-054**: A local sign-in MUST run CSRF → `POST /gm/v1/auth/login` → CSRF → `/me`; a 401 says "invalid staff id or
-  password".
+- **FR-054** (amended by T034/T069): A local sign-in MUST run CSRF → `POST /gm/v1/auth/login` (its answer is the staff
+  member; no extra `/me` call); the anonymous token is discarded and the session-bound token is fetched before the next
+  mutation; a 401 says "invalid staff id or password".
 - **FR-055** (Q19): After `/me`, a `gameId` or `environmentId` different from `config.json` MUST show the block screen,
   load nothing else and offer only sign-out.
 - **FR-056** (Q19, §7.5): The build MUST embed `builtFor = { frameworkVersion, gameVersion? }` (shell package version; game

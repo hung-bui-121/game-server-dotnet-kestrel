@@ -405,14 +405,45 @@ no Claude signature lines).
 
 Starts only after T024.
 
-- [ ] T025 **[VERIFY] V8 — decision gate for dependency versions**: re-run the registry query of research R7 (`npm view
+- [x] T025 **[VERIFY] V8 — decision gate for dependency versions**: re-run the registry query of research R7 (`npm view
   <pkg> time --json`, `engines`, `peerDependencies`) for every package of contract §8 and plan Technical Context plus
   `@types/react`, `@types/react-dom`, `postcss`, `postcss-preset-mantine`, `globals`; pick per package the newest stable
   version published ≥ 14 days before today whose `engines` accepts Node 22.20.0 and whose peers are satisfied by the other
   picks (TypeScript 5.9.x, React Router 7.x, jsdom ≤ 28.x unless a newer one accepts 22.20).
   Done when: a Note records the table (package, version, publish date, engines, peer check) — the only source of versions for
   T026. (FR-043, FR-098)
-- [ ] T026 [US5] Workspace skeleton `gm-console/` (research R8, contract §6–§8): root `package.json` (private, `version`
+  Note (V8, registry query 2026-11-06, cut-off 2026-10-23; script in the session scratch folder, full packuments, semver
+  engine check against 22.20.0):
+
+  | Package | Version | Published | `engines.node` | Peer check / why not newer |
+  | --- | --- | --- | --- | --- |
+  | `react`, `react-dom` | 19.3.1 | 2026-10-14 | ≥0.10 / – | react-dom peer `^19.3.1` ok |
+  | `@mantine/core`, `@mantine/hooks` | 9.7.3 | 2026-10-17 | – | react `^19.2.0`, hooks `9.7.3` ok; 9.7.5 is 2 days old |
+  | `@tanstack/react-query` | 5.104.5 | 2026-10-19 | – | react `^18 \|\| ^19`; 5.106.1 too new |
+  | `react-router` | 7.18.4 | 2026-09-15 | ≥20 | react ≥18; 8.x needs Node ≥22.22.0 |
+  | `openapi-fetch` | 0.17.0 | 2026-02-11 | – | none |
+  | `openapi-typescript` | 7.13.0 | 2026-02-11 | – | typescript `^5.x` ok |
+  | `typescript` | 5.9.3 | 2025-09-30 | ≥14.17 | 7.0.2/6.0.3 are eligible by date but outside `typescript-eslint` (`<6.1.0`) and `openapi-typescript` (`^5.x`) peers |
+  | `vite` | 8.3.5 | 2026-10-21 | `^20.19 \|\| >=22.12` | 8.3.6 too new |
+  | `@vitejs/plugin-react` | 6.1.2 | 2026-10-05 | `^20.19 \|\| >=22.12` | vite `^8` ok; 6.2.1 too new |
+  | `postcss` / `postcss-preset-mantine` | 8.5.31 / 1.18.0 | 2026-10-18 / 2025-06-30 | ≥14 / – | preset peer postcss ≥8 ok |
+  | `vitest` | 5.0.5 | 2026-10-15 | `^22.12 \|\| ^24 \|\| >=26` | vite `^8`, jsdom `*` ok (research R7's "5.x is 4 days old" no longer holds); 5.1.0 too new |
+  | `jsdom` | 29.1.1 | 2026-04-30 | `^20.19 \|\| ^22.13 \|\| >=24` | accepts 22.20 → chosen over 28.1.0; 30.x needs ≥22.22.2 |
+  | `@testing-library/react` / `dom` / `user-event` / `jest-dom` | 16.3.3 / 10.4.2 / 14.6.8 / 7.0.1 | 08-27 / 09-13 / 10-13 / 08-09 | ≥18 / ≥18 / ≥12 / ≥22 | react `^19`, dom `^10`, vitest ≥0.32 ok |
+  | `eslint` / `@eslint/js` | 10.13.0 / 10.0.1 | 2026-10-16 / 2026-02-06 | `^22.13` ok | 10.14.0 too new |
+  | `typescript-eslint` | 8.72.0 | 2026-10-19 | `>=21.1` | eslint `^10`, typescript `<6.1.0` ok; 8.72.1 too new |
+  | `eslint-plugin-react-hooks` | 7.1.1 | 2026-04-17 | ≥18 | eslint `^10` ok |
+  | `globals` | 17.13.0 | 2026-10-01 | ≥18 | 17.14.0 too new |
+  | `playwright-core` | 1.64.1 | 2026-10-14 | ≥20 | none; 1.65.0 too new |
+  | `@types/react` / `@types/react-dom` | 19.3.0 | 2026-09-09 | – | ok |
+  | `@types/node` | 22.20.5 | 2026-10-01 | – | **decision**: the 22.x line (types of the Node that runs the tools), not 26.6.5 |
+
+  **Install finding**: npm 10.9.3 fails with `Cannot read properties of null (reading 'edgesOut')` (Arborist `#loadPeerSet`)
+  for **any** `vitest` (5.0.5 and the fallback 4.1.12 alike) next to any `vite` 8: vite's optional peer `@vitejs/devtools`
+  → `@vitejs/devtools-vitest` (peer `vitest@*`) → newest `vitest` 5.1.0 → `@vitest/browser-playwright@5.1.0` (required peer
+  `playwright`). Not a version problem, so no fallback line; fix = root `"overrides": { "vitest": "5.0.5" }` (same exact
+  version) — install, `npm ci` and `engine-strict` green. A game root (GM-4) needs the same override (T064).
+- [x] T026 [US5] Workspace skeleton `gm-console/` (research R8, contract §6–§8): root `package.json` (private, `version`
   = `GameServerFrameworkVersion` 0.7.0, workspaces, scripts of contract §8 with placeholders for later tasks, `engines.node
   >=22.20.0`, devDependencies: TypeScript, ESLint stack, Vitest, jsdom, Testing Library, openapi-typescript,
   playwright-core), `.npmrc` (`engine-strict=true`, `save-exact=true`), `.nvmrc` (`22.20.0`), `tsconfig.base.json` (strict,
@@ -426,7 +457,15 @@ Starts only after T024.
   Run `npm install` once to produce `package-lock.json`, then from a clean folder `npm ci`.
   Done when: `npm ci`, `npm run typecheck`, `npm run lint`, `npm run test` (0 tests allowed with `passWithNoTests`) and
   `npm run build` succeed; `git status` shows no `node_modules`/`dist`. (FR-040..FR-043, FR-045)
-- [ ] T027 [P] [US5] .NET architecture tests (A9) `tests/GameServer.Architecture.Tests/GmConsoleWorkspaceTests.cs` and
+  Note: skeleton green (`npm install` once → lockfile v3; then `rm -rf node_modules && npm ci` 298 packages; typecheck, lint,
+  test with 0 tests, build: JS 105.9 KB + CSS 35.9 KB gzip); `git status` lists `gm-console/` without `node_modules`/`dist`
+  (`git check-ignore` confirms). Decisions: vite/plugin-react/postcss/preset are `devDependencies` of `app` (its own build,
+  Q18) and of the root (Vitest); shell typecheck runs twice (`tsconfig.json` without Node types for `src`, `tsconfig.test.json`
+  with Node + jest-dom types for tests), tools (`vitest.config.ts`, `app/vite.config.ts`, `deploy/`, `e2e/`) in
+  `tsconfig.tools.json`; `lint` = `eslint .`; `__GM_BUILT_FOR__` is declared by `declare global` in
+  `src/session/builtFor.ts` (a module, so a game app compiling the shell gets the declaration; lint forbids triple-slash
+  references) instead of `src/env.d.ts`; a missing define reads as framework version `unknown` (skew warning).
+- [x] T027 [P] [US5] .NET architecture tests (A9) `tests/GameServer.Architecture.Tests/GmConsoleWorkspaceTests.cs` and
   `VersionTests.cs`: (a) the versions of `gm-console/package.json`, `packages/shell/package.json`, `app/package.json` equal
   `RepositoryTooling.DeclaredFrameworkVersion()` (message names both and the fix "bump with Directory.Build.props and the
   Unity package"); (b) every value in `dependencies`, `devDependencies`, `peerDependencies` of those files is an exact
@@ -436,39 +475,74 @@ Starts only after T024.
   (f) the shell's `src/` has no import from `app/` or `../..` outside the package (text scan of `import … from`).
   Done when: green; each assertion shown red once with a temporary edit (scripted, reverted). (FR-041..FR-043, FR-046,
   FR-047)
-- [ ] T028 [US5] Codegen (research R9, V12): `gen:api` and `check:api` scripts; generate
+  Note: (a) `VersionTests.The_gm_console_packages_carry_the_declared_version` (+ message test); (b)–(f) in
+  `GmConsoleWorkspaceTests` (exact versions incl. `overrides`, lockfile v3, `git ls-files gm-console` without
+  `node_modules`/`dist` (skips outside a checkout), `git ls-files *.csproj *.props *.targets` without `npm`/`npx`/`node`
+  commands, shell imports resolved inside `packages/shell` and never the default app) + a message/unit test per rule.
+  Architecture.Tests 80 (72 passed, 8 opt-in skipped; was 69). Scripted red checks (no rebuild needed, files read at run time),
+  one failing test each, then restored → 17/17 green: (a) app version 0.6.0; (b) shell peer `^19.3.1`; (c) lockfile moved
+  away; (d) `git add -N -f gm-console/app/dist/index.html` (then `git reset`); (e) `<Exec Command="npm ci" />` comment
+  appended to `Directory.Build.targets` (then `git checkout`); (f) a shell file importing `../../../app/src/main`.
+- [x] T028 [US5] Codegen (research R9, V12): `gen:api` and `check:api` scripts; generate
   `packages/shell/src/generated/gm-api.d.ts` from `../docs/api/gm-openapi.json`; run `gen:api` twice and diff (V12);
   scripted staleness check: copy the document to the scratch folder, change one `summary`, run the generator on the copy
   into the committed path, `check:api`'s diff step exits non-zero naming the file; restore and re-run green.
   Done when: generated file committed-ready (LF, no timestamp); `npm run check:api` green; Note records V12 and the red run.
   (FR-044, SC-005, FR-098)
-- [ ] T029 [US5] Lint rules (FR-048) in `eslint.config.js`: `no-restricted-syntax` for `JSXAttribute[name.name=
+  Note (V12): `scripts/gen-api.mjs` runs the `openapi-typescript` CLI into a temp file and normalizes to LF; two runs
+  byte-identical (66 922 bytes, 2 219 lines), raw CLI output already LF (0 CR) and without timestamp → **V12 confirmed**, the
+  LF step is a no-op guard. `check:api` = generate and compare with the file on disk (fails naming the file, rewrites it),
+  then `git diff --exit-code` on it (catches a regenerated but uncommitted file). Decision: the on-disk comparison is added
+  because `git diff` alone is silent while the file is untracked (it is, until the orchestrator commits). Red run: copy of
+  the document with the `gm.me` summary changed → CLI into the committed path → `npm run check:api` exit 1
+  "packages/shell/src/generated/gm-api.d.ts is stale …"; re-run green, file byte-identical to the original.
+- [x] T029 [US5] Lint rules (FR-048)
+  Note: rules in `eslint.config.js` (for every file: `no-eval`, `no-implied-eval`, `no-new-func`,
+  `no-restricted-syntax` for `dangerouslySetInnerHTML` and `innerHTML`, `no-restricted-globals` and
+  `no-restricted-properties` on `window`/`globalThis`/`self` for the three storage APIs; TypeScript: typescript-eslint
+  `recommendedTypeChecked`, react-hooks recommended, `consistent-type-imports`). Red runs with a temporary
+  `packages/shell/src/lintProbe.tsx` (one item each, all exit 1): `dangerouslySetInnerHTML`, `localStorage`,
+  `sessionStorage`, `indexedDB`, `window.localStorage`, `window.sessionStorage`, `globalThis.indexedDB`, `eval`,
+  `new Function`, `setTimeout("…")`, `innerHTML`, a conditional hook; file deleted, `npm run lint` green. `verify` chains
+  contract §8 (`check:dist` is a placeholder until T052). in `eslint.config.js`: `no-restricted-syntax` for `JSXAttribute[name.name=
   'dangerouslySetInnerHTML']`, `no-restricted-globals` / `no-restricted-properties` for `localStorage`, `sessionStorage`,
   `indexedDB` (also as `window.*`), `no-eval`, `no-implied-eval`, `no-new-func`, React hooks rules, typescript-eslint
   recommended-type-checked; `verify` script chains contract §8 (with `check:dist` added by T052). Scripted check: a temporary
   file under `packages/shell/src/` using each forbidden item makes `npm run lint` fail once per item; delete it.
   Done when: `npm run lint` green on the repository; the Note lists each rule's red run. (FR-048)
-- [ ] T030 [US5] Dev loop: `app/public/config.json` (data-model §5 local values); `tools/local/run-local.ps1` and
+- [x] T030 [US5] Dev loop: `app/public/config.json` (data-model §5 local values); `tools/local/run-local.ps1` and
   `run-local.sh` print one extra banner line after "GM UI": `  GM console   http://localhost:5173  (cd gm-console; npm ci; npm run dev)`;
   update `tests/GameServer.Architecture.Tests/RunLocalScriptTests.cs:98` area to expect it. Manual check: start run-local
   (`-Port 5080`), `npm run dev`, open `http://localhost:5173` in the system Chrome: the skeleton loads `config.json` (no API
   call yet).
   Done when: `RunLocalScriptTests` green; the manual check recorded. (FR-045, D19)
-- [ ] T031 [US5] **Checkpoint US5**: `npm ci && npm run verify` (without `check:dist` until T052) green; architecture tests
+  Note: `app/public/config.json` = data-model §5 local values; banner line added to both scripts after "GM UI";
+  `RunLocalScriptTests` default-invocation case run opt-in (`GAMESERVER_SCRIPT_TESTS=1`) → 2/2 green (PowerShell, Bash).
+  Manual check: `run-local.ps1 -Port 5080` (banner shows the console line) + `npm run dev`; system Chrome (playwright-core,
+  headless) on `http://localhost:5173`: title "GM console", requests `/`, `/src/main.tsx`, `/config.json` only (no API
+  call), `config.json` served as committed. The one console error was `/favicon.ico` 404 → `index.html` gets
+  `<link rel="icon" href="data:,">` (allowed by `img-src data:`), 0 errors after.
+- [x] T031 [US5] **Checkpoint US5**: `npm ci && npm run verify` (without `check:dist` until T052) green; architecture tests
   green; release notes US5 (workspace, versions table of T025, codegen, dev loop).
   Done when: all hold. (FR-040..FR-048, SC-005)
+  Note: `npm ci` (clean) then `check:api`, `lint`, `typecheck`, `test` (0 tests), `build` green; Architecture.Tests 80 (72, 8
+  opt-in skipped); release notes US5 written (+ V8, V12 rows).
 
 ## Phase 7: US6 — Staff sign in, see which game and environment they are on, and sign out (P6, Q19) — Phase B
 
 Shared test helpers first used here: `packages/shell/src/test/fakeFetch.ts` (route table `METHOD path` → status, headers,
 JSON body; records requests incl. headers and `credentials`) and `test/render.tsx` (Mantine + Query + router providers).
 
-- [ ] T032 [P] [US6] `packages/shell/src/config/loadConfig.ts` (+ `loadConfig.test.ts`): `GET /config.json` with
+- [x] T032 [P] [US6] `packages/shell/src/config/loadConfig.ts` (+ `loadConfig.test.ts`): `GET /config.json` with
   `cache: 'no-store'`; validation of data-model §5 (FR-050) returning `{ ok: true, config }` or `{ ok: false, field,
   message }`; trailing `/` of `apiBaseUrl` removed. Tests: valid local and Beta examples, missing file (404), not JSON,
   each invalid member, unknown members ignored, no other request made.
   Done when: green. (FR-050, US6-1)
-- [ ] T033 [P] [US6] `packages/shell/src/api/problem.ts` and `api/client.ts` (+ tests) per contract §6 and plan US6:
+  Note: `loadConfig.test.ts` 22 cases green. Decision: `config.json` is fetched **relative to the document**
+  (`new URL('config.json', document.baseURI)`), not `/config.json`, so a console under a sub-path (`BaseUrl`
+  `https://cdn.example.com/gm/`, FR-022/edge case) finds its file; at the root both are the same URL. The app is built with
+  Vite `base: './'` for the same reason (T048). `validateConfig` is exported for `deploy.test.ts` (T051).
+- [x] T033 [P] [US6] `packages/shell/src/api/problem.ts` and `api/client.ts` (+ tests) per contract §6 and plan US6:
   `createGmClient` over `openapi-fetch` with `credentials: 'include'`, base `apiBaseUrl`; middleware: GET untouched (assert
   no added header), non-GET + `X-CSRF-Token` (+ `Content-Type` with a body), caller headers (`X-Request-Id`) passed through;
   response → `GmProblem` (Problem Details members, `errors`, `requestId` from body else `X-Request-Id` header); fetch
@@ -476,7 +550,17 @@ JSON body; records requests incl. headers and `credentials`) and `test/render.ts
   non-GET → `csrf.refresh()` then one retry with the same body and headers, second failure returned.
   Done when: tests cover each rule (incl. "GET sends no custom header", "retry happens once", body replay). (FR-051,
   FR-052, FR-057, FR-058, FR-062, US6-7, US6-8)
-- [ ] T034 [US6] `packages/shell/src/session/` (`csrf.ts`, `versions.ts`, `phases.ts`, `SessionProvider.tsx` + tests):
+  Note: `client.test.ts` green (GET without any header, token only on non-GET, Content-Type only with a body,
+  `X-Request-Id` passed through, CSRF retry once with byte-identical body and the new token, second failure returned, GET
+  never retried, 401/403 hooks, Problem Details + header request id, network → `status: 0`, catalog GET with no header and
+  `cache: default`). **Phase A review carry-over**: `api/paths.ts` replaces openapi-fetch's path serializer: each
+  parameter is `encodeURIComponent`-encoded into one segment and `''`, `.`, `..` are refused before any request
+  (`encodeURIComponent('..')` is `..`, which the URL parser would collapse: `/players/../receipts` → `/receipts`).
+  Tests: `../staff`, `..%2F..%2Fstaff`, `../../gm/v1/staff`, `a/b?c#d`, `%2e%2e`, `pgs:abc` stay one segment of the
+  player route; `..`, `.`, `''` → `INVALID_PATH_PARAMETER` with zero requests. Decisions: errors are thrown as
+  `GmApiError` (an `Error` carrying `GmProblem`, for TanStack Query and lint `only-throw-error`); the catalog route,
+  absent from the document, has its own typed client with the same middleware.
+- [x] T034 [US6] `packages/shell/src/session/` (`csrf.ts`, `versions.ts`, `phases.ts`, `SessionProvider.tsx` + tests):
   phases of data-model §7; start = config → `auth/methods` → `/me` (401 → `signed-out`); guard (FR-055) → `blocked`; skew
   (FR-056: `compareFrameworkVersions(builtFor, me)` → `same | minor-differs | unparsable`, game version info); sign-in
   local (CSRF → POST login → CSRF → me from the answer); sign-out (POST logout with token; 401 treated as done; clear
@@ -485,82 +569,146 @@ JSON body; records requests incl. headers and `credentials`) and `test/render.ts
   Done when: tests: call order of sign-in (exact list and only POST carries the token), guard blocks with zero further calls,
   `0.8.1`/`0.7.0` warns, `0.7.3`/`0.7.0` does not, `0.7.0+abc` parses, game-version info, logout on expired session, no loop
   after repeated 401. (FR-052, FR-054..FR-059, US6-4..US6-9)
-- [ ] T035 [US6] `pages/LoginPage.tsx` (+ test): auth-methods variants (US6-2), local form (staff id, password;
+  Note: `SessionProvider.test.tsx` (13), `versions.test.ts` (13), `csrf.test.ts` (2) green: exact sign-in call list
+  `config → methods → me(401) → csrf → POST login → csrf` with the token only on the POST; blocked (env and game) with zero
+  further calls; `0.8.1` warns, `0.7.3`/`0.7.0+abc` do not, unparsable warns; game version info; 401 → `#/login` and back
+  to `/players/p-1` after sign-in; three concurrent 401s → one transition, no `/me`; 403 → one `/me` per navigation;
+  sign-out with token, also on 401, then a new anonymous CSRF; SSO URL. **Deviations/decisions**: (1) FR-054 lists `/me`
+  after the second CSRF; tasks T034 ("me from the answer") wins — the login answer is the `GmMeResponse`, no extra call; (2)
+  phase `api-error` added (start calls without a usable answer → error screen with retry, never "signed out", FR-062 edge
+  case); `ready`/`catalog-error` are derived from the catalog query (`consolePhase`); (3) `__GM_BUILT_FOR__` declared in
+  `session/builtFor.ts` (T026 note); (4) a sign-out the server did not confirm (not 401) still clears the console and says so.
+- [x] T035 [US6] `pages/LoginPage.tsx` (+ test): auth-methods variants (US6-2), local form (staff id, password;
   invalid-credentials message without detail), SSO button → `window.location.assign(<api>/gm/v1/auth/sso/start?returnUrl=
   <encodeURIComponent('/' + returnHash or '#/')>)` (injected `navigate` for the test), `error=sso_denied` message read from
   the hash query; no password kept after submit.
   Done when: tests for the four variants, the SSO URL (including an encoded hash), the denial message, a 401 sign-in.
   (FR-053, FR-054, US6-2, US6-3)
-- [ ] T036 [US6] `components/Layout.tsx`, `EnvBadge.tsx` (red for `live`), `SkewBanner.tsx`, `BlockScreen.tsx` (expected vs
+  Note: `LoginPage.test.tsx` (8) green: four method variants; SSO from `#/players/abc` →
+  `…/sso/start?returnUrl=%2F%23%2Fplayers%2Fabc`, from `#/login` → `%2F%23%2F` (navigation injected); `?error=sso_denied`
+  message; 401 → exactly "Invalid staff id or password." (server detail not shown), password field empty after submit.
+  `session/RedirectToLogin.tsx` keeps the page in memory before showing `#/login` (reused by the router, T041).
+- [x] T036 [US6] `components/Layout.tsx`, `EnvBadge.tsx` (red for `live`), `SkewBanner.tsx`, `BlockScreen.tsx` (expected vs
   actual game/env, only sign-out), footer (built-for and server versions, game version info) (+ tests).
   Done when: tests: badge colour for `live` vs `beta`, banner only on `minor-differs`/`unparsable`, block screen content and
   that it renders no navigation. (FR-055, FR-056, FR-060, US6-5, US6-6)
-- [ ] T037 [P] [US6] `components/ErrorDisplay.tsx` and `JsonView.tsx` (+ tests): Problem Details view (title, code,
+  Note: `Layout.test.tsx` (9) green. Layout is a plain CSS grid (`components/layout.css`, mobile first) instead of
+  Mantine `AppShell`, whose responsive options inject `<style>` (V3, R10 option 1); `live` also gets a fixed red strip
+  (design §12.9). Footer: "Console built for framework X[, game Y] · server framework A, game B".
+- [x] T037 [P] [US6] `components/ErrorDisplay.tsx` and `JsonView.tsx` (+ tests): Problem Details view (title, code,
   codeNumber, detail, `errors` list by field, request id), network failure text with the API origin; `JsonView` renders
   `JSON.stringify(value, null, 2)` in a `<pre>` as text. Test: a value containing `<img src=x onerror=alert(1)>` appears as
   text and creates no `img` element.
   Done when: green. (FR-062, FR-076, US7-6)
-- [ ] T038 [US6] **Checkpoint US6**: `npm run verify` green; release notes US6 (session behaviour, guard, skew, CSRF retry,
+  Note: `ErrorDisplay.test.tsx` (5) green, incl. `<img src=x onerror=alert(1)>` in title/detail/errors/JSON shown
+  as text with no `img` element.
+- [x] T038 [US6] **Checkpoint US6**: `npm run verify` green; release notes US6 (session behaviour, guard, skew, CSRF retry,
   D15).
   Done when: all hold. (FR-050..FR-062)
+  Note: `npm run verify` green (8 files, 91 tests; `check:dist` still the placeholder); release notes US6 written.
 
 ## Phase 8: US7 — Staff browse the framework's read pages from a navigation built from their permissions and the catalog (P7) — Phase B
 
-- [ ] T039 [P] [US7] `packages/shell/src/catalog/parseCatalog.ts` (+ test): `GmCatalog` of data-model §8 from an OpenAPI
+- [x] T039 [P] [US7] `packages/shell/src/catalog/parseCatalog.ts` (+ test): `GmCatalog` of data-model §8 from an OpenAPI
   object; defaults for missing `x-gm-*`; operations without `operationId` skipped. Test input = the committed
   `docs/api/gm-openapi.json` read from disk: every operation of the document is in the catalog, keyed by route name
   (count compared with the document's own operation count, not hard-coded), `gm.player_receipts` paged query `player.read`, `economy.adjust` command `player` target; a minimal
   document without `x-gm-*` parses with defaults.
   Done when: green. (FR-065)
-- [ ] T040 [US7] `navigation/registry.ts`, `navigation/builtins.ts`, `navigation/Menu.tsx` (+ tests): internal registry with
+  Note: `parseCatalog.test.ts` (4) green: every operation of the committed document (count from the document itself),
+  `gm.player_receipts`, `economy.adjust`, `gm.staff_grant`; defaults; skips. Decision: a missing `x-gm-permission` reads as
+  `''` (data-model §8 gives no default; visibility uses the page's permission, not the operation's).
+- [x] T040 [US7] `navigation/registry.ts`, `navigation/builtins.ts`, `navigation/Menu.tsx` (+ tests): internal registry with
   `addPage`/`addPlayerTab` (design §7.3 shapes, FR-067), built-in definitions of data-model §9, `isVisible(def, me,
   catalog)`; menu grouped and ordered; player-search modes visible per their route. Not exported from `src/index.ts`
   (assert in a test that the public module exports only contract §6 names).
   Done when: tests: `player.read`-only staff sees Players only; without `economy.ledger` in the catalog the Ledger tab is
   absent; ops cards individually; the export list. (FR-066, FR-067, US7-1)
-- [ ] T041 [US7] `router.tsx`, `App.tsx`, `pages/NotAvailable.tsx` (+ tests): hash routes of plan US7, session-phase gating
+  Note: `registry.test.tsx` (8) green, incl. "the package exports only `createGmConsole` at run time". Decision: the
+  internal `GmPageDef` gains optional `anyOfRoutes` (Ops: visible with at least one card route, data-model §9 "cards
+  individually"); the design §7.3 members are unchanged. Pages with a `:param` path are never in the menu.
+- [x] T041 [US7] `router.tsx`, `App.tsx`, `pages/NotAvailable.tsx` (+ tests): hash routes of plan US7, session-phase gating
   (config error, signed-out → login, blocked → block screen, ready → layout), a hidden page by URL renders "not available"
   with **zero** API calls, `returnTo` restored after sign-in, unknown hash → home (`#/players` when visible, else the first
   visible page, else an empty-permissions message); catalog loaded once (`staleTime: Infinity`, cleared on 401/sign-out)
   with an error screen + retry.
   Done when: tests for each gate, the zero-call rule, `returnTo`, a single catalog request across three navigations, the
   catalog error screen. (FR-057, FR-065, FR-066, SC-008)
-- [ ] T042 [P] [US7] `components/PagedList.tsx` (+ test): TanStack `useInfiniteQuery`, `pageSize=50`, "Load more" with
+  Note: `App.test.tsx` (13) green: config error (0 API calls), API down → "No answer…" + retry (not the login page),
+  deep link signed out → login → back to `/staff/admin`, blocked (no catalog), hidden page "not available" with zero page calls,
+  one catalog request over four navigations (no header, credentials), home rules, empty permissions, catalog error + retry,
+  401 in a page → login, catalog loaded again after sign-in, sign-out from the header, and the hash `..%2F..%2Fstaff` →
+  `/gm/v1/players/..%2F..%2Fstaff` only. **Fix found by these tests**: after a sign-in the login route's redirect raced the
+  provider's return navigation; the `signed-in` state now carries `landing` and only the gate navigates.
+- [x] T042 [P] [US7] `components/PagedList.tsx` (+ test): TanStack `useInfiniteQuery`, `pageSize=50`, "Load more" with
   `cursor = nextCursor`, button hidden when null, a failed later page keeps loaded rows and shows `ErrorDisplay`.
   Done when: test with a fake two-page list and a failing second page. (FR-073, US7-4)
-- [ ] T043 [P] [US7] `pages/PlayersPage.tsx` (+ test): three modes (player id → `gm.player`; mapping key → `gm.player_by_mapping`
+  Note: `PagedList.test.tsx` (2) green: `?pageSize=50`, then `?pageSize=50&cursor=c-1`; a 503 on page 2 keeps rows a, b
+  and shows the error; retry appends c and hides "Load more"; first-page error; empty text.
+- [x] T043 [P] [US7] `pages/PlayersPage.tsx` (+ test): three modes (player id → `gm.player`; mapping key → `gm.player_by_mapping`
   with the key URL-encoded in the path; display name → `gm.player_search`, paged), each mode shown per FR-066; a hit
   navigates to `#/players/{playerId}`; inputs kept in component state only.
   Done when: tests: each mode calls the right path; after a mapping-key or display-name search `location.hash` contains
   neither value; 404 → "player not found". (FR-061, FR-068, US7-2)
-- [ ] T044 [P] [US7] `pages/PlayerPage.tsx` (+ test): aggregates table (data-model fields), deletion state, `JsonView` per
+  Note: `PlayersPage.test.tsx` (5) green: id → `/gm/v1/players/p-1` → `/players/p-1`; mapping key → API path
+  `…/by-mapping/pgs%3Asecret-key`, router path and `location.hash` without the key; name search
+  `?displayName=Alice%20Secret&pageSize=50`, path stays `/players`; 404 → "Player not found."; modes hidden per route.
+- [x] T044 [P] [US7] `pages/PlayerPage.tsx` (+ test): aggregates table (data-model fields), deletion state, `JsonView` per
   state; tabs Receipts (`PagedList` of `gm.player_receipts`, each row links `#/receipts/{receiptId}`), Audit
   (`gm.player_audit`), Ledger (`economy.ledger`, FR-066); tabs independent (A10).
   Done when: tests: the three tabs with fake pages; Ledger absent without the route; a failing Audit tab leaves Receipts
   working; 404 page. (FR-069, US7-3)
-- [ ] T045 [P] [US7] `pages/ReceiptPage.tsx` (+ test): `gm.receipt` → `JsonView`; 404 → "receipt not found".
+  Note: `PlayerPage.test.tsx` (9) green: aggregates row text, deletion and state JSON (`<b>` stays text), three tabs each
+  its own call (`keepMounted={false}`: a tab loads when opened), receipt link → `/receipts/r-1`, no Ledger without
+  `economy.ledger`, failing Audit keeps Receipts, 404 without tabs; hash parameters `..%2F..%2Fstaff`, `..%2Fstaff`,
+  `a%3Fb%23c` stay one API segment, `%2E%2E` → `INVALID_PATH_PARAMETER` with zero requests.
+- [x] T045 [P] [US7] `pages/ReceiptPage.tsx` (+ test): `gm.receipt` → `JsonView`; 404 → "receipt not found".
   Done when: green. (FR-070)
-- [ ] T046 [P] [US7] `pages/StaffListPage.tsx`, `pages/StaffPage.tsx` (+ tests): `PagedList` of `gm.staff_list` (staff id,
+  Note: `ReceiptPage.test.tsx` (2) green.
+- [x] T046 [P] [US7] `pages/StaffListPage.tsx`, `pages/StaffPage.tsx` (+ tests): `PagedList` of `gm.staff_list` (staff id,
   display name, status, roles/permissions summary from `StaffView`), detail from `gm.staff`, audit tab `gm.staff_audit`
   (paged, `JsonView` rows).
   Done when: tests with fake pages; no control for create/grant/disable/enable/revoke. (FR-071, FR-074, US7-5, US7-7)
-- [ ] T047 [P] [US7] `pages/OpsPage.tsx` (+ test): cards health (`gm.health`: status, entries table), version
+  Note: `StaffPages.test.tsx` (3) green: two pages with cursor, row text, link to detail, detail + audit tab, no audit tab
+  without `gm.staff_audit`; the only buttons on both pages are "Load more" (no create/grant/disable/enable/revoke).
+- [x] T047 [P] [US7] `pages/OpsPage.tsx` (+ test): cards health (`gm.health`: status, entries table), version
   (`gm.ops_version`), gate (`gm.ops_gate`), each under FR-066 and independent (A10); no maintenance or min-version control.
   Done when: tests: each card alone, a failing card does not hide the others. (FR-072, FR-074, US7-5, US7-7)
-- [ ] T048 [US7] Default app wiring: `app/vite.config.ts` `define` of `__GM_BUILT_FOR__` (shell `package.json` version;
+  Note: `OpsPage.test.tsx` (5) green: three cards, each alone (one request), a failing health card keeps the others, no
+  button at all.
+- [x] T048 [US7] Default app wiring: `app/vite.config.ts` `define` of `__GM_BUILT_FOR__` (shell `package.json` version;
   `GM_CONSOLE_GAME_VERSION` when set), `app/src/main.tsx`; shell `createGmConsole(options?)` mounts the providers, router and
   pages; a test of `createGmConsole` mounting into a given element; a source scan test that no page module calls
   `api.POST`/`PUT`/`DELETE` except `session/` (FR-074 boundary pinned).
   Done when: `npm run build` produces `app/dist`; the boundary test is red with a temporary `api.POST` in a page (scripted,
   reverted). (FR-042, FR-056, FR-074, FR-075, US7-7)
-- [ ] T049 [US7] **Checkpoint US7**: `npm run verify` green; manual run against run-local in the system Chrome
+  Note: `app/vite.config.ts`: `define` `__GM_BUILT_FOR__` from `@gameserver/gm-shell/package.json` (resolved through the
+  package, which now also exports `./package.json`, so a game app (GM-4) reads the framework's version the same way) +
+  `GM_CONSOLE_GAME_VERSION`; `base: './'` (environment-free, sub-path capable; `check:dist` accepts relative paths);
+  `chunkSizeWarningLimit` 800 (the budget is `check:dist`'s gzip). `createGmConsole` mounts `GmConsoleApp` (StrictMode,
+  Mantine with `withGlobalClasses={false}` and an in-memory colour-scheme manager — Mantine's default one uses
+  `localStorage`). Tests: `index.test.tsx` (mount into a given element → login form, first request `config.json`, hash
+  `#/login`; no root → error), `mutationBoundary.test.ts` (no `.POST/.PUT/.DELETE/.PATCH(` nor raw `method: 'post'`
+  outside `session/`; `session/` has exactly POST login and POST logout). Red runs: `api.POST('/gm/v1/staff/{staffId}/disable')`
+  in `StaffPage.tsx` → red naming the file; `fetch(u, { method: 'post' })` in `OpsPage.tsx` → red; restored → green.
+  `npm run build` → `app/dist` (`./assets/…`).
+- [x] T049 [US7] **Checkpoint US7**: `npm run verify` green; manual run against run-local in the system Chrome
   (`npm run dev`): sign in as `admin`, open Players (search a display name of a player created with the Unity sample client
   or skip if none), Staff → `admin`, Ops; Note with what was seen. Release notes US7 (pages, D10 boundary, D11).
   Done when: all hold. (FR-065..FR-076)
+  Note: `npm run verify` green (19 files, 146 tests). Manual run (run-local Local flavor :5080 + `npm run dev`, system
+  Chrome 157 via playwright-core, headless): sign-in `admin` → `#/players`; header "LOCAL · sample · Local admin · Sign out";
+  menu Players / Staff / Operations; display-name search "Player" → "No player has this display name." (the local players
+  have empty display names: search **skipped** as allowed); mapping key `guest:dev-2753460c3b5647d3` → API
+  `…/by-mapping/guest%3Adev-…` → `#/players/p_4kvaf1xr9z6dh13hqhkf3p96kr` (no key in the URL), 6 aggregates, tabs
+  Receipts (`battle.end` receipts) / Audit / Ledger (entries); Staff → `admin` (12 permissions, 1 audit entry); Ops: framework
+  `0.7.0+63ddb8f…`, health Healthy, maintenance off; cookies `gs_gm_dev`/`gs_gm_dev_csrf` `Path=/`, `Lax`, HttpOnly. Only POST
+  = login (with token); every other call a GET without custom header. One console message: Chrome's "Failed to load resource:
+  401" for the expected start-up `/me`. Release notes US7 written.
 
 ## Phase 9: US8 — Ops deploy the default app on a static host with strict security headers (P8, §6.6, Q18) — Phase B
 
-- [ ] T050 **[VERIFY] V3 — decision gate for `style-src`** (research R10): build `app` with the pages of Phase 8; serve
+- [x] T050 **[VERIFY] V3 — decision gate for `style-src`** (research R10): build `app` with the pages of Phase 8; serve
   `app/dist` from a scratch Node server on `http://localhost:5173` (the configured console origin; dev server stopped) with
   the strict CSP of data-model §10
   (`connect-src 'self' http://localhost:5080`); open it with `playwright-core` + system Chrome against the running run-local
@@ -569,7 +717,21 @@ JSON body; records requests incl. headers and `credentials`) and `test/render.ts
   Done when: Note records the violations (directive, source) and the decision: `style-src 'self'` kept (0 violations, maybe
   after the R10 option (1) change in `createGmConsole`) or fallback `'self' 'unsafe-inline'`; the decision feeds T051.
   (FR-081, FR-098)
-- [ ] T051 [US8] `gm-console/deploy/` (FR-080, data-model §10): `security-headers.json` (with the V3 decision),
+  Note (V3): scratch Node server (session scratch folder) serving `app/dist` on `http://localhost:5173` with the data-model §10
+  CSP (`style-src 'self'`, `connect-src 'self' http://localhost:5080`); playwright-core + Chrome 157 against run-local, init
+  script collecting `securitypolicyviolation`. Steps: login page, invalid-credentials alert, sign-in (layout, menu, Players), Staff
+  list, staff detail (Tabs, JSON), Ops (Cards, Table), 404 receipt alert, `ErrorDisplay` (`#/players/..`). **First run: 2
+  violations**, both `style-src-elem` "inline" from the bundle: (1) `<style data-mantine-styles>` of `MantineCssVariables`
+  (content only whitespace: the default theme differs from no default variable) at start; (2) `SimpleGrid`'s responsive
+  `<style>` on Ops. **R10 option (1) applied**: `MantineProvider withCssVariables={false}` (the default theme's variables are
+  in the static `@mantine/core/styles.css`; `withGlobalClasses={false}` already) and a `Stack` instead of `SimpleGrid`. **Second
+  run: 0 violations, no `<style>` element in the document** → **decision: `style-src 'self'` kept** (no fallback), feeds T051.
+  Remaining console messages are Chrome's "Failed to load resource" for the expected 401 (`/me` at start, wrong password) and
+  the deliberate 404. Screenshots (scratch) at 1280 px and 390 px look as designed. Guard: `App.test.tsx` "injects no <style>
+  element…" (red with `withCssVariables` restored; jsdom does not render component-level responsive styles, so a
+  `SimpleGrid` comes back green there — the e2e preview target under the real CSP is that guard, T055). GM-4 note: a game
+  theme must ship its variables as static CSS (no runtime injection).
+- [x] T051 [US8] `gm-console/deploy/` (FR-080, data-model §10): `security-headers.json` (with the V3 decision),
   `nginx.conf.example` (`server` block, `location = /index.html`, `location = /config.json`, `location /assets/`, `add_header
   … always;` lines from the JSON, `{{apiOrigin}}` shown as `https://gm-api.beta.example.com` with a comment), `headers.md`
   (table: path class, header, value; CDN notes: response headers not `<meta>`, custom domain + TLS, no PSL default domain),
@@ -578,7 +740,16 @@ JSON body; records requests incl. headers and `credentials`) and `test/render.ts
   string has exactly the directives of FR-081.
   Done when: green; a deliberate edit of one header in the nginx example makes the test red (scripted, reverted). (FR-080,
   FR-081, FR-082)
-- [ ] T052 [US8] Preview with headers and bundle check: `app/vite.config.ts` `preview` = `localhost:5173`, `strictPort`,
+  Note: `deploy/` = `security-headers.json` (data-model §10, `style-src 'self'` per V3), `nginx.conf.example` (five
+  locations: `= /`, `= /index.html`, `= /config.json`, `/assets/`, fallback `/` → 404; every location repeats the full set
+  because nginx does not inherit `add_header`; `always`), `headers.md` (table + CDN notes), `config.example.json` (Beta),
+  `config.schema.json` (2020-12), `securityHeaders.ts` (reader shared with the preview plugin), `deploy.test.ts` (15 tests:
+  CSP = the ten FR-081 directives, other headers and classes, nginx and table equal the JSON, example passes the schema rules
+  (hand-written check of the keywords used, plan N2) and `validateConfig`, eight invalid configs refused by both, schema pattern
+  = shell pattern). Red runs: `Referrer-Policy "origin"` in the nginx example → red; `/config.json` dropped from the table →
+  red; restored → green. Decision: `validateConfig` now uses the schema's `apiBaseUrl` pattern (`API_BASE_URL_PATTERN`, lower-case
+  scheme, no whitespace/`?`/`#`/`@` in the authority) on top of the URL parse, so both sources refuse the same values.
+- [x] T052 [US8] Preview with headers and bundle check: `app/vite.config.ts` `preview` = `localhost:5173`, `strictPort`,
   headers from `deploy/security-headers.json` (`apiOrigin` from `GM_E2E_API`, default `http://localhost:5080`) per path class
   (a small Vite plugin middleware for `preview` if `preview.headers` cannot vary per path); V11: curl `/`, `/index.html`,
   `/config.json`, one `/assets/*` file and record the headers. `scripts/check-dist.mjs` (FR-083, SC-007): inline `<script>`
@@ -586,16 +757,31 @@ JSON body; records requests incl. headers and `credentials`) and `test/render.ts
   of the JS+CSS referenced by `index.html` ≤ 500 KB (prints the size); add to `verify`.
   Done when: `npm run build && npm run check:dist` green with the size recorded; each rule shown red once with a temporary
   file in `dist/` (scripted); V11 Note (or the fallback server in `e2e/` and the reason). (FR-082..FR-084, SC-007, FR-098)
-- [ ] T053 [US8] **Checkpoint US8**: `npm run verify` green (incl. `check:dist`); release notes US8 (deploy files, V3
+  Note: `app/vite-plugins/staticHost.ts` (preview only): per-path headers from the JSON (`apiOrigin` = `GM_E2E_API`, else the
+  origin of the served config's `apiBaseUrl`), `/config.json` served from `GM_CONSOLE_CONFIG` (default `app/public/config.json`).
+  **Finding**: Vite copied `app/public/config.json` into `dist/` (forbidden by FR-083) → `build.copyPublicDir: false`
+  (`public/` serves the dev loop only; preview/deployments add `config.json`). The `data:,` favicon became `app/favicon.svg`
+  (emitted as `./assets/favicon-<hash>.svg`) so the "relative or root path" rule holds literally. **V11**: first curl showed
+  `Cache-Control: no-cache` on `/assets/*` (the static middleware passes headers to `writeHead(status, headers)`, which beats
+  `setHeader`); the plugin now overrides those arguments → confirmed: `/`, `/index.html`, `/config.json` = all headers +
+  `no-cache`; `/assets/*.js|.css` = all + `public, max-age=31536000, immutable`; `/favicon.ico` 404 with the `all` headers;
+  CSP `connect-src 'self' http://localhost:5080`. No fallback server needed. Imports carry `.ts` (Vite 8's native config
+  loader warning; `allowImportingTsExtensions` in `tsconfig.tools.json`). `scripts/check-dist.mjs`: 185.2 KB gzip (JS 154.8
+  + CSS 36.2, budget 500 KB). Red runs with temporary changes in `dist/`: inline `<script>`, `https://cdn.example.com/x.js`,
+  a file containing `localhost:5080`, `dist/config.json`, a 700 KB random script (888.3 KB gzip) → exit 1 each; rebuilt → ok.
+  `check:dist` is in `verify`.
+- [x] T053 [US8] **Checkpoint US8**: `npm run verify` green (incl. `check:dist`); release notes US8 (deploy files, V3
   decision, bundle size).
   Done when: all hold. (FR-080..FR-085)
+  Note: `npm run verify` green: check:api, lint, typecheck, 20 files / 164 tests, build, check:dist 185.2 KB. Release
+  notes US8 written (+ V3, V11 rows).
 
 ## Phase 10: End-to-end smoke (US5–US8) — Phase B
 
 Precondition for T055/T056: the run-local host is running on 5080 (`tools/local/run-local.ps1`, Local flavor with the T019
 values, File store; no `-Reset`, the owner's local data stays) and nothing else listens on 5173.
 
-- [ ] T054 [US5] [US6] `gm-console/e2e/` harness (research R11, data-model §11, A7): `vitest.e2e.config.ts` (node
+- [x] T054 [US5] [US6] `gm-console/e2e/` harness (research R11, data-model §11, A7): `vitest.e2e.config.ts` (node
   environment, sequential, timeouts 60 s per test, 120 s first load), `harness.ts`: API precheck
   (`GET {GM_E2E_API}/gm/v1/auth/methods` → else fail "start tools/local/run-local.ps1 (Local flavor) first"), Vite server
   per target started programmatically (`createServer` for `dev`, `preview` for `preview` after `npm run build`) on
@@ -605,7 +791,17 @@ values, File store; no `-Reset`, the owner's local data stays) and nothing else 
   (how to run, variables, Edge path). Root script `e2e`.
   Done when: `npm run e2e` with a trivial test (open the console, login page visible) passes on both targets; with the host
   stopped it fails with the hint. (FR-087)
-- [ ] T055 [US5] [US6] [US7] [US8] `gm-console/e2e/smoke.e2e.ts` (FR-087), per target:
+  Note: `e2e/vitest.e2e.config.ts` (node, files sequential, 60 s tests, 120 s hooks), `e2e/harness.ts` (API precheck,
+  Vite `createServer` / `build`+`preview` from the app's config on 5173 strict, `chromium.launch({ executablePath })` with a
+  clear error for a missing file, CSP init script, console errors, CDP log of every request as sent — `requestWillBeSent` +
+  `…ExtraInfo` give real `Origin`/`Sec-Fetch-Site`/`If-None-Match` headers, preflights and raw 304 statuses — and a JSON report
+  in `e2e/.artifacts/`), `e2e/console.e2e.ts` (trivial: login page on each target), `e2e/README.md`. `npm run e2e`: 2/2 green
+  (dev, preview, Chrome). Failure paths (without stopping the owner's host): `GM_E2E_API=http://localhost:5099` → "The GM API
+  does not answer at http://localhost:5099 (fetch failed): start tools/local/run-local.ps1 (Local flavor) first, or set
+  GM_E2E_API."; `GM_E2E_BROWSER=C:/nope/chrome.exe` → "Browser not found at … the smoke never downloads a browser."; port 5173
+  free afterwards. Decision: request headers are read through CDP rather than `page.on('request')` (Playwright's request
+  headers omit `Origin`/`Sec-Fetch-*` and CORS preflights are not page requests).
+- [x] T055 [US5] [US6] [US7] [US8] `gm-console/e2e/smoke.e2e.ts` (FR-087), per target:
   1. open `http://localhost:5173/` → login page with the local form (`local: true`) and no SSO button (`sso: false`);
   2. sign in `admin` / `dev-only-change-me` → header shows `local` and `sample` and the staff name; the request log shows the
      POST login with `origin: http://localhost:5173`, `sec-fetch-site: same-site`, an `x-csrf-token` header, and exactly the
@@ -622,19 +818,35 @@ values, File store; no `-Reset`, the owner's local data stays) and nothing else 
   Also record the time from the login answer to the first page render (SC-008) and the number of catalog requests (1).
   Done when: both targets green on Chrome; Note with timings, request counts and V4. (FR-087, FR-082, SC-006, SC-008,
   US5-4, US6-2, US6-4, US6-5, US6-9, US7-1, US7-5, US8-2)
-- [ ] T056 [US7] V13 and Edge: in the smoke (preview target), after step 4 reload the page and sign-in state persists
+  Note: `e2e/smoke.e2e.ts` steps 1–8 green on both targets, Chrome 157.0.8103.38 (run-local Local flavor :5080, File store):
+  login POST `Origin: http://localhost:5173`, `Sec-Fetch-Site: same-site`, `X-CSRF-Token` present, 200; GETs without custom
+  header; **V4 re-confirmed**: `gs_gm_dev` and `gs_gm_dev_csrf` on `http://localhost:5080` HttpOnly, `Lax`, `Path=/` (set on
+  the CORS answer) and deleted by sign-out (`/me` 401 after); header `local` / `sample` / "Local admin"; Staff → `admin`; Ops
+  version `0.7.0+63ddb8f…`; **1 catalog request**; 404 with readable `X-Request-Id`; **preflights = exactly `OPTIONS
+  /gm/v1/auth/login` and `/gm/v1/auth/logout` (for POST), none for a GET (SC-006)**; second context with `environmentId: beta`
+  → "Wrong server" naming `beta`/`local`, calls methods, me, csrf, login, csrf and no catalog; **0 CSP violations** (preview);
+  **SC-008**: login answer → first page 101 ms (dev) / 92 ms (preview). Console errors: only Chrome's "Failed to load resource"
+  for the deliberate 401 (`/me` signed out, twice) and 404; **decision**: `unexpectedConsoleErrors` ignores exactly those
+  (no page code can silence the browser's own network log); everything else fails the step. Step 8 also asserts
+  `localStorage.length + sessionStorage.length === 0` after the run (FR-061 at run time; scoped lint exception, FR-048).
+- [x] T056 [US7] V13 and Edge: in the smoke (preview target), after step 4 reload the page and sign-in state persists
   (cookie); through the CDP session record whether the catalog request is revalidated with `If-None-Match` and answered 304
   (`Network.responseReceivedExtraInfo` status); if not, Note the fallback (once per session, FR-065 unchanged). Run the whole
   smoke once with `GM_E2E_BROWSER = C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe`. Release notes e2e
   section.
   Done when: Notes for V13 and the Edge run (green). (FR-065, FR-087, SC-006, FR-098)
+  Note (V13): preview target, reload after step 4: session kept (header shown, no login), the catalog GET carried
+  `If-None-Match: "b1c396b9…"` and Chrome's raw status was **304** (ETag exposed by CORS) → **V13 confirmed**, no fallback
+  (still one catalog request per page load, FR-065). **Edge run** (`GM_E2E_BROWSER` = msedge.exe 156.0.4314.58): both targets
+  19 passed + 1 skipped (V13 is preview-only), login → page 81 ms / 100 ms, same preflights, 0 CSP violations, V13 304. Release
+  notes e2e section written.
 
 ## Phase 11: US9 — The docs and the requirements describe the console hosting as built (P9) — Phase B
 
 Every value written in a doc is copied from the tested source (code constants, `deploy/security-headers.json`, test
 expectations), never retyped from the design.
 
-- [ ] T057 [P] [US9] `docs/pcr/gm.md` (Vietnamese): header lines 4–6 (console = GM-2 shipped shell; `/gm/v1/ui` Dev/Test
+- [x] T057 [P] [US9] `docs/pcr/gm.md` (Vietnamese): header lines 4–6 (console = GM-2 shipped shell; `/gm/v1/ui` Dev/Test
   only, removed later); "Xác thực và phạm vi" (cookie names per environment, `Path=/`, `Secure`, `SameSite` from
   `Gm:Cookies:SameSite`, one-time sign-out; CORS: expose list, max-age 7200, one origin outside Development, headers on every
   error answer, sibling-origin rule); endpoint table (`/auth/csrf` cookie name, `/auth/sso/start` return rule,
@@ -643,12 +855,49 @@ expectations), never retyped from the design.
   "Console hosting (slice 018 — GM-2)" with the guarantees of contracts/console-hosting.md §3 and §6 and the denial fragment.
   Done when: a read-through finds no `Path=/gm`, no "`None` khi CORS bật", no "`/gm/v1/ui` … trang P0"; every value equals
   code/tests. (FR-090)
-- [ ] T058 [P] [US9] `docs/pcr/platform.md`: §14 CORS paragraph (exposed headers, max-age, errors keep headers through the
+  Note: `docs/pcr/gm.md` updated from code and tests:
+  - header lines: GM-2 (slice 018) ships the console (`@gameserver/gm-shell` + default app in `gm-console/`, case A);
+    `/gm/v1/ui` is Development/Test only; the branch line adds `018-gm-console-hosting-shell`.
+  - "Xác thực và phạm vi": a cookie table per environment from `GmCookies` (`__Host-gs_gm`/`__Host-gs_gm_csrf` outside
+    Development, `gs_gm_dev`/`gs_gm_dev_csrf` in Development, `Path=/`, Secure/antiforgery policy, `SameSite` from
+    `Gm:Cookies:SameSite`), why Development has no `__Host-`, the one-time sign-out (pre-018 cookies ignored), OIDC
+    correlation cookies unchanged. The CSRF bullet uses the per-environment cookie names and adds the sibling-origin rule
+    (FR-004). The CORS bullet adds the `GmCors` values (expose `X-Request-Id,Retry-After,ETag`, max-age 7200,
+    methods/headers), one origin outside Development, and CORS headers on every error answer (the 12 statuses of
+    `GmCorsErrorHeadersTests`, `OnStarting`, writer unchanged).
+  - endpoint table: `/auth/csrf` cookie names; `/auth/sso/start` return rule from `GmConsoleUrls`; `/auth/sso/callback`
+    success and denial targets for both configurations; `/gm/v1/ui` Dev/Test only.
+  - "Cấu hình": `Gm:Cors:AllowedOrigins` (count, https, needs `BaseUrl`), `Gm:Console:BaseUrl`, `Gm:Cookies:SameSite`; the
+    "no console" mode; sample host values (checked in `appsettings.Local/Dev.json`; Beta/Uat/Live have none); the 9 startup
+    lines copied from `GmOptionsValidator`/`GmCorsValidation`.
+  - "Route catalog": `gm.ui` gets condition `development_tools` (text and table row).
+  - slice 017 section: the CORS line points to 018; the console bootstrap is corrected (no manual `If-None-Match`; the
+    browser cache revalidates with a 304, measured in e2e).
+  - new section "Console hosting (slice 018 — GM-2)": case-A layout and settings, call sequences, the guarantees table
+    (contract §3), compatibility promise and denial fragment `#/login?error=sso_denied` (§6), deploy order and skew (Q19).
+  Read-through: no `Path=/gm`, no "`None` khi CORS bật", no "`/gm/v1/ui` … trang P0" (grep clean); the pre-018 cookie is
+  described as "đường dẫn `/gm`" and the OIDC callback path is written without `Path=`.
+- [x] T058 [P] [US9] `docs/pcr/platform.md`: §14 CORS paragraph (exposed headers, max-age, errors keep headers through the
   middleware's `OnStarting`, outcome of T007), §9/§214 line for `/gm/v1/ui` (Dev/Test), new **§24 "GM console: hosting và
   shell (slice 018 — GM-2)"**: workspace and versions rule (T025 table), codegen and `check:api`, `verify`, static-host header
   source and V3 decision, `check:dist`, e2e (how, browsers, ports), Breaking (slice 018) list BC-1..BC-9.
   Done when: read-through against code and `deploy/`. (FR-091)
-- [ ] T059 [P] [US9] New `docs/guides/gm-console.md` (Vietnamese): 1 overview (case A diagram); 2 local loop (run-local +
+  Note: `docs/pcr/platform.md` updated:
+  - version paragraph: adds the 018 branch (§24, CORS in §14, `/gm/v1/ui` in §9).
+  - §9 allowlist row: `/gm/v1/ui` mapped only in Development/Test (`development_tools`), elsewhere 404.
+  - §14 CORS paragraph: pipeline position (`UseWhen("/gm", UseCors)` after routing, before gate/profile/timeouts/limiter,
+    checked in `GameServerApplicationExtensions.cs:74`), exposed headers, max-age 7200, methods/headers unchanged, one origin
+    outside Development, headers on errors through `OnStarting`, T007 outcome "no change" (H14 not reproduced on ASP.NET
+    Core 10.0.14).
+  - new §24 "GM console: hosting và shell (slice 018 — GM-2)": workspace contract and version rule with the T025 table and the
+    npm `overrides` workaround; GM-4/V9 consumption notes; scripts table (from `gm-console/package.json`) and lint rules;
+    shell public surface and session rules; static host (header table = `deploy/security-headers.json`, V3 decision
+    `style-src 'self'` and why, environment-free build, preview plugin variables, `check:dist` rules and 185.2 KB gzip); e2e
+    (how to run, browsers, variables, ports 5173/5080, never 5180, results on Chrome 157 and Edge 156 incl. V13 304);
+    "Breaking (slice 018)" BC-1..BC-9 from spec.md.
+  Read-through against the code, `deploy/` and the task notes: the values match (e2e results and versions copied from the
+  T025–T064 notes, not re-run).
+- [x] T059 [P] [US9] New `docs/guides/gm-console.md` (Vietnamese): 1 overview (case A diagram); 2 local loop (run-local +
   `npm ci` + `npm run dev`, `admin` seed, `localhost` only); 3 configuration per environment (server keys, `config.json`,
   CSP `connect-src`, sample values); 4 deploy a static host (build once, `dist/` + `config.json` + headers from `deploy/`,
   custom domain + TLS, no CDN default domain, TLS at the proxy needs forwarded headers for the CSRF route); 5 deploy order and
@@ -656,67 +905,258 @@ expectations), never retyped from the design.
   (`127.0.0.1`, LAN, old cookies after upgrade, `SameSite=None` needs HTTPS, CORS error seen as network error, port 5173
   busy); 9 what comes in GM-3/GM-4.
   Done when: the file exists and each command in it was run once while writing (Note). (FR-092, FR-085)
-- [ ] T060 [P] [US9] `docs/guides/consumer-guide.md` (English): new section 15 "GM console for a game" — Q18 CI recipe for a
+  Note: new `docs/guides/gm-console.md` (Vietnamese, sections 1–9): case-A diagram and start sequence; local loop (run-local +
+  `npm ci` + `npm run dev`, `admin` / `dev-only-change-me`, `localhost` only); server keys with the validator's startup lines
+  copied verbatim, cookie table per environment, SSO return/denial targets, `config.json` rules (read next to `index.html`,
+  schema/example in `deploy/`), CSP `connect-src`; static-host deploy (build once, `dist/` + `config.json`, header table equal
+  to `security-headers.json`, custom domain + TLS, no CDN default domain, `GameServer:Hosting:ForwardedHeaders` behind a TLS
+  proxy, `npm run preview` with `GM_CONSOLE_CONFIG` (absolute path)/`GM_E2E_API`); deploy order and skew table (Q19), one-time
+  sign-out; security invariants; tests (`verify`, `check:api`, `e2e`, Edge via `GM_E2E_BROWSER`, architecture tests);
+  troubleshooting (no answer / CORS, `127.0.0.1`, LAN, old cookies, `SameSite=None` on HTTP, proxy, port 5173 busy, Wrong
+  server, Version mismatch, EBADENGINE); GM-3/GM-4 with the T064 frictions. Commands run once while writing: `npm ci` (298
+  packages); `npm run verify` green (20 files / 164 tests, check:dist 185.2 KB); `npm run gen:api` (file unchanged,
+  `check:api` up to date afterwards); `npm run build -w app`; `npm run check:dist` ok; `npm run dev` (serves `/` 200 and
+  `config.json`; run-local answers `Access-Control-Allow-Origin: http://localhost:5173` for that origin and none for
+  `Origin: http://127.0.0.1:5173`, which backs the troubleshooting row); PowerShell `$env:GM_CONSOLE_CONFIG=<scratch
+  config.json>; npm run preview` → the scratch file served, `/` and `/config.json` `no-cache`, assets `immutable`, CSP
+  `connect-src 'self' http://localhost:5080`; servers stopped. `npm run e2e` not re-run (T055/T056). The EBADENGINE row is
+  npm's documented `engine-strict` behaviour, not reproduced (only Node 22.20 installed).
+- [x] T060 [P] [US9] `docs/guides/consumer-guide.md` (English): new section 15 "GM console for a game" — Q18 CI recipe for a
   game without pages (Node 22.20 in that job only, `npm ci --prefix framework/gm-console`, `npm run build -w app`, add the
   environment's `config.json`, apply `deploy/` headers, upload), per-environment server keys, deploy order, one-time sign-out,
   game tests pinning `gs_gm`/`gm.ui`; section 11 bump checklist lines for BC-1, BC-2, BC-4, BC-8; a pointer that pages of the
   game wait for GM-4.
   Done when: read-through; the recipe commands run once on this repository (`framework/gm-console` = `gm-console`). (FR-093,
   FR-085)
-- [ ] T061 [P] [US9] `docs/html/01-gioi-thieu.html` (4.12 GM API: console shell and default app, cookies, Dev/Test page;
+  Note: `docs/guides/consumer-guide.md` (English): header names branches 017 and 018; intro links `docs/guides/gm-console.md`;
+  section 11 step 7 gains the slice 018 lines for BC-1 (one-time sign-in, new cookie names, tools/tests that use `gs_gm`), BC-2
+  (removed constants → `GmCookies.SessionName/CsrfName` or the four name constants), BC-4 (`Gm:Cors:AllowedOrigins` needs
+  `Gm:Console:BaseUrl`), BC-8 (`gm.ui` only with development tools); new section 15 "GM console for a game": 15.1 Q18 CI recipe
+  (Node 22.20 in that job only, `npm ci --prefix framework/gm-console`, `npm run build -w app --prefix framework/gm-console`,
+  optional `check:dist`, per-environment `config.json` + `deploy/` headers + upload to a custom domain, local try with
+  `GM_CONSOLE_CONFIG=… npm run preview --prefix …`), 15.2 server keys per environment (+ env-var names, IdP redirect URI
+  unchanged, ForwardedHeaders), 15.3 deploy order, one-time sign-out, tests pinning `gs_gm`/`gm.ui`, 15.4 game pages wait for
+  GM-4 (GM-3 forms for game commands; T064 frictions as pointers). Recipe run once from the repository root
+  (`framework/gm-console` = `gm-console`): `npm ci --prefix gm-console` (298 packages), `npm run build -w app --prefix
+  gm-console` (built), `npm run check:dist --prefix gm-console` ok, `GM_CONSOLE_CONFIG=<abs path> npm run preview --prefix
+  gm-console` → scratch `config.json` served with the CSP; stopped.
+- [x] T061 [P] [US9] `docs/html/01-gioi-thieu.html` (4.12 GM API: console shell and default app, cookies, Dev/Test page;
   module table line 543), `docs/html/03-deploy.html` §11 (GM: SSO, CORS, cookie, console host — values from the PCR),
   `README.md` (lines 52, 117: GM console + Dev/Test page), `docs/guides/environments-and-local-run.md` (banner line, `local`
   profile still opens `/gm/v1/ui`, console loop link); update the HTML "updated" stamps as the pages do.
   Done when: each page renders (open in the system Chrome) and has no stale line from the spec's list. (FR-094)
-- [ ] T062 [US9] Owner's requirements file `Requirements/Game_Server_System_Requirements_v1.2.md` (gitignored; edit, never
+  Note: `docs/html/01-gioi-thieu.html`: 4.12 GM API (`/gm/v1/ui` Dev/Test only; new paragraph on the GM-2 console: case A,
+  shell + default app, no business mutation; bullets for cookies, CORS, SSO and the static host; local loop and a guide link),
+  module table (Gm row + new `gm-console` row), limitations row (GM-1 = 017, GM-2 = 018, GM-3/GM-4 next), stamps (meta + footer:
+  branches 017 and 018, updated 2026-11-07). `docs/html/03-deploy.html` §11 renamed "GM: SSO, CORS, cookie, console host"
+  (heading + TOC): console host (case A, the two keys together with their rules, no-console behaviour, env-var names), cookies
+  per environment + one-time sign-out, TLS at the proxy → ForwardedHeaders, static-host headers from `deploy/` with values,
+  deploy order, `/gm/v1/ui` Dev/Test only; stamps updated. `README.md`: "GM console" row (localhost:5173, commands, guide) and a
+  "GM page (Dev/Test)" row; `src/GameServer.Modules.Gm*` row updated and a new `gm-console` row in the structure table.
+  `docs/guides/environments-and-local-run.md`: banner block gains the `GM console` line (as printed by `run-local.ps1:280`), the
+  `local` profile still opens `/gm/v1/ui` (Dev/Test page), a paragraph with the console loop, the Local/Dev CORS + BaseUrl values
+  and a link to `docs/guides/gm-console.md`; stamp mentions slice 018. Both HTML pages opened in the system Chrome 157
+  (playwright-core, headless, `file://`): titles fine, new text present, stamp 2026-11-07, 0 console errors.
+- [x] T062 [US9] Owner's requirements file `Requirements/Game_Server_System_Requirements_v1.2.md` (gitignored; edit, never
   commit; research R17): rows TBD-05a (line 707), SEC-04 (442), SEC-06 (444), TBD-21 (725) to the case-A wording with status
   `Chốt 2026-11-05`; G6 (line 95), status line 7 and line 697 restated; SEC-13 (line 451) and the appendix line "Rate limit
   GM API" (line 816) to Q9: per-IP hard limit ≤ 30/min only on the GM auth endpoints (`/gm/v1/auth/*`), other GM routes keep
   the concurrency limiter, `Chốt 2026-11-05` (wording in research R17). Do not edit GM-01 (reported in the release notes).
   Done when: the Note quotes before/after of each line; `git status` does not list the file. (FR-096, D17)
-- [ ] T063 [US9] Release notes final pass `specs/018-gm-console-hosting-shell/release-notes-draft.md`: every FR group,
+  Note: file edited in place (9 lines replaced, none deleted, line count unchanged), GM-01 (line 427) not edited (reported in
+  the release notes); `git status` does not list the file (`.gitignore:2 Requirements/`); a byte copy of the file before the edit
+  is in the session scratch folder. Before → after:
+  - line 7 before: | Trạng thái | Draft v1.2 rev 4 — mọi TBD đã chốt hoặc có giả định thiết kế (TBD-09, TBD-21 còn Mở, chỉ chặn P0.5); **không còn [MẶC ĐỊNH]** (TBD-17 owner duyệt vòng 3, 26/10/2026); không còn [VERIFY] chặn P0; Leaderboard và League ngoài phạm vi framework (owner 26/10/2026) |
+    after: | Trạng thái | Draft v1.2 rev 4 — mọi TBD đã chốt hoặc có giả định thiết kế (TBD-09 còn Mở, chỉ chặn P0.5; TBD-21 chốt 05/11/2026: React + TypeScript + Vite + Mantine, console host tĩnh riêng cùng site với GM API; TBD-05a mở lại và chốt 05/11/2026: trường hợp A, cùng site khác origin); **không còn [MẶC ĐỊNH]** (TBD-17 owner duyệt vòng 3, 26/10/2026); không còn [VERIFY] chặn P0; Leaderboard và League ngoài phạm vi framework (owner 26/10/2026) |
+  - line 95 before: | G6 | GM frontend same-origin với GM backend (TBD-05a chốt); CORS chỉ là phương án dự phòng | Khác origin: SEC-06 bắt buộc, cookie `SameSite=None` |
+    after: | G6 | GM frontend là console host tĩnh riêng, **cùng site** nhưng khác origin với GM API (trường hợp A; TBD-05a chốt lại 05/11/2026): CORS cho đúng một origin console mỗi environment, cookie `__Host-` + `SameSite=Lax`; console khác site không hỗ trợ | Console khác site (vd domain mặc định CDN): cookie phiên phải `SameSite=None` (cookie bên thứ ba, bị chặn hoặc phân vùng) → cần thiết kế riêng (token/CHIPS), không nằm trong GM-2 |
+  - line 442 before: | SEC-04 | Baseline web dùng same-origin frontend/backend (TBD-05a) và cookie session `HttpOnly`, `Secure`, `SameSite=Lax`; `SameSite=None` chỉ khi khác origin và phải kèm SEC-06. Cookie chỉ mang session id; ticket lưu server-side (`gm_sessions`, `ITicketStore`); server quản lý token provider/secret. (TBD-05a chốt 22/10/2026.) | MUST | P0.5 | ACC-11 |
+    after: | SEC-04 | Baseline web: console GM host tĩnh riêng **cùng site** khác origin với GM API (trường hợp A, TBD-05a) và cookie session `HttpOnly`, `Secure`, tiền tố `__Host-` + `Path=/`, không `Domain` (`__Host-gs_gm`, `__Host-gs_gm_csrf`; Development dùng `gs_gm_dev`, `gs_gm_dev_csrf` vì chạy HTTP); `SameSite` cấu hình `Gm:Cookies:SameSite` (`Lax` mặc định), không phụ thuộc CORS; `None` chỉ ở Development/Test, cần origin CORS (SEC-06) và luôn `Secure`. Cookie chỉ mang session id; ticket lưu server-side (`gm_sessions`, `ITicketStore`); server quản lý token provider/secret. (TBD-05a chốt 22/10/2026, mở lại và chốt 05/11/2026.) | MUST | P0.5 | ACC-11 |
+  - line 444 before: | SEC-06 | Nếu khác origin, CORS chỉ cho phép danh sách origin cấu hình theo environment; không dùng wildcard với credentials. CORS không được coi là authentication. | MUST | P0.5 | ACC-11; Integration |
+    after: | SEC-06 | Khi console khác origin, CORS chỉ cho phép danh sách origin cấu hình theo environment — đúng một origin console mỗi environment (ngoài Development); không dùng wildcard với credentials. Header CORS có trên mọi response, kể cả response lỗi; expose `X-Request-Id`, `Retry-After`, `ETag`; preflight cache 7200 s. CORS không được coi là authentication. (Chốt 2026-11-05.) | MUST | P0.5 | ACC-11; Integration |
+  - line 451 before: | SEC-13 | Login Player: kiểm soát chính theo **`localId` hoặc provider subject** ≤ M = 10 lần/phút; per-IP **không** chặn login hợp lệ (mobile sau carrier-grade NAT gom hàng nghìn thiết bị một IP) mà chỉ giới hạn **lần đăng nhập thất bại** ≤ 60/phút/IP (chống credential stuffing) và ngưỡng tổng ≤ 600 request login/phút/IP chỉ để **cảnh báo** (metric), không chặn. GM API giữ per-IP chặn cứng ≤ 30/phút. Command nhạy cảm (adjust, redeem) có concurrency limiter riêng (PERF-04 ở P0; budget theo nhóm PERF-05 ở P0.5); vượt → 429 `ErrorEnvelope` + `Retry-After`. Response lỗi không tiết lộ sự tồn tại của tài khoản/identity khác. Giá trị ghi trong PCR (TBD-19 chốt 22/10/2026). | MUST | P0 | ACC-52 |
+    after: | SEC-13 | Login Player: kiểm soát chính theo **`localId` hoặc provider subject** ≤ M = 10 lần/phút; per-IP **không** chặn login hợp lệ (mobile sau carrier-grade NAT gom hàng nghìn thiết bị một IP) mà chỉ giới hạn **lần đăng nhập thất bại** ≤ 60/phút/IP (chống credential stuffing) và ngưỡng tổng ≤ 600 request login/phút/IP chỉ để **cảnh báo** (metric), không chặn. GM: per-IP chặn cứng ≤ 30/phút chỉ cho endpoint auth GM (`/gm/v1/auth/*`: login, csrf, methods, SSO start/callback); các route GM khác chỉ có concurrency limiter `gs-gm` (Q9, chốt 2026-11-05). Command nhạy cảm (adjust, redeem) có concurrency limiter riêng (PERF-04 ở P0; budget theo nhóm PERF-05 ở P0.5); vượt → 429 `ErrorEnvelope` + `Retry-After`. Response lỗi không tiết lộ sự tồn tại của tài khoản/identity khác. Giá trị ghi trong PCR (TBD-19 chốt 22/10/2026). | MUST | P0 | ACC-52 |
+  - line 697 before: Owner đã trả lời 23/26 TBD (vòng 1) và duyệt 11/11 mục mặc định (vòng 2) ngày 22/10/2026 (`04_owner_answers.md`); vòng 3 (26/10/2026) duyệt mục mặc định cuối cùng (TBD-17). Cột "Mặc định / Quyết định" ghi quyết định owner (trạng thái `Chốt 2026-10-22`); TBD-06 là `Giả định thiết kế (Chốt 2026-10-22)`; TBD-10 `Huỷ 2026-10-26` (Leaderboard ngoài phạm vi). TBD-09, TBD-21 còn `Mở`. Các TBD không ngăn thiết kế phần độc lập, nhưng phần phụ thuộc không được nghiệm thu khi TBD liên quan còn `Mở`.
+    after: Owner đã trả lời 23/26 TBD (vòng 1) và duyệt 11/11 mục mặc định (vòng 2) ngày 22/10/2026 (`04_owner_answers.md`); vòng 3 (26/10/2026) duyệt mục mặc định cuối cùng (TBD-17). Cột "Mặc định / Quyết định" ghi quyết định owner (trạng thái `Chốt 2026-10-22`); TBD-06 là `Giả định thiết kế (Chốt 2026-10-22)`; TBD-10 `Huỷ 2026-10-26` (Leaderboard ngoài phạm vi). TBD-09 còn `Mở`; TBD-21 `Chốt 2026-11-05`; TBD-05a mở lại và `Chốt 2026-11-05` (trường hợp A). Các TBD không ngăn thiết kế phần độc lập, nhưng phần phụ thuộc không được nghiệm thu khi TBD liên quan còn `Mở`.
+  - line 707 before: | TBD-05a | GM frontend same-origin với backend? | Operations + frontend | Sprint 0 | Same-origin; `SameSite=Lax`; không CORS | Chốt 2026-10-22 |
+    after: | TBD-05a | GM frontend same-origin với backend? | Operations + frontend | Sprint 0 | Console host tĩnh riêng, **cùng site** khác origin (trường hợp A); cookie `__Host-` + `SameSite=Lax`; CORS một origin console theo environment; khác site không hỗ trợ | Chốt 2026-11-05 (mở lại từ 2026-10-22) |
+  - line 725 before: | TBD-21 | GM frontend stack, browser support, hosting | Frontend + ops | Trước GM frontend đầy đủ (P0.5) | Chưa có | Mở |
+    after: | TBD-21 | GM frontend stack, browser support, hosting | Frontend + ops | Trước GM frontend đầy đủ (P0.5) | React + TypeScript + Vite + Mantine; Chrome/Edge desktop, Firefox best-effort; static host riêng cùng site với GM API | Chốt 2026-11-05 |
+  - line 816 before: | Rate limit GM API | ≤ 30/phút/IP (chặn cứng) | SEC-13 | TBD-19 |
+    after: | Rate limit GM API | ≤ 30/phút/IP (chặn cứng) chỉ cho endpoint auth GM (`/gm/v1/auth/*`); các route GM khác: concurrency limiter `gs-gm` (Q9, chốt 2026-11-05) | SEC-13 | TBD-19 |
+- [x] T063 [US9] Release notes final pass `specs/018-gm-console-hosting-shell/release-notes-draft.md`: every FR group,
   BC-1..BC-9 final, migration steps, owner questions 1–5, V2–V13 results, docs touched, test counts
   placeholder for T066.
   Done when: a read-through finds every BC id; nothing marked TODO. (FR-095)
+  Note: final pass: summary (Phase B bullet), Phase A gate (T023/T024 results, review carry-over and where it is done), BC table
+  + "Phase B adds no breaking change", zh-pvp migration, story sections US1–US8 + e2e, implementation decisions of Phase B,
+  requirements rows (GM-01 not edited, reported for the owner), owner questions 1–5, V2–V13 (V7 not run), docs touched (T057–T062),
+  tests per checkpoint with "final counts by T066/T067", next tag. Read-through: BC-1..BC-9 all present; no "TODO", no
+  "filled by" and no empty placeholder left.
 
 ## Phase 12: Verification, review and close — Phase B
 
-- [ ] T064 [VERIFY] V9 — GM-4 seam (scratch, never committed): in the session scratch folder create a game-shaped layout
+- [x] T064 [VERIFY] V9 — GM-4 seam (scratch, never committed): in the session scratch folder create a game-shaped layout
   `game/package.json` (`private`, workspaces `["gm-console", "framework/gm-console/packages/shell"]`), `game/framework` = a
   copy (not a link) of this repository's `gm-console/packages/shell` under `framework/gm-console/packages/shell`, and a
   minimal `game/gm-console` Vite app importing `@gameserver/gm-shell` and calling `createGmConsole()`; `npm install` then
   `npm run build -w gm-console`.
   Done when: Note records success, the hoisting result (one React copy) and any friction for GM-4, or the fallback taken.
   (FR-041, FR-098)
-- [ ] T065 Reviewer walkthrough (story 9; after T063): a fresh agent with only `docs/guides/gm-console.md` and consumer guide
+  Note (V9, session scratch folder, never committed): `game/package.json` (private, workspaces `["gm-console",
+  "framework/gm-console/packages/shell"]`, `.npmrc` engine-strict/save-exact), a copy of `gm-console/packages/shell`, and
+  `game/gm-console` (Vite app: `dependencies` only `@gameserver/gm-shell: 0.7.0`, devDependencies `vite 8.3.5`,
+  `@vitejs/plugin-react 6.1.2`; `main.tsx` = `createGmConsole()`; `define` of `__GM_BUILT_FOR__` from
+  `@gameserver/gm-shell/package.json` + a game version). `npm install`: 48 packages, **the shell's exact peers were installed
+  automatically and hoisted once** (`node_modules/react`, `react-dom`, `@mantine/core` only at the game root; `npm ls` all
+  deduped; `@gameserver/gm-shell` linked to the submodule path); no `overrides` needed (no vitest in a game app). **V9
+  confirmed** with one friction: the first `npm run build -w gm-console` failed — Vite's transform reads the shell's
+  `tsconfig.json`, which extends `../../tsconfig.base.json` — because only `packages/shell` had been copied; with
+  `framework/gm-console/tsconfig.base.json` present (as in a real submodule, which has the whole folder) the build succeeds
+  (154.8 KB JS + 36.2 KB CSS gzip, stamp `{frameworkVersion: "0.7.0", gameVersion: "1.0.0"}`). Frictions for GM-4: (1) consume
+  the whole `framework/gm-console` folder, never a vendored `packages/shell` alone (or make the shell tsconfig self-contained);
+  (2) the game app needs its own `define` of `__GM_BUILT_FOR__` (else the console warns "unknown" version) and
+  `build.copyPublicDir: false` if it keeps a local `config.json` in `public/`; (3) a game root that adds Vitest next to Vite 8 on
+  npm 10.9 needs the `"overrides": { "vitest": … }` workaround (T025); (4) Mantine's `localStorage` colour-scheme manager stays in
+  the bundle as dead code (the shell passes an in-memory one; the smoke asserts empty storage).
+- [x] T065 Reviewer walkthrough (story 9; after T063): a fresh agent with only `docs/guides/gm-console.md` and consumer guide
   §15 (no source reading) runs the console locally against run-local, signs in, opens two pages, then simulates a
   static-host deployment (`npm run build -w app`, a scratch `config.json`, `npm run preview` with the headers) and signs in
   there. Findings are fixed in the docs.
   Done when: the walkthrough succeeds without help, or every finding is fixed and recorded. (SC-010, FR-092, FR-093)
-- [ ] T066 Final verification (after T065): Release build of `GameServer.slnx` 0 warnings; full suite in memory and with
+  Note (orchestrator): a fresh docs-only agent (`docs/guides/gm-console.md` + consumer guide §15, no source) **passed all three
+  steps without help**: local run (run-local + `npm ci` + `npm run dev`, sign-in, Staff / Ops / Players pages); static-host
+  simulation (`npm run build -w app`, a scratch `config.json`, `npm run preview` with headers matching guide §4, sign-in, 0 CSP
+  violations); cleanup. 0 Blocker / 0 Major / 6 Minor doc findings (wait for run-local's ready line; one expected 401 on the login
+  page; local `config.json` values + stop `npm run dev` first + clear `GM_CONSOLE_CONFIG`; Chrome default path; what each page
+  shows; 500 KB = gzip), all fixed in T069. First page after sign-in 138–357 ms; `npm ci` 119 s; build about 0.5 s.
+- [x] T066 Final verification (after T065): Release build of `GameServer.slnx` 0 warnings; full suite in memory and with
   `GAMESERVER_TEST_STORE=File`; consumer fixture suites; in `gm-console/` from a clean `node_modules`: `npm ci`, `npm run
   verify`; start run-local (Local flavor, background PowerShell, port 5080), `npm run e2e` (both targets, Chrome), stop the
   host; `git diff main -- docs/api/gm-openapi.json proto src/*/Protos sdk` empty; `git status` lists only intended files
   (no `node_modules`, `dist`, e2e artifacts, `Requirements/`); Gm.Tests wall time within 10 % of T001 (a).
   Done when: all hold; counts recorded against T001. (FR-099, SC-005, SC-006, SC-009)
-- [ ] T067 Couchbase full suite (after T066; PowerShell in the background, variables from the resume file, password never
+  Note (orchestrator, after T069 and the r2 follow-ups): clean `npm ci` OK; `npm run verify` green, 231 tests (shell 158,
+  tooling 58, deploy 15), check:dist 185.4 KB gzip; e2e Chrome 157 and Edge 156 each 21 passed / 1 skipped (dev + preview);
+  Release build of `GameServer.slnx` 0 warnings / 0 errors; `GameServer.Gm.Tests` alone 31 s (T001 reference 31.6 s, within
+  10 %); full suite in memory 3026 total / 2911 passed / 115 skipped / 0 failed (1 m 05 s); `GAMESERVER_TEST_STORE=File` 3026 /
+  2910 / 115 / 1 failed = `TelemetryTests.Obs01_metrics_are_recorded_without_player_or_request_labels` (known flaky), rerun alone
+  3/3 and the whole Observability project 69/69 green on File; `git diff main -- docs/api/gm-openapi.json proto src/*/Protos sdk`
+  empty; `git status` lists only intended files (`node_modules`, `dist`, `e2e/.artifacts` ignored; `tasks/` is the owner's
+  scratch, not committed).
+- [x] T067 Couchbase full suite (after T066; PowerShell in the background, variables from the resume file, password never
   printed), including `SampleHostFlavorTests`.
   Done when: 0 failures; totals and duration recorded; a known flaky class (TelemetryTests) rerun alone before reporting.
   (FR-099, SC-009)
-- [ ] T068 Tech-lead review (after T066): `tech-lead-reviewer` gets spec, plan, this file and `git diff --stat main`; focus:
+  Note (orchestrator): Couchbase full suite 3026 total / 2966 passed / 28 skipped / 32 failed — all 32 in
+  `GameServer.Platform.Couchbase.IntegrationTests`, each `CouchbaseFixture.InitializeAsync` `ProvisioningFailedException` (index
+  catalog `UnambiguousTimeoutException`: local cluster query timeout, the environmental issue already seen in 017); the project
+  rerun alone 151 total / 148 passed / 3 skipped / 0 failed (6 m 26 s), `SampleHostFlavorTests` included. TelemetryTests rerun
+  alone as in T066.
+- [x] T068 Tech-lead review (after T066): `tech-lead-reviewer` gets spec, plan, this file and `git diff --stat main`; focus:
   Phase A unchanged since T024 or re-reviewed; shell security invariants (design §12: no storage, no HTML from data, CSRF only
   on non-GET, no PII in URL, guard before any page call, 401/403 handling without loops), client middleware retry
   correctness (body replay once), catalog/navigation visibility, mutation boundary (FR-074), header source and CSP, e2e
   assertions actually exercising cross-origin, docs equal code, versions and lockfile.
   Done when: a findings list (Blocker/Major/Minor) is recorded. (constitution governance)
-- [ ] T069 Review fixes (after T068): fix every accepted finding, each with a test that fails without the fix (scripted
+  Note (orchestrator): r1 **CONDITIONAL** — 0 Blocker, 2 Major (M1 mutation-boundary bypass, M2 shell dependency confusion), 8
+  minor (m1–m8) → all fixed in T069; r2 **YES** — 5 minor follow-ups (n1–n5) + spec FR-052/FR-054 amendment, all done (T069 r2
+  note). GM-3 carry-over: an unknown `x-gm-kind` on a non-GET operation is a `command`.
+- [x] T069 Review fixes (after T068): fix every accepted finding, each with a test that fails without the fix (scripted
   revert check); rerun the affected projects/workspaces, then `npm run verify`, the in-memory .NET suite and the e2e smoke.
   Done when: every accepted finding closed or recorded as an owner decision (release notes); suites green. (FR-099)
-- [ ] T070 Resume and design status (after T069): `AgentMemories/features/p05-speckit/00_summary.md` gains an 018 row (DONE
+  Note (T069, from review T068 CONDITIONAL + walkthrough T065 doc findings; started from a clean `npm ci`). Each code fix:
+  fix → test → scripted revert (fix undone, guard red, file restored byte for byte):
+  - **M1 mutation boundary**: (a) lint on the AST, shared `gm-console/eslint.rules.js` (used by `eslint.config.js`): shell
+    source (tests excluded) forbids `.POST/.PUT/.DELETE/.PATCH/.request(`, computed `['POST'|…|'request']`, any template-literal
+    computed member, `method: 'post'|…` and template methods; `session/` override allows only `.POST` whose first argument is the
+    literal `'/gm/v1/auth/login'` or `'/gm/v1/auth/logout'`. Test `eslint.rules.test.ts` (new Vitest project `tooling`, Linter
+    on fixtures at their real paths, 42 cases incl. `api.request('post',…)`, `api['POST']`, ``POST``, non-literal paths in
+    session/, allowed GET/login/logout/test files). (b) run-time guard in `createGmMiddleware.onRequest`: non-GET/HEAD whose path
+    relative to the `apiBaseUrl` path is not in `GM2_ALLOWED_MUTATIONS` → `GmApiError` `MUTATION_NOT_ALLOWED` before sending
+    (comment + release notes: GM-3 replaces it with the catalog check). Tests (client.test.ts): staff disable POST, gate PUT,
+    `request('post')` ban, `['POST']` adjust refused with 0 requests and no token fetch; login/logout allowed behind an API
+    path prefix. (c) `mutationBoundary.test.ts`: scan adds `.request(`, computed names, template methods; session/ must contain
+    exactly `POST '/gm/v1/auth/login'` and `POST '/gm/v1/auth/logout'` (literal first argument) and no other form. Reverts:
+    guard off → 5 client tests red; shell selectors off → 9 fixture cases red; session override off → 6 red; `api.request('post')`
+    in `StaffPage.tsx` → `npx eslint` "GM-2 boundary" error and the scan red; non-literal `POST(LOGOUT_ROUTE …)` in session/ →
+    scan red. The old pass-through test that used a staff POST now uses `X-Request-Id` on the login call.
+  - **M2 dependency confusion**: `gm-console/.npmrc` `@gameserver:registry=https://registry.invalid/`; `npm ci` still links both
+    workspaces (`node_modules/@gameserver/*` → `app`, `packages/shell`), `npm view @gameserver/gm-shell` fails ENOTFOUND.
+    `GmConsoleWorkspaceTests.The_app_uses_the_workspace_shell_of_the_declared_version_and_never_a_registry` (+ message test):
+    app dependency spec = declared version, lockfile `app` dependency, root/`app`/`packages/shell` versions = declared,
+    `node_modules/@gameserver/gm-shell` `link: true` resolved `packages/shell`, the `.npmrc` line. The workspace-name `*`
+    exception of the exact-version rule is removed. `VersionTests` fix text now says what is checked (package.json versions + the
+    app's shell dependency, then npm install; lockfile checked by `GmConsoleWorkspaceTests`). Reverts (no rebuild, files read at
+    run time): `.npmrc` line removed, lockfile entry resolved from the registry, app dependency `0.7.1` → the test red each time.
+  - **m1** CSRF retry fetch wrapped: a rejection → `networkProblem` ("No answer from the GM API"). Test: 403 CSRF_FAILED then
+    network error → `NETWORK_ERROR`. Revert (rethrow) → red.
+  - **m2** `csrf.ts`: concurrent `refresh()` share one in-flight refresh; `clear()` drops it. Tests: three concurrent refreshes →
+    one fetch; refresh, clear, refresh → the post-clear token. Reverts: sharing off → first red; `clear()` keeping it → second red.
+  - **m3** `SessionProvider`: after a successful login `csrf.clear()` instead of `await csrf.refresh()` (lazy token; the
+    middleware retries once on CSRF_FAILED). Tests: sign-in call list now ends `csrf, POST login`; new "stays signed in when no
+    token can be fetched after the login". Revert → both red. e2e: logout POST still carries `X-CSRF-Token` (204).
+    `docs/pcr/gm.md`, `contracts/console-hosting.md` §2 and the release notes updated (deviation from the FR-054 wording).
+  - **m4** lint: `document.cookie`, `document.write/writeln` (`no-restricted-properties`), `outerHTML`, `insertAdjacentHTML`,
+    `srcdoc`, JSX `srcDoc`, computed HTML/cookie sinks and computed storage access (`no-restricted-syntax`); fixtures in
+    `eslint.rules.test.ts`. Reverts: cookie rule → 2 red; outerHTML/insertAdjacentHTML/srcdoc → 3 red; computed storage → red only
+    for an alias (`const w = window; w['indexedDB']`; `globalThis['localStorage']` is already caught by `no-restricted-properties`,
+    fixture added). e2e step 8 asserts `{ storage: 0, cookie: '', databases: 0 }`. Guide §6 lists exactly these checks.
+  - **m5** e2e: V13 asserted (preview: `If-None-Match` present, raw status 304); blocked context 0 CSP violations (preview); step 4b
+    opens `#/players/<GM_E2E_PLAYER or e2e-no-such-player>` and asserts 0 violations (default "not found"; with
+    `GM_E2E_PLAYER=p_4kvaf1xr9z6dh13hqhkf3p96kr` the full player page rendered, 0 violations).
+  - **m6** harness writes `e2e/.artifacts/config.json` (local ids, `apiBaseUrl` = `GM_E2E_API`) and sets `GM_CONSOLE_CONFIG` for
+    preview; the dev target is skipped with "dev target skipped: it serves app/public/config.json (http://localhost:5080);
+    GM_E2E_API=… runs on the preview target only" (shown with `GM_E2E_API=http://127.0.0.1:5080`: dev skipped, preview login page
+    green, generated file as expected). `run-local.ps1`/`.sh` print the console line only on port 5080; new opt-in
+    `RunLocalScriptTests.The_sample_host_on_another_port_prints_no_console_line` (PowerShell + Bash) green; revert (condition
+    removed in both scripts) → both red. e2e README updated.
+  - **m7** `deploy/headers.md`, guide §4, `docs/pcr/platform.md` §24 (+ a comment in `nginx.conf.example`): path classes are
+    relative to the console base path, with the sub-path nginx `location` adaptation; `deploy.test.ts` green (15).
+  - **m8** exact-version regex `^\d+\.\d+\.\d+$`; `1.2.3-rc.1` and `*` are expected failures in the message test. Revert (old
+    regex, rebuild) → `An_inexact_dependency_names_the_file_the_package_and_the_rule` red.
+  - **Walkthrough docs** (`docs/guides/gm-console.md`, consumer guide §15.1): 1 wait for "… is ready" (~30 s first run); 2 one
+    expected `401` in the browser console (§2 + §8 row); 3 §4 local preview: stop `npm run dev`, local `config.json` values /
+    `GM_CONSOLE_CONFIG` optional, `Remove-Item Env:GM_CONSOLE_CONFIG`; 4 §7 Chrome default path and `GM_E2E_BROWSER` for
+    `C:/Program Files/…`; 5 §1/§2 what Players, Staff and Operations show; 6 budget "≤ 500 KB gzip (Vite prints ~510 kB raw JS)"
+    in §4 and consumer §15.1.
+  - **GM-3 carry-over (no code change)**: `parseCatalog.ts` reads a missing/unknown `x-gm-kind` as `query`; GM-3 must treat an
+    unknown kind on a non-GET operation as `command` (also in the release notes).
+  Suites: `npm ci` clean; `npm run verify` green (lint, typecheck, 21 files / 215 tests: shell 158, tooling 42, deploy 15;
+  check:dist 185.4 KB gzip); `npm run e2e` with run-local (Local, :5080): Chrome 157 21 passed + 1 skipped (V13 step is preview-only), Edge 156 the same, preview alone with a real player 11/11; Release build of `GameServer.slnx` 0 warnings; Architecture.Tests with `GAMESERVER_SCRIPT_TESTS=1`: 84/84 passed (incl. the 10 opt-in run-local cases; 74 + 10). Host and every server
+  started here stopped; ports 5080/5173 free. No change under `src/` or `modules/`; Phase A files untouched.
+  Note (r2 follow-ups, review r2 = YES): n1 `docs/pcr/platform.md` §24 aligned with the release notes (`.npmrc` registry line,
+  `tooling` test project, full lint list + GM-2 boundary rules, client `MUTATION_NOT_ALLOWED` guard and lazy session token,
+  three-layer mutation check, `WorkspaceLinkFailures` and the bump steps). n2 `deploy/headers.md`, guide §4, platform §24: "the
+  console's origin serves nothing but the console (a sub-path is for a dedicated host, never a shared CDN/app origin)", example
+  now `https://gm.beta.example.com/console/` (planning files spec/research/tasks still quote `cdn.company.com/gm/` as history).
+  n3 `eslint.rules.js`: shell source forbids any `MemberExpression` named `POST|PUT|DELETE|PATCH|request` (not only calls),
+  destructuring them (`VariableDeclarator`/`AssignmentExpression > ObjectPattern`, not parameters such as the middleware's
+  `({ request })`), calls through a non-literal computed member, and `fetch`/`window|globalThis|self.fetch` except in
+  `api/client.ts`, `config/loadConfig.ts`, `session/SessionProvider.tsx`; `session/` keeps only `.POST` as the callee of a call
+  whose first argument is the literal login/logout path. Fixtures (58 total): `const { POST } = api`, `({ request: r } = api)`,
+  `api.POST.call(api, …)`, `const send = api.request`, `api[m](…)`, the same in session/, raw `fetch` with `method: verb` /
+  GET / `window.fetch` / `globalThis.fetch` / `self.fetch`; allowed: fetch in the three files, `({ request })` parameter.
+  Reverts: call-only selectors → 5 red; session call-only → 2 red; fetch restriction removed → 5 red; restored. n4
+  `SessionProvider.test.tsx`: the m3 test is replaced by "sign-in then sign-out": calls end `GET csrf, POST login, GET csrf, POST
+  logout`, POST tokens = `['anonymous', 'session']` (unused queued network error removed). Reverts: eager refresh after login → 2
+  red; anonymous token kept (no `clear()`) → 1 red. n5 consumer guide §15.4, guide §9 and platform §24: a game root needs its own
+  `.npmrc` with `@gameserver:registry=https://registry.invalid/`. Spec FR-052 and FR-054 amended in place (T034/T069; sign-out =
+  `clear()` then an anonymous `refresh()`, checked in `SessionProvider.tsx`); release-notes decision item updated. `npm run verify`
+  green (21 files, 231 tests: shell 158, tooling 58, deploy 15; check:dist 185.4 KB). Not run, by instruction: e2e, dotnet, run-local
+  (no .cs/src/modules/tests change).
+- [x] T070 Resume and design status (after T069): `AgentMemories/features/p05-speckit/00_summary.md` gains an 018 row (DONE
   n/n, review outcome, test counts) and "Technical notes from 018" (Development cookie names and why, H14 outcome, e2e
   harness and browser paths, toolchain pins); `AgentMemories/features/gm-tool/00_summary.md` "Bước kế tiếp" moves to GM-3 and
   records GM-2 results (V2–V13 notes, decisions awaiting the owner).
   Done when: both files updated. (handover)
+  Note: `AgentMemories/features/p05-speckit/00_summary.md`: 018 row after 017 ("DONE 2026-11-07, branch
+  `018-gm-console-hosting-shell`", 70/70, reviews, suite counts), new "Technical notes from 018" before 017's (Development cookie
+  names and why, H14 outcome, e2e harness + browser paths + `GM_E2E_API`, toolchain pins incl. the vitest override and the
+  `.npmrc` registry block, mutation-boundary layers, CSP/build), TBD-21 open item now "017 DONE, 018 DONE, next GM-3".
+  `AgentMemories/features/gm-tool/00_summary.md`: status 2026-11-07, "Kết quả GM-2" (Phase A/B, V2–V13, suites, reviews, GM-3
+  carry-over, decisions awaiting the owner incl. GM-01 wording, FR-054 change, 017 D9/D15), "Bước kế tiếp" → GM-3
+  `gm-generic-forms`. `AgentMemories/README.md` gm-tool row updated. Commit hash of the 018 feat to be filled by the orchestrator.
 
 ## Dependencies
 

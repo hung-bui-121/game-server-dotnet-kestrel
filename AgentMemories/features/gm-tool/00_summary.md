@@ -1,8 +1,8 @@
 # RESUME: GM tool (GM console + GM API) — framework shell, game mở rộng
 
-**Trạng thái (2026-11-05):** GM-1 (slice 017 `gm-api-contract`) XONG trên nhánh `017-gm-api-contract` (`e182fba`, chưa merge
-main, chưa push). Bước kế tiếp: **GM-2
-`gm-console-hosting-shell`**.
+**Trạng thái (2026-11-07):** GM-1 (slice 017 `gm-api-contract`) XONG (`e182fba`); GM-2 (slice 018
+`gm-console-hosting-shell`) XONG trên nhánh `018-gm-console-hosting-shell` (70/70 task, review r2 YES). Bước kế tiếp: **GM-3
+`gm-generic-forms`**.
 **Thiết kế:** `01_design.md` (đọc §0, rồi §6 hosting/bảo mật, §19 phạm vi GM-1).
 
 **Bối cảnh:** owner tự làm GM frontend (các dòng "giao dev khác" trong `docs/pcr/gm.md`, `p05-speckit/00_summary.md`,
@@ -61,8 +61,35 @@ GM-1 `gm-api-contract` (bắt đầu ngay) → GM-2 `gm-console-hosting-shell` �
 - Ghi chú cho GM-2: CORS cần expose `ETag` cho catalog; catalog ghi đè `no-store` thành `private, no-cache`; 415 cho
   Content-Type sai trên mọi GM mutation có `Accepts`.
 
+## Kết quả GM-2 (slice 018, 2026-11-07)
+
+- Phase A (backend, `63ddb8f`): cookie `__Host-gs_gm` / `__Host-gs_gm_csrf` ngoài Development, `gs_gm_dev` / `gs_gm_dev_csrf` ở
+  Development (`Path=/`); `SameSite` từ `Gm:Cookies:SameSite` (Lax; `None` chỉ Dev/Test); CORS expose `X-Request-Id`,
+  `Retry-After`, `ETag`, preflight 7200 s, một origin ngoài Development; SSO về `Gm:Console:BaseUrl` + `/` hoặc `/#…`, từ chối về
+  `BaseUrl#/login?error=sso_denied`; `/gm/v1/ui` chỉ Dev/Test. Mọi staff đăng nhập lại một lần (BC-1).
+- Phase B: workspace `gm-console/` (shell `@gameserver/gm-shell` dạng source, app mặc định, `deploy/` một nguồn header, e2e trên
+  Chrome/Edge của máy), trang đọc Players / Player (+ Receipts, Audit, Ledger) / Receipt / Staff / Ops, guard Q19, cảnh báo lệch
+  version, ranh giới mutation ba lớp (lint, quét source, guard `MUTATION_NOT_ALLOWED` lúc chạy). Docs: PCR gm + platform §24,
+  `docs/guides/gm-console.md`, consumer guide §15.
+- VERIFY: V2 đúng (header CORS trên 12 status lỗi, H14 không tái hiện, `ErrorResponseWriter` không đổi); V3 `style-src 'self'` giữ
+  được sau khi bỏ `<style>` của Mantine (CSS variables, `SimpleGrid`); V4 đúng (cookie `Lax` trên fetch cùng site, Chrome 157, Edge
+  156); V5 đúng (`__Host-` + antiforgery trên HTTPS, `Always` lỗi trên HTTP → tên Development); V7 không chạy (không có Firefox);
+  V8 version trong bảng T025, npm 10.9.3 cần `overrides` vitest; V9 đúng (workspace game hoist một React; phải dùng cả thư mục
+  `framework/gm-console`, `.npmrc` chặn scope `@gameserver` ở root game); V11 đúng (preview + plugin header); V12 đúng (codegen xác
+  định, LF); V13 đúng (catalog revalidate `If-None-Match` → 304).
+- Suite: in-memory 3026 (0 lỗi); File 1 lỗi flaky `TelemetryTests` (chạy lại xanh); Couchbase 32 lỗi timeout provisioning fixture
+  (chạy lại project 151, 0 lỗi); `npm run verify` 231 test; e2e Chrome + Edge xanh. Review T068 r1 CONDITIONAL (2 Major, 8 minor)
+  → T069; r2 YES (5 minor + sửa spec FR-052/FR-054, đã xong).
+- Chuyển sang GM-3: `x-gm-kind` thiếu/lạ trên operation không phải GET phải coi là `command`; guard `MUTATION_NOT_ALLOWED` thay bằng
+  kiểm theo catalog của form chung.
+- Chờ owner (danh sách ở `specs/018-gm-console-hosting-shell/release-notes-draft.md`): D4 tên cookie Development; D2/BC-5 một
+  origin console mỗi env ngoài Development; D3 `SameSite=None` bị từ chối ngoài Dev/Test; D10 không mutation nghiệp vụ đến GM-3;
+  D14 e2e với host chạy ngoài test; dòng GM-01 trong file requirements (chưa sửa: "P0 … resource adjust" ở frontend); thay đổi
+  FR-054 (đăng nhập không gọi `/me` thêm, token phiên lấy lười — spec đã sửa); 017 D9 (version trong `/me`) và D15 (không bump/tag,
+  tag kế đề xuất v0.8.0) vẫn chờ.
+
 ## Bước kế tiếp
 
-1. 017 XONG (`e182fba`, 64/64, full suite kèm Couchbase xanh, review r1+r2 đã sửa). Chờ owner: merge main? push?
-   xác nhận "Decisions awaiting owner override" trong `specs/017-gm-api-contract/release-notes-draft.md`.
-2. GM-2 `gm-console-hosting-shell` theo Q16–Q21 ở trên.
+1. 017 + 018 XONG trên nhánh. Chờ owner: merge main, push, xác nhận "Decisions awaiting owner override" của 017 và 018.
+2. GM-3 `gm-generic-forms`: form command chung sinh từ catalog (xác nhận, gõ lại, `reason`, request id, không tự retry), các thao
+   tác staff/gate/key/resource/ban và command của game; thay guard GM-2 bằng kiểm catalog.

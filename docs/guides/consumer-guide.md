@@ -1,6 +1,7 @@
 # Consumer guide — building a game on the framework
 
-> Matches framework v0.7.0 (released 2026-11-04, tag `v0.7.0`) + branch `017-gm-api-contract` (unreleased).
+> Matches framework v0.7.0 (released 2026-11-04, tag `v0.7.0`) + branches `017-gm-api-contract` and
+> `018-gm-console-hosting-shell` (unreleased).
 
 This guide is for a **game repository** that uses this framework as a git submodule (the first consumer is
 `zh-pvp-server`). Every code sample below is taken from `tests/ConsumerFixture`, a consumer-shaped repository inside the
@@ -11,7 +12,8 @@ and this guide has a bug. One known difference is by design: the fixture sits in
 
 Vietnamese pages on the same topics: `docs/guides/module-authoring.md` (writing a module),
 `docs/guides/environments-and-local-run.md` (flavors, run-local, request log, versions), `docs/html/02-them-command.html`
-(adding a command, with in-repo and consumer-repo variants).
+(adding a command, with in-repo and consumer-repo variants), `docs/guides/gm-console.md` (GM console: local loop,
+configuration, static host).
 
 ## 1. Repository layout and submodule
 
@@ -990,6 +992,15 @@ client.Sections.SectionChanged += id =>
    bodies that already carry DataAnnotations (now enforced, 400 with `errors`). Every non-nullable value type of a GM body
    (`int`, `long`, `bool`, enum) without a default is now required: an absent one is a 400 with `errors` (make it nullable
    or give its constructor parameter a default to keep it optional; computed get-only members are never required).
+   GM hosting (slice 018, section 15): **BC-1** every staff member signs in again once (cookies are now `__Host-gs_gm` /
+   `__Host-gs_gm_csrf` with `Path=/` outside Development, `gs_gm_dev` / `gs_gm_dev_csrf` in Development; the old `gs_gm`
+   with `Path=/gm` is ignored) — tell staff, and change tools, scripts and tests that read or send `gs_gm`; **BC-2** replace
+   `GmCookieAuthenticationHandler.CookieName` and `GmCookies.CsrfCookieName` (compile error) with
+   `GmCookies.SessionName(options)` / `GmCookies.CsrfName(options)` or the constants `GmCookies.HostSessionName`,
+   `HostCsrfName`, `DevelopmentSessionName`, `DevelopmentCsrfName`; **BC-4** a host that sets `Gm:Cors:AllowedOrigins` now also
+   needs `Gm:Console:BaseUrl` of the same origin (startup fails with one line); a host with neither needs nothing; **BC-8**
+   `gm.ui` (`/gm/v1/ui`) is mapped only with development tools: remove it from route lists your tests pin for Staging and
+   Production flavors (it answers 404 there).
 8. Build Debug and Release (0 warnings) and run the full game test suite; run the host once with `run-local`.
 9. Remove the workarounds the release notes list as removable (code, `FRAMEWORK-GAP` markers, friction-log entries).
 10. Commit the gitlink, the copied files, the regenerated client files, the GM document, the docs and the removed workarounds
@@ -1921,3 +1932,79 @@ tests as `FixtureGmOpenApiTests.The_game_gm_command_enforces_its_annotated_body`
 test-authentication GM headers (`TestAuthenticationHandler.GmHeader` = staff id, `GmPermissionsHeader` = the permission;
 development flavors only, no CSRF needed) and an `X-Request-Id` UUID header. Module-authoring guide §5.4 has the full code
 with its `using` lines.
+
+## 15. GM console for a game
+
+The framework ships the GM console (slice 018, GM-2): a static web app in `framework/gm-console` that calls the game host's
+GM API from its own origin on the same site (`https://gm.<env>.<domain>` → `https://gm-api.<env>.<domain>`). A game
+without pages of its own deploys the framework's default app; it writes no frontend code. Full guide (Vietnamese, with the
+security rules and troubleshooting): `docs/guides/gm-console.md`.
+
+### 15.1 CI recipe (game without pages, Q18)
+
+A separate job of the game's CI; Node **22.20** is needed in this job only (`framework/gm-console/.nvmrc`; `engine-strict`
+refuses an older Node). `dotnet build` and `dotnet test` never need Node.
+
+```bash
+npm ci --prefix framework/gm-console                 # exact versions from the framework's package-lock.json
+npm run build -w app --prefix framework/gm-console   # → framework/gm-console/app/dist/ (same build for every environment)
+npm run check:dist --prefix framework/gm-console     # optional: no inline script, no third-party URL, no config.json, ≤ 500 KB gzip
+```
+
+The budget is **≤ 500 KB gzip** for the JS+CSS that `index.html` loads (`check:dist` prints it, about 185 KB today). Vite prints
+the raw size (about 510 kB for the JS file) and may warn about a large chunk: that is fine.
+
+Then, per environment:
+
+1. Copy `framework/gm-console/app/dist/` and add that environment's `config.json` next to `index.html` (`dist/` never contains
+   one):
+
+   ```json
+   { "apiBaseUrl": "https://gm-api.beta.example.com", "gameId": "zhpvp", "environmentId": "beta" }
+   ```
+
+   `apiBaseUrl`: absolute `http`/`https` URL of the GM API, no query, fragment or user info; `gameId` and `environmentId`:
+   1..64 characters, equal to what `GET /gm/v1/me` of that host returns (otherwise the console blocks with "Wrong server").
+   Schema: `framework/gm-console/deploy/config.schema.json`.
+2. Apply the response headers of `framework/gm-console/deploy/security-headers.json` on the static host (table
+   `deploy/headers.md`, nginx example `deploy/nginx.conf.example`), with `{{apiOrigin}}` in the CSP `connect-src` replaced by the
+   origin of `apiBaseUrl`. They must be HTTP response headers, not `<meta>`.
+3. Upload to a **custom domain under the company domain with TLS**, on the same site as the GM API. A CDN/PaaS default
+   domain (`*.cloudfront.net`, `*.pages.dev`, …) is another site and is not supported.
+
+To try the result locally: `GM_CONSOLE_CONFIG=<absolute path of a config.json> npm run preview --prefix framework/gm-console`
+serves `dist/` on `http://localhost:5173` with the reference headers and that file (PowerShell: set
+`$env:GM_CONSOLE_CONFIG` first).
+
+### 15.2 Server settings per environment
+
+| Key | Environment with a console | Environment without a console |
+| --- | --- | --- |
+| `Gm:Cors:AllowedOrigins` | `["https://gm.<env>.<domain>"]` — exactly one origin outside Development | unset |
+| `Gm:Console:BaseUrl` | `https://gm.<env>.<domain>/` — same origin, path ends with `/`, `https` outside Development | unset |
+| `Gm:Cookies:SameSite` | unset (`Lax`) | unset |
+
+Both console keys go together (one without the other fails startup). As environment variables:
+`Gm__Cors__AllowedOrigins__0`, `Gm__Console__BaseUrl`. SSO then returns to the console
+(`BaseUrl#/login?error=sso_denied` on a denial); the identity provider's redirect URI stays
+`https://<GM API host>/gm/v1/auth/sso/callback`. Behind a TLS-terminating proxy, `GameServer:Hosting:ForwardedHeaders` must be
+enabled (the CSRF route needs HTTPS outside Development). The game's Local flavor may use the framework's local values
+(`http://localhost:5173` and `http://localhost:5173/`) to run the console against the game host with `npm run dev`.
+
+### 15.3 Deploy order, sign-out, tests
+
+- Deploy the **server first**, then the console built from the same framework tag. Between the two, the console warns when the
+  framework `major.minor` differs and blocks only on another game or environment.
+- The first deploy of a framework with slice 018 signs every staff member out once (new cookie names, section 11 BC-1).
+- Game tests that pin `gs_gm` (cookie name, `Path=/gm`) or list `gm.ui` for every flavor change: in Development the cookies
+  are `gs_gm_dev` / `gs_gm_dev_csrf` with `Path=/`; `gm.ui` exists only with development tools (section 11, BC-1, BC-8).
+
+### 15.4 Pages of the game (later)
+
+Pages and player tabs of a game's own come with GM-4 (a game workspace with `framework/gm-console/packages/shell` and
+`createGmConsole({ extensions })`); GM commands of the game appear in GM-3's generic forms from the GM document (section 14)
+without frontend code. Points seen while preparing GM-4 (slice 018 T064): the game workspace must include the whole
+`framework/gm-console` folder (the shell's tsconfig extends `tsconfig.base.json`), the game app defines its own build stamp,
+a game theme ships its CSS variables as static CSS (the CSP keeps `style-src 'self'`), and the game root needs its own
+`.npmrc` with `@gameserver:registry=https://registry.invalid/` (npm reads the `.npmrc` of the workspace root it runs in; without
+it a missing workspace link could resolve `@gameserver/gm-shell` from the public registry).

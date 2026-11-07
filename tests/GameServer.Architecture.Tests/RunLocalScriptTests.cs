@@ -96,7 +96,27 @@ public sealed class RunLocalScriptTests : IDisposable
         run.Output.ShouldContain("  Player API   http://localhost:5080/          (routes /api/v1/..., /v1/time)");
         run.Output.ShouldContain("  Health       http://localhost:5080/health/ready");
         run.Output.ShouldContain("  GM UI        http://localhost:5080/gm/v1/ui  (staff admin / dev-only-change-me)");
+        run.Output.ShouldContain("  GM console   http://localhost:5173  (cd gm-console; npm ci; npm run dev)");
         run.Output.ShouldContain("  GM OpenAPI   http://localhost:5080/gm/v1/openapi/gm.json");
+        (await run.StopAsync()).ShouldBe(0, run.Output);
+    }
+
+    /// <summary>
+    /// Slice 018 review T068 m6: the console's local config.json calls port 5080, so the sample host on another port prints no
+    /// console line (it would point at a console that does not call this host).
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(Shells))]
+    public async Task The_sample_host_on_another_port_prints_no_console_line(Shell shell)
+    {
+        RequireOptIn(shell);
+        var port = FreePort();
+
+        using var run = ScriptRun.Start(shell, Option(shell, "Port", port.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        await run.WaitForAsync(Ready, StartTimeout);
+
+        run.Output.ShouldContain($"  GM UI        http://localhost:{port}/gm/v1/ui  (staff admin / dev-only-change-me)");
+        run.Output.ShouldNotContain("GM console");
         (await run.StopAsync()).ShouldBe(0, run.Output);
     }
 

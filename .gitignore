@@ -32,3 +32,9 @@ appsettings.*.local.json
 _database/
 # Consumer fixture local run (data, analytics, logs of tests/ConsumerFixture/src/Fixture.Host on the Local flavor)
 /tests/ConsumerFixture/.local/
+
+# GM console (slice 018): dependencies, build output and e2e artifacts are never committed (FR-042)
+gm-console/**/node_modules/
+gm-console/**/dist/
+gm-console/e2e/.artifacts/
+gm-console/**/*.tsbuildinfo

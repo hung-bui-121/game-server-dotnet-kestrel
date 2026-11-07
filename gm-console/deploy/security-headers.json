@@ -1,0 +1,25 @@
+{
+  "placeholders": {
+    "apiOrigin": "Origin of config.json apiBaseUrl (scheme://host[:port]), e.g. https://gm-api.beta.example.com"
+  },
+  "all": {
+    "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self' {{apiOrigin}}; img-src 'self' data:; font-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+    "Strict-Transport-Security": "max-age=31536000",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()"
+  },
+  "document": {
+    "paths": ["/", "/index.html", "/config.json"],
+    "headers": {
+      "Cache-Control": "no-cache"
+    }
+  },
+  "asset": {
+    "paths": ["/assets/*"],
+    "headers": {
+      "Cache-Control": "public, max-age=31536000, immutable"
+    }
+  }
+}
