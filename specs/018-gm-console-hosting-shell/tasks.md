@@ -1156,7 +1156,7 @@ expectations), never retyped from the design.
   `.npmrc` registry block, mutation-boundary layers, CSP/build), TBD-21 open item now "017 DONE, 018 DONE, next GM-3".
   `AgentMemories/features/gm-tool/00_summary.md`: status 2026-11-07, "Kết quả GM-2" (Phase A/B, V2–V13, suites, reviews, GM-3
   carry-over, decisions awaiting the owner incl. GM-01 wording, FR-054 change, 017 D9/D15), "Bước kế tiếp" → GM-3
-  `gm-generic-forms`. `AgentMemories/README.md` gm-tool row updated. Commit hash of the 018 feat to be filled by the orchestrator.
+  `gm-generic-forms`. `AgentMemories/README.md` gm-tool row updated. Phase B feat = `80776c0`, merged ff into main and pushed 2026-11-07.
 
 ## Dependencies
 

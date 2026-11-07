@@ -1,7 +1,7 @@
 # RESUME: GM tool (GM console + GM API) — framework shell, game mở rộng
 
 **Trạng thái (2026-11-07):** GM-1 (slice 017 `gm-api-contract`) XONG (`e182fba`); GM-2 (slice 018
-`gm-console-hosting-shell`) XONG trên nhánh `018-gm-console-hosting-shell` (70/70 task, review r2 YES). Bước kế tiếp: **GM-3
+`gm-console-hosting-shell`) XONG (`63ddb8f` + `80776c0`, merge main + push 2026-11-07; 70/70 task, review r2 YES). Bước kế tiếp: **GM-3
 `gm-generic-forms`**.
 **Thiết kế:** `01_design.md` (đọc §0, rồi §6 hosting/bảo mật, §19 phạm vi GM-1).
 
@@ -90,6 +90,6 @@ GM-1 `gm-api-contract` (bắt đầu ngay) → GM-2 `gm-console-hosting-shell` �
 
 ## Bước kế tiếp
 
-1. 017 + 018 XONG trên nhánh. Chờ owner: merge main, push, xác nhận "Decisions awaiting owner override" của 017 và 018.
+1. 017 + 018 XONG, đã merge main + push. Chờ owner xác nhận "Decisions awaiting owner override" của 017 và 018.
 2. GM-3 `gm-generic-forms`: form command chung sinh từ catalog (xác nhận, gõ lại, `reason`, request id, không tự retry), các thao
    tác staff/gate/key/resource/ban và command của game; thay guard GM-2 bằng kiểm catalog.
