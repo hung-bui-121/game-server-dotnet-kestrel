@@ -90,6 +90,11 @@ GM-1 `gm-api-contract` (bắt đầu ngay) → GM-2 `gm-console-hosting-shell` �
 
 ## Bước kế tiếp
 
+**PHIÊN KẾT THÚC 2026-11-09 — bắt đầu phiên sau từ đây.** main = `origin/main`, cây sạch (chỉ `tasks/` của owner, không commit).
+Việc đầu tiên: hỏi owner (a) gắn tag `v0.8.0` cho 017 + 018? (b) bắt đầu CP-1 `gm-token-auth` (spec → plan → tasks theo quy trình
+slice, test hoàn toàn local, không cần control plane/domain)? (c) các "Decisions awaiting owner override" của 017/018 (release notes)
+vẫn chưa xác nhận — không ghi là đã chấp nhận.
+
 **2026-11-08/09 — yêu cầu mới của owner: MỘT URL cho mọi game × env (dev/beta/uat/live), admin phân quyền.** Owner chọn
 **C = control plane trung tâm** (không phải A′ architect đề xuất). Thiết kế đã chốt (Q22–Q32 trả lời hết):
 `02_single_url_multi_env.md` — đọc file này trước `01_design.md`.

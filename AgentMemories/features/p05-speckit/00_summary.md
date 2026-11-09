@@ -440,7 +440,9 @@ After P0.5 comes P1: Event, durable jobs (JOB-01/02, ACC-15), GM-05 API, PRIV-02
 - ACC-03/ACC-29 with real Play Games / Game Center devices: manual before release.
 - Couchbase outage drill `tools/local/couchbase-outage.ps1` needs admin; owner has not run it yet.
 - TBD-21 (GM console) decided 2026-11-05: owner builds it as GM-1..GM-4; GM-1 = slice 017 `gm-api-contract` (DONE),
-  GM-2 = slice 018 `gm-console-hosting-shell` (DONE 2026-11-07); next GM-3 `gm-generic-forms`.
+  GM-2 = slice 018 `gm-console-hosting-shell` (DONE 2026-11-07). 2026-11-08/09 owner: ONE GM URL for every game x env,
+  admin grants access, central control plane (option C) - design `AgentMemories/features/gm-tool/02_single_url_multi_env.md`
+  (accepted). Next: tag v0.8.0 (owner to confirm) then CP-1 `gm-token-auth`; GM-3 moves after CP-3.
 - Possible flaky `TelemetryTests.A_command_is_one_trace...` under full-suite load.
 - Game Center pins: gc-prod-12 expires 2027-05-27; Apple chain change → `PROVIDER_UNAVAILABLE` + LogError, update pins.
 - 010 open (PCR platform §16): the `deletion` view field schema (generator limitation; the `deletion/cancel` body/response
