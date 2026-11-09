@@ -1,9 +1,9 @@
 # RESUME: GM tool (GM console + GM API) — framework shell, game mở rộng
 
 **Trạng thái (2026-11-07):** GM-1 (slice 017 `gm-api-contract`) XONG (`e182fba`); GM-2 (slice 018
-`gm-console-hosting-shell`) XONG (`63ddb8f` + `80776c0`, merge main + push 2026-11-07; 70/70 task, review r2 YES). Bước kế tiếp: **GM-3
-`gm-generic-forms`**.
-**Thiết kế:** `01_design.md` (đọc §0, rồi §6 hosting/bảo mật, §19 phạm vi GM-1).
+`gm-console-hosting-shell`) XONG (`63ddb8f` + `80776c0`, merge main + push 2026-11-07; 70/70 task, review r2 YES). Bước kế tiếp: **CP-1
+`gm-token-auth`** (thiết kế một URL + control plane, `02_single_url_multi_env.md`, chốt 2026-11-09).
+**Thiết kế:** `02_single_url_multi_env.md` (một URL, control plane — thay phần hosting của 01), `01_design.md` (đọc §0, rồi §6 hosting/bảo mật, §19 phạm vi GM-1).
 
 **Bối cảnh:** owner tự làm GM frontend (các dòng "giao dev khác" trong `docs/pcr/gm.md`, `p05-speckit/00_summary.md`,
 auto-memory `gm-frontend-out-of-scope.md` đã lỗi thời — sửa trong GM-1). Chiến lược: framework ship backend base + frontend
@@ -90,6 +90,11 @@ GM-1 `gm-api-contract` (bắt đầu ngay) → GM-2 `gm-console-hosting-shell` �
 
 ## Bước kế tiếp
 
+**2026-11-08/09 — yêu cầu mới của owner: MỘT URL cho mọi game × env (dev/beta/uat/live), admin phân quyền.** Owner chọn
+**C = control plane trung tâm** (không phải A′ architect đề xuất). Thiết kế đã chốt (Q22–Q32 trả lời hết):
+`02_single_url_multi_env.md` — đọc file này trước `01_design.md`.
+
 1. 017 + 018 XONG, đã merge main + push. Chờ owner xác nhận "Decisions awaiting owner override" của 017 và 018.
-2. GM-3 `gm-generic-forms`: form command chung sinh từ catalog (xác nhận, gõ lại, `reason`, request id, không tự retry), các thao
-   tác staff/gate/key/resource/ban và command của game; thay guard GM-2 bằng kiểm catalog.
+2. Đề xuất gắn tag `v0.8.0` (017 + 018) — chờ owner xác nhận.
+3. Thứ tự slice mới: CP-1 `gm-token-auth` → CP-2 `gm-control-plane` → CP-3 `gm-console-multi-target` → CP-4 `gm-access-admin`
+   (song song GM-3 `gm-generic-forms`; quản staff chuyển từ GM-3 sang CP-4) → GM-4 → cutover zh-pvp.
